@@ -1,0 +1,202 @@
+version: "3.9"
+
+networks:
+  shivutz:
+    driver: bridge
+
+volumes:
+  mysql_data:
+  redis_data:
+  rabbitmq_data:
+
+services:
+  # ─────────────────────────────────────────────────────────
+  # Infrastructure
+  # ─────────────────────────────────────────────────────────
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./db/migrations:/docker-entrypoint-initdb.d
+    ports:
+      - "3306:3306"
+    networks:
+      - shivutz
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - shivutz
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"   # Management UI
+    networks:
+      - shivutz
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  # ─────────────────────────────────────────────────────────
+  # Application Services
+  # ─────────────────────────────────────────────────────────
+  gateway:
+    build: ./services/gateway
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "3000:3000"
+    networks:
+      - shivutz
+    depends_on:
+      redis:
+        condition: service_healthy
+      auth:
+        condition: service_started
+
+  auth:
+    build: ./services/auth
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DB_NAME: ${AUTH_DB_NAME}
+    ports:
+      - "3001:3001"
+    networks:
+      - shivutz
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  user-org:
+    build: ./services/user-org
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DB_NAME: ${ORG_DB_NAME}
+    ports:
+      - "3002:3002"
+    networks:
+      - shivutz
+    depends_on:
+      mysql:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  worker:
+    build: ./services/worker
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DB_NAME: ${WORKER_DB_NAME}
+    ports:
+      - "3003:3003"
+    networks:
+      - shivutz
+    depends_on:
+      mysql:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  job-match:
+    build: ./services/job-match
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DB_NAME: ${JOB_DB_NAME}
+    ports:
+      - "3004:3004"
+    networks:
+      - shivutz
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      worker:
+        condition: service_started
+
+  deal:
+    build: ./services/deal
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DB_NAME: ${DEAL_DB_NAME}
+    ports:
+      - "3005:3005"
+    networks:
+      - shivutz
+    depends_on:
+      mysql:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      worker:
+        condition: service_started
+
+  notification:
+    build: ./services/notification
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DB_NAME: ${NOTIF_DB_NAME}
+    ports:
+      - "3006:3006"
+    networks:
+      - shivutz
+    depends_on:
+      mysql:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  admin:
+    build: ./services/admin
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "3007:3007"
+    networks:
+      - shivutz
+    depends_on:
+      mysql:
+        condition: service_healthy
+      user-org:
+        condition: service_started
+      worker:
+        condition: service_started
+      deal:
+        condition: service_started
