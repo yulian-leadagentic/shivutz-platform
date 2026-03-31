@@ -44,8 +44,13 @@ const services = {
   '/api/admin':         process.env.ADMIN_SERVICE_URL         || 'http://admin:3007',
 };
 
-// Public routes (no auth required)
-const PUBLIC_PREFIXES = ['/api/auth/login', '/api/auth/refresh', '/api/auth/register'];
+// Public routes (no auth required) — matched against req.originalUrl
+const PUBLIC_PREFIXES = [
+  '/api/auth/login',
+  '/api/auth/refresh',
+  '/api/auth/register',
+  '/api/enums',          // profession/region enum lookups are public
+];
 
 // Admin-only routes
 const ADMIN_ONLY = ['/api/admin'];
@@ -58,8 +63,8 @@ for (const [prefix, target] of Object.entries(services)) {
     const limited = await rateLimiter(req, res);
     if (limited) return;
 
-    // Auth check (skip for public routes)
-    const isPublic = PUBLIC_PREFIXES.some(p => req.path.startsWith(p.replace(prefix, '')));
+    // Auth check — use originalUrl so the full /api/... path is available
+    const isPublic = PUBLIC_PREFIXES.some(p => req.originalUrl.startsWith(p));
     if (!isPublic) {
       const user = await validateToken(req);
       if (!user) return res.status(401).json({ error: 'Unauthorized' });
@@ -78,7 +83,9 @@ for (const [prefix, target] of Object.entries(services)) {
   }, createProxyMiddleware({
     target,
     changeOrigin: true,
-    pathRewrite: { [`^${prefix}`]: '' },
+    // Rewrite /api/auth/register → /auth/register, /api/enums/professions → /enums/professions
+    // Express strips the mount prefix from req.url, so we restore it via originalUrl
+    pathRewrite: (_path, req) => req.originalUrl.replace(/^\/api/, ''),
     on: {
       error: (err, _, res) => {
         console.error(`[gateway] Proxy error → ${target}:`, err.message);

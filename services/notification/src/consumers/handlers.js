@@ -1,5 +1,3 @@
-const axios = require('axios') || require('node:https');
-
 const USER_ORG_URL = process.env.USER_ORG_SERVICE_URL || 'http://user-org:3002';
 const ADMIN_EMAIL  = process.env.ADMIN_EMAIL || 'admin@shivutz-platform.co.il';
 
