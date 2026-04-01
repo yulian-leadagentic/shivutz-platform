@@ -183,6 +183,10 @@ services:
     build: ./services/admin
     restart: unless-stopped
     env_file: .env
+    environment:
+      USER_ORG_SERVICE_URL: http://user-org:3002
+      JOB_MATCH_SERVICE_URL: http://job-match:3004
+      DEAL_SERVICE_URL: http://deal:3005
     ports:
       - "3007:3007"
     networks:
