@@ -1,7 +1,7 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Header
 from pydantic import BaseModel
 from typing import Optional
-import uuid, json
+import uuid
 
 from app.db import get_db
 from app.publisher import publish_event
@@ -10,30 +10,38 @@ router = APIRouter()
 
 
 class MessageCreate(BaseModel):
-    sender_user_id: str
-    sender_role: str
     content: str
+    sender_user_id: Optional[str] = None
+    sender_role: Optional[str] = None
 
 
 @router.post("/{deal_id}/messages", status_code=201)
-async def send_message(deal_id: str, data: MessageCreate):
+async def send_message(
+    deal_id: str,
+    data: MessageCreate,
+    x_user_id: Optional[str] = Header(default=None),
+    x_user_role: Optional[str] = Header(default=None),
+):
+    sender_user_id = data.sender_user_id or x_user_id or "unknown"
+    sender_role = data.sender_role or x_user_role or "contractor"
+
     msg_id = str(uuid.uuid4())
     conn = get_db()
     try:
-        cur = conn.cursor()
+        cur = conn.cursor(dictionary=True)
         cur.execute(
             "INSERT INTO messages (id, deal_id, sender_user_id, sender_role, content) VALUES (%s,%s,%s,%s,%s)",
-            (msg_id, deal_id, data.sender_user_id, data.sender_role, data.content)
+            (msg_id, deal_id, sender_user_id, sender_role, data.content)
         )
         conn.commit()
 
         await publish_event("message.new", {
             "deal_id": deal_id,
-            "sender_user_id": data.sender_user_id,
-            "sender_role": data.sender_role,
+            "sender_user_id": sender_user_id,
+            "sender_role": sender_role,
         })
 
-        return {"id": msg_id}
+        return {"id": msg_id, "deal_id": deal_id, "sender_role": sender_role, "content": data.content}
     finally:
         conn.close()
 

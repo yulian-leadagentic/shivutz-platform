@@ -37,6 +37,7 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprintln(w, `{"status":"ok","service":"job-match"}`)
 	})
+	mux.HandleFunc("GET /job-requests", h.ListJobRequests)
 	mux.HandleFunc("POST /job-requests", h.CreateJobRequest)
 	mux.HandleFunc("GET /job-requests/{id}", h.GetJobRequest)
 	mux.HandleFunc("POST /job-requests/{id}/line-items", h.AddLineItem)

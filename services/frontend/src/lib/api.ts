@@ -71,10 +71,10 @@ export const jobApi = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
-  match: (id: string) =>
-    apiFetch<import('@/types').MatchBundle[]>(`/job-requests/${id}/match`, {
-      method: 'POST',
-    }),
+  match: async (id: string): Promise<import('@/types').MatchBundle[]> => {
+    const res = await apiFetch<{ bundles: import('@/types').MatchBundle[] }>(`/job-requests/${id}/match`, { method: 'POST' });
+    return res.bundles ?? [];
+  },
 };
 
 export const dealApi = {
