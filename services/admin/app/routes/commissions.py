@@ -22,7 +22,7 @@ def _serialize(row: dict) -> dict:
 
 
 def _org_name(conn, org_id: str, org_type: str) -> str:
-    cur = conn.cursor(dictionary=True)
+    cur = conn.cursor()
     table = "contractors" if org_type == "contractor" else "corporations"
     cur.execute(f"SELECT company_name, company_name_he FROM {table} WHERE id=%s", (org_id,))
     row = cur.fetchone()
@@ -38,7 +38,7 @@ def get_deal_detail(deal_id: str):
     deal_conn = get_db("deal_db")
     org_conn  = get_db("org_db")
     try:
-        deal_cur = deal_conn.cursor(dictionary=True)
+        deal_cur = deal_conn.cursor()
 
         # Deal row
         deal_cur.execute(
@@ -103,7 +103,7 @@ def create_commission(
 
     conn = get_db("deal_db")
     try:
-        cur = conn.cursor(dictionary=True)
+        cur = conn.cursor()
 
         # Guard: deal must exist and be completed/reporting
         cur.execute(
@@ -165,7 +165,7 @@ def update_commission_status(commission_id: str, body: StatusUpdate):
 
     conn = get_db("deal_db")
     try:
-        cur = conn.cursor(dictionary=True)
+        cur = conn.cursor()
         cur.execute("SELECT id FROM commissions WHERE id=%s", (commission_id,))
         if not cur.fetchone():
             raise HTTPException(status_code=404, detail="Commission not found")

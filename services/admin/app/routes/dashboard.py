@@ -12,9 +12,9 @@ def get_dashboard():
     deal_conn = get_db("deal_db")
 
     try:
-        org_cur  = org_conn.cursor(dictionary=True)
-        job_cur  = job_conn.cursor(dictionary=True)
-        deal_cur = deal_conn.cursor(dictionary=True)
+        org_cur  = org_conn.cursor()
+        job_cur  = job_conn.cursor()
+        deal_cur = deal_conn.cursor()
 
         org_cur.execute("SELECT COUNT(*) AS total FROM contractors WHERE approval_status='pending' AND deleted_at IS NULL")
         pending_contractors = org_cur.fetchone()["total"]
@@ -54,8 +54,8 @@ def get_alerts():
     deal_conn = get_db("deal_db")
     org_conn  = get_db("org_db")
     try:
-        deal_cur = deal_conn.cursor(dictionary=True)
-        org_cur  = org_conn.cursor(dictionary=True)
+        deal_cur = deal_conn.cursor()
+        org_cur  = org_conn.cursor()
 
         deal_cur.execute(
             "SELECT id, contractor_id, corporation_id, discrepancy_details, updated_at FROM deals WHERE discrepancy_flag=TRUE AND status='disputed'"

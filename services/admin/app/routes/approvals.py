@@ -14,7 +14,7 @@ USER_ORG_URL = os.getenv("USER_ORG_SERVICE_URL", "http://user-org:3002")
 def list_pending():
     conn = get_db("org_db")
     try:
-        cur = conn.cursor(dictionary=True)
+        cur = conn.cursor()
         cur.execute(
             """
             SELECT id, company_name, COALESCE(company_name_he,'') AS company_name_he,
@@ -45,7 +45,7 @@ def list_pending():
 def get_org(org_id: str, org_type: str = "contractor"):
     conn = get_db("org_db")
     try:
-        cur = conn.cursor(dictionary=True)
+        cur = conn.cursor()
         table = "contractors" if org_type == "contractor" else "corporations"
         cur.execute(f"SELECT * FROM {table} WHERE id=%s AND deleted_at IS NULL", (org_id,))
         row = cur.fetchone()
@@ -63,7 +63,7 @@ def get_org(org_id: str, org_type: str = "contractor"):
 def list_approved():
     conn = get_db("org_db")
     try:
-        cur = conn.cursor(dictionary=True)
+        cur = conn.cursor()
         cur.execute(
             """
             SELECT id, company_name, COALESCE(company_name_he,'') AS company_name_he,
@@ -102,7 +102,7 @@ async def decide(
     status = "approved" if body.approved else "rejected"
     conn = get_db("org_db")
     try:
-        cur = conn.cursor(dictionary=True)
+        cur = conn.cursor()
         table = "contractors" if org_type == "contractor" else "corporations"
 
         cur.execute(

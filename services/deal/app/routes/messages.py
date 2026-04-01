@@ -28,7 +28,7 @@ async def send_message(
     msg_id = str(uuid.uuid4())
     conn = get_db()
     try:
-        cur = conn.cursor(dictionary=True)
+        cur = conn.cursor()
         cur.execute(
             "INSERT INTO messages (id, deal_id, sender_user_id, sender_role, content) VALUES (%s,%s,%s,%s,%s)",
             (msg_id, deal_id, sender_user_id, sender_role, data.content)
@@ -50,7 +50,7 @@ async def send_message(
 def get_messages(deal_id: str):
     conn = get_db()
     try:
-        cur = conn.cursor(dictionary=True)
+        cur = conn.cursor()
         cur.execute(
             "SELECT * FROM messages WHERE deal_id=%s AND deleted_at IS NULL ORDER BY created_at ASC",
             (deal_id,)

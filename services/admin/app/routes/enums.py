@@ -24,7 +24,7 @@ class CountryCreate(BaseModel):
 def list_professions():
     conn = get_db("worker_db")
     try:
-        cur = conn.cursor(dictionary=True)
+        cur = conn.cursor()
         cur.execute("SELECT * FROM profession_types ORDER BY sort_order")
         return cur.fetchall()
     finally:
@@ -61,7 +61,7 @@ def deactivate_profession(code: str):
 def list_origins():
     conn = get_db("worker_db")
     try:
-        cur = conn.cursor(dictionary=True)
+        cur = conn.cursor()
         cur.execute("SELECT * FROM origin_countries ORDER BY name_en")
         return cur.fetchall()
     finally:

@@ -34,7 +34,7 @@ def add_unavailability(worker_id: str, data: AvailabilityBlock):
 def get_availability(worker_id: str):
     conn = get_db()
     try:
-        cur = conn.cursor(dictionary=True)
+        cur = conn.cursor()
         cur.execute(
             "SELECT * FROM worker_availability WHERE worker_id = %s ORDER BY unavailable_from",
             (worker_id,)

@@ -53,7 +53,7 @@ async def submit_report(
 async def _do_submit(deal_id, party, reporter_user_id, data, actual_days):
     conn = get_db()
     try:
-        cur = conn.cursor(dictionary=True)
+        cur = conn.cursor()
         cur.execute("SELECT id, status FROM deals WHERE id=%s AND deleted_at IS NULL", (deal_id,))
         deal = cur.fetchone()
         if not deal:

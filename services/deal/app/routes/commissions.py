@@ -52,7 +52,7 @@ async def create_commission(deal_id: str, data: CommissionCreate):
 def get_commission(deal_id: str):
     conn = get_db()
     try:
-        cur = conn.cursor(dictionary=True)
+        cur = conn.cursor()
         cur.execute("SELECT * FROM commissions WHERE deal_id=%s", (deal_id,))
         row = cur.fetchone()
         if not row:

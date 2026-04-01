@@ -17,7 +17,7 @@ class ApprovalDecision(BaseModel):
 def list_pending():
     conn = get_db()
     try:
-        cur = conn.cursor(dictionary=True)
+        cur = conn.cursor()
         cur.execute(
             "SELECT id, company_name, contact_email, approval_sla_deadline, created_at, 'contractor' AS org_type FROM contractors WHERE approval_status='pending' AND deleted_at IS NULL"
             " UNION ALL "
@@ -34,7 +34,7 @@ async def decide(org_id: str, body: ApprovalDecision, org_type: str = "contracto
     status = "approved" if body.approved else "rejected"
     conn = get_db()
     try:
-        cur = conn.cursor(dictionary=True)
+        cur = conn.cursor()
         table = "contractors" if org_type == "contractor" else "corporations"
 
         cur.execute(

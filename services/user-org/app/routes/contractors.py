@@ -30,7 +30,7 @@ async def register_contractor(data: ContractorCreate):
 
     conn = get_db()
     try:
-        cur = conn.cursor(dictionary=True)
+        cur = conn.cursor()
 
         # Create org record
         cur.execute(
@@ -91,7 +91,7 @@ async def register_contractor(data: ContractorCreate):
 def get_contractor(org_id: str):
     conn = get_db()
     try:
-        cur = conn.cursor(dictionary=True)
+        cur = conn.cursor()
         cur.execute("SELECT * FROM contractors WHERE id = %s AND deleted_at IS NULL", (org_id,))
         row = cur.fetchone()
         if not row:

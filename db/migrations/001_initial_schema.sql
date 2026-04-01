@@ -2,6 +2,7 @@
 -- Shivutz Platform — Initial Schema
 -- MySQL 8.0 | All schemas created here on first boot
 -- =============================================================
+SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- ─────────────────────────────────────────────────────────────
 -- 1. AUTH DB

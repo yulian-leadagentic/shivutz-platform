@@ -1,22 +1,25 @@
 import os
-import mysql.connector.pooling
+import pymysql
+import pymysql.cursors
 
-_pools = {}
+_base_config = {}
 
 async def init_db():
-    global _pools
-    base = dict(
+    global _base_config
+    _base_config = dict(
         host=os.getenv("MYSQL_HOST", "mysql"),
         port=int(os.getenv("MYSQL_PORT", 3306)),
         user="root",
         password=os.getenv("MYSQL_ROOT_PASSWORD"),
         charset="utf8mb4",
+        autocommit=False,
+        cursorclass=pymysql.cursors.DictCursor,
     )
-    for name in ["org_db", "worker_db", "job_db", "deal_db"]:
-        _pools[name] = mysql.connector.pooling.MySQLConnectionPool(
-            pool_name=f"admin_{name}", pool_size=5, database=name, **base
-        )
+    # Verify connectivity
+    for db in ["org_db", "worker_db", "job_db", "deal_db"]:
+        conn = pymysql.connect(**_base_config, database=db)
+        conn.close()
     print("Admin DB pools connected")
 
 def get_db(schema: str):
-    return _pools[schema].get_connection()
+    return pymysql.connect(**_base_config, database=schema)

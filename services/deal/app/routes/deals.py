@@ -35,7 +35,7 @@ def list_deals(
 ):
     conn = get_db()
     try:
-        cur = conn.cursor(dictionary=True)
+        cur = conn.cursor()
         if x_user_role == "admin":
             cur.execute("SELECT * FROM deals WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT 200")
         elif x_user_role == "corporation" and x_org_id:
@@ -85,7 +85,7 @@ async def create_deal(
     deal_id = str(uuid.uuid4())
     conn = get_db()
     try:
-        cur = conn.cursor(dictionary=True)
+        cur = conn.cursor()
         cur.execute(
             """INSERT INTO deals
                (id, request_line_item_id, contractor_id, corporation_id, proposed_by,
@@ -123,7 +123,7 @@ async def create_deal(
 def get_deal_workers(deal_id: str):
     conn = get_db()
     try:
-        cur = conn.cursor(dictionary=True)
+        cur = conn.cursor()
         cur.execute(
             "SELECT worker_id as id, assigned_at FROM deal_workers WHERE deal_id=%s AND removed_at IS NULL",
             (deal_id,)
@@ -137,7 +137,7 @@ def get_deal_workers(deal_id: str):
 def get_deal(deal_id: str):
     conn = get_db()
     try:
-        cur = conn.cursor(dictionary=True)
+        cur = conn.cursor()
         cur.execute("SELECT * FROM deals WHERE id = %s AND deleted_at IS NULL", (deal_id,))
         deal = cur.fetchone()
         if not deal:
@@ -164,7 +164,7 @@ async def update_status(deal_id: str, body: dict):
 def list_contractor_deals(contractor_id: str):
     conn = get_db()
     try:
-        cur = conn.cursor(dictionary=True)
+        cur = conn.cursor()
         cur.execute(
             "SELECT * FROM deals WHERE contractor_id=%s AND deleted_at IS NULL ORDER BY created_at DESC",
             (contractor_id,)
@@ -178,7 +178,7 @@ def list_contractor_deals(contractor_id: str):
 def list_corporation_deals(corporation_id: str):
     conn = get_db()
     try:
-        cur = conn.cursor(dictionary=True)
+        cur = conn.cursor()
         cur.execute(
             "SELECT * FROM deals WHERE corporation_id=%s AND deleted_at IS NULL ORDER BY created_at DESC",
             (corporation_id,)

@@ -30,7 +30,7 @@ async def register_corporation(data: CorporationCreate):
 
     conn = get_db()
     try:
-        cur = conn.cursor(dictionary=True)
+        cur = conn.cursor()
         cur.execute(
             """INSERT INTO corporations
                (id, user_owner_id, company_name, company_name_he, business_number,
@@ -84,7 +84,7 @@ async def register_corporation(data: CorporationCreate):
 def get_corporation(org_id: str):
     conn = get_db()
     try:
-        cur = conn.cursor(dictionary=True)
+        cur = conn.cursor()
         cur.execute("SELECT * FROM corporations WHERE id = %s AND deleted_at IS NULL", (org_id,))
         row = cur.fetchone()
         if not row:

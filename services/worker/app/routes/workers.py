@@ -40,7 +40,7 @@ def create_worker(data: WorkerCreate):
     worker_id = str(uuid.uuid4())
     conn = get_db()
     try:
-        cur = conn.cursor(dictionary=True)
+        cur = conn.cursor()
         cur.execute(
             """INSERT INTO workers
                (id, corporation_id, first_name, last_name, profession_type,
@@ -69,7 +69,7 @@ def list_workers(
 ):
     conn = get_db()
     try:
-        cur = conn.cursor(dictionary=True)
+        cur = conn.cursor()
         filters = ["deleted_at IS NULL"]
         params = []
 
@@ -94,7 +94,7 @@ def list_workers(
 def get_worker(worker_id: str):
     conn = get_db()
     try:
-        cur = conn.cursor(dictionary=True)
+        cur = conn.cursor()
         cur.execute("SELECT * FROM workers WHERE id = %s AND deleted_at IS NULL", (worker_id,))
         row = cur.fetchone()
         if not row:
