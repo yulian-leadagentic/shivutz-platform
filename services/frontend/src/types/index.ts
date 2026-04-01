@@ -112,3 +112,16 @@ export interface Region {
   name_he: string;
   name_en: string;
 }
+
+export interface Corporation {
+  id: string;
+  company_name: string;
+  company_name_he: string;
+  business_number: string;
+  countries_of_origin: string[];
+  minimum_contract_months: number;
+  approval_status: 'pending' | 'approved' | 'rejected' | 'suspended';
+  contact_name: string;
+  contact_email: string;
+  contact_phone: string;
+}

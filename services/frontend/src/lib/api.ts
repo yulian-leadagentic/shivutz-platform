@@ -77,6 +77,26 @@ export const jobApi = {
   },
 };
 
+export const workerApi = {
+  list: (corporationId?: string) => {
+    const qs = corporationId ? `?corporation_id=${corporationId}` : '';
+    return apiFetch<import('@/types').Worker[]>(`/workers${qs}`);
+  },
+  get: (id: string) => apiFetch<import('@/types').Worker>(`/workers/${id}`),
+  create: (data: unknown) =>
+    apiFetch<import('@/types').Worker>('/workers', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  update: (id: string, data: unknown) =>
+    apiFetch<import('@/types').Worker>(`/workers/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  delete: (id: string) =>
+    apiFetch<void>(`/workers/${id}`, { method: 'DELETE' }),
+};
+
 export const dealApi = {
   list: () => apiFetch<import('@/types').Deal[]>('/deals'),
   get: (id: string) => apiFetch<import('@/types').Deal>(`/deals/${id}`),
@@ -99,4 +119,9 @@ export const dealApi = {
     }),
   workers: (id: string) =>
     apiFetch<import('@/types').Worker[]>(`/deals/${id}/workers`),
+  updateStatus: (id: string, status: string) =>
+    apiFetch<import('@/types').Deal>(`/deals/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    }),
 };

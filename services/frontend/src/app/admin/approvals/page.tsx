@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Loader2, CheckCircle, XCircle, Clock, ChevronDown, ChevronUp } from 'lucide-react';
 import { adminApi, type PendingOrg } from '@/lib/adminApi';
@@ -134,7 +134,7 @@ function OrgRow({
   );
 }
 
-export default function ApprovalsPage() {
+function ApprovalsContent() {
   const searchParams = useSearchParams();
   const highlight = searchParams.get('highlight') ?? '';
 
@@ -220,5 +220,13 @@ export default function ApprovalsPage() {
         ))}
       </div>
     </div>
+  );
+}
+
+export default function ApprovalsPage() {
+  return (
+    <Suspense fallback={<div className="flex justify-center py-12"><span className="text-slate-400 text-sm">טוען...</span></div>}>
+      <ApprovalsContent />
+    </Suspense>
   );
 }
