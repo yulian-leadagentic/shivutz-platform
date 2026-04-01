@@ -1,5 +1,46 @@
 import { apiFetch } from './api';
-import type { Deal } from '@/types';
+import type { Deal, Worker } from '@/types';
+
+// ── Commission types ────────────────────────────────────────────────────────
+
+export interface Commission {
+  id: string;
+  deal_id: string;
+  gross_amount: number;
+  commission_rate: number;
+  commission_amount: number;
+  invoice_number?: string;
+  invoice_date?: string;
+  invoice_url?: string;
+  notes?: string;
+  status: 'pending' | 'invoiced' | 'paid' | 'disputed';
+  created_by: string;
+  created_at: string;
+}
+
+export interface DealReport {
+  id: string;
+  deal_id: string;
+  reported_by: 'contractor' | 'corporation';
+  actual_workers: number;
+  actual_start_date: string;
+  actual_end_date: string;
+  actual_days: number;
+  notes?: string;
+  submitted_at: string;
+}
+
+export interface AdminDealDetail extends Deal {
+  contractor_name: string;
+  corporation_name: string;
+  reports: DealReport[];
+  commission: Commission | null;
+  workers: Worker[];
+  discrepancy_flag: boolean;
+  discrepancy_details?: string;
+  start_date?: string;
+  end_date?: string;
+}
 
 export interface PendingOrg {
   id: string;
@@ -53,4 +94,30 @@ export const adminApi = {
   allOrgs: () => apiFetch<PendingOrg[]>('/admin/approved-orgs'),
 
   allDeals: () => apiFetch<Deal[]>('/deals'),
+
+  getDeal: (id: string) => apiFetch<AdminDealDetail>(`/admin/deals/${id}`),
+
+  createCommission: (dealId: string, data: {
+    gross_amount: number;
+    commission_rate: number;
+    invoice_number?: string;
+    invoice_date?: string;
+    invoice_url?: string;
+    notes?: string;
+  }) =>
+    apiFetch<Commission>(`/admin/deals/${dealId}/commission`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  updateCommissionStatus: (commissionId: string, data: {
+    status: string;
+    invoice_number?: string;
+    invoice_date?: string;
+    invoice_url?: string;
+  }) =>
+    apiFetch<{ id: string; status: string }>(`/admin/commissions/${commissionId}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
 };
