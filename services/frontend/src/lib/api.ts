@@ -46,6 +46,8 @@ export const enumApi = {
   professions: () => apiFetch<import('@/types').Profession[]>('/enums/professions'),
   regions: () =>
     apiFetch<{ code: string; name_he: string; name_en: string }[]>('/enums/regions'),
+  origins: () =>
+    apiFetch<{ code: string; name_he: string; name_en: string }[]>('/enums/origins'),
 };
 
 export const orgApi = {
