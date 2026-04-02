@@ -1,284 +1,410 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import { Loader2, ChevronRight, ChevronLeft, CheckCircle2 } from 'lucide-react';
+import { Loader2, Plus, CheckCircle2, Users, User } from 'lucide-react';
 import { workerApi, enumApi } from '@/lib/api';
 import type { Profession } from '@/types';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
-const COUNTRIES = [
-  { code: 'CN', name_he: 'סין' },
-  { code: 'PH', name_he: 'פיליפינים' },
-  { code: 'IN', name_he: 'הודו' },
-  { code: 'TH', name_he: 'תאילנד' },
-  { code: 'UA', name_he: 'אוקראינה' },
-  { code: 'MK', name_he: 'מקדוניה' },
-  { code: 'RO', name_he: 'רומניה' },
-  { code: 'BG', name_he: 'בולגריה' },
-  { code: 'MD', name_he: 'מולדובה' },
-  { code: 'RS', name_he: 'סרביה' },
+// ── Constants ──────────────────────────────────────────────────────────────
+
+const EXP_RANGES = [
+  { code: '1-3', label: '1–3 שנים' },
+  { code: '3-5', label: '3–5 שנים' },
+  { code: '5+',  label: '5+ שנים' },
+] as const;
+
+type ExpRange = '1-3' | '3-5' | '5+';
+
+const LANGUAGE_OPTIONS = [
+  { code: 'he', name: 'עברית' },
+  { code: 'en', name: 'אנגלית' },
+  { code: 'ro', name: 'רומנית' },
+  { code: 'uk', name: 'אוקראינית' },
+  { code: 'ru', name: 'רוסית' },
+  { code: 'th', name: 'תאילנדית' },
+  { code: 'zh', name: 'סינית' },
+  { code: 'tl', name: 'פיליפינית' },
+  { code: 'hi', name: 'הינדית' },
+  { code: 'ar', name: 'ערבית' },
+  { code: 'md', name: 'מולדובית' },
 ];
 
-const LANGUAGES = ['עברית', 'אנגלית', 'רוסית', 'ערבית', 'פיליפינית', 'הינדי', 'ספרדית', 'סינית'];
-
-interface FormData {
-  first_name: string;
-  last_name: string;
+interface SharedFields {
   profession_type: string;
-  experience_years: string;
+  experience_range: ExpRange | '';
   origin_country: string;
   languages: string[];
   visa_valid_until: string;
+  available_region: string;
+  available_from: string;
 }
 
-const INITIAL: FormData = {
-  first_name: '',
-  last_name: '',
-  profession_type: '',
-  experience_years: '0',
-  origin_country: '',
-  languages: [],
-  visa_valid_until: '',
+const EMPTY_SHARED: SharedFields = {
+  profession_type: '', experience_range: '', origin_country: '',
+  languages: [], visa_valid_until: '', available_region: '', available_from: '',
 };
+
+type Origin = { code: string; name_he: string; name_en: string };
+
+// ── Shared fields section ──────────────────────────────────────────────────
+
+function SharedFieldsSection({ fields, professions, origins, onChange }: {
+  fields: SharedFields;
+  professions: Profession[];
+  origins: Origin[];
+  onChange: (f: Partial<SharedFields>) => void;
+}) {
+  function toggleLang(code: string) {
+    const next = fields.languages.includes(code)
+      ? fields.languages.filter((l) => l !== code)
+      : [...fields.languages, code];
+    onChange({ languages: next });
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Profession */}
+      <div className="flex flex-col gap-1">
+        <label className="text-sm font-medium text-slate-700">מקצוע *</label>
+        <select value={fields.profession_type}
+          onChange={(e) => onChange({ profession_type: e.target.value })}
+          className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
+          <option value="">בחר מקצוע...</option>
+          {professions.filter((p) => p.is_active).map((p) => (
+            <option key={p.code} value={p.code}>{p.name_he}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Experience range */}
+      <div className="flex flex-col gap-1.5">
+        <label className="text-sm font-medium text-slate-700">טווח ניסיון *</label>
+        <div className="flex gap-2">
+          {EXP_RANGES.map((r) => (
+            <button key={r.code} type="button"
+              onClick={() => onChange({ experience_range: r.code })}
+              className={`flex-1 py-2 rounded-lg border text-sm font-medium transition-colors ${
+                fields.experience_range === r.code
+                  ? 'bg-brand-600 text-white border-brand-600'
+                  : 'bg-white text-slate-600 border-slate-300 hover:border-brand-400'
+              }`}>{r.label}</button>
+          ))}
+        </div>
+      </div>
+
+      {/* Origin country */}
+      <div className="flex flex-col gap-1">
+        <label className="text-sm font-medium text-slate-700">מדינת מוצא *</label>
+        <select value={fields.origin_country}
+          onChange={(e) => onChange({ origin_country: e.target.value })}
+          className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
+          <option value="">בחר מדינה...</option>
+          {origins.map((o) => (
+            <option key={o.code} value={o.code}>{o.name_he}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Languages */}
+      <div className="flex flex-col gap-1.5">
+        <label className="text-sm font-medium text-slate-700">שפות</label>
+        <div className="flex flex-wrap gap-1.5">
+          {LANGUAGE_OPTIONS.map((l) => (
+            <button key={l.code} type="button" onClick={() => toggleLang(l.code)}
+              className={`px-2.5 py-1 rounded-full text-xs border font-medium transition-colors ${
+                fields.languages.includes(l.code)
+                  ? 'bg-brand-600 text-white border-brand-600'
+                  : 'bg-white text-slate-600 border-slate-300 hover:border-brand-400'
+              }`}>{l.name}</button>
+          ))}
+        </div>
+      </div>
+
+      {/* Visa */}
+      <Input label="ויזה תקפה עד *" type="date" dir="ltr"
+        value={fields.visa_valid_until}
+        onChange={(e) => onChange({ visa_valid_until: e.target.value })} />
+
+      {/* Availability */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="flex flex-col gap-1">
+          <label className="text-sm font-medium text-slate-700">אזור זמינות</label>
+          <select value={fields.available_region}
+            onChange={(e) => onChange({ available_region: e.target.value })}
+            className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
+            <option value="">כל הארץ</option>
+            {origins.map((o) => (
+              <option key={o.code} value={o.code}>{o.name_he}</option>
+            ))}
+          </select>
+        </div>
+        <Input label="זמין מתאריך" type="date" dir="ltr"
+          value={fields.available_from}
+          onChange={(e) => onChange({ available_from: e.target.value })} />
+      </div>
+    </div>
+  );
+}
+
+// ── Toast ──────────────────────────────────────────────────────────────────
+
+function Toast({ msg, onClose }: { msg: string; onClose: () => void }) {
+  return (
+    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 bg-green-700 text-white px-5 py-3 rounded-xl shadow-xl text-sm font-medium">
+      <CheckCircle2 className="h-5 w-5 shrink-0" />
+      {msg}
+      <button onClick={onClose} className="ms-2 text-green-200 hover:text-white text-base leading-none">✕</button>
+    </div>
+  );
+}
+
+// ── Main page ──────────────────────────────────────────────────────────────
+
+type Mode = 'single' | 'bulk';
 
 export default function NewWorkerPage() {
   const router = useRouter();
-  const [step, setStep] = useState(1);
-  const [form, setForm] = useState<FormData>(INITIAL);
-  const [professions, setProfessions] = useState<Profession[]>([]);
+  const [mode, setMode]     = useState<Mode>('single');
   const [submitting, setSubmitting] = useState(false);
-  const [done, setDone] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError]   = useState('');
+  const [toast, setToast]   = useState('');
+
+  const [professions, setProfessions] = useState<Profession[]>([]);
+  const [origins, setOrigins]         = useState<Origin[]>([]);
+
+  // single
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName]   = useState('');
+  const [shared, setShared]       = useState<SharedFields>(EMPTY_SHARED);
+
+  // bulk
+  const [quantity, setQuantity]     = useState(5);
+  const [namePrefix, setNamePrefix] = useState('עובד');
+  const [bulkShared, setBulkShared] = useState<SharedFields>(EMPTY_SHARED);
 
   useEffect(() => {
-    enumApi.professions().then(setProfessions).catch(console.error);
+    enumApi.professions().then(setProfessions).catch(() => {});
+    enumApi.origins().then(setOrigins).catch(() => {});
   }, []);
 
-  function set(field: keyof FormData, value: string | string[]) {
-    setForm((f) => ({ ...f, [field]: value }));
+  function showToast(msg: string) {
+    setToast(msg);
+    setTimeout(() => setToast(''), 4500);
   }
 
-  function toggleLang(lang: string) {
-    setForm((f) => ({
-      ...f,
-      languages: f.languages.includes(lang)
-        ? f.languages.filter((l) => l !== lang)
-        : [...f.languages, lang],
-    }));
+  // ── Single ────────────────────────────────────────────────────────────────
+  function validateSingle(): string {
+    if (!firstName.trim())        return 'יש להזין שם פרטי';
+    if (!lastName.trim())         return 'יש להזין שם משפחה';
+    if (!shared.profession_type)  return 'יש לבחור מקצוע';
+    if (!shared.experience_range) return 'יש לבחור טווח ניסיון';
+    if (!shared.origin_country)   return 'יש לבחור מדינת מוצא';
+    if (!shared.visa_valid_until) return 'יש להזין תאריך ויזה';
+    return '';
   }
 
-  function canProceed() {
-    if (step === 1) return form.first_name.trim() && form.last_name.trim();
-    if (step === 2) return form.profession_type && form.origin_country;
-    if (step === 3) return form.visa_valid_until;
-    return true;
-  }
-
-  async function handleSubmit() {
-    setSubmitting(true);
-    setError('');
+  async function handleSingleSubmit(e: FormEvent) {
+    e.preventDefault();
+    const err = validateSingle();
+    if (err) { setError(err); return; }
+    setError(''); setSubmitting(true);
     try {
       await workerApi.create({
-        ...form,
-        experience_years: Number(form.experience_years),
+        first_name:       firstName,
+        last_name:        lastName,
+        profession_type:  shared.profession_type,
+        experience_range: shared.experience_range,
+        origin_country:   shared.origin_country,
+        languages:        shared.languages,
+        visa_valid_until: shared.visa_valid_until,
+        available_region: shared.available_region || undefined,
+        available_from:   shared.available_from   || undefined,
       });
-      setDone(true);
+      showToast(`${firstName} ${lastName} נוסף בהצלחה`);
+      // Auto-open next — keep shared fields, clear name only
+      setFirstName('');
+      setLastName('');
     } catch (e: unknown) {
-      setError((e as Error).message ?? 'שגיאה בשמירת העובד');
+      setError((e as Error).message ?? 'שגיאה בשמירה');
     } finally {
       setSubmitting(false);
     }
   }
 
-  if (done) {
-    return (
-      <div className="max-w-md mx-auto text-center py-16 space-y-4">
-        <CheckCircle2 className="h-16 w-16 text-green-500 mx-auto" />
-        <h2 className="text-2xl font-bold text-slate-900">העובד נוסף בהצלחה</h2>
-        <p className="text-slate-500 text-sm">
-          {form.first_name} {form.last_name} נוסף לרשימת העובדים שלך.
-        </p>
-        <div className="flex gap-3 justify-center">
-          <Button onClick={() => { setForm(INITIAL); setStep(1); setDone(false); }}>
-            הוסף עובד נוסף
-          </Button>
-          <Button variant="outline" onClick={() => router.push('/corporation/workers')}>
-            חזור לרשימה
-          </Button>
-        </div>
-      </div>
-    );
+  // ── Bulk ──────────────────────────────────────────────────────────────────
+  function validateBulk(): string {
+    if (quantity < 1 || quantity > 50)  return 'כמות חייבת להיות בין 1 ל-50';
+    if (!bulkShared.profession_type)    return 'יש לבחור מקצוע';
+    if (!bulkShared.experience_range)   return 'יש לבחור טווח ניסיון';
+    if (!bulkShared.origin_country)     return 'יש לבחור מדינת מוצא';
+    if (!bulkShared.visa_valid_until)   return 'יש להזין תאריך ויזה';
+    return '';
+  }
+
+  async function handleBulkSubmit(e: FormEvent) {
+    e.preventDefault();
+    const err = validateBulk();
+    if (err) { setError(err); return; }
+    setError(''); setSubmitting(true);
+    try {
+      const res = await workerApi.bulkCreate({
+        quantity,
+        name_prefix:      namePrefix || 'עובד',
+        profession_type:  bulkShared.profession_type,
+        experience_range: bulkShared.experience_range,
+        origin_country:   bulkShared.origin_country,
+        languages:        bulkShared.languages,
+        visa_valid_until: bulkShared.visa_valid_until,
+        available_region: bulkShared.available_region || undefined,
+        available_from:   bulkShared.available_from   || undefined,
+      });
+      showToast(`${res.created} עובדים נוצרו בהצלחה`);
+      setBulkShared(EMPTY_SHARED);
+      setQuantity(5);
+    } catch (e: unknown) {
+      setError((e as Error).message ?? 'שגיאה בשמירה');
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
-    <div className="max-w-xl mx-auto space-y-6">
+    <div className="max-w-xl mx-auto space-y-4">
+      {toast && <Toast msg={toast} onClose={() => setToast('')} />}
+
       {/* Header */}
-      <div>
-        <h2 className="text-xl font-bold text-slate-900">הוספת עובד חדש</h2>
-        <p className="text-sm text-slate-500 mt-1">שלב {step} מתוך 3</p>
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <h2 className="text-xl font-bold text-slate-900">הוספת עובדים</h2>
+        <button onClick={() => router.push('/corporation/workers')}
+          className="text-sm text-slate-500 hover:text-slate-700 underline">
+          חזרה לרשימה
+        </button>
       </div>
 
-      {/* Progress */}
-      <div className="flex gap-2">
-        {[1, 2, 3].map((s) => (
-          <div
-            key={s}
-            className={`h-2 flex-1 rounded-full transition-colors ${
-              s <= step ? 'bg-brand-600' : 'bg-slate-200'
-            }`}
-          />
+      {/* Mode tabs */}
+      <div className="flex gap-1 p-1 bg-slate-100 rounded-lg w-fit">
+        {([['single', 'עובד בודד', User], ['bulk', 'הוספה כמותית', Users]] as const).map(([m, label, Icon]) => (
+          <button key={m} onClick={() => { setMode(m as Mode); setError(''); }}
+            className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+              mode === m ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+            }`}>
+            <Icon className="h-4 w-4" /> {label}
+          </button>
         ))}
       </div>
 
-      <Card>
-        <CardContent className="pt-6 space-y-4">
-          {/* Step 1 — personal details */}
-          {step === 1 && (
-            <>
-              <h3 className="font-semibold text-slate-800">פרטים אישיים</h3>
-              <div className="grid grid-cols-2 gap-4">
-                <Input
-                  label="שם פרטי"
-                  value={form.first_name}
-                  onChange={(e) => set('first_name', e.target.value)}
-                  required
-                />
-                <Input
-                  label="שם משפחה"
-                  value={form.last_name}
-                  onChange={(e) => set('last_name', e.target.value)}
-                  required
-                />
+      {/* ── Single mode ── */}
+      {mode === 'single' && (
+        <form onSubmit={handleSingleSubmit} className="space-y-4" noValidate>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">פרטים אישיים</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 gap-3">
+                <Input label="שם פרטי *" value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)} autoFocus />
+                <Input label="שם משפחה *" value={lastName}
+                  onChange={(e) => setLastName(e.target.value)} />
               </div>
-            </>
-          )}
+            </CardContent>
+          </Card>
 
-          {/* Step 2 — professional details */}
-          {step === 2 && (
-            <>
-              <h3 className="font-semibold text-slate-800">פרטים מקצועיים</h3>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">מקצוע</label>
-                <select
-                  value={form.profession_type}
-                  onChange={(e) => set('profession_type', e.target.value)}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                  required
-                >
-                  <option value="">בחר מקצוע...</option>
-                  {professions.map((p) => (
-                    <option key={p.code} value={p.code}>{p.name_he}</option>
-                  ))}
-                </select>
-              </div>
-              <Input
-                label="שנות ניסיון"
-                type="number"
-                min={0}
-                max={50}
-                value={form.experience_years}
-                onChange={(e) => set('experience_years', e.target.value)}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">פרטים מקצועיים וזמינות</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <SharedFieldsSection
+                fields={shared} professions={professions} origins={origins}
+                onChange={(delta) => setShared((s) => ({ ...s, ...delta }))}
               />
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">מדינת מוצא</label>
-                <select
-                  value={form.origin_country}
-                  onChange={(e) => set('origin_country', e.target.value)}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                  required
-                >
-                  <option value="">בחר מדינה...</option>
-                  {COUNTRIES.map((c) => (
-                    <option key={c.code} value={c.code}>{c.name_he}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">שפות</label>
-                <div className="flex flex-wrap gap-2">
-                  {LANGUAGES.map((lang) => (
-                    <button
-                      key={lang}
-                      type="button"
-                      onClick={() => toggleLang(lang)}
-                      className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${
-                        form.languages.includes(lang)
-                          ? 'bg-brand-600 text-white border-brand-600'
-                          : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
-                      }`}
-                    >
-                      {lang}
-                    </button>
-                  ))}
+            </CardContent>
+          </Card>
+
+          {error && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">{error}</p>}
+
+          <div className="flex gap-3">
+            <Button type="submit" disabled={submitting} className="flex-1">
+              {submitting
+                ? <><Loader2 className="h-4 w-4 animate-spin" /> שומר...</>
+                : <><Plus className="h-4 w-4" /> שמור והוסף עובד נוסף</>}
+            </Button>
+            <Button type="button" variant="outline" onClick={() => router.push('/corporation/workers')}>
+              סיום
+            </Button>
+          </div>
+        </form>
+      )}
+
+      {/* ── Bulk mode ── */}
+      {mode === 'bulk' && (
+        <form onSubmit={handleBulkSubmit} className="space-y-4" noValidate>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">הגדרות כמות</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-xs text-slate-500">
+                יצירת מספר עובדים עם אותם מאפיינים. שמות אוטומטיים לפי קידומת + מספר סידורי.
+              </p>
+              <div className="grid grid-cols-2 gap-3 items-end">
+                <div className="flex flex-col gap-1">
+                  <label className="text-sm font-medium text-slate-700">כמות עובדים *</label>
+                  <div className="flex items-center gap-2">
+                    <button type="button" onClick={() => setQuantity((q) => Math.max(1, q - 1))}
+                      className="h-10 w-10 rounded-lg border border-slate-300 bg-white text-lg font-bold hover:bg-slate-50 flex items-center justify-center">−</button>
+                    <input type="number" min={1} max={50} value={quantity} dir="ltr"
+                      onChange={(e) => setQuantity(Math.min(50, Math.max(1, parseInt(e.target.value) || 1)))}
+                      className="h-10 w-16 text-center rounded-md border border-slate-300 bg-white text-sm font-bold focus:outline-none focus:ring-2 focus:ring-brand-500"
+                    />
+                    <button type="button" onClick={() => setQuantity((q) => Math.min(50, q + 1))}
+                      className="h-10 w-10 rounded-lg border border-slate-300 bg-white text-lg font-bold hover:bg-slate-50 flex items-center justify-center">+</button>
+                  </div>
                 </div>
+                <Input label="קידומת שם" value={namePrefix} placeholder="עובד"
+                  onChange={(e) => setNamePrefix(e.target.value)} />
               </div>
-            </>
-          )}
+              <div className="bg-slate-50 border border-slate-200 rounded-md px-3 py-2 text-xs text-slate-500">
+                ייצור:{' '}
+                <span className="font-medium text-slate-700">
+                  {namePrefix || 'עובד'} 1, {namePrefix || 'עובד'} 2
+                  {quantity > 2 ? ` ... ${namePrefix || 'עובד'} ${quantity}` : ''}
+                </span>
+              </div>
+            </CardContent>
+          </Card>
 
-          {/* Step 3 — visa */}
-          {step === 3 && (
-            <>
-              <h3 className="font-semibold text-slate-800">פרטי ויזה</h3>
-              <Input
-                label="ויזה תקפה עד"
-                type="date"
-                value={form.visa_valid_until}
-                onChange={(e) => set('visa_valid_until', e.target.value)}
-                required
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">מאפיינים משותפים</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <SharedFieldsSection
+                fields={bulkShared} professions={professions} origins={origins}
+                onChange={(delta) => setBulkShared((s) => ({ ...s, ...delta }))}
               />
-              {/* Review summary */}
-              <div className="mt-4 p-4 bg-slate-50 rounded-lg space-y-2 text-sm">
-                <p className="font-semibold text-slate-800 mb-2">סיכום</p>
-                <p><span className="text-slate-500">שם:</span> {form.first_name} {form.last_name}</p>
-                <p><span className="text-slate-500">מקצוע:</span> {form.profession_type}</p>
-                <p><span className="text-slate-500">ניסיון:</span> {form.experience_years} שנים</p>
-                <p><span className="text-slate-500">מדינה:</span> {form.origin_country}</p>
-                {form.languages.length > 0 && (
-                  <p><span className="text-slate-500">שפות:</span> {form.languages.join(', ')}</p>
-                )}
-              </div>
-            </>
-          )}
+            </CardContent>
+          </Card>
 
-          {error && (
-            <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-              {error}
-            </p>
-          )}
-        </CardContent>
-      </Card>
+          {error && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">{error}</p>}
 
-      {/* Navigation */}
-      <div className="flex justify-between">
-        <Button
-          variant="outline"
-          onClick={() => (step > 1 ? setStep(step - 1) : router.back())}
-        >
-          <ChevronRight className="h-4 w-4" />
-          {step === 1 ? 'ביטול' : 'הקודם'}
-        </Button>
-
-        {step < 3 ? (
-          <Button onClick={() => setStep(step + 1)} disabled={!canProceed()}>
-            הבא
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-        ) : (
-          <Button onClick={handleSubmit} disabled={submitting || !canProceed()}>
-            {submitting ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                שומר...
-              </>
-            ) : (
-              'שמור עובד'
-            )}
-          </Button>
-        )}
-      </div>
+          <div className="flex gap-3">
+            <Button type="submit" disabled={submitting} className="flex-1">
+              {submitting
+                ? <><Loader2 className="h-4 w-4 animate-spin" /> יוצר עובדים...</>
+                : <><Users className="h-4 w-4" /> צור {quantity} עובדים</>}
+            </Button>
+            <Button type="button" variant="outline" onClick={() => router.push('/corporation/workers')}>
+              סיום
+            </Button>
+          </div>
+        </form>
+      )}
     </div>
   );
 }

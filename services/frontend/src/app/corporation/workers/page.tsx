@@ -127,6 +127,7 @@ export default function WorkersPage() {
                     <th className="px-4 py-3 text-start font-medium">מקצוע</th>
                     <th className="px-4 py-3 text-start font-medium">ניסיון</th>
                     <th className="px-4 py-3 text-start font-medium">מדינה</th>
+                    <th className="px-4 py-3 text-start font-medium">אזור זמינות</th>
                     <th className="px-4 py-3 text-start font-medium">ויזה</th>
                     <th className="px-4 py-3 text-start font-medium">סטטוס</th>
                   </tr>
@@ -135,14 +136,17 @@ export default function WorkersPage() {
                   {filtered.map((w) => {
                     const vr = visaStatus(w.visa_valid_until);
                     const sr = STATUS_LABELS[w.status] ?? { label: w.status, color: 'bg-slate-100 text-slate-600' };
+                    const availRegion = (w.extra_fields as Record<string, string> | undefined)?.available_region;
+                    const expLabel = w.experience_range ?? `${w.experience_years} שנ׳`;
                     return (
                       <tr key={w.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50">
                         <td className="px-4 py-3 font-medium text-slate-900">
                           {w.first_name} {w.last_name}
                         </td>
                         <td className="px-4 py-3 text-slate-600">{w.profession_type}</td>
-                        <td className="px-4 py-3 text-slate-600">{w.experience_years} שנ׳</td>
+                        <td className="px-4 py-3 text-slate-600 text-xs">{expLabel}</td>
                         <td className="px-4 py-3 text-slate-600">{w.origin_country}</td>
+                        <td className="px-4 py-3 text-slate-500 text-xs">{availRegion || '—'}</td>
                         <td className={`px-4 py-3 text-xs font-medium ${vr.urgent ? 'text-red-600' : 'text-slate-600'}`}>
                           {vr.urgent && <AlertTriangle className="inline h-3 w-3 me-1" />}
                           {vr.label}

@@ -97,6 +97,11 @@ export const workerApi = {
     }),
   delete: (id: string) =>
     apiFetch<void>(`/workers/${id}`, { method: 'DELETE' }),
+  bulkCreate: (data: unknown) =>
+    apiFetch<{ created: number; ids: string[] }>('/workers/bulk', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
 };
 
 export const dealApi = {

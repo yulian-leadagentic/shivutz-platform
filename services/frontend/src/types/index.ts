@@ -31,10 +31,16 @@ export interface Worker {
   last_name: string;
   profession_type: string;
   experience_years: number;
+  experience_range?: '1-3' | '3-5' | '5+';
   origin_country: string;
   languages: string[];
   visa_valid_until: string;
   status: string;
+  extra_fields?: {
+    available_region?: string;
+    available_from?: string;
+    [key: string]: unknown;
+  };
 }
 
 export interface JobLineItem {
