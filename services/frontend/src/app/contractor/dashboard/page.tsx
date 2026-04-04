@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Plus, AlertCircle, FolderOpen, Handshake } from 'lucide-react';
-import { jobApi, dealApi } from '@/lib/api';
+import { jobApi, dealApi, enumApi } from '@/lib/api';
 import type { JobRequest, Deal } from '@/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -41,23 +41,20 @@ function formatDate(dateStr?: string) {
 export default function DashboardPage() {
   const [jobs, setJobs] = useState<JobRequest[]>([]);
   const [deals, setDeals] = useState<Deal[]>([]);
+  const [regionMap, setRegionMap] = useState<Record<string, string>>({});
   const [loadingJobs, setLoadingJobs] = useState(true);
   const [loadingDeals, setLoadingDeals] = useState(true);
   const [errorJobs, setErrorJobs] = useState(false);
   const [errorDeals, setErrorDeals] = useState(false);
 
   useEffect(() => {
-    jobApi
-      .list()
-      .then(setJobs)
-      .catch(() => setErrorJobs(true))
-      .finally(() => setLoadingJobs(false));
-
-    dealApi
-      .list()
-      .then(setDeals)
-      .catch(() => setErrorDeals(true))
-      .finally(() => setLoadingDeals(false));
+    jobApi.list().then(setJobs).catch(() => setErrorJobs(true)).finally(() => setLoadingJobs(false));
+    dealApi.list().then(setDeals).catch(() => setErrorDeals(true)).finally(() => setLoadingDeals(false));
+    enumApi.regions().then((rs) => {
+      const m: Record<string, string> = {};
+      rs.forEach((r) => { m[r.code] = r.name_he; });
+      setRegionMap(m);
+    }).catch(() => {});
   }, []);
 
   const openJobs = jobs.filter((j) => j.status === 'open').length;
@@ -181,7 +178,7 @@ export default function DashboardPage() {
                               {j.project_name_he || j.project_name}
                             </Link>
                           </td>
-                          <td className="px-4 py-3 text-slate-600">{j.region || '—'}</td>
+                          <td className="px-4 py-3 text-slate-600">{regionMap[j.region] || j.region || '—'}</td>
                           <td className="px-4 py-3">
                             <StatusBadge status={j.status} />
                           </td>

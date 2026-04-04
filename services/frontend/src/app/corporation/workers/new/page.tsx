@@ -19,6 +19,21 @@ const EXP_RANGES = [
 
 type ExpRange = '1-3' | '3-5' | '5+';
 
+/** Map origin country code → primary language code */
+const ORIGIN_TO_LANG: Record<string, string> = {
+  RO: 'ro', MD: 'ro',   // Romanian / Moldovan → Romanian
+  TH: 'th',             // Thailand → Thai
+  PH: 'tl',             // Philippines → Tagalog
+  VN: 'vi',             // Vietnam → Vietnamese
+  IN: 'hi',             // India → Hindi
+  NP: 'ne',             // Nepal → Nepali
+  LK: 'si',             // Sri Lanka → Sinhala
+  UA: 'uk',             // Ukraine → Ukrainian
+  RU: 'ru',             // Russia → Russian
+  CN: 'zh',             // China → Chinese
+  IL: 'he',             // Israel → Hebrew
+};
+
 const LANGUAGE_OPTIONS = [
   { code: 'he', name: 'עברית' },
   { code: 'en', name: 'אנגלית' },
@@ -30,7 +45,9 @@ const LANGUAGE_OPTIONS = [
   { code: 'tl', name: 'פיליפינית' },
   { code: 'hi', name: 'הינדית' },
   { code: 'ar', name: 'ערבית' },
-  { code: 'md', name: 'מולדובית' },
+  { code: 'vi', name: 'וייטנאמית' },
+  { code: 'ne', name: 'נפאלית' },
+  { code: 'si', name: 'סינהלית' },
 ];
 
 interface SharedFields {
@@ -49,13 +66,15 @@ const EMPTY_SHARED: SharedFields = {
 };
 
 type Origin = { code: string; name_he: string; name_en: string };
+type Region = { code: string; name_he: string; name_en: string };
 
 // ── Shared fields section ──────────────────────────────────────────────────
 
-function SharedFieldsSection({ fields, professions, origins, onChange }: {
+function SharedFieldsSection({ fields, professions, origins, regions, onChange }: {
   fields: SharedFields;
   professions: Profession[];
   origins: Origin[];
+  regions: Region[];
   onChange: (f: Partial<SharedFields>) => void;
 }) {
   function toggleLang(code: string) {
@@ -63,6 +82,16 @@ function SharedFieldsSection({ fields, professions, origins, onChange }: {
       ? fields.languages.filter((l) => l !== code)
       : [...fields.languages, code];
     onChange({ languages: next });
+  }
+
+  function handleOriginChange(code: string) {
+    const update: Partial<SharedFields> = { origin_country: code };
+    // Auto-add primary language for this origin if not already selected
+    const lang = ORIGIN_TO_LANG[code];
+    if (lang && !fields.languages.includes(lang)) {
+      update.languages = [...fields.languages, lang];
+    }
+    onChange(update);
   }
 
   return (
@@ -96,11 +125,11 @@ function SharedFieldsSection({ fields, professions, origins, onChange }: {
         </div>
       </div>
 
-      {/* Origin country */}
+      {/* Origin country — auto-selects language */}
       <div className="flex flex-col gap-1">
         <label className="text-sm font-medium text-slate-700">מדינת מוצא *</label>
         <select value={fields.origin_country}
-          onChange={(e) => onChange({ origin_country: e.target.value })}
+          onChange={(e) => handleOriginChange(e.target.value)}
           className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
           <option value="">בחר מדינה...</option>
           {origins.map((o) => (
@@ -109,7 +138,7 @@ function SharedFieldsSection({ fields, professions, origins, onChange }: {
         </select>
       </div>
 
-      {/* Languages */}
+      {/* Languages — pills */}
       <div className="flex flex-col gap-1.5">
         <label className="text-sm font-medium text-slate-700">שפות</label>
         <div className="flex flex-wrap gap-1.5">
@@ -129,7 +158,7 @@ function SharedFieldsSection({ fields, professions, origins, onChange }: {
         value={fields.visa_valid_until}
         onChange={(e) => onChange({ visa_valid_until: e.target.value })} />
 
-      {/* Availability */}
+      {/* Availability region — uses real region list */}
       <div className="grid grid-cols-2 gap-3">
         <div className="flex flex-col gap-1">
           <label className="text-sm font-medium text-slate-700">אזור זמינות</label>
@@ -137,8 +166,8 @@ function SharedFieldsSection({ fields, professions, origins, onChange }: {
             onChange={(e) => onChange({ available_region: e.target.value })}
             className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
             <option value="">כל הארץ</option>
-            {origins.map((o) => (
-              <option key={o.code} value={o.code}>{o.name_he}</option>
+            {regions.map((r) => (
+              <option key={r.code} value={r.code}>{r.name_he}</option>
             ))}
           </select>
         </div>
@@ -155,8 +184,7 @@ function SharedFieldsSection({ fields, professions, origins, onChange }: {
 function Toast({ msg, onClose }: { msg: string; onClose: () => void }) {
   return (
     <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 bg-green-700 text-white px-5 py-3 rounded-xl shadow-xl text-sm font-medium">
-      <CheckCircle2 className="h-5 w-5 shrink-0" />
-      {msg}
+      <CheckCircle2 className="h-5 w-5 shrink-0" />{msg}
       <button onClick={onClose} className="ms-2 text-green-200 hover:text-white text-base leading-none">✕</button>
     </div>
   );
@@ -168,27 +196,28 @@ type Mode = 'single' | 'bulk';
 
 export default function NewWorkerPage() {
   const router = useRouter();
-  const [mode, setMode]     = useState<Mode>('single');
+  const [mode, setMode]             = useState<Mode>('single');
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError]   = useState('');
-  const [toast, setToast]   = useState('');
+  const [error, setError]           = useState('');
+  const [toast, setToast]           = useState('');
 
   const [professions, setProfessions] = useState<Profession[]>([]);
   const [origins, setOrigins]         = useState<Origin[]>([]);
+  const [regions, setRegions]         = useState<Region[]>([]);
 
-  // single
+  // single mode
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName]   = useState('');
   const [shared, setShared]       = useState<SharedFields>(EMPTY_SHARED);
 
-  // bulk
-  const [quantity, setQuantity]     = useState(5);
-  const [namePrefix, setNamePrefix] = useState('עובד');
+  // bulk mode — comma-separated names
+  const [bulkNames, setBulkNames] = useState('');
   const [bulkShared, setBulkShared] = useState<SharedFields>(EMPTY_SHARED);
 
   useEffect(() => {
     enumApi.professions().then(setProfessions).catch(() => {});
     enumApi.origins().then(setOrigins).catch(() => {});
+    enumApi.regions().then(setRegions).catch(() => {});
   }, []);
 
   function showToast(msg: string) {
@@ -220,28 +249,41 @@ export default function NewWorkerPage() {
         experience_range: shared.experience_range,
         origin_country:   shared.origin_country,
         languages:        shared.languages,
-        visa_valid_until: shared.visa_valid_until,
-        available_region: shared.available_region || undefined,
-        available_from:   shared.available_from   || undefined,
+        visa_valid_until: shared.visa_valid_until || null,
+        available_region: shared.available_region || null,
+        available_from:   shared.available_from   || null,
       });
       showToast(`${firstName} ${lastName} נוסף בהצלחה`);
-      // Auto-open next — keep shared fields, clear name only
-      setFirstName('');
-      setLastName('');
+      setFirstName(''); setLastName('');
     } catch (e: unknown) {
       setError((e as Error).message ?? 'שגיאה בשמירה');
-    } finally {
-      setSubmitting(false);
-    }
+    } finally { setSubmitting(false); }
   }
 
   // ── Bulk ──────────────────────────────────────────────────────────────────
+
+  /** Parse "שם פרטי שם משפחה, שם פרטי שם משפחה, ..." → [{first, last}] */
+  function parseNames(raw: string): Array<{ first: string; last: string }> {
+    return raw
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map((full) => {
+        const parts = full.trim().split(/\s+/);
+        if (parts.length === 1) return { first: parts[0], last: '' };
+        return { first: parts[0], last: parts.slice(1).join(' ') };
+      });
+  }
+
+  const parsedNames = parseNames(bulkNames);
+
   function validateBulk(): string {
-    if (quantity < 1 || quantity > 50)  return 'כמות חייבת להיות בין 1 ל-50';
-    if (!bulkShared.profession_type)    return 'יש לבחור מקצוע';
-    if (!bulkShared.experience_range)   return 'יש לבחור טווח ניסיון';
-    if (!bulkShared.origin_country)     return 'יש לבחור מדינת מוצא';
-    if (!bulkShared.visa_valid_until)   return 'יש להזין תאריך ויזה';
+    if (!bulkNames.trim())                return 'יש להזין שמות (מופרדים בפסיק)';
+    if (parsedNames.length === 0)         return 'יש להזין לפחות שם אחד';
+    if (!bulkShared.profession_type)      return 'יש לבחור מקצוע';
+    if (!bulkShared.experience_range)     return 'יש לבחור טווח ניסיון';
+    if (!bulkShared.origin_country)       return 'יש לבחור מדינת מוצא';
+    if (!bulkShared.visa_valid_until)     return 'יש להזין תאריך ויזה';
     return '';
   }
 
@@ -251,38 +293,38 @@ export default function NewWorkerPage() {
     if (err) { setError(err); return; }
     setError(''); setSubmitting(true);
     try {
-      const res = await workerApi.bulkCreate({
-        quantity,
-        name_prefix:      namePrefix || 'עובד',
-        profession_type:  bulkShared.profession_type,
-        experience_range: bulkShared.experience_range,
-        origin_country:   bulkShared.origin_country,
-        languages:        bulkShared.languages,
-        visa_valid_until: bulkShared.visa_valid_until,
-        available_region: bulkShared.available_region || undefined,
-        available_from:   bulkShared.available_from   || undefined,
-      });
-      showToast(`${res.created} עובדים נוצרו בהצלחה`);
+      // Create workers one by one so each gets their real name
+      let created = 0;
+      for (const { first, last } of parsedNames) {
+        await workerApi.create({
+          first_name:       first,
+          last_name:        last,
+          profession_type:  bulkShared.profession_type,
+          experience_range: bulkShared.experience_range,
+          origin_country:   bulkShared.origin_country,
+          languages:        bulkShared.languages,
+          visa_valid_until: bulkShared.visa_valid_until || null,
+          available_region: bulkShared.available_region || null,
+          available_from:   bulkShared.available_from   || null,
+        });
+        created++;
+      }
+      showToast(`${created} עובדים נוצרו בהצלחה`);
+      setBulkNames('');
       setBulkShared(EMPTY_SHARED);
-      setQuantity(5);
     } catch (e: unknown) {
       setError((e as Error).message ?? 'שגיאה בשמירה');
-    } finally {
-      setSubmitting(false);
-    }
+    } finally { setSubmitting(false); }
   }
 
   return (
     <div className="max-w-xl mx-auto space-y-4">
       {toast && <Toast msg={toast} onClose={() => setToast('')} />}
 
-      {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h2 className="text-xl font-bold text-slate-900">הוספת עובדים</h2>
         <button onClick={() => router.push('/corporation/workers')}
-          className="text-sm text-slate-500 hover:text-slate-700 underline">
-          חזרה לרשימה
-        </button>
+          className="text-sm text-slate-500 hover:text-slate-700 underline">חזרה לרשימה</button>
       </div>
 
       {/* Mode tabs */}
@@ -301,9 +343,7 @@ export default function NewWorkerPage() {
       {mode === 'single' && (
         <form onSubmit={handleSingleSubmit} className="space-y-4" noValidate>
           <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">פרטים אישיים</CardTitle>
-            </CardHeader>
+            <CardHeader className="pb-2"><CardTitle className="text-base">פרטים אישיים</CardTitle></CardHeader>
             <CardContent>
               <div className="grid grid-cols-2 gap-3">
                 <Input label="שם פרטי *" value={firstName}
@@ -315,14 +355,10 @@ export default function NewWorkerPage() {
           </Card>
 
           <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">פרטים מקצועיים וזמינות</CardTitle>
-            </CardHeader>
+            <CardHeader className="pb-2"><CardTitle className="text-base">פרטים מקצועיים וזמינות</CardTitle></CardHeader>
             <CardContent>
-              <SharedFieldsSection
-                fields={shared} professions={professions} origins={origins}
-                onChange={(delta) => setShared((s) => ({ ...s, ...delta }))}
-              />
+              <SharedFieldsSection fields={shared} professions={professions} origins={origins} regions={regions}
+                onChange={(delta) => setShared((s) => ({ ...s, ...delta }))} />
             </CardContent>
           </Card>
 
@@ -330,13 +366,9 @@ export default function NewWorkerPage() {
 
           <div className="flex gap-3">
             <Button type="submit" disabled={submitting} className="flex-1">
-              {submitting
-                ? <><Loader2 className="h-4 w-4 animate-spin" /> שומר...</>
-                : <><Plus className="h-4 w-4" /> שמור והוסף עובד נוסף</>}
+              {submitting ? <><Loader2 className="h-4 w-4 animate-spin" /> שומר...</> : <><Plus className="h-4 w-4" /> שמור והוסף עובד נוסף</>}
             </Button>
-            <Button type="button" variant="outline" onClick={() => router.push('/corporation/workers')}>
-              סיום
-            </Button>
+            <Button type="button" variant="outline" onClick={() => router.push('/corporation/workers')}>סיום</Button>
           </div>
         </form>
       )}
@@ -346,62 +378,48 @@ export default function NewWorkerPage() {
         <form onSubmit={handleBulkSubmit} className="space-y-4" noValidate>
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-base">הגדרות כמות</CardTitle>
+              <CardTitle className="text-base">שמות עובדים</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-3">
               <p className="text-xs text-slate-500">
-                יצירת מספר עובדים עם אותם מאפיינים. שמות אוטומטיים לפי קידומת + מספר סידורי.
+                הזן שמות מלאים מופרדים בפסיק. כל עובד יקבל שם נפרד עם אותם מאפיינים.
               </p>
-              <div className="grid grid-cols-2 gap-3 items-end">
-                <div className="flex flex-col gap-1">
-                  <label className="text-sm font-medium text-slate-700">כמות עובדים *</label>
-                  <div className="flex items-center gap-2">
-                    <button type="button" onClick={() => setQuantity((q) => Math.max(1, q - 1))}
-                      className="h-10 w-10 rounded-lg border border-slate-300 bg-white text-lg font-bold hover:bg-slate-50 flex items-center justify-center">−</button>
-                    <input type="number" min={1} max={50} value={quantity} dir="ltr"
-                      onChange={(e) => setQuantity(Math.min(50, Math.max(1, parseInt(e.target.value) || 1)))}
-                      className="h-10 w-16 text-center rounded-md border border-slate-300 bg-white text-sm font-bold focus:outline-none focus:ring-2 focus:ring-brand-500"
-                    />
-                    <button type="button" onClick={() => setQuantity((q) => Math.min(50, q + 1))}
-                      className="h-10 w-10 rounded-lg border border-slate-300 bg-white text-lg font-bold hover:bg-slate-50 flex items-center justify-center">+</button>
-                  </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-sm font-medium text-slate-700">שמות (מופרדים בפסיק) *</label>
+                <textarea
+                  value={bulkNames}
+                  onChange={(e) => setBulkNames(e.target.value)}
+                  placeholder="יוחנן כהן, מריה פופסקו, אנדרי בונדרנקו"
+                  rows={3}
+                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none"
+                />
+              </div>
+              {parsedNames.length > 0 && (
+                <div className="bg-slate-50 border border-slate-200 rounded-md px-3 py-2 text-xs text-slate-600 space-y-1">
+                  <p className="font-medium text-slate-700">{parsedNames.length} עובדים:</p>
+                  <p>{parsedNames.map((n) => `${n.first} ${n.last}`.trim()).join(' · ')}</p>
                 </div>
-                <Input label="קידומת שם" value={namePrefix} placeholder="עובד"
-                  onChange={(e) => setNamePrefix(e.target.value)} />
-              </div>
-              <div className="bg-slate-50 border border-slate-200 rounded-md px-3 py-2 text-xs text-slate-500">
-                ייצור:{' '}
-                <span className="font-medium text-slate-700">
-                  {namePrefix || 'עובד'} 1, {namePrefix || 'עובד'} 2
-                  {quantity > 2 ? ` ... ${namePrefix || 'עובד'} ${quantity}` : ''}
-                </span>
-              </div>
+              )}
             </CardContent>
           </Card>
 
           <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">מאפיינים משותפים</CardTitle>
-            </CardHeader>
+            <CardHeader className="pb-2"><CardTitle className="text-base">מאפיינים משותפים</CardTitle></CardHeader>
             <CardContent>
-              <SharedFieldsSection
-                fields={bulkShared} professions={professions} origins={origins}
-                onChange={(delta) => setBulkShared((s) => ({ ...s, ...delta }))}
-              />
+              <SharedFieldsSection fields={bulkShared} professions={professions} origins={origins} regions={regions}
+                onChange={(delta) => setBulkShared((s) => ({ ...s, ...delta }))} />
             </CardContent>
           </Card>
 
           {error && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">{error}</p>}
 
           <div className="flex gap-3">
-            <Button type="submit" disabled={submitting} className="flex-1">
+            <Button type="submit" disabled={submitting || parsedNames.length === 0} className="flex-1">
               {submitting
                 ? <><Loader2 className="h-4 w-4 animate-spin" /> יוצר עובדים...</>
-                : <><Users className="h-4 w-4" /> צור {quantity} עובדים</>}
+                : <><Users className="h-4 w-4" /> צור {parsedNames.length > 0 ? parsedNames.length : ''} עובדים</>}
             </Button>
-            <Button type="button" variant="outline" onClick={() => router.push('/corporation/workers')}>
-              סיום
-            </Button>
+            <Button type="button" variant="outline" onClick={() => router.push('/corporation/workers')}>סיום</Button>
           </div>
         </form>
       )}

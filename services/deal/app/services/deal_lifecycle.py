@@ -23,7 +23,7 @@ VALID_TRANSITIONS = {
 def transition(deal_id: str, new_status: str, performed_by: str):
     conn = get_db()
     try:
-        cur = conn.cursor(dictionary=True)
+        cur = conn.cursor()
         cur.execute("SELECT * FROM deals WHERE id = %s AND deleted_at IS NULL", (deal_id,))
         deal = cur.fetchone()
         if not deal:
@@ -51,7 +51,7 @@ def check_discrepancy(deal_id: str):
     """Compare contractor and corporation reports. Flag if mismatched."""
     conn = get_db()
     try:
-        cur = conn.cursor(dictionary=True)
+        cur = conn.cursor()
         cur.execute(
             "SELECT reported_by, actual_workers, actual_days FROM deal_reports WHERE deal_id = %s",
             (deal_id,)

@@ -32,7 +32,7 @@ router.post('/auth/login', async (req, res) => {
   const match = await bcrypt.compare(password, user.password_hash);
   if (!match) return res.status(401).json({ error: 'invalid credentials' });
 
-  const payload = { sub: user.id, role: user.role, org_id: user.org_id, org_type: user.org_type };
+  const payload = { sub: user.id, email: user.email, role: user.role, org_id: user.org_id, org_type: user.org_type };
   const accessToken  = signAccess(payload);
   const refreshToken = signRefresh({ sub: user.id });
 
@@ -75,7 +75,7 @@ router.post('/auth/refresh', async (req, res) => {
   const user = users[0];
   if (!user) return res.status(401).json({ error: 'user not found' });
 
-  const payload = { sub: user.id, role: user.role, org_id: user.org_id, org_type: user.org_type };
+  const payload = { sub: user.id, email: user.email, role: user.role, org_id: user.org_id, org_type: user.org_type };
   const newAccess  = signAccess(payload);
   const newRefresh = signRefresh({ sub: user.id });
 

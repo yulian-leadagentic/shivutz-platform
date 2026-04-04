@@ -345,7 +345,7 @@ export default function NewRequestPage() {
           start_date: li.start_date, end_date: li.end_date,
           min_experience: li.min_experience,
           origin_preference: li.origin_preference,
-          required_languages: li.required_languages,
+          required_languages: li.required_languages.map((l) => l.language),
         })),
       });
       setCreatedId(result.id);

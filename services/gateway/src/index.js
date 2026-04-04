@@ -76,7 +76,8 @@ for (const [prefix, target] of Object.entries(services)) {
 
       req.headers['x-user-id']   = user.sub;
       req.headers['x-user-role'] = user.role;
-      req.headers['x-org-id']    = user.org_id || '';
+      if (user.org_id) req.headers['x-org-id'] = user.org_id;
+      else delete req.headers['x-org-id'];
     }
 
     next();

@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -99,17 +101,20 @@ func (h *Handler) CreateJobRequest(w http.ResponseWriter, r *http.Request) {
 		ProjectEnd      string `json:"project_end_date"`
 		CreatedBy       string `json:"created_by"`
 		LineItems       []struct {
-			ProfessionType    string   `json:"profession_type"`
-			Quantity          int      `json:"quantity"`
-			StartDate         string   `json:"start_date"`
-			EndDate           string   `json:"end_date"`
-			MinExperience     int      `json:"min_experience"`
-			OriginPreference  []string `json:"origin_preference"`
-			RequiredLanguages []string `json:"required_languages"`
+			ProfessionType    string          `json:"profession_type"`
+			Quantity          int             `json:"quantity"`
+			StartDate         string          `json:"start_date"`
+			EndDate           string          `json:"end_date"`
+			MinExperience     int             `json:"min_experience"`
+			OriginPreference  []string        `json:"origin_preference"`
+			RequiredLanguages json.RawMessage `json:"required_languages"`
 		} `json:"line_items"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, 400, "invalid JSON")
+	bodyBytes, _ := io.ReadAll(r.Body)
+	log.Printf("[CreateJobRequest] body (%d bytes): %s", len(bodyBytes), string(bodyBytes))
+	if err := json.Unmarshal(bodyBytes, &body); err != nil {
+		log.Printf("[CreateJobRequest] decode error: %v", err)
+		writeError(w, 400, err.Error())
 		return
 	}
 
@@ -157,14 +162,15 @@ func (h *Handler) CreateJobRequest(w http.ResponseWriter, r *http.Request) {
 	for _, li := range body.LineItems {
 		liID := uuid.NewString()
 		origins, _ := json.Marshal(li.OriginPreference)
-		langs, _ := json.Marshal(li.RequiredLanguages)
+		// Normalize required_languages: accept both []string and [{language,level}] formats
+		langs := normalizeLangs(li.RequiredLanguages)
 		_, err = tx.Exec(
 			`INSERT INTO job_request_line_items
 			 (id, request_id, profession_type, quantity, start_date, end_date, min_experience, origin_preference, required_languages)
 			 VALUES (?,?,?,?,?,?,?,?,?)`,
 			liID, id, li.ProfessionType, li.Quantity,
 			nullStr(li.StartDate), nullStr(li.EndDate), li.MinExperience,
-			string(origins), string(langs),
+			string(origins), langs,
 		)
 		if err != nil {
 			writeError(w, 500, err.Error())
@@ -377,6 +383,31 @@ func (h *Handler) ListByContractor(w http.ResponseWriter, r *http.Request) {
 		result = []models.JobRequest{}
 	}
 	writeJSON(w, 200, result)
+}
+
+// normalizeLangs accepts either ["he","ro"] or [{"language":"he","level":"..."}] and returns ["he","ro"] as JSON.
+func normalizeLangs(raw json.RawMessage) string {
+	if len(raw) == 0 || string(raw) == "null" {
+		return "[]"
+	}
+	// Try []string first
+	var codes []string
+	if json.Unmarshal(raw, &codes) == nil {
+		out, _ := json.Marshal(codes)
+		return string(out)
+	}
+	// Try [{language, level}] format
+	var objs []struct {
+		Language string `json:"language"`
+	}
+	if json.Unmarshal(raw, &objs) == nil {
+		for _, o := range objs {
+			codes = append(codes, o.Language)
+		}
+		out, _ := json.Marshal(codes)
+		return string(out)
+	}
+	return "[]"
 }
 
 func nullStr(s string) any {

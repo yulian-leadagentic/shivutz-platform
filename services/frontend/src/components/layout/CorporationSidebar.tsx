@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { LayoutDashboard, Users, Handshake, LogOut } from 'lucide-react';
+import { LayoutDashboard, Users, Handshake, LogOut, UserCog } from 'lucide-react';
 import { clearTokens } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 
@@ -21,6 +21,11 @@ const navItems = [
     label: 'עסקאות',
     href: '/corporation/deals',
     icon: Handshake,
+  },
+  {
+    label: 'ניהול משתמשים',
+    href: '/corporation/users',
+    icon: UserCog,
   },
 ];
 
