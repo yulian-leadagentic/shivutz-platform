@@ -285,9 +285,22 @@ router.post('/auth/invite/validate', async (req, res) => {
     return res.status(410).json({ error: 'invite_expired' });
   }
 
+  // Look up entity name (cross-schema on same MySQL instance)
+  let entityName = null;
+  try {
+    const tbl = membership.entity_type === 'contractor'
+      ? 'org_db.contractors' : 'org_db.corporations';
+    const [orgRows] = await pool.query(
+      `SELECT company_name_he FROM ${tbl} WHERE id = ? LIMIT 1`,
+      [membership.entity_id]
+    );
+    entityName = orgRows[0]?.company_name_he || null;
+  } catch { /* cross-schema lookup — ignore if org_db unreachable */ }
+
   res.json({
     entity_type:  membership.entity_type,
     entity_id:    membership.entity_id,
+    entity_name:  entityName,
     role:         membership.role,
     job_title:    membership.job_title,
     inviter_name: membership.inviter_name || null,

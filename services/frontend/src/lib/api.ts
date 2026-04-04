@@ -113,6 +113,106 @@ export interface Membership {
   role: string;
 }
 
+// ─── Team members ─────────────────────────────────────────────────────────────
+
+export interface TeamMember {
+  membership_id: string;
+  user_id: string | null;
+  role: string;
+  job_title: string | null;
+  is_active: boolean;
+  invitation_accepted_at: string | null;
+  created_at: string;
+  phone: string | null;
+  full_name: string | null;
+  email: string | null;
+  pending: boolean;
+}
+
+export const memberApi = {
+  list: (orgType: 'contractors' | 'corporations', orgId: string) =>
+    apiFetch<TeamMember[]>(`/organizations/${orgType}/${orgId}/users`),
+
+  invite: (orgType: 'contractors' | 'corporations', orgId: string, phone: string, role: string, jobTitle?: string) =>
+    apiFetch<{ membership_id: string; role: string; pending: boolean }>(
+      `/organizations/${orgType}/${orgId}/users`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ phone, role, job_title: jobTitle }),
+      }
+    ),
+};
+
+// ─── Documents ────────────────────────────────────────────────────────────────
+
+export interface OrgDocument {
+  doc_id: string;
+  doc_type: string;
+  file_name: string;
+  file_url: string;
+  file_size: number | null;
+  mime_type: string | null;
+  is_valid: boolean | null;
+  notes: string | null;
+  uploaded_at: string;
+  validated_at: string | null;
+}
+
+export const DOC_TYPE_LABELS: Record<string, string> = {
+  registration_cert:        'תעודת רישום',
+  contractor_license:       'רישיון קבלן',
+  foreign_worker_license:   'רישיון עובדים זרים',
+  id_copy:                  'צילום תעודת זהות',
+  other:                    'אחר',
+};
+
+export const documentApi = {
+  list: (orgType: 'contractors' | 'corporations', orgId: string) =>
+    apiFetch<OrgDocument[]>(`/organizations/${orgType}/${orgId}/documents`),
+
+  create: (
+    orgType: 'contractors' | 'corporations',
+    orgId: string,
+    data: { doc_type: string; file_url: string; file_name: string; notes?: string }
+  ) =>
+    apiFetch<{ doc_id: string; doc_type: string; file_name: string }>(
+      `/organizations/${orgType}/${orgId}/documents`,
+      { method: 'POST', body: JSON.stringify(data) }
+    ),
+
+  delete: (orgType: 'contractors' | 'corporations', orgId: string, docId: string) =>
+    apiFetch<void>(`/organizations/${orgType}/${orgId}/documents/${docId}`, { method: 'DELETE' }),
+};
+
+// ─── Invite accept ────────────────────────────────────────────────────────────
+
+export interface InviteMetadata {
+  entity_type: 'contractor' | 'corporation';
+  entity_id: string;
+  entity_name: string | null;
+  role: string;
+  job_title: string | null;
+  inviter_name: string | null;
+  membership_id: string;
+}
+
+export const inviteApi = {
+  validate: (token: string) =>
+    apiFetch<InviteMetadata>('/auth/invite/validate', {
+      method: 'POST',
+      body: JSON.stringify({ token }),
+    }),
+
+  accept: (token: string, phone: string, code: string, fullName?: string) =>
+    apiFetch<{ access_token: string; refresh_token: string; role: string }>(
+      '/auth/invite/accept',
+      {
+        method: 'POST',
+        body: JSON.stringify({ token, phone, code, full_name: fullName }),
+      }
+    ),
+};
+
 export const otpApi = {
   /** Send a 6-digit OTP to phone. Purpose: 'login' | 'register' | 'invite_accept'. */
   sendOtp: (phone: string, purpose: 'login' | 'register' | 'invite_accept') =>

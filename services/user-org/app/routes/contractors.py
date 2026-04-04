@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Header
 from pydantic import BaseModel, EmailStr
 from typing import List, Optional
 from datetime import datetime, timedelta
-import uuid, httpx, os, json
+import uuid, httpx, os, json, secrets
 
 from app.db import get_db
 from app.publisher import publish_event
@@ -23,10 +23,10 @@ class ContractorCreate(BaseModel):
     # password removed — phone-first OTP registration
 
 
-class OrgUserInvite(BaseModel):
-    email: EmailStr
-    password: str
-    role: str = "staff"
+class TeamInvite(BaseModel):
+    phone: str                              # invitee mobile — will be normalised by auth service
+    role: str = "operator"                  # owner | admin | operator | viewer
+    job_title: Optional[str] = None
 
 
 @router.post("", status_code=201)
@@ -117,27 +117,127 @@ def get_contractor(org_id: str):
 
 @router.get("/{org_id}/users")
 def list_contractor_users(org_id: str):
+    """List team members from entity_memberships (phone-first, includes pending invitations)."""
     conn = get_db()
     try:
         cur = conn.cursor()
         cur.execute(
-            """SELECT ou.id, ou.user_id, ou.role, ou.joined_at, u.email
-               FROM org_users ou
-               JOIN auth_db.users u ON u.id = ou.user_id
-               WHERE ou.org_id = %s AND ou.deleted_at IS NULL""",
+            """SELECT em.membership_id, em.user_id, em.role, em.job_title,
+                      em.is_active, em.invitation_accepted_at, em.created_at,
+                      u.phone, u.full_name, u.email
+               FROM auth_db.entity_memberships em
+               LEFT JOIN auth_db.users u ON u.id = em.user_id
+               WHERE em.entity_type = 'contractor' AND em.entity_id = %s
+               ORDER BY em.created_at""",
             (org_id,)
         )
         rows = cur.fetchall()
         for r in rows:
-            if hasattr(r.get("joined_at"), "isoformat"):
-                r["joined_at"] = r["joined_at"].isoformat()
+            for col in ("invitation_accepted_at", "created_at"):
+                if hasattr(r.get(col), "isoformat"):
+                    r[col] = r[col].isoformat()
+            r["pending"] = r["invitation_accepted_at"] is None
         return rows
     finally:
         conn.close()
 
 
 @router.post("/{org_id}/users", status_code=201)
-async def invite_contractor_user(org_id: str, data: OrgUserInvite):
+async def invite_contractor_user(
+    org_id: str,
+    data: TeamInvite,
+    x_user_id: Optional[str] = Header(None),
+):
+    """Send a phone-based team invitation. Creates entity_membership (pending) and sends SMS via RabbitMQ."""
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        # Verify org exists and get name for the SMS
+        cur.execute(
+            "SELECT id, company_name_he FROM contractors WHERE id = %s AND deleted_at IS NULL",
+            (org_id,)
+        )
+        org = cur.fetchone()
+        if not org:
+            raise HTTPException(status_code=404, detail="Contractor not found")
+
+        invite_token    = secrets.token_urlsafe(32)
+        membership_id   = str(uuid.uuid4())
+        inviter_user_id = x_user_id  # set by gateway from JWT
+
+        # Create pending membership (no user_id yet — filled on acceptance)
+        cur.execute(
+            """INSERT INTO auth_db.entity_memberships
+               (membership_id, user_id, entity_type, entity_id, role, job_title,
+                invited_by, invitation_token, is_active)
+               VALUES (%s, NULL, 'contractor', %s, %s, %s, %s, %s, FALSE)""",
+            (membership_id,
+             org_id, data.role, data.job_title, inviter_user_id, invite_token)
+        )
+        conn.commit()
+
+        # Normalise phone for the SMS payload (best-effort; auth will normalise properly on accept)
+        raw_phone = data.phone.strip()
+
+        await publish_event("team.invited", {
+            "phone":       raw_phone,
+            "entity_name": org["company_name_he"],
+            "entity_type": "contractor",
+            "role":        data.role,
+            "invite_token": invite_token,
+            "inviter_user_id": inviter_user_id,
+        })
+
+        return {"membership_id": membership_id, "role": data.role, "pending": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+
+# ── Documents ────────────────────────────────────────────────────────────────
+
+class DocumentCreate(BaseModel):
+    doc_type: str     # registration_cert | contractor_license | foreign_worker_license | id_copy | other
+    file_url: str
+    file_name: str
+    file_size: Optional[int] = None
+    mime_type: Optional[str] = None
+    notes: Optional[str] = None
+
+
+@router.get("/{org_id}/documents")
+def list_contractor_documents(org_id: str):
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT doc_id, doc_type, file_name, file_url, file_size, mime_type,
+                      is_valid, notes, uploaded_at, validated_at
+               FROM auth_db.entity_documents
+               WHERE entity_type = 'contractor' AND entity_id = %s
+               ORDER BY uploaded_at DESC""",
+            (org_id,)
+        )
+        rows = cur.fetchall()
+        for r in rows:
+            for col in ("uploaded_at", "validated_at"):
+                if hasattr(r.get(col), "isoformat"):
+                    r[col] = r[col].isoformat()
+        return rows
+    finally:
+        conn.close()
+
+
+@router.post("/{org_id}/documents", status_code=201)
+def create_contractor_document(
+    org_id: str,
+    data: DocumentCreate,
+    x_user_id: Optional[str] = Header(None),
+):
     conn = get_db()
     try:
         cur = conn.cursor()
@@ -145,29 +245,33 @@ async def invite_contractor_user(org_id: str, data: OrgUserInvite):
         if not cur.fetchone():
             raise HTTPException(status_code=404, detail="Contractor not found")
 
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(f"{AUTH_SERVICE}/auth/register", json={
-                "email": data.email,
-                "password": data.password,
-                "role": "contractor",
-                "org_id": org_id,
-                "org_type": "contractor"
-            })
-            if resp.status_code == 409:
-                raise HTTPException(status_code=409, detail="Email already registered")
-            resp.raise_for_status()
-            user = resp.json()
-
+        doc_id = str(uuid.uuid4())
         cur.execute(
-            "INSERT INTO org_users (id, user_id, org_id, org_type, role, joined_at) VALUES (%s,%s,%s,%s,%s,NOW())",
-            (str(uuid.uuid4()), user["id"], org_id, "contractor", data.role)
+            """INSERT INTO auth_db.entity_documents
+               (doc_id, entity_type, entity_id, doc_type, file_url, file_name,
+                file_size, mime_type, uploaded_by, notes)
+               VALUES (%s, 'contractor', %s, %s, %s, %s, %s, %s, %s, %s)""",
+            (doc_id, org_id, data.doc_type, data.file_url, data.file_name,
+             data.file_size, data.mime_type, x_user_id, data.notes)
         )
         conn.commit()
-        return {"user_id": user["id"], "email": data.email, "role": data.role}
-    except HTTPException:
-        raise
+        return {"doc_id": doc_id, "doc_type": data.doc_type, "file_name": data.file_name}
     except Exception as e:
         conn.rollback()
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+
+@router.delete("/{org_id}/documents/{doc_id}", status_code=204)
+def delete_contractor_document(org_id: str, doc_id: str):
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "DELETE FROM auth_db.entity_documents WHERE doc_id = %s AND entity_type = 'contractor' AND entity_id = %s",
+            (doc_id, org_id)
+        )
+        conn.commit()
     finally:
         conn.close()

@@ -30,6 +30,7 @@ async function startConsumer() {
     'deal.proposed', 'deal.accepted', 'deal.discrepancy.flagged',
     'message.new', 'commission.invoiced',
     'worker.visa.expiring_30d', 'worker.visa.expiring_7d', 'worker.visa.expired',
+    'team.invited',   // Phase 4: SMS invitation
   ];
   for (const key of keys) {
     await channel.bindQueue(queue, EXCHANGE_NAME, key);
