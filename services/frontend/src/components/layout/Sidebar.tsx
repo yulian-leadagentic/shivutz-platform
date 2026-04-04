@@ -1,38 +1,49 @@
 'use client';
 
+import React from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { LayoutDashboard, ClipboardList, Handshake, LogOut, Plus, Users } from 'lucide-react';
-import { clearTokens } from '@/lib/auth';
+import { LayoutDashboard, ClipboardList, Handshake, LogOut, Plus, Users, FileText } from 'lucide-react';
+import { clearTokens, getAccessToken, decodeJwtPayload } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 
-const navItems = [
-  {
-    label: 'לוח בקרה',
-    href: '/contractor/dashboard',
-    icon: LayoutDashboard,
-  },
-  {
-    label: 'בקשות עבודה',
-    href: '/contractor/requests',
-    icon: ClipboardList,
-    sub: [{ label: '+ חדש', href: '/contractor/requests/new' }],
-  },
-  {
-    label: 'עסקאות',
-    href: '/contractor/deals',
-    icon: Handshake,
-  },
-  {
-    label: 'ניהול משתמשים',
-    href: '/contractor/users',
-    icon: Users,
-  },
+function getEntityType(): 'contractor' | 'corporation' | null {
+  if (typeof window === 'undefined') return null;
+  const token = getAccessToken();
+  if (!token) return null;
+  const p = decodeJwtPayload(token);
+  return (p?.entity_type as 'contractor' | 'corporation') ?? null;
+}
+
+interface NavItem {
+  label: string;
+  href: string;
+  icon: React.ElementType;
+  sub?: { label: string; href: string }[];
+}
+
+const CONTRACTOR_NAV: NavItem[] = [
+  { label: 'לוח בקרה',     href: '/contractor/dashboard', icon: LayoutDashboard },
+  { label: 'בקשות עבודה',  href: '/contractor/requests',  icon: ClipboardList,
+    sub: [{ label: '+ חדש', href: '/contractor/requests/new' }] },
+  { label: 'עסקאות',       href: '/contractor/deals',     icon: Handshake },
+  { label: 'צוות',         href: '/contractor/users',     icon: Users },
+  { label: 'מסמכים',       href: '/contractor/documents', icon: FileText },
+];
+
+const CORPORATION_NAV: NavItem[] = [
+  { label: 'לוח בקרה',   href: '/corporation/dashboard', icon: LayoutDashboard },
+  { label: 'עסקאות',     href: '/corporation/deals',     icon: Handshake },
+  { label: 'עובדים',     href: '/corporation/workers',   icon: ClipboardList },
+  { label: 'צוות',       href: '/corporation/users',     icon: Users },
+  { label: 'מסמכים',     href: '/corporation/documents', icon: FileText },
 ];
 
 export default function Sidebar() {
   const pathname = usePathname();
-  const router = useRouter();
+  const router   = useRouter();
+  const entityType = getEntityType();
+  const navItems = entityType === 'corporation' ? CORPORATION_NAV : CONTRACTOR_NAV;
 
   function handleLogout() {
     clearTokens();
@@ -51,7 +62,8 @@ export default function Sidebar() {
         <ul className="space-y-1 px-3">
           {navItems.map((item) => {
             const isActive =
-              pathname === item.href || pathname.startsWith(item.href + '/');
+              pathname === item.href ||
+              (item.href !== '/' && pathname.startsWith(item.href + '/'));
             const Icon = item.icon;
             return (
               <li key={item.href}>

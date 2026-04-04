@@ -1,5 +1,27 @@
-const USER_ORG_URL = process.env.USER_ORG_SERVICE_URL || 'http://user-org:3002';
-const ADMIN_EMAIL  = process.env.ADMIN_EMAIL || 'admin@shivutz-platform.co.il';
+const USER_ORG_URL   = process.env.USER_ORG_SERVICE_URL || 'http://user-org:3002';
+const ADMIN_EMAIL    = process.env.ADMIN_EMAIL || 'admin@shivutz-platform.co.il';
+const NOTIF_URL      = `http://localhost:${process.env.PORT || 3006}`;
+const FRONTEND_URL   = process.env.FRONTEND_URL || 'https://app.shivutz.co.il';
+
+const ROLE_LABELS_HE = {
+  owner:    'בעלים',
+  admin:    'מנהל',
+  operator: 'מפעיל',
+  viewer:   'צופה',
+};
+
+async function sendSmsInternal(phone, message) {
+  try {
+    const resp = await fetch(`${NOTIF_URL}/internal/sms`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ phone, message }),
+    });
+    if (!resp.ok) console.error('[handlers] SMS failed:', await resp.text());
+  } catch (err) {
+    console.error('[handlers] SMS unreachable:', err.message);
+  }
+}
 
 /**
  * Route each event to the appropriate recipient + template.
@@ -84,6 +106,14 @@ async function handle(routingKey, payload, sendEmail) {
         worker_name: payload.worker_name || 'עובד',
       });
       break;
+
+    case 'team.invited': {
+      const roleLabel  = ROLE_LABELS_HE[payload.role] ?? payload.role;
+      const inviteUrl  = `${FRONTEND_URL}/invite/accept/${payload.invite_token}`;
+      const message    = `הוזמנת להצטרף ל${payload.entity_name} בתפקיד ${roleLabel}.\nלאישור ההזמנה: ${inviteUrl}`;
+      await sendSmsInternal(payload.phone, message);
+      break;
+    }
 
     default:
       console.warn(`[handlers] No handler for: ${routingKey}`);

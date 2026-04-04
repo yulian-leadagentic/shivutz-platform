@@ -34,6 +34,7 @@ const services = {
   '/api/auth':          process.env.AUTH_SERVICE_URL          || 'http://auth:3001',
   '/api/organizations': process.env.USER_ORG_SERVICE_URL      || 'http://user-org:3002',
   '/api/users':         process.env.USER_ORG_SERVICE_URL      || 'http://user-org:3002',
+  '/api/documents':     process.env.USER_ORG_SERVICE_URL      || 'http://user-org:3002',
   '/api/workers':       process.env.WORKER_SERVICE_URL        || 'http://worker:3003',
   '/api/enums':         process.env.WORKER_SERVICE_URL        || 'http://worker:3003',
   '/api/job-requests':  process.env.JOB_MATCH_SERVICE_URL     || 'http://job-match:3004',
@@ -49,8 +50,19 @@ const PUBLIC_PREFIXES = [
   '/api/auth/login',
   '/api/auth/refresh',
   '/api/auth/register',
-  '/api/enums',          // profession/region enum lookups are public
+  '/api/auth/send-otp',          // SMS OTP — Phase 2
+  '/api/auth/verify-otp',        // SMS OTP — Phase 2
+  '/api/auth/login/otp',         // SMS OTP login — Phase 2
+  '/api/auth/invite/validate',   // Invitation token check — Phase 4
+  '/api/auth/invite/accept',     // Invitation acceptance — Phase 4
+  '/api/enums',                  // profession/region enum lookups are public
 ];
+
+// Public only for specific HTTP methods (path → allowed methods set)
+const PUBLIC_METHOD_ROUTES = {
+  '/api/organizations/contractors': new Set(['POST']),  // self-registration
+  '/api/organizations/corporations': new Set(['POST']), // self-registration
+};
 
 // Admin-only routes
 const ADMIN_ONLY = ['/api/admin'];
@@ -64,7 +76,11 @@ for (const [prefix, target] of Object.entries(services)) {
     if (limited) return;
 
     // Auth check — use originalUrl so the full /api/... path is available
-    const isPublic = PUBLIC_PREFIXES.some(p => req.originalUrl.startsWith(p));
+    const isPublic =
+      PUBLIC_PREFIXES.some(p => req.originalUrl.startsWith(p)) ||
+      Object.entries(PUBLIC_METHOD_ROUTES).some(
+        ([path, methods]) => req.originalUrl === path && methods.has(req.method)
+      );
     if (!isPublic) {
       const user = await validateToken(req);
       if (!user) return res.status(401).json({ error: 'Unauthorized' });
@@ -76,8 +92,18 @@ for (const [prefix, target] of Object.entries(services)) {
 
       req.headers['x-user-id']   = user.sub;
       req.headers['x-user-role'] = user.role;
-      if (user.org_id) req.headers['x-org-id'] = user.org_id;
-      else delete req.headers['x-org-id'];
+      // Legacy org context — kept for backward compat
+      if (user.org_id)          req.headers['x-org-id']          = user.org_id;
+      else                      delete req.headers['x-org-id'];
+      // New entity context — only present after entity selection (Phase 5+)
+      if (user.phone)           req.headers['x-phone']           = user.phone;
+      else                      delete req.headers['x-phone'];
+      if (user.entity_id)       req.headers['x-entity-id']       = user.entity_id;
+      else                      delete req.headers['x-entity-id'];
+      if (user.entity_type)     req.headers['x-entity-type']     = user.entity_type;
+      else                      delete req.headers['x-entity-type'];
+      if (user.membership_role) req.headers['x-membership-role'] = user.membership_role;
+      else                      delete req.headers['x-membership-role'];
     }
 
     next();
