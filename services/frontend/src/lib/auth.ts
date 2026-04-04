@@ -40,3 +40,36 @@ export function getRoleFromToken(token: string): string | null {
   if (!payload) return null;
   return (payload.role as string) ?? null;
 }
+
+/** Display name derived from full_name → email → phone (whichever is set). */
+export function getDisplayName(token: string): string | null {
+  const payload = decodeJwtPayload(token);
+  if (!payload) return null;
+  return (payload.full_name as string) ?? (payload.email as string) ?? (payload.phone as string) ?? null;
+}
+
+/** The user's role within the currently selected entity (owner/admin/operator/viewer). */
+export function getMembershipRole(token: string): string | null {
+  const payload = decodeJwtPayload(token);
+  if (!payload) return null;
+  return (payload.membership_role as string) ?? null;
+}
+
+/** Returns true when the JWT has no entity context yet (entity selection required). */
+export function needsEntitySelection(token: string): boolean {
+  const payload = decodeJwtPayload(token);
+  if (!payload) return false;
+  return !payload.entity_id;
+}
+
+export function getEntityId(token: string): string | null {
+  const payload = decodeJwtPayload(token);
+  if (!payload) return null;
+  return (payload.entity_id as string) ?? null;
+}
+
+export function getEntityType(token: string): string | null {
+  const payload = decodeJwtPayload(token);
+  if (!payload) return null;
+  return (payload.entity_type as string) ?? null;
+}

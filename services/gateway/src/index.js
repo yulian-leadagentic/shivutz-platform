@@ -58,6 +58,12 @@ const PUBLIC_PREFIXES = [
   '/api/enums',                  // profession/region enum lookups are public
 ];
 
+// Public only for specific HTTP methods (path → allowed methods set)
+const PUBLIC_METHOD_ROUTES = {
+  '/api/organizations/contractors': new Set(['POST']),  // self-registration
+  '/api/organizations/corporations': new Set(['POST']), // self-registration
+};
+
 // Admin-only routes
 const ADMIN_ONLY = ['/api/admin'];
 
@@ -70,7 +76,11 @@ for (const [prefix, target] of Object.entries(services)) {
     if (limited) return;
 
     // Auth check — use originalUrl so the full /api/... path is available
-    const isPublic = PUBLIC_PREFIXES.some(p => req.originalUrl.startsWith(p));
+    const isPublic =
+      PUBLIC_PREFIXES.some(p => req.originalUrl.startsWith(p)) ||
+      Object.entries(PUBLIC_METHOD_ROUTES).some(
+        ([path, methods]) => req.originalUrl === path && methods.has(req.method)
+      );
     if (!isPublic) {
       const user = await validateToken(req);
       if (!user) return res.status(401).json({ error: 'Unauthorized' });

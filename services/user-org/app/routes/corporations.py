@@ -12,15 +12,15 @@ AUTH_SERVICE = os.getenv("AUTH_SERVICE_URL", "http://auth:3001")
 
 
 class CorporationCreate(BaseModel):
-    company_name: Optional[str] = None       # defaults to company_name_he
+    company_name: Optional[str] = None          # defaults to company_name_he
     company_name_he: str
     business_number: str
     countries_of_origin: List[str]
     minimum_contract_months: int = 3
-    contact_name: str
-    contact_phone: str
-    contact_email: EmailStr
-    password: str
+    contact_name: str                           # owner full name (also used as user.full_name)
+    contact_phone: str                          # owner mobile (used as user.phone for SMS login)
+    contact_email: Optional[EmailStr] = None    # optional business email
+    # password removed — phone-first OTP registration
 
 
 class OrgUserInvite(BaseModel):
@@ -50,24 +50,38 @@ async def register_corporation(data: CorporationCreate):
              data.contact_phone, data.contact_email, sla_deadline)
         )
 
+        # Phone-first registration — auth service verifies OTP was confirmed recently
         async with httpx.AsyncClient() as client:
             resp = await client.post(f"{AUTH_SERVICE}/auth/register", json={
-                "email": data.contact_email,
-                "password": data.password,
-                "role": "corporation",
-                "org_id": org_id,
-                "org_type": "corporation"
+                "phone":     data.contact_phone,
+                "full_name": data.contact_name,
+                "role":      "corporation",
+                "org_id":    org_id,
+                "org_type":  "corporation"
             })
             if resp.status_code == 409:
                 conn.rollback()
-                raise HTTPException(status_code=409, detail="Email already registered")
+                raise HTTPException(status_code=409, detail="Phone already registered")
+            if resp.status_code == 400:
+                conn.rollback()
+                body = resp.json()
+                raise HTTPException(status_code=400, detail=body.get("error", "registration_failed"))
             resp.raise_for_status()
             user = resp.json()
 
         cur.execute("UPDATE corporations SET user_owner_id = %s WHERE id = %s", (user["id"], org_id))
+        # Legacy org_users row
         cur.execute(
             "INSERT INTO org_users (id, user_id, org_id, org_type, role, joined_at) VALUES (%s,%s,%s,%s,%s,NOW())",
             (str(uuid.uuid4()), user["id"], org_id, "corporation", "owner")
+        )
+        # New entity_memberships row in auth_db (same MySQL instance)
+        cur.execute(
+            """INSERT INTO auth_db.entity_memberships
+               (membership_id, user_id, entity_type, entity_id, role, invitation_accepted_at, is_active)
+               VALUES (%s, %s, 'corporation', %s, 'owner', NOW(), TRUE)
+               ON DUPLICATE KEY UPDATE is_active = TRUE""",
+            (str(uuid.uuid4()), user["id"], org_id)
         )
         conn.commit()
 

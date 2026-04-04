@@ -104,6 +104,51 @@ export const workerApi = {
     }),
 };
 
+// ─── OTP / phone-auth ─────────────────────────────────────────────────────────
+
+export interface Membership {
+  membership_id: string;
+  entity_id: string;
+  entity_type: 'contractor' | 'corporation';
+  role: string;
+}
+
+export const otpApi = {
+  /** Send a 6-digit OTP to phone. Purpose: 'login' | 'register' | 'invite_accept'. */
+  sendOtp: (phone: string, purpose: 'login' | 'register' | 'invite_accept') =>
+    apiFetch<{ sent: boolean; phone: string }>('/auth/send-otp', {
+      method: 'POST',
+      body: JSON.stringify({ phone, purpose }),
+    }),
+
+  /** Verify OTP without issuing a JWT (used during registration to confirm phone ownership). */
+  verifyOtp: (phone: string, code: string, purpose: string) =>
+    apiFetch<{ valid: boolean; phone: string }>('/auth/verify-otp', {
+      method: 'POST',
+      body: JSON.stringify({ phone, code, purpose }),
+    }),
+
+  /** Full login: verify OTP + issue JWT. Returns entity context or needs_entity_selection. */
+  loginOtp: (phone: string, code: string) =>
+    apiFetch<{
+      access_token: string;
+      refresh_token: string;
+      role: string;
+      needs_entity_selection: boolean;
+      memberships?: Membership[];
+    }>('/auth/login/otp', {
+      method: 'POST',
+      body: JSON.stringify({ phone, code }),
+    }),
+
+  /** Re-issue JWT scoped to a specific entity (called after needs_entity_selection=true). */
+  selectEntity: (entityId: string, entityType: string) =>
+    apiFetch<{ access_token: string; refresh_token: string }>('/auth/select-entity', {
+      method: 'POST',
+      body: JSON.stringify({ entity_id: entityId, entity_type: entityType }),
+    }),
+};
+
 export const dealApi = {
   list: () => apiFetch<import('@/types').Deal[]>('/deals'),
   get: (id: string) => apiFetch<import('@/types').Deal>(`/deals/${id}`),
