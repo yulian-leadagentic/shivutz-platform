@@ -1,6 +1,6 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
-from app.db import init_db
+from fastapi import FastAPI, HTTPException
+from app.db import get_db, init_db
 from app.routes import payment_methods, transactions, webhooks, admin_payments, settings
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -29,7 +29,24 @@ app = FastAPI(
 
 @app.get("/health")
 def health():
+    """Liveness — static OK, independent of dependencies."""
     return {"status": "ok", "service": "payment"}
+
+
+@app.get("/readyz")
+def readyz():
+    """Readiness — 503 if the DB pool can't serve a trivial query."""
+    try:
+        conn = get_db()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT 1")
+            cur.fetchone()
+        finally:
+            conn.close()
+        return {"status": "ready", "service": "payment"}
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"db_unreachable: {e}")
 
 
 app.include_router(settings.router,        prefix="/settings",        tags=["settings"])

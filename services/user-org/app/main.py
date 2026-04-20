@@ -1,8 +1,8 @@
 import os
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from app.routes import contractors, corporations, users, admin_approvals, marketplace
-from app.db import init_db
+from app.db import get_db, init_db
 
 UPLOAD_DIR = os.getenv("UPLOAD_DIR", "/app/uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -15,7 +15,24 @@ async def startup():
 
 @app.get("/health")
 def health():
+    """Liveness — static OK, independent of dependencies."""
     return {"status": "ok", "service": "user-org"}
+
+
+@app.get("/readyz")
+def readyz():
+    """Readiness — 503 if the org DB can't serve a trivial query."""
+    try:
+        conn = get_db()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT 1")
+            cur.fetchone()
+        finally:
+            conn.close()
+        return {"status": "ready", "service": "user-org"}
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"db_unreachable: {e}")
 
 # Serve uploaded files statically
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")

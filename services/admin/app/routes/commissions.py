@@ -21,14 +21,21 @@ def _serialize(row: dict) -> dict:
     return row
 
 
-def _org_name(conn, org_id: str, org_type: str) -> str:
+def _load_deal_party_names(conn, contractor_id: str, corporation_id: str) -> dict:
+    """Fetch both parties of a deal in a single round-trip (UNION ALL across tables)."""
     cur = conn.cursor()
-    table = "contractors" if org_type == "contractor" else "corporations"
-    cur.execute(f"SELECT company_name, company_name_he FROM {table} WHERE id=%s", (org_id,))
-    row = cur.fetchone()
-    if not row:
-        return org_id[:8]
-    return row.get("company_name_he") or row.get("company_name") or org_id[:8]
+    cur.execute(
+        """SELECT id, company_name_he, company_name, 'contractor' AS kind
+             FROM contractors WHERE id=%s
+           UNION ALL
+           SELECT id, company_name_he, company_name, 'corporation' AS kind
+             FROM corporations WHERE id=%s""",
+        (contractor_id, corporation_id),
+    )
+    names: dict = {}
+    for row in cur.fetchall():
+        names[row["id"]] = row.get("company_name_he") or row.get("company_name") or row["id"][:8]
+    return names
 
 
 # ── GET /admin/deals/:id ──────────────────────────────────────────────────
@@ -49,9 +56,10 @@ def get_deal_detail(deal_id: str):
             raise HTTPException(status_code=404, detail="Deal not found")
         deal = _serialize(deal)
 
-        # Resolve org names
-        deal["contractor_name"] = _org_name(org_conn, deal["contractor_id"], "contractor")
-        deal["corporation_name"] = _org_name(org_conn, deal["corporation_id"], "corporation")
+        # Resolve both party names in one round-trip.
+        party_names = _load_deal_party_names(org_conn, deal["contractor_id"], deal["corporation_id"])
+        deal["contractor_name"]  = party_names.get(deal["contractor_id"], deal["contractor_id"][:8])
+        deal["corporation_name"] = party_names.get(deal["corporation_id"], deal["corporation_id"][:8])
 
         # Reports (both parties)
         deal_cur.execute(

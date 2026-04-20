@@ -27,7 +27,11 @@ app.use((req, res, next) => {
 });
 
 // ─── Health ────────────────────────────────────────────────
+// Liveness — static OK, independent of dependencies.
 app.get('/health', (_, res) => res.json({ status: 'ok', service: 'gateway' }));
+// Readiness — gateway itself has no direct deps; downstream failure surfaces
+// as 502s on the proxied routes, so readyz tracks only the listener.
+app.get('/readyz', (_, res) => res.json({ status: 'ready', service: 'gateway' }));
 
 // ─── Route table ───────────────────────────────────────────
 const services = {

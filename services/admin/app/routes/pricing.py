@@ -22,13 +22,20 @@ def _serialize(row: dict) -> dict:
     return row
 
 
-def _corp_name(conn, corp_id: str) -> str:
+def _load_corp_names(conn, corp_ids: set) -> dict:
+    """Batch-fetch Hebrew (or fallback) names for a set of corporation IDs."""
+    if not corp_ids:
+        return {}
     cur = conn.cursor()
-    cur.execute("SELECT company_name_he, company_name FROM corporations WHERE id=%s", (corp_id,))
-    row = cur.fetchone()
-    if not row:
-        return corp_id[:8]
-    return row.get("company_name_he") or row.get("company_name") or corp_id[:8]
+    placeholders = ",".join(["%s"] * len(corp_ids))
+    cur.execute(
+        f"SELECT id, company_name_he, company_name FROM corporations WHERE id IN ({placeholders})",
+        tuple(corp_ids),
+    )
+    names: dict = {}
+    for row in cur.fetchall():
+        names[row["id"]] = row.get("company_name_he") or row.get("company_name") or row["id"][:8]
+    return names
 
 
 class PricingCreate(BaseModel):
@@ -58,9 +65,10 @@ def list_pricing():
             SELECT * FROM corporation_pricing ORDER BY is_active DESC, created_at DESC
         """)
         rows = [_serialize(r) for r in cur.fetchall()]
-        # Enrich with corp names
+        # Batched enrichment — single round-trip to org_db instead of one per row.
+        names = _load_corp_names(org_conn, {r["corporation_id"] for r in rows})
         for row in rows:
-            row["corporation_name"] = _corp_name(org_conn, row["corporation_id"])
+            row["corporation_name"] = names.get(row["corporation_id"], row["corporation_id"][:8])
         return rows
     finally:
         deal_conn.close()

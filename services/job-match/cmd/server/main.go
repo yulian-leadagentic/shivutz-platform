@@ -33,9 +33,20 @@ func main() {
 	h := handler.New(db)
 
 	mux := http.NewServeMux()
+	// Liveness — static OK, independent of dependencies.
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprintln(w, `{"status":"ok","service":"job-match"}`)
+	})
+	// Readiness — 503 if the DB can't serve a trivial query.
+	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if err := db.PingContext(r.Context()); err != nil {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			fmt.Fprintf(w, `{"status":"not_ready","error":"db_unreachable: %s"}`+"\n", err.Error())
+			return
+		}
+		fmt.Fprintln(w, `{"status":"ready","service":"job-match"}`)
 	})
 	mux.HandleFunc("GET /job-requests", h.ListJobRequests)
 	mux.HandleFunc("POST /job-requests", h.CreateJobRequest)

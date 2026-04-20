@@ -1,6 +1,6 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from app.routes import deals, messages, reports, commissions
-from app.db import init_db
+from app.db import get_db, init_db
 
 app = FastAPI(title="Shivutz Deal Service", version="1.0.0")
 
@@ -10,7 +10,24 @@ async def startup():
 
 @app.get("/health")
 def health():
+    """Liveness — static OK, independent of dependencies."""
     return {"status": "ok", "service": "deal"}
+
+
+@app.get("/readyz")
+def readyz():
+    """Readiness — 503 if the deal DB can't serve a trivial query."""
+    try:
+        conn = get_db()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT 1")
+            cur.fetchone()
+        finally:
+            conn.close()
+        return {"status": "ready", "service": "deal"}
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"db_unreachable: {e}")
 
 app.include_router(deals.router,       prefix="/deals",       tags=["deals"])
 app.include_router(messages.router,    prefix="/deals",       tags=["messages"])
