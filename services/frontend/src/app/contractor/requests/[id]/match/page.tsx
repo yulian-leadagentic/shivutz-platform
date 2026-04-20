@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -497,29 +497,49 @@ export default function MatchPage() {
   const [inquiryNotes, setInquiryNotes]       = useState('');
   const [mismatchAcknowledged, setMismatchAcknowledged] = useState(false);
 
+  // Each call to runMatch bumps this ref; stale in-flight results check against
+  // the captured id and bail out, preventing races where (a) the 8s timer has
+  // already flipped state to "timed out" when the slow promise resolves, or
+  // (b) the user has retried and the first request resolves after the second.
+  const runIdRef = useRef(0);
+
   const runMatch = useCallback(async () => {
+    runIdRef.current += 1;
+    const thisRun = runIdRef.current;
+
     setLoading(true);
     setError('');
     setTimedOut(false);
 
-    const timer = setTimeout(() => { setTimedOut(true); setLoading(false); }, 8000);
+    const timer = setTimeout(() => {
+      if (runIdRef.current !== thisRun) return;
+      setTimedOut(true);
+      setLoading(false);
+    }, 8000);
+
     try {
       const [reqData, results] = await Promise.all([
         jobApi.get(id).catch(() => null),
         jobApi.match(id),
       ]);
+      if (runIdRef.current !== thisRun) return;  // stale — newer run or unmount
       clearTimeout(timer);
       setJobRequest(reqData);
       setBundles(results);
+      setTimedOut(false);
+      setLoading(false);
     } catch (err) {
+      if (runIdRef.current !== thisRun) return;
       clearTimeout(timer);
       setError(err instanceof Error ? err.message : 'שגיאה בחיפוש התאמות');
-    } finally {
       setLoading(false);
     }
   }, [id]);
 
   useEffect(() => { runMatch(); }, [runMatch]);
+
+  // Invalidate any in-flight run on unmount so late resolutions can't touch state.
+  useEffect(() => () => { runIdRef.current += 1; }, []);
 
   const lineItemMap = Object.fromEntries(
     (jobRequest?.line_items ?? []).map((li) => [li.id, li])
