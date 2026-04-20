@@ -20,7 +20,7 @@ app.use(morgan(':method :url :status :response-time ms - :req[x-request-id]'));
 // ─── CORS ──────────────────────────────────────────────────
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PATCH,DELETE,OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization');
   if (req.method === 'OPTIONS') return res.sendStatus(200);
   next();
@@ -42,7 +42,11 @@ const services = {
   '/api/deals':         process.env.DEAL_SERVICE_URL          || 'http://deal:3005',
   '/api/commissions':   process.env.DEAL_SERVICE_URL          || 'http://deal:3005',
   '/api/notifications': process.env.NOTIFICATION_SERVICE_URL  || 'http://notification:3006',
+  '/api/webhooks':      process.env.NOTIFICATION_SERVICE_URL  || 'http://notification:3006',
   '/api/admin':         process.env.ADMIN_SERVICE_URL         || 'http://admin:3007',
+  '/api/payments':      process.env.PAYMENT_SERVICE_URL       || 'http://payment:3009',
+  '/api/marketplace':   process.env.USER_ORG_SERVICE_URL      || 'http://user-org:3002',
+  '/api/uploads':       process.env.USER_ORG_SERVICE_URL      || 'http://user-org:3002',
 };
 
 // Public routes (no auth required) — matched against req.originalUrl
@@ -56,13 +60,21 @@ const PUBLIC_PREFIXES = [
   '/api/auth/invite/validate',   // Invitation token check — Phase 4
   '/api/auth/invite/accept',     // Invitation acceptance — Phase 4
   '/api/enums',                  // profession/region enum lookups are public
+  '/api/webhooks/vonage',        // Vonage webhooks — secured by Signature Secret JWT, not user JWT
 ];
 
-// Public only for specific HTTP methods (path → allowed methods set)
+// Public only for specific HTTP methods (exact path → allowed methods)
 const PUBLIC_METHOD_ROUTES = {
   '/api/organizations/contractors': new Set(['POST']),  // self-registration
   '/api/organizations/corporations': new Set(['POST']), // self-registration
 };
+
+// Public only for specific HTTP methods matched by prefix (prefix → allowed methods)
+// Used for routes where GET is public but mutating methods require auth
+const PUBLIC_METHOD_PREFIXES = [
+  { prefix: '/api/marketplace/leads', methods: new Set(['POST']) }, // lead capture — no auth
+  { prefix: '/api/marketplace',       methods: new Set(['GET']) },  // public browse
+];
 
 // Admin-only routes
 const ADMIN_ONLY = ['/api/admin'];
@@ -80,6 +92,9 @@ for (const [prefix, target] of Object.entries(services)) {
       PUBLIC_PREFIXES.some(p => req.originalUrl.startsWith(p)) ||
       Object.entries(PUBLIC_METHOD_ROUTES).some(
         ([path, methods]) => req.originalUrl === path && methods.has(req.method)
+      ) ||
+      PUBLIC_METHOD_PREFIXES.some(
+        ({ prefix: p, methods }) => req.originalUrl.startsWith(p) && methods.has(req.method)
       );
     if (!isPublic) {
       const user = await validateToken(req);

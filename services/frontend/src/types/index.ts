@@ -31,7 +31,7 @@ export interface Worker {
   last_name: string;
   profession_type: string;
   experience_years: number;
-  experience_range?: '1-3' | '3-5' | '5+';
+  experience_range?: string;  // month-based: '0-6' | '6-12' | '12-24' | '24-36' | '36+'
   origin_country: string;
   languages: string[];
   visa_valid_until: string;
@@ -56,6 +56,13 @@ export interface JobLineItem {
   status: string;
 }
 
+export interface JobLineItemSummary {
+  id: string;
+  profession_type: string;
+  quantity: number;
+  status: string;
+}
+
 export interface JobRequest {
   id: string;
   contractor_id: string;
@@ -68,22 +75,54 @@ export interface JobRequest {
   address?: string;
   project_start_date?: string;
   project_end_date?: string;
+  professions_count?: number;
+  total_workers?: number;
+  /** -1 = no match run yet; 0-100 = fill percentage from best bundle */
+  best_fill_pct?: number;
+  best_is_complete?: boolean;
 }
 
-export interface MatchedWorker {
-  worker_id: string;
-  worker_name: string;
+// ─── Match types (Go job-match service response) ──────────────────────────────
+
+export interface MatchedWorkerDetail {
+  id: string;
+  corporation_id: string;
   profession_type: string;
-  score: number;
-  visa_valid_until: string;
+  experience_years: number;
+  origin_country: string;
+  languages: string[];
+  visa_valid_until?: string;
+  status: string;
+  available_region?: string;
+}
+
+export interface WorkerMatchResult {
+  worker: MatchedWorkerDetail;
+  score: number;           // raw 0-110
+  line_item_id: string;
+  match_tier: string;      // "perfect" | "good" | "partial"
+  matched_criteria: string[];
+  missing_criteria: string[];
+}
+
+export interface LineItemFill {
+  line_item_id: string;
+  profession: string;
+  needed: number;
+  workers: WorkerMatchResult[];
+  is_filled: boolean;
 }
 
 export interface MatchBundle {
   corporation_id: string;
-  corporation_name: string;
-  workers: MatchedWorker[];
-  score: number;
+  corporation_name?: string;   // resolved client-side after fetch
+  threshold_requirements?: Record<string, unknown> | null;  // resolved client-side
+  line_items: LineItemFill[];
+  total_score: number;
   is_complete: boolean;
+  fill_percentage: number;     // 0-100
+  filled_workers: number;
+  needed_workers: number;
 }
 
 export interface Deal {
@@ -94,7 +133,13 @@ export interface Deal {
   workers_count: number;
   agreed_price?: number;
   status: string;
+  notes?: string;
   created_at: string;
+  standard_contract_url?: string;
+  standard_contract_doc_name?: string;
+  payment_status?: string;
+  payment_amount_estimated?: number;
+  corp_committed_at?: string;
 }
 
 export interface Message {
@@ -103,6 +148,7 @@ export interface Message {
   sender_user_id: string;
   sender_role: string;
   content: string;
+  content_type?: 'text' | 'system';
   created_at: string;
 }
 
@@ -130,4 +176,64 @@ export interface Corporation {
   contact_name: string;
   contact_email: string;
   contact_phone: string;
+  threshold_requirements?: Record<string, unknown> | null;
+}
+
+export interface PaymentMethod {
+  id: string;
+  entity_type: string;
+  entity_id: string;
+  provider: string;
+  last_4_digits: string;
+  card_brand: string | null;
+  card_holder_name: string | null;
+  expiry_month: number;
+  expiry_year: number;
+  is_default: boolean;
+  status: string;
+  created_at: string | null;
+  last_used_at: string | null;
+}
+
+export interface CommitEngagementResult {
+  transaction_id: string;
+  status: string;
+  grace_period_expires_at: string;
+  amounts: {
+    base_amount: number;
+    vat_rate: number;
+    vat_amount: number;
+    total_amount: number;
+  };
+}
+
+export interface MarketplaceListing {
+  id: string;
+  corporation_id: string;
+  corporation_name?: string;
+  is_corporation_verified?: boolean;
+  category: 'housing' | 'equipment' | 'services' | 'other';
+  subcategory?: string;
+  title: string;
+  description?: string;
+  city?: string;
+  region?: string;
+  price?: number;
+  price_unit?: 'per_month' | 'per_night' | 'fixed' | 'negotiable';
+  capacity?: number;
+  is_furnished?: boolean;
+  available_from?: string;
+  status: 'active' | 'rented' | 'sold' | 'paused';
+  contact_phone?: string;
+  contact_name?: string;
+  images_json?: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LeadFormData {
+  full_name: string;
+  phone: string;
+  org_type: 'contractor' | 'corporation';
+  notes?: string;
 }

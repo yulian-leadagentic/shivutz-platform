@@ -40,6 +40,17 @@ async function handle(routingKey, payload, sendEmail) {
         contact_name: payload.contact_name,
         org_name:     payload.org_name,
       });
+      // Send SMS with direct link — contractors get link to create worker request
+      if (payload.contact_phone) {
+        const link = payload.org_type === 'contractor'
+          ? `${FRONTEND_URL}/contractor/requests/new`
+          : `${FRONTEND_URL}/corporation/dashboard`;
+        const firstName = (payload.contact_name || '').split(' ')[0] || 'שלום';
+        await sendSmsInternal(
+          payload.contact_phone,
+          `${firstName}, החשבון שלך בפלטפורמת שיבוץ אושר ✓\n${payload.org_type === 'contractor' ? 'לפתיחת בקשה לעובדים: ' : 'כניסה לחשבון: '}${link}`
+        );
+      }
       break;
 
     case 'org.rejected':
@@ -108,9 +119,11 @@ async function handle(routingKey, payload, sendEmail) {
       break;
 
     case 'team.invited': {
-      const roleLabel  = ROLE_LABELS_HE[payload.role] ?? payload.role;
-      const inviteUrl  = `${FRONTEND_URL}/invite/accept/${payload.invite_token}`;
-      const message    = `הוזמנת להצטרף ל${payload.entity_name} בתפקיד ${roleLabel}.\nלאישור ההזמנה: ${inviteUrl}`;
+      const roleLabel   = ROLE_LABELS_HE[payload.role] ?? payload.role;
+      const inviteUrl   = `${FRONTEND_URL}/invite/accept/${payload.invite_token}`;
+      const inviterName = payload.inviter_name || 'המנהל';
+      const entityName  = payload.entity_name  || 'הארגון';
+      const message     = `שלום! ${inviterName} מזמין אותך להצטרף לצוות "${entityName}" בפלטפורמת שיבוץ בתפקיד ${roleLabel}.\nלהתחברות והצטרפות לפלטפורמה:\n${inviteUrl}`;
       await sendSmsInternal(payload.phone, message);
       break;
     }

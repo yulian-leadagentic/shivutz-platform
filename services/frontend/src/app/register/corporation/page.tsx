@@ -2,8 +2,10 @@
 
 import { useState, FormEvent, useRef } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Loader2, CheckCircle2 } from 'lucide-react';
 import { orgApi, otpApi } from '@/lib/api';
+import { saveTokens } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -47,6 +49,7 @@ function otpErrorMsg(msg: string): string {
 }
 
 export default function RegisterCorporationPage() {
+  const router = useRouter();
   const [step, setStep]       = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState('');
@@ -115,7 +118,7 @@ export default function RegisterCorporationPage() {
     e.preventDefault(); setError('');
     setLoading(true);
     try {
-      await orgApi.registerCorporation({
+      const result = await orgApi.registerCorporation({
         company_name_he:         step2.company_name_he,
         business_number:         step2.business_number,
         countries_of_origin:     step2.countries_of_origin,
@@ -123,8 +126,14 @@ export default function RegisterCorporationPage() {
         contact_name:            step1.full_name,
         contact_phone:           step1.normPhone,
         contact_email:           step3.contact_email || undefined,
-      });
-      setSuccess(true);
+      }) as { id: string; status: string; org_type: string; access_token?: string; refresh_token?: string };
+
+      if (result.access_token && result.refresh_token) {
+        saveTokens(result.access_token, result.refresh_token);
+        router.push('/corporation/dashboard');
+      } else {
+        setSuccess(true);
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'שגיאה בהרשמה';
       setError(
@@ -344,6 +353,19 @@ export default function RegisterCorporationPage() {
             )}
           </CardContent>
         </Card>
+
+        {/* Trouble footer */}
+        <p className="text-center text-xs text-slate-400 mt-4">
+          נתקלת בבעיה?{' '}
+          <a
+            href="https://wa.me/972500000000?text=שלום%2C%20אני%20מעוניין%20ברישום%20ידני%20כתאגיד"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-brand-600 hover:text-brand-700 font-medium underline underline-offset-2"
+          >
+            צור קשר לרישום ידני
+          </a>
+        </p>
       </div>
     </div>
   );

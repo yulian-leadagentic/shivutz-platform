@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { LayoutDashboard, ClipboardCheck, Handshake, Building2, LogOut } from 'lucide-react';
+import { LayoutDashboard, ClipboardCheck, Handshake, Building2, LogOut, BadgeDollarSign, Percent, PhoneCall } from 'lucide-react';
 import { clearTokens } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 
@@ -11,6 +11,9 @@ const NAV = [
   { href: '/admin/approvals',  label: 'אישורים',        icon: ClipboardCheck, badge: true },
   { href: '/admin/deals',      label: 'עסקאות',         icon: Handshake },
   { href: '/admin/orgs',       label: 'ארגונים',        icon: Building2 },
+  { href: '/admin/pricing',      label: 'תמחור תאגידים',  icon: BadgeDollarSign },
+  { href: '/admin/commissions',      label: 'עמלות',         icon: Percent },
+  { href: '/admin/registration-log', label: 'לוג רישומים',  icon: PhoneCall },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {

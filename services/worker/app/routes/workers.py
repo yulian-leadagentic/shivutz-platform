@@ -10,16 +10,28 @@ router = APIRouter()
 
 # ── Experience range helpers ──────────────────────────────────────────────
 
+# Month-based ranges (new) + legacy year-based ranges (old) → experience_years
 EXP_RANGE_TO_YEARS = {
+    # Month-based (new): store lower bound in months, convert to years for DB
+    "0-6":   0,
+    "6-12":  0,   # < 1 year
+    "12-24": 1,
+    "24-36": 2,
+    "36+":   3,
+    # Legacy year-based (old):
     "1-3": 1,
     "3-5": 3,
     "5+":  5,
 }
 
 def exp_range(years: int) -> str:
-    if years >= 5: return "5+"
-    if years >= 3: return "3-5"
-    return "1-3"
+    """Convert experience_years to month-based range string."""
+    months = years * 12
+    if months >= 36: return "36+"
+    if months >= 24: return "24-36"
+    if months >= 12: return "12-24"
+    if months >= 6:  return "6-12"
+    return "0-6"
 
 
 # ── Models ────────────────────────────────────────────────────────────────
@@ -30,7 +42,7 @@ class WorkerCreate(BaseModel):
     last_name: str
     profession_type: str
     experience_years: int = 0
-    experience_range: Optional[str] = None  # "1-3" | "3-5" | "5+"
+    experience_range: Optional[str] = None  # month-based: "0-6"|"6-12"|"12-24"|"24-36"|"36+"
     origin_country: str
     languages: List[str] = []
     visa_type: Optional[str] = None
@@ -39,6 +51,7 @@ class WorkerCreate(BaseModel):
     visa_valid_until: Optional[date] = None
     available_region: Optional[str] = None   # stored in extra_fields
     available_from: Optional[str] = None     # stored in extra_fields
+    employee_number: Optional[str] = None    # stored in extra_fields; auto-generated if omitted
     notes: Optional[str] = None
     extra_fields: Optional[dict] = None
 
@@ -68,6 +81,7 @@ class WorkerUpdate(BaseModel):
     status: Optional[str] = None
     available_region: Optional[str] = None
     available_from: Optional[str] = None
+    employee_number: Optional[str] = None    # stored in extra_fields
     notes: Optional[str] = None
     extra_fields: Optional[dict] = None
 
@@ -79,11 +93,29 @@ def _resolve_exp(years: int, range_str: Optional[str]) -> int:
         return EXP_RANGE_TO_YEARS[range_str]
     return years
 
-def _build_extra(base: Optional[dict], available_region: Optional[str], available_from: Optional[str]) -> Optional[str]:
+def _build_extra(
+    base: Optional[dict],
+    available_region: Optional[str],
+    available_from: Optional[str],
+    experience_range: Optional[str] = None,
+    employee_number: Optional[str] = None,
+) -> Optional[str]:
     extra = dict(base or {})
-    if available_region: extra["available_region"] = available_region
-    if available_from:   extra["available_from"]   = available_from
+    if available_region:  extra["available_region"]  = available_region
+    if available_from:    extra["available_from"]    = available_from
+    if experience_range:  extra["experience_range"]  = experience_range
+    if employee_number:   extra["employee_number"]   = employee_number
     return json.dumps(extra) if extra else None
+
+def _generate_employee_number(conn, corp_id: str) -> str:
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT COUNT(*) as cnt FROM workers WHERE corporation_id = %s AND deleted_at IS NULL",
+        (corp_id,)
+    )
+    row = cur.fetchone()
+    count = (row.get("cnt") or 0) + 1
+    return f"W-{count:04d}"
 
 
 # ── Routes ────────────────────────────────────────────────────────────────
@@ -99,10 +131,15 @@ def create_worker(
 
     exp_years = _resolve_exp(data.experience_years, data.experience_range)
     worker_id = str(uuid.uuid4())
-    extra = _build_extra(data.extra_fields, data.available_region, data.available_from)
 
     conn = get_db()
     try:
+        emp_num = data.employee_number or _generate_employee_number(conn, corp_id)
+        stored_range = data.experience_range or exp_range(exp_years)
+        extra = _build_extra(
+            data.extra_fields, data.available_region, data.available_from,
+            experience_range=stored_range, employee_number=emp_num,
+        )
         cur = conn.cursor()
         cur.execute(
             """INSERT INTO workers
@@ -116,7 +153,12 @@ def create_worker(
              data.visa_valid_from, data.visa_valid_until, data.notes, extra)
         )
         conn.commit()
-        return {"id": worker_id, "experience_years": exp_years, "experience_range": exp_range(exp_years)}
+        return {
+            "id": worker_id,
+            "experience_years": exp_years,
+            "experience_range": stored_range,
+            "employee_number": emp_num,
+        }
     finally:
         conn.close()
 
@@ -206,7 +248,11 @@ def list_workers(
             if isinstance(row.get("extra_fields"), str):
                 try: row["extra_fields"] = json.loads(row["extra_fields"])
                 except: row["extra_fields"] = {}
-            row["experience_range"] = exp_range(row.get("experience_years", 0))
+            # Prefer stored range (month-based) over computed fallback
+            stored = (row.get("extra_fields") or {}).get("experience_range")
+            row["experience_range"] = stored or exp_range(row.get("experience_years", 0))
+            # Promote available_region to top-level so matching engine can read it
+            row["available_region"] = (row.get("extra_fields") or {}).get("available_region", "")
             for k, v in row.items():
                 if hasattr(v, "isoformat"): row[k] = v.isoformat()
         return rows
@@ -229,7 +275,8 @@ def get_worker(worker_id: str):
         if isinstance(row.get("extra_fields"), str):
             try: row["extra_fields"] = json.loads(row["extra_fields"])
             except: row["extra_fields"] = {}
-        row["experience_range"] = exp_range(row.get("experience_years", 0))
+        stored = (row.get("extra_fields") or {}).get("experience_range")
+        row["experience_range"] = stored or exp_range(row.get("experience_years", 0))
         for k, v in row.items():
             if hasattr(v, "isoformat"): row[k] = v.isoformat()
         return row
@@ -250,16 +297,18 @@ def update_worker(worker_id: str, data: WorkerUpdate):
         elif data.experience_years is not None:
             exp_years = data.experience_years
 
-        # Merge extra_fields with available_region / available_from
-        if data.available_region or data.available_from:
+        # Merge extra_fields with available_region / available_from / employee_number / experience_range
+        if data.available_region or data.available_from or data.employee_number or data.experience_range:
             cur.execute("SELECT extra_fields FROM workers WHERE id=%s", (worker_id,))
             existing = cur.fetchone()
             base = {}
             if existing and existing.get("extra_fields"):
                 try: base = json.loads(existing["extra_fields"])
                 except: base = {}
-            if data.available_region: base["available_region"] = data.available_region
-            if data.available_from:   base["available_from"]   = data.available_from
+            if data.available_region:  base["available_region"]  = data.available_region
+            if data.available_from:    base["available_from"]    = data.available_from
+            if data.employee_number:   base["employee_number"]   = data.employee_number
+            if data.experience_range:  base["experience_range"]  = data.experience_range
             data = data.model_copy(update={"extra_fields": base})
 
         updates, params = [], []

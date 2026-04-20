@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Suspense } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import { dealApi } from '@/lib/api';
 import type { Deal } from '@/types';
@@ -22,10 +23,14 @@ const FILTER_LABELS: Record<Filter, string> = {
   completed: 'הושלמו',
 };
 
-export default function CorporationDealsPage() {
+function CorporationDealsPageContent() {
+  const searchParams = useSearchParams();
   const [deals, setDeals] = useState<Deal[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<Filter>('all');
+  const urlFilter = searchParams.get('filter') as Filter | null;
+  const [filter, setFilter] = useState<Filter>(
+    urlFilter && Object.keys(FILTER_LABELS).includes(urlFilter) ? urlFilter : 'all'
+  );
 
   useEffect(() => {
     dealApi.list()
@@ -133,5 +138,13 @@ export default function CorporationDealsPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+export default function CorporationDealsPage() {
+  return (
+    <Suspense fallback={<div className="flex justify-center py-20"><Loader2 className="h-5 w-5 animate-spin text-slate-400" /></div>}>
+      <CorporationDealsPageContent />
+    </Suspense>
   );
 }

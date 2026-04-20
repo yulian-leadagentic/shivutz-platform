@@ -2,8 +2,10 @@
 
 import { useState, useEffect, FormEvent, useRef } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Loader2, CheckCircle2 } from 'lucide-react';
 import { orgApi, enumApi, otpApi } from '@/lib/api';
+import { saveTokens } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -46,6 +48,7 @@ function otpErrorMsg(msg: string): string {
 }
 
 export default function RegisterContractorPage() {
+  const router = useRouter();
   const [step, setStep]       = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState('');
@@ -118,7 +121,7 @@ export default function RegisterContractorPage() {
     e.preventDefault(); setError('');
     setLoading(true);
     try {
-      await orgApi.registerContractor({
+      const result = await orgApi.registerContractor({
         company_name_he:    step2.company_name_he,
         business_number:    step2.business_number,
         classification:     step2.classification,
@@ -126,8 +129,20 @@ export default function RegisterContractorPage() {
         contact_name:       step1.full_name,
         contact_phone:      step1.normPhone,
         contact_email:      step3.contact_email || undefined,
-      });
-      setSuccess(true);
+      }) as { id: string; status: string; org_type: string; access_token?: string; refresh_token?: string };
+
+      if (result.access_token && result.refresh_token) {
+        saveTokens(result.access_token, result.refresh_token);
+        // Approved immediately → go straight to create request; pending → go to dashboard
+        if (result.status === 'approved') {
+          router.push('/contractor/requests/new');
+        } else {
+          router.push('/contractor/dashboard');
+        }
+      } else {
+        // Fallback: no tokens returned (shouldn't happen in normal flow)
+        setSuccess(true);
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'שגיאה בהרשמה';
       setError(
@@ -253,12 +268,12 @@ export default function RegisterContractorPage() {
                 <h3 className="font-semibold text-slate-800">פרטי חברה</h3>
                 <Input
                   label="שם החברה"
-                  placeholder="חברת הבנייה בערמ"
+                  placeholder='חברת הבנייה בע"מ'
                   value={step2.company_name_he}
                   onChange={(e) => setStep2((p) => ({ ...p, company_name_he: e.target.value }))}
                 />
                 <Input
-                  label="מספר עוסק מורשא (9 ספרות)"
+                  label="מספר ע.מ / ח.פ (9 ספרות)"
                   placeholder="123456789"
                   maxLength={9}
                   dir="ltr"
@@ -348,6 +363,19 @@ export default function RegisterContractorPage() {
             )}
           </CardContent>
         </Card>
+
+        {/* Trouble footer */}
+        <p className="text-center text-xs text-slate-400 mt-4">
+          נתקלת בבעיה?{' '}
+          <a
+            href="https://wa.me/972500000000?text=שלום%2C%20אני%20מעוניין%20ברישום%20ידני%20כקבלן"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-brand-600 hover:text-brand-700 font-medium underline underline-offset-2"
+          >
+            צור קשר לרישום ידני
+          </a>
+        </p>
       </div>
     </div>
   );

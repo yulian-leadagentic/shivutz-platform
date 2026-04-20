@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useState, FormEvent } from 'react';
+import { useEffect, useState, useRef, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import { Loader2, Plus, CheckCircle2, Users, User } from 'lucide-react';
+import { Loader2, Plus, CheckCircle2, Users, User, FileSpreadsheet, Download, Upload } from 'lucide-react';
 import { workerApi, enumApi } from '@/lib/api';
 import type { Profession } from '@/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -12,12 +12,14 @@ import { Input } from '@/components/ui/input';
 // ── Constants ──────────────────────────────────────────────────────────────
 
 const EXP_RANGES = [
-  { code: '1-3', label: '1–3 שנים' },
-  { code: '3-5', label: '3–5 שנים' },
-  { code: '5+',  label: '5+ שנים' },
+  { code: '0-6',   label: '0–6 חודשים' },
+  { code: '6-12',  label: '6–12 חודשים' },
+  { code: '12-24', label: '12–24 חודשים' },
+  { code: '24-36', label: '24–36 חודשים' },
+  { code: '36+',   label: '36+ חודשים' },
 ] as const;
 
-type ExpRange = '1-3' | '3-5' | '5+';
+type ExpRange = '0-6' | '6-12' | '12-24' | '24-36' | '36+';
 
 /** Map origin country code → primary language code */
 const ORIGIN_TO_LANG: Record<string, string> = {
@@ -58,11 +60,13 @@ interface SharedFields {
   visa_valid_until: string;
   available_region: string;
   available_from: string;
+  employee_number: string;
 }
 
 const EMPTY_SHARED: SharedFields = {
   profession_type: '', experience_range: '', origin_country: '',
   languages: [], visa_valid_until: '', available_region: '', available_from: '',
+  employee_number: '',
 };
 
 type Origin = { code: string; name_he: string; name_en: string };
@@ -70,11 +74,12 @@ type Region = { code: string; name_he: string; name_en: string };
 
 // ── Shared fields section ──────────────────────────────────────────────────
 
-function SharedFieldsSection({ fields, professions, origins, regions, onChange }: {
+function SharedFieldsSection({ fields, professions, origins, regions, showEmployeeNumber = true, onChange }: {
   fields: SharedFields;
   professions: Profession[];
   origins: Origin[];
   regions: Region[];
+  showEmployeeNumber?: boolean;
   onChange: (f: Partial<SharedFields>) => void;
 }) {
   function toggleLang(code: string) {
@@ -96,6 +101,16 @@ function SharedFieldsSection({ fields, professions, origins, regions, onChange }
 
   return (
     <div className="space-y-4">
+      {/* Employee number */}
+      {showEmployeeNumber && (
+        <Input
+          label="מספר עובד בתאגיד"
+          placeholder="לדוגמה: EMP-001"
+          value={fields.employee_number}
+          onChange={(e) => onChange({ employee_number: e.target.value })}
+        />
+      )}
+
       {/* Profession */}
       <div className="flex flex-col gap-1">
         <label className="text-sm font-medium text-slate-700">מקצוע *</label>
@@ -109,14 +124,14 @@ function SharedFieldsSection({ fields, professions, origins, regions, onChange }
         </select>
       </div>
 
-      {/* Experience range */}
+      {/* Experience range — months */}
       <div className="flex flex-col gap-1.5">
         <label className="text-sm font-medium text-slate-700">טווח ניסיון *</label>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {EXP_RANGES.map((r) => (
             <button key={r.code} type="button"
               onClick={() => onChange({ experience_range: r.code })}
-              className={`flex-1 py-2 rounded-lg border text-sm font-medium transition-colors ${
+              className={`px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${
                 fields.experience_range === r.code
                   ? 'bg-brand-600 text-white border-brand-600'
                   : 'bg-white text-slate-600 border-slate-300 hover:border-brand-400'
@@ -179,6 +194,240 @@ function SharedFieldsSection({ fields, professions, origins, regions, onChange }
   );
 }
 
+// ── Excel upload ──────────────────────────────────────────────────────────
+
+// Column headers for the Excel template (order matters)
+const EXCEL_COLUMNS = ['שם פרטי', 'שם משפחה', 'מקצוע (קוד)', 'טווח ניסיון', 'מדינת מוצא (קוד)', 'ויזה תוקף עד', 'אזור זמינות (קוד)', 'מספר עובד'];
+const EXCEL_EXAMPLE = ['יוחנן', 'כהן', 'carpenter', '12-24', 'RO', '2026-12-31', 'center', 'W-0042'];
+
+function downloadTemplate(professions: Profession[], origins: Origin[], regions: Region[]) {
+  // Build a CSV template with headers + one example row + reference sheet
+  const rows: string[][] = [
+    EXCEL_COLUMNS,
+    EXCEL_EXAMPLE,
+    [],
+    ['--- קודי מקצועות ---'],
+    ...professions.filter(p => p.is_active).map(p => [p.code, p.name_he]),
+    [],
+    ['--- קודי מדינות ---'],
+    ...origins.map(o => [o.code, o.name_he]),
+    [],
+    ['--- קודי אזורים ---'],
+    ...regions.map(r => [r.code, r.name_he]),
+    [],
+    ['--- טווחי ניסיון ---'],
+    ['0-6', '0–6 חודשים'],
+    ['6-12', '6–12 חודשים'],
+    ['12-24', '12–24 חודשים'],
+    ['24-36', '24–36 חודשים'],
+    ['36+', '36+ חודשים'],
+  ];
+  const csv = rows.map(r => r.map(c => `"${c}"`).join(',')).join('\n');
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'תבנית_עובדים.csv'; a.click();
+  URL.revokeObjectURL(url);
+}
+
+interface ExcelRow {
+  first_name: string; last_name: string;
+  profession_type: string; experience_range: string;
+  origin_country: string; visa_valid_until: string;
+  available_region: string; employee_number: string;
+  _valid: boolean; _errors: string[];
+}
+
+function parseCSV(text: string): string[][] {
+  return text.trim().split(/\r?\n/).map((line) => {
+    const cells: string[] = [];
+    let cur = '', inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      if (line[i] === '"') { inQ = !inQ; }
+      else if (line[i] === ',' && !inQ) { cells.push(cur.trim()); cur = ''; }
+      else { cur += line[i]; }
+    }
+    cells.push(cur.trim());
+    return cells;
+  });
+}
+
+function validateRows(raw: string[][], professions: Profession[], origins: Origin[]): ExcelRow[] {
+  const profCodes = new Set(professions.map(p => p.code));
+  const originCodes = new Set(origins.map(o => o.code));
+  const validRanges = new Set(['0-6', '6-12', '12-24', '24-36', '36+']);
+
+  return raw.map((cells) => {
+    const [first_name = '', last_name = '', profession_type = '', experience_range = '',
+      origin_country = '', visa_valid_until = '', available_region = '', employee_number = ''] = cells;
+    const errors: string[] = [];
+    if (!first_name) errors.push('שם פרטי חסר');
+    if (!last_name) errors.push('שם משפחה חסר');
+    if (!profCodes.has(profession_type)) errors.push(`מקצוע לא תקין: ${profession_type}`);
+    if (!validRanges.has(experience_range)) errors.push(`טווח ניסיון לא תקין: ${experience_range}`);
+    if (!originCodes.has(origin_country)) errors.push(`מדינת מוצא לא תקינה: ${origin_country}`);
+    if (!visa_valid_until) errors.push('תאריך ויזה חסר');
+    return { first_name, last_name, profession_type, experience_range, origin_country,
+      visa_valid_until, available_region, employee_number,
+      _valid: errors.length === 0, _errors: errors };
+  });
+}
+
+function ExcelUploadSection({ professions, origins, regions, onDone, onToast }: {
+  professions: Profession[]; origins: Origin[]; regions: Region[];
+  onDone: () => void; onToast: (msg: string) => void;
+}) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [rows, setRows]           = useState<ExcelRow[]>([]);
+  const [fileName, setFileName]   = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [error, setError]         = useState('');
+
+  const validRows   = rows.filter(r => r._valid);
+  const invalidRows = rows.filter(r => !r._valid);
+
+  function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setFileName(file.name);
+    setError('');
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = ev.target?.result as string;
+      const allRows = parseCSV(text);
+      // Skip header row(s) — find first row where first cell matches "שם פרטי"
+      const dataStart = allRows.findIndex(r => r[0] === 'שם פרטי') + 1;
+      const dataRows = allRows.slice(dataStart || 1).filter(r => r[0] && r[0] !== '---');
+      if (dataRows.length === 0) { setError('לא נמצאו שורות נתונים בקובץ'); setRows([]); return; }
+      setRows(validateRows(dataRows, professions, origins));
+    };
+    reader.readAsText(file, 'UTF-8');
+  }
+
+  async function handleImport() {
+    if (!validRows.length) return;
+    setUploading(true); setError('');
+    let created = 0;
+    try {
+      for (const row of validRows) {
+        await workerApi.create({
+          first_name:       row.first_name,
+          last_name:        row.last_name,
+          profession_type:  row.profession_type,
+          experience_range: row.experience_range,
+          origin_country:   row.origin_country,
+          visa_valid_until: row.visa_valid_until || null,
+          available_region: row.available_region || null,
+          employee_number:  row.employee_number  || null,
+        });
+        created++;
+      }
+      onToast(`${created} עובדים יובאו בהצלחה`);
+      onDone();
+    } catch (e: unknown) {
+      setError((e as Error).message ?? 'שגיאה בייבוא');
+    } finally { setUploading(false); }
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Download template */}
+      <div className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-lg px-4 py-3">
+        <div>
+          <p className="text-sm font-medium text-slate-700">הורד תבנית CSV</p>
+          <p className="text-xs text-slate-500 mt-0.5">מלא את הקובץ ואז העלה אותו</p>
+        </div>
+        <Button type="button" variant="outline" size="sm"
+          onClick={() => downloadTemplate(professions, origins, regions)}>
+          <Download className="h-4 w-4" /> הורד תבנית
+        </Button>
+      </div>
+
+      {/* Upload area */}
+      <div
+        onClick={() => fileRef.current?.click()}
+        className="border-2 border-dashed border-slate-300 rounded-lg px-6 py-8 text-center cursor-pointer hover:border-brand-400 transition-colors"
+      >
+        <Upload className="h-8 w-8 mx-auto text-slate-300 mb-2" />
+        {fileName
+          ? <p className="text-sm font-medium text-slate-700">{fileName}</p>
+          : <p className="text-sm text-slate-500">לחץ לבחירת קובץ CSV</p>}
+        <input ref={fileRef} type="file" accept=".csv,.txt" className="hidden" onChange={handleFile} />
+      </div>
+
+      {/* Preview */}
+      {rows.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-3 text-sm">
+            <span className="text-green-700 font-medium">{validRows.length} שורות תקינות</span>
+            {invalidRows.length > 0 && (
+              <span className="text-red-600 font-medium">{invalidRows.length} שורות עם שגיאות</span>
+            )}
+          </div>
+
+          {invalidRows.length > 0 && (
+            <div className="bg-red-50 border border-red-200 rounded-md px-3 py-2 space-y-1 max-h-40 overflow-y-auto">
+              {invalidRows.map((r, i) => (
+                <p key={i} className="text-xs text-red-700">
+                  <span className="font-medium">{r.first_name} {r.last_name}:</span> {r._errors.join(' | ')}
+                </p>
+              ))}
+            </div>
+          )}
+
+          <div className="border border-slate-200 rounded-md overflow-hidden">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-200 text-slate-500">
+                  <th className="px-2 py-2 text-start">שם</th>
+                  <th className="px-2 py-2 text-start">מקצוע</th>
+                  <th className="px-2 py-2 text-start">ניסיון</th>
+                  <th className="px-2 py-2 text-start">מדינה</th>
+                  <th className="px-2 py-2 text-start">ויזה</th>
+                  <th className="px-2 py-2 text-start">סטטוס</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.slice(0, 20).map((r, i) => (
+                  <tr key={i} className={`border-b border-slate-100 ${r._valid ? '' : 'bg-red-50'}`}>
+                    <td className="px-2 py-1.5">{r.first_name} {r.last_name}</td>
+                    <td className="px-2 py-1.5 font-mono">{r.profession_type}</td>
+                    <td className="px-2 py-1.5">{r.experience_range}</td>
+                    <td className="px-2 py-1.5 font-mono">{r.origin_country}</td>
+                    <td className="px-2 py-1.5">{r.visa_valid_until}</td>
+                    <td className="px-2 py-1.5">
+                      {r._valid
+                        ? <span className="text-green-600 font-medium">✓</span>
+                        : <span className="text-red-600" title={r._errors.join('\n')}>⚠ {r._errors[0]}</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {rows.length > 20 && <p className="text-xs text-slate-400 px-2 py-1.5">+{rows.length - 20} שורות נוספות...</p>}
+          </div>
+        </div>
+      )}
+
+      {error && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">{error}</p>}
+
+      <div className="flex gap-3">
+        <Button
+          type="button"
+          disabled={uploading || validRows.length === 0}
+          onClick={handleImport}
+          className="flex-1"
+        >
+          {uploading
+            ? <><Loader2 className="h-4 w-4 animate-spin" /> מייבא...</>
+            : <><FileSpreadsheet className="h-4 w-4" /> ייבא {validRows.length > 0 ? validRows.length : ''} עובדים</>}
+        </Button>
+        <Button type="button" variant="outline" onClick={onDone}>ביטול</Button>
+      </div>
+    </div>
+  );
+}
+
 // ── Toast ──────────────────────────────────────────────────────────────────
 
 function Toast({ msg, onClose }: { msg: string; onClose: () => void }) {
@@ -192,7 +441,7 @@ function Toast({ msg, onClose }: { msg: string; onClose: () => void }) {
 
 // ── Main page ──────────────────────────────────────────────────────────────
 
-type Mode = 'single' | 'bulk';
+type Mode = 'single' | 'bulk' | 'excel';
 
 export default function NewWorkerPage() {
   const router = useRouter();
@@ -252,9 +501,11 @@ export default function NewWorkerPage() {
         visa_valid_until: shared.visa_valid_until || null,
         available_region: shared.available_region || null,
         available_from:   shared.available_from   || null,
+        employee_number:  shared.employee_number  || null,
       });
       showToast(`${firstName} ${lastName} נוסף בהצלחה`);
       setFirstName(''); setLastName('');
+      setShared((s) => ({ ...s, employee_number: '' }));
     } catch (e: unknown) {
       setError((e as Error).message ?? 'שגיאה בשמירה');
     } finally { setSubmitting(false); }
@@ -306,6 +557,7 @@ export default function NewWorkerPage() {
           visa_valid_until: bulkShared.visa_valid_until || null,
           available_region: bulkShared.available_region || null,
           available_from:   bulkShared.available_from   || null,
+          // employee_number is intentionally omitted in bulk — assign individually after
         });
         created++;
       }
@@ -329,7 +581,7 @@ export default function NewWorkerPage() {
 
       {/* Mode tabs */}
       <div className="flex gap-1 p-1 bg-slate-100 rounded-lg w-fit">
-        {([['single', 'עובד בודד', User], ['bulk', 'הוספה כמותית', Users]] as const).map(([m, label, Icon]) => (
+        {([['single', 'עובד בודד', User], ['bulk', 'הוספה כמותית', Users], ['excel', 'ייבוא אקסל', FileSpreadsheet]] as const).map(([m, label, Icon]) => (
           <button key={m} onClick={() => { setMode(m as Mode); setError(''); }}
             className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
               mode === m ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
@@ -357,8 +609,14 @@ export default function NewWorkerPage() {
           <Card>
             <CardHeader className="pb-2"><CardTitle className="text-base">פרטים מקצועיים וזמינות</CardTitle></CardHeader>
             <CardContent>
-              <SharedFieldsSection fields={shared} professions={professions} origins={origins} regions={regions}
-                onChange={(delta) => setShared((s) => ({ ...s, ...delta }))} />
+              <SharedFieldsSection
+                fields={shared}
+                professions={professions}
+                origins={origins}
+                regions={regions}
+                showEmployeeNumber={true}
+                onChange={(delta) => setShared((s) => ({ ...s, ...delta }))}
+              />
             </CardContent>
           </Card>
 
@@ -382,7 +640,7 @@ export default function NewWorkerPage() {
             </CardHeader>
             <CardContent className="space-y-3">
               <p className="text-xs text-slate-500">
-                הזן שמות מלאים מופרדים בפסיק. כל עובד יקבל שם נפרד עם אותם מאפיינים.
+                הזן שמות מלאים מופרדים בפסיק. כל עובד יקבל שם נפרד עם אותם מאפיינים. מספר עובד ניתן להקצות אחרי יצירה.
               </p>
               <div className="flex flex-col gap-1">
                 <label className="text-sm font-medium text-slate-700">שמות (מופרדים בפסיק) *</label>
@@ -406,8 +664,14 @@ export default function NewWorkerPage() {
           <Card>
             <CardHeader className="pb-2"><CardTitle className="text-base">מאפיינים משותפים</CardTitle></CardHeader>
             <CardContent>
-              <SharedFieldsSection fields={bulkShared} professions={professions} origins={origins} regions={regions}
-                onChange={(delta) => setBulkShared((s) => ({ ...s, ...delta }))} />
+              <SharedFieldsSection
+                fields={bulkShared}
+                professions={professions}
+                origins={origins}
+                regions={regions}
+                showEmployeeNumber={false}
+                onChange={(delta) => setBulkShared((s) => ({ ...s, ...delta }))}
+              />
             </CardContent>
           </Card>
 
@@ -422,6 +686,17 @@ export default function NewWorkerPage() {
             <Button type="button" variant="outline" onClick={() => router.push('/corporation/workers')}>סיום</Button>
           </div>
         </form>
+      )}
+
+      {/* ── Excel mode ── */}
+      {mode === 'excel' && (
+        <ExcelUploadSection
+          professions={professions}
+          origins={origins}
+          regions={regions}
+          onDone={() => router.push('/corporation/workers')}
+          onToast={showToast}
+        />
       )}
     </div>
   );

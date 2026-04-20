@@ -8,6 +8,34 @@ function getToken(): string | undefined {
     ?.split('=')[1];
 }
 
+function getRefreshToken(): string | undefined {
+  if (typeof document === 'undefined') return undefined;
+  return document.cookie
+    .split('; ')
+    .find((r) => r.startsWith('refresh_token='))
+    ?.split('=')[1];
+}
+
+/** Attempt a silent token refresh. Returns new access token on success, null on failure. */
+async function tryRefresh(): Promise<string | null> {
+  const refresh = getRefreshToken();
+  if (!refresh) return null;
+  try {
+    const res = await fetch(`${BASE}/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: refresh }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json() as { access_token: string; refresh_token?: string };
+    const { saveTokens } = await import('./auth');
+    saveTokens(data.access_token, data.refresh_token ?? refresh);
+    return data.access_token;
+  } catch {
+    return null;
+  }
+}
+
 export async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = getToken();
   const headers: HeadersInit = {
@@ -17,6 +45,24 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
   };
   const res = await fetch(`${BASE}${path}`, { ...options, headers });
   if (res.status === 401 && typeof window !== 'undefined') {
+    // Try silent refresh before giving up
+    const newToken = await tryRefresh();
+    if (newToken) {
+      const retryHeaders: HeadersInit = {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${newToken}`,
+        ...(options.headers as Record<string, string> | undefined),
+      };
+      const retry = await fetch(`${BASE}${path}`, { ...options, headers: retryHeaders });
+      if (retry.status !== 401) {
+        if (!retry.ok) {
+          const err = await retry.json().catch(() => ({ error: retry.statusText }));
+          throw new Error((err as { error?: string }).error ?? retry.statusText);
+        }
+        if (retry.status === 204) return undefined as T;
+        return retry.json() as Promise<T>;
+      }
+    }
     window.location.href = '/login';
     throw new Error('Unauthorized');
   }
@@ -63,6 +109,8 @@ export const orgApi = {
     }),
   getContractor: (id: string) =>
     apiFetch<import('@/types').Contractor>(`/organizations/contractors/${id}`),
+  getCorporation: (id: string) =>
+    apiFetch<import('@/types').Corporation>(`/organizations/corporations/${id}`),
 };
 
 export const jobApi = {
@@ -73,9 +121,37 @@ export const jobApi = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
+  update: (id: string, data: unknown) =>
+    apiFetch<{ id: string }>(`/job-requests/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  replaceLineItems: (id: string, lineItems: unknown[]) =>
+    apiFetch<{ id: string; line_items_count: number }>(`/job-requests/${id}/line-items`, {
+      method: 'PUT',
+      body: JSON.stringify({ line_items: lineItems }),
+    }),
+  addLineItem: (id: string, lineItem: unknown) =>
+    apiFetch<{ id: string }>(`/job-requests/${id}/line-items`, {
+      method: 'POST',
+      body: JSON.stringify(lineItem),
+    }),
   match: async (id: string): Promise<import('@/types').MatchBundle[]> => {
     const res = await apiFetch<{ bundles: import('@/types').MatchBundle[] }>(`/job-requests/${id}/match`, { method: 'POST' });
-    return res.bundles ?? [];
+    const bundles = res.bundles ?? [];
+    // Resolve corporation names + threshold_requirements in parallel (best-effort)
+    await Promise.allSettled(
+      bundles.map(async (b) => {
+        try {
+          const corp = await orgApi.getCorporation(b.corporation_id);
+          b.corporation_name = corp.company_name_he || corp.company_name;
+          b.threshold_requirements = corp.threshold_requirements ?? null;
+        } catch {
+          b.corporation_name = b.corporation_id;
+        }
+      })
+    );
+    return bundles;
   },
 };
 
@@ -163,6 +239,7 @@ export const DOC_TYPE_LABELS: Record<string, string> = {
   contractor_license:       'רישיון קבלן',
   foreign_worker_license:   'רישיון עובדים זרים',
   id_copy:                  'צילום תעודת זהות',
+  standard_contract:        'חוזה התקשרות סטנדרטי',
   other:                    'אחר',
 };
 
@@ -179,6 +256,33 @@ export const documentApi = {
       `/organizations/${orgType}/${orgId}/documents`,
       { method: 'POST', body: JSON.stringify(data) }
     ),
+
+  /** Upload an actual file (multipart). Returns doc record with file_url. */
+  upload: async (
+    orgType: 'contractors' | 'corporations',
+    orgId: string,
+    file: File,
+    docType: string,
+    notes?: string
+  ): Promise<{ doc_id: string; doc_type: string; file_name: string; file_url: string }> => {
+    const token = typeof document !== 'undefined'
+      ? document.cookie.split('; ').find((r) => r.startsWith('access_token='))?.split('=')[1]
+      : undefined;
+    const form = new FormData();
+    form.append('file', file);
+    form.append('doc_type', docType);
+    if (notes) form.append('notes', notes);
+    const res = await fetch(`${BASE}/organizations/${orgType}/${orgId}/documents/upload`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: form,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error((err as { error?: string; detail?: string }).error ?? (err as { detail?: string }).detail ?? res.statusText);
+    }
+    return res.json();
+  },
 
   delete: (orgType: 'contractors' | 'corporations', orgId: string, docId: string) =>
     apiFetch<void>(`/organizations/${orgType}/${orgId}/documents/${docId}`, { method: 'DELETE' }),
@@ -249,6 +353,116 @@ export const otpApi = {
     }),
 };
 
+export const paymentApi = {
+  /** List payment methods for the authenticated entity (from JWT context). */
+  methods: () =>
+    apiFetch<import('@/types').PaymentMethod[]>('/payments/payment-methods'),
+
+  /** Delete (soft) a payment method. */
+  deleteMethod: (pmId: string) =>
+    apiFetch<void>(`/payments/payment-methods/${pmId}`, { method: 'DELETE' }),
+
+  /** Set a payment method as the default. */
+  setDefault: (pmId: string) =>
+    apiFetch<{ id: string; is_default: boolean }>(
+      `/payments/payment-methods/${pmId}/set-default`,
+      { method: 'PATCH' }
+    ),
+
+  /** Get a Cardcom LowProfile tokenization URL to redirect the user to. */
+  cardcomInit: () =>
+    apiFetch<{ url: string; low_profile_id: string }>('/payments/cardcom-init'),
+
+  /** Commit to a deal — creates a pending_charge transaction. */
+  commitEngagement: (dealId: string) =>
+    apiFetch<import('@/types').CommitEngagementResult>(
+      `/payments/deals/${dealId}/commit-engagement`,
+      { method: 'POST' }
+    ),
+
+  /** Get the current payment transaction status for a deal. */
+  dealPaymentStatus: (dealId: string) =>
+    apiFetch<{ deal_id: string; payment_status: string | null; total_amount?: number }>(
+      `/payments/deals/${dealId}/payment-status`
+    ),
+};
+
+export const marketplaceApi = {
+  list: (params?: {
+    category?: string;
+    region?: string;
+    city?: string;
+    min_capacity?: number;
+    search?: string;
+    mine?: boolean;
+  }) => {
+    const qs = new URLSearchParams();
+    if (params?.category) qs.set('category', params.category);
+    if (params?.region) qs.set('region', params.region);
+    if (params?.city) qs.set('city', params.city);
+    if (params?.min_capacity) qs.set('min_capacity', String(params.min_capacity));
+    if (params?.search) qs.set('search', params.search);
+    if (params?.mine) qs.set('mine', 'true');
+    const query = qs.toString();
+    return apiFetch<import('@/types').MarketplaceListing[]>(
+      `/marketplace${query ? '?' + query : ''}`
+    );
+  },
+
+  get: (id: string) =>
+    apiFetch<import('@/types').MarketplaceListing>(`/marketplace/${id}`),
+
+  create: (data: {
+    category: string;
+    title: string;
+    description?: string;
+    city?: string;
+    region?: string;
+    price?: number;
+    price_unit?: string;
+    capacity?: number;
+    is_furnished?: boolean;
+    available_from?: string;
+    contact_phone?: string;
+    contact_name?: string;
+    subcategory?: string;
+  }) =>
+    apiFetch<{ id: string; status: string }>('/marketplace', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  update: (id: string, data: Partial<{
+    title: string;
+    description: string;
+    city: string;
+    region: string;
+    price: number;
+    price_unit: string;
+    capacity: number;
+    is_furnished: boolean;
+    available_from: string;
+    contact_phone: string;
+    contact_name: string;
+    status: string;
+  }>) =>
+    apiFetch<{ id: string; updated: boolean }>(`/marketplace/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+
+  remove: (id: string) =>
+    apiFetch<void>(`/marketplace/${id}`, { method: 'DELETE' }),
+};
+
+export const leadsApi = {
+  submit: (data: import('@/types').LeadFormData) =>
+    apiFetch<{ id: string; message: string }>('/marketplace/leads', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+};
+
 export const dealApi = {
   list: () => apiFetch<import('@/types').Deal[]>('/deals'),
   get: (id: string) => apiFetch<import('@/types').Deal>(`/deals/${id}`),
@@ -271,6 +485,11 @@ export const dealApi = {
     }),
   workers: (id: string) =>
     apiFetch<import('@/types').Worker[]>(`/deals/${id}/workers`),
+  updateWorkers: (id: string, workerIds: string[]) =>
+    apiFetch<{ deal_id: string; assigned: number }>(`/deals/${id}/workers`, {
+      method: 'PUT',
+      body: JSON.stringify({ worker_ids: workerIds }),
+    }),
   updateStatus: (id: string, status: string) =>
     apiFetch<import('@/types').Deal>(`/deals/${id}/status`, {
       method: 'PATCH',

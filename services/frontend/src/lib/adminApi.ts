@@ -120,4 +120,66 @@ export const adminApi = {
       method: 'PATCH',
       body: JSON.stringify(data),
     }),
+
+  // ── Per-worker commission rate ───────────────────────────────────────────
+
+  getCorpCommission: (corpId: string) =>
+    apiFetch<CorpCommission>(`/admin/corporations/${corpId}/commission`),
+
+  setCorpCommission: (corpId: string, data: { commission_per_worker_amount: number; currency?: string }) =>
+    apiFetch<{ corporation_id: string; commission_per_worker_amount: number; currency: string }>(
+      `/admin/corporations/${corpId}/commission`,
+      { method: 'PATCH', body: JSON.stringify(data) }
+    ),
+
+  // ── Pricing ──────────────────────────────────────────────────────────────
+
+  listPricing: () => apiFetch<CorporationPricing[]>('/admin/pricing'),
+
+  getCorpPricing: (corpId: string) =>
+    apiFetch<CorporationPricing | null>(`/admin/pricing/corporation/${corpId}`),
+
+  createPricing: (data: {
+    corporation_id: string;
+    price_per_deal: number;
+    valid_from: string;
+    valid_until?: string;
+    notes?: string;
+  }) =>
+    apiFetch<{ id: string; price_per_deal: number }>('/admin/pricing', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  updatePricing: (id: string, data: {
+    price_per_deal?: number;
+    valid_until?: string;
+    is_active?: boolean;
+    notes?: string;
+  }) =>
+    apiFetch<{ id: string; updated: boolean }>(`/admin/pricing/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
 };
+
+export interface CorpCommission {
+  corporation_id: string;
+  commission_per_worker_amount: number | null;
+  currency: string;
+  commission_set_by_user_id: string | null;
+  commission_set_at: string | null;
+}
+
+export interface CorporationPricing {
+  id: string;
+  corporation_id: string;
+  corporation_name?: string;
+  price_per_deal: number;
+  valid_from: string;
+  valid_until?: string;
+  is_active: boolean;
+  notes?: string;
+  created_by?: string;
+  created_at: string;
+}

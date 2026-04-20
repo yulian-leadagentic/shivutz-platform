@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from app.routes import dashboard, enums, approvals, commissions
+from app.routes import dashboard, enums, approvals, commissions, pricing, registration_log
 from app.db import init_db
 
 app = FastAPI(title="Shivutz Admin Service", version="1.0.0")
@@ -15,4 +15,6 @@ def health():
 app.include_router(dashboard.router,     prefix="/admin", tags=["dashboard"])
 app.include_router(approvals.router,     prefix="/admin", tags=["approvals"])
 app.include_router(commissions.router,   prefix="/admin", tags=["commissions"])
-app.include_router(enums.router,         prefix="/enums",  tags=["enums"])
+app.include_router(pricing.router,       prefix="/admin", tags=["pricing"])
+app.include_router(enums.router,              prefix="/enums",  tags=["enums"])
+app.include_router(registration_log.router,   prefix="",        tags=["registration-log"])

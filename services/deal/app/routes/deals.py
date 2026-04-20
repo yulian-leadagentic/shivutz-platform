@@ -133,6 +133,47 @@ def get_deal_workers(deal_id: str):
         conn.close()
 
 
+class WorkersUpdate(BaseModel):
+    worker_ids: List[str]
+
+
+@router.put("/{deal_id}/workers")
+def update_deal_workers(
+    deal_id: str,
+    body: WorkersUpdate,
+    x_user_id: Optional[str] = Header(default=None),
+):
+    """Corporation replaces the worker assignment on a deal."""
+    worker_ids = body.worker_ids
+    if not worker_ids:
+        raise HTTPException(status_code=400, detail="worker_ids required")
+
+    performed_by = x_user_id or "unknown"
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        # Hard-delete existing assignments (UNIQUE KEY prevents re-insert otherwise)
+        cur.execute(
+            "DELETE FROM deal_workers WHERE deal_id=%s",
+            (deal_id,)
+        )
+        # Insert final selection
+        for wid in worker_ids:
+            cur.execute(
+                "INSERT INTO deal_workers (id, deal_id, worker_id) VALUES (%s,%s,%s)",
+                (str(uuid.uuid4()), deal_id, wid)
+            )
+        conn.commit()
+        audit.log("deal", deal_id, "workers_updated", performed_by,
+                  new_value={"worker_ids": worker_ids})
+        return {"deal_id": deal_id, "assigned": len(worker_ids)}
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+
 @router.get("/{deal_id}")
 def get_deal(deal_id: str):
     conn = get_db()

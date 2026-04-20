@@ -23,6 +23,7 @@
     "class-variance-authority": "^0.7",
     "clsx": "^2",
     "js-cookie": "^3",
+    "xlsx": "^0.18.5",
     "lucide-react": "^0.364",
     "next": "^16.2.1",
     "postcss": "^8",

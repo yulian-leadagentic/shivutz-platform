@@ -6,6 +6,7 @@ volumes:
   mysql_data:
   redis_data:
   rabbitmq_data:
+  uploads_data:
 
 services:
   # ─────────────────────────────────────────────────────────
@@ -103,6 +104,8 @@ services:
       DB_NAME: ${ORG_DB_NAME}
     ports:
       - "3002:3002"
+    volumes:
+      - uploads_data:/app/uploads
     networks:
       - shivutz
     depends_on:
@@ -200,6 +203,20 @@ services:
         condition: service_started
       deal:
         condition: service_started
+
+  payment:
+    build: ./services/payment
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DB_NAME: ${PAYMENT_DB_NAME}
+    ports:
+      - "3009:3009"
+    networks:
+      - shivutz
+    depends_on:
+      mysql:
+        condition: service_healthy
 
   # ─────────────────────────────────────────────────────────
   # Frontend

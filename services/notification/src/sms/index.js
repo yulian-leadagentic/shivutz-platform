@@ -11,6 +11,7 @@ const providers = {
   stub:   require('./stub'),
   inforu: require('./inforu'),
   twilio: require('./twilio'),
+  vonage: require('./vonage'),
 };
 
 const PROVIDER = process.env.SMS_PROVIDER || 'stub';

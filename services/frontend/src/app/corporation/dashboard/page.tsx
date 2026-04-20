@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { AlertCircle, Users, Handshake, Clock } from 'lucide-react';
-import { dealApi, workerApi } from '@/lib/api';
+import { dealApi, workerApi, enumApi } from '@/lib/api';
 import type { Deal, Worker } from '@/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -40,6 +40,7 @@ function fmt(iso?: string) {
 export default function CorporationDashboard() {
   const [deals, setDeals] = useState<Deal[]>([]);
   const [workers, setWorkers] = useState<Worker[]>([]);
+  const [profMap, setProfMap] = useState<Record<string, string>>({});
   const [loadingDeals, setLoadingDeals] = useState(true);
   const [loadingWorkers, setLoadingWorkers] = useState(true);
 
@@ -53,6 +54,14 @@ export default function CorporationDashboard() {
       .then(setWorkers)
       .catch(console.error)
       .finally(() => setLoadingWorkers(false));
+
+    enumApi.professions()
+      .then((list) => {
+        const m: Record<string, string> = {};
+        list.forEach((p) => { m[p.code] = p.name_he; });
+        setProfMap(m);
+      })
+      .catch(() => {});
   }, []);
 
   const incomingDeals = deals.filter((d) => d.status === 'proposed');
@@ -69,49 +78,73 @@ export default function CorporationDashboard() {
         </Button>
       </div>
 
+      {/* Pending proposals alert banner */}
+      {!loadingDeals && incomingDeals.length > 0 && (
+        <Link href="/corporation/deals?filter=proposed">
+          <div className="flex items-center justify-between bg-amber-50 border border-amber-300 rounded-xl px-4 py-3 hover:bg-amber-100 transition-colors cursor-pointer shadow-sm">
+            <div className="flex items-center gap-3">
+              <Clock className="h-5 w-5 text-amber-600 shrink-0" />
+              <div>
+                <p className="font-semibold text-amber-900 text-sm">
+                  יש לך {incomingDeals.length} {incomingDeals.length === 1 ? 'הצעה שממתינה' : 'הצעות שממתינות'} לתגובה שלך
+                </p>
+                <p className="text-amber-700 text-xs mt-0.5">לחץ לצפייה ואישור / דחיית ההצעות</p>
+              </div>
+            </div>
+            <span className="text-amber-700 text-sm font-medium whitespace-nowrap">לצפייה ←</span>
+          </div>
+        </Link>
+      )}
+
       {/* KPI cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-slate-500">הצעות ממתינות</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {loadingDeals ? <SkeletonCard /> : (
-              <div className="flex items-center gap-3">
-                <Clock className="h-8 w-8 text-amber-500" />
-                <span className="text-3xl font-bold text-slate-900">{incomingDeals.length}</span>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        <Link href="/corporation/deals?filter=proposed" className="block group">
+          <Card className="cursor-pointer group-hover:border-amber-300 group-hover:shadow-md transition-all">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-slate-500">הצעות ממתינות</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {loadingDeals ? <SkeletonCard /> : (
+                <div className="flex items-center gap-3">
+                  <Clock className="h-8 w-8 text-amber-500" />
+                  <span className="text-3xl font-bold text-slate-900">{incomingDeals.length}</span>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </Link>
 
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-slate-500">עסקאות פעילות</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {loadingDeals ? <SkeletonCard /> : (
-              <div className="flex items-center gap-3">
-                <Handshake className="h-8 w-8 text-green-500" />
-                <span className="text-3xl font-bold text-slate-900">{activeDeals.length}</span>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        <Link href="/corporation/deals?filter=active" className="block group">
+          <Card className="cursor-pointer group-hover:border-green-300 group-hover:shadow-md transition-all">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-slate-500">עסקאות פעילות</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {loadingDeals ? <SkeletonCard /> : (
+                <div className="flex items-center gap-3">
+                  <Handshake className="h-8 w-8 text-green-500" />
+                  <span className="text-3xl font-bold text-slate-900">{activeDeals.length}</span>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </Link>
 
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-slate-500">עובדים זמינים</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {loadingWorkers ? <SkeletonCard /> : (
-              <div className="flex items-center gap-3">
-                <Users className="h-8 w-8 text-brand-500" />
-                <span className="text-3xl font-bold text-slate-900">{availWorkers.length}</span>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        <Link href="/corporation/workers?status=available" className="block group">
+          <Card className="cursor-pointer group-hover:border-brand-300 group-hover:shadow-md transition-all">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-slate-500">עובדים זמינים</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {loadingWorkers ? <SkeletonCard /> : (
+                <div className="flex items-center gap-3">
+                  <Users className="h-8 w-8 text-brand-500" />
+                  <span className="text-3xl font-bold text-slate-900">{availWorkers.length}</span>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </Link>
       </div>
 
       {/* Two column tables */}
@@ -255,8 +288,8 @@ export default function CorporationDashboard() {
                       <td className="px-4 py-3 font-medium text-slate-900">
                         {w.first_name} {w.last_name}
                       </td>
-                      <td className="px-4 py-3 text-slate-600">{w.profession_type}</td>
-                      <td className="px-4 py-3 text-slate-600">{w.experience_years} שנים</td>
+                      <td className="px-4 py-3 text-slate-600">{profMap[w.profession_type] ?? w.profession_type}</td>
+                      <td className="px-4 py-3 text-slate-600 text-xs">{w.experience_range ?? `${w.experience_years}y`}</td>
                       <td className="px-4 py-3 text-slate-600">{fmt(w.visa_valid_until)}</td>
                       <td className="px-4 py-3">
                         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">

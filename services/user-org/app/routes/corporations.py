@@ -1,8 +1,8 @@
-from fastapi import APIRouter, HTTPException, Header
+from fastapi import APIRouter, HTTPException, Header, UploadFile, File, Form
 from pydantic import BaseModel, EmailStr
 from typing import List, Optional
 from datetime import datetime, timedelta
-import uuid, httpx, os, json, secrets
+import uuid, httpx, os, json, secrets, shutil
 
 from app.db import get_db
 from app.publisher import publish_event
@@ -53,11 +53,12 @@ async def register_corporation(data: CorporationCreate):
         # Phone-first registration — auth service verifies OTP was confirmed recently
         async with httpx.AsyncClient() as client:
             resp = await client.post(f"{AUTH_SERVICE}/auth/register", json={
-                "phone":     data.contact_phone,
-                "full_name": data.contact_name,
-                "role":      "corporation",
-                "org_id":    org_id,
-                "org_type":  "corporation"
+                "phone":          data.contact_phone,
+                "full_name":      data.contact_name,
+                "role":           "corporation",
+                "org_id":         org_id,
+                "org_type":       "corporation",
+                "include_tokens": True,
             })
             if resp.status_code == 409:
                 conn.rollback()
@@ -91,7 +92,13 @@ async def register_corporation(data: CorporationCreate):
             "org_type": "corporation"
         })
 
-        return {"id": org_id, "status": "pending", "message": "Registration submitted. Awaiting admin approval (up to 48h)."}
+        return {
+            "id":            org_id,
+            "status":        "pending",
+            "org_type":      "corporation",
+            "access_token":  user.get("access_token"),
+            "refresh_token": user.get("refresh_token"),
+        }
     except HTTPException:
         raise
     except Exception as e:
@@ -164,6 +171,17 @@ async def invite_corporation_user(
         membership_id   = str(uuid.uuid4())
         inviter_user_id = x_user_id
 
+        # Resolve inviter's name for the SMS (best-effort)
+        inviter_name = None
+        if inviter_user_id:
+            cur.execute(
+                "SELECT full_name FROM auth_db.users WHERE id = %s LIMIT 1",
+                (inviter_user_id,)
+            )
+            u = cur.fetchone()
+            if u and u.get("full_name"):
+                inviter_name = u["full_name"]
+
         cur.execute(
             """INSERT INTO auth_db.entity_memberships
                (membership_id, user_id, entity_type, entity_id, role, job_title,
@@ -175,12 +193,12 @@ async def invite_corporation_user(
         conn.commit()
 
         await publish_event("team.invited", {
-            "phone":       data.phone.strip(),
-            "entity_name": org["company_name_he"],
-            "entity_type": "corporation",
-            "role":        data.role,
+            "phone":        data.phone.strip(),
+            "entity_name":  org["company_name_he"] or "",
+            "entity_type":  "corporation",
+            "role":         data.role,
             "invite_token": invite_token,
-            "inviter_user_id": inviter_user_id,
+            "inviter_name": inviter_name or org.get("company_name_he") or "המנהל",
         })
 
         return {"membership_id": membership_id, "role": data.role, "pending": True}
@@ -251,6 +269,58 @@ def create_corporation_document(
         )
         conn.commit()
         return {"doc_id": doc_id, "doc_type": data.doc_type, "file_name": data.file_name}
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+
+@router.post("/{org_id}/documents/upload", status_code=201)
+async def upload_corporation_document(
+    org_id: str,
+    file: UploadFile = File(...),
+    doc_type: str = Form("other"),
+    notes: str = Form(""),
+    x_user_id: Optional[str] = Header(None),
+):
+    """Accept a file upload, store it, and create a document record."""
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT id FROM corporations WHERE id = %s AND deleted_at IS NULL", (org_id,))
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail="Corporation not found")
+
+        upload_dir = os.getenv("UPLOAD_DIR", "/app/uploads")
+        os.makedirs(upload_dir, exist_ok=True)
+
+        doc_id   = str(uuid.uuid4())
+        ext      = os.path.splitext(file.filename or "")[-1].lower() if file.filename else ""
+        safe_ext = ext if ext in (".pdf", ".jpg", ".jpeg", ".png", ".doc", ".docx", ".xls", ".xlsx") else ".bin"
+        saved_name = f"{doc_id}{safe_ext}"
+        dest_path  = os.path.join(upload_dir, saved_name)
+
+        with open(dest_path, "wb") as f:
+            shutil.copyfileobj(file.file, f)
+
+        file_url  = f"/api/uploads/{saved_name}"
+        file_name = file.filename or saved_name
+        file_size = os.path.getsize(dest_path)
+        mime_type = file.content_type or "application/octet-stream"
+
+        cur.execute(
+            """INSERT INTO auth_db.entity_documents
+               (doc_id, entity_type, entity_id, doc_type, file_url, file_name,
+                file_size, mime_type, uploaded_by, notes)
+               VALUES (%s, 'corporation', %s, %s, %s, %s, %s, %s, %s, %s)""",
+            (doc_id, org_id, doc_type, file_url, file_name,
+             file_size, mime_type, x_user_id, notes or None)
+        )
+        conn.commit()
+        return {"doc_id": doc_id, "doc_type": doc_type, "file_name": file_name, "file_url": file_url}
+    except HTTPException:
+        raise
     except Exception as e:
         conn.rollback()
         raise HTTPException(status_code=500, detail=str(e))

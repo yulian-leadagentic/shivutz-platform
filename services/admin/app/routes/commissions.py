@@ -187,3 +187,80 @@ def update_commission_status(commission_id: str, body: StatusUpdate):
         return {"id": commission_id, "status": body.status}
     finally:
         conn.close()
+
+
+# ── Corporation commission-rate endpoints ─────────────────────────────────
+
+class CommissionRateInput(BaseModel):
+    commission_per_worker_amount: Decimal
+    currency: str = "ILS"
+
+
+@router.get("/corporations/{corp_id}/commission")
+def get_corporation_commission(corp_id: str):
+    """Return the current per-worker commission settings for a corporation."""
+    conn = get_db("org_db")
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id FROM corporations WHERE id=%s AND deleted_at IS NULL",
+            (corp_id,)
+        )
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail="Corporation not found")
+
+        cur.execute(
+            """SELECT commission_per_worker_amount, commission_currency,
+                      commission_set_by_user_id, commission_set_at
+               FROM corporations WHERE id=%s""",
+            (corp_id,)
+        )
+        row = cur.fetchone()
+        return {
+            "corporation_id":                corp_id,
+            "commission_per_worker_amount":  float(row["commission_per_worker_amount"]) if row["commission_per_worker_amount"] is not None else None,
+            "currency":                      row["commission_currency"],
+            "commission_set_by_user_id":     row["commission_set_by_user_id"],
+            "commission_set_at":             row["commission_set_at"].isoformat() if row["commission_set_at"] else None,
+        }
+    finally:
+        conn.close()
+
+
+@router.patch("/corporations/{corp_id}/commission")
+def set_corporation_commission(
+    corp_id: str,
+    body: CommissionRateInput,
+    x_user_id: Optional[str] = Header(default=None),
+):
+    """Set the per-worker commission rate for a corporation."""
+    conn = get_db("org_db")
+    try:
+        cur = conn.cursor()
+
+        # Guard: corporation must exist and not be deleted
+        cur.execute(
+            "SELECT id FROM corporations WHERE id=%s AND deleted_at IS NULL",
+            (corp_id,)
+        )
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail="Corporation not found")
+
+        cur.execute(
+            """UPDATE corporations
+               SET commission_per_worker_amount=%s,
+                   commission_currency=%s,
+                   commission_set_by_user_id=%s,
+                   commission_set_at=NOW()
+               WHERE id=%s""",
+            (body.commission_per_worker_amount, body.currency, x_user_id, corp_id)
+        )
+        conn.commit()
+
+        return {
+            "corporation_id":               corp_id,
+            "commission_per_worker_amount": float(body.commission_per_worker_amount),
+            "currency":                     body.currency,
+        }
+    finally:
+        conn.close()

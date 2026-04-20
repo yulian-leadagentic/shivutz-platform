@@ -495,7 +495,7 @@ router.get('/auth/me', async (req, res) => {
 // Supports both legacy email+password and new phone-first paths.
 // ─────────────────────────────────────────────────────────────────────────────
 router.post('/auth/register', async (req, res) => {
-  const { email, password, phone, full_name, role, org_id, org_type } = req.body;
+  const { email, password, phone, full_name, role, org_id, org_type, include_tokens } = req.body;
   if (!role) return res.status(400).json({ error: 'role required' });
 
   const pool = getPool();
@@ -519,6 +519,13 @@ router.post('/auth/register', async (req, res) => {
           'UPDATE users SET org_id=?, org_type=?, role=? WHERE id=?',
           [org_id || null, org_type || null, role, existing[0].id]
         );
+        if (include_tokens && org_id) {
+          const u = { id: existing[0].id, phone: normPhone, email: undefined, role, org_id: org_id || null, org_type: org_type || null };
+          const membership = { entity_id: org_id, entity_type: org_type, role: 'owner' };
+          const at = signAccess(buildPayload(u, membership));
+          const rt = await issueRefreshToken(pool, existing[0].id);
+          return res.status(200).json({ id: existing[0].id, phone: normPhone, role, access_token: at, refresh_token: rt });
+        }
         return res.status(200).json({ id: existing[0].id, phone: normPhone, role });
       }
 
@@ -527,6 +534,13 @@ router.post('/auth/register', async (req, res) => {
          VALUES (?, ?, ?, ?, ?, ?, 'sms')`,
         [id, normPhone, full_name || null, role, org_id || null, org_type || null]
       );
+      if (include_tokens && org_id) {
+        const u = { id, phone: normPhone, email: undefined, role, org_id: org_id || null, org_type: org_type || null };
+        const membership = { entity_id: org_id, entity_type: org_type, role: 'owner' };
+        const at = signAccess(buildPayload(u, membership));
+        const rt = await issueRefreshToken(pool, id);
+        return res.status(201).json({ id, phone: normPhone, role, access_token: at, refresh_token: rt });
+      }
       return res.status(201).json({ id, phone: normPhone, role });
 
     } else {

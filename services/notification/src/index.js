@@ -7,7 +7,13 @@ const { runVisaExpiryCron } = require('./cron/visaExpiry');
 const notifRoutes = require('./routes/notifications');
 
 const app = express();
-app.use(express.json());
+// Capture raw body buffer on req.rawBody before JSON parsing —
+// required by vonageWebhookAuth to verify the payload_hash claim in signed JWTs.
+app.use(express.json({
+  verify: (req, _res, buf) => {
+    req.rawBody = buf;
+  },
+}));
 
 app.get('/health', (_, res) => res.json({ status: 'ok', service: 'notification' }));
 app.use('/', notifRoutes);

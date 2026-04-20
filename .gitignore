@@ -40,3 +40,9 @@ Thumbs.db
 
 # Uploads / generated
 uploads/
+
+# Claude
+.claude/
+
+# Backup files
+*.bak
