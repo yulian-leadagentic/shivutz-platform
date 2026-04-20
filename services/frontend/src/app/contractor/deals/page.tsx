@@ -62,7 +62,7 @@ export default function ContractorDealsPage() {
     setLoading(true);
     setError(false);
     dealApi.list()
-      .then(setDeals)
+      .then((res) => setDeals(res.items))
       .catch(() => setError(true))
       .finally(() => setLoading(false));
   }, []);
@@ -106,7 +106,7 @@ export default function ContractorDealsPage() {
               <p className="text-slate-400 text-sm">בדוק את החיבור לאינטרנט ונסה שוב</p>
               <Button variant="outline" size="sm" onClick={() => {
                 setLoading(true); setError(false);
-                dealApi.list().then(setDeals).catch(() => setError(true)).finally(() => setLoading(false));
+                dealApi.list().then((res) => setDeals(res.items)).catch(() => setError(true)).finally(() => setLoading(false));
               }}>
                 נסה שוב
               </Button>

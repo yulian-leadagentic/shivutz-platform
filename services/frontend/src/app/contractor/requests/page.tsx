@@ -76,10 +76,10 @@ export default function RequestsPage() {
   useEffect(() => {
     Promise.all([
       jobApi.list(),
-      dealApi.list().catch(() => []),
+      dealApi.list().then((r) => r.items).catch(() => [] as Deal[]),
     ]).then(([reqs, dealsData]) => {
       setRequests(reqs);
-      setDeals(dealsData as Deal[]);
+      setDeals(dealsData);
     }).catch(console.error).finally(() => setLoading(false));
   }, []);
 

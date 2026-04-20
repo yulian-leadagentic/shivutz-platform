@@ -35,7 +35,7 @@ function CorporationDealsPageContent() {
 
   useEffect(() => {
     dealApi.list()
-      .then(setDeals)
+      .then((res) => setDeals(res.items))
       .catch(console.error)
       .finally(() => setLoading(false));
   }, []);

@@ -3,11 +3,13 @@ from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from app.routes import contractors, corporations, users, admin_approvals, marketplace
 from app.db import get_db, init_db
+from app.errors import register_error_handlers
 
 UPLOAD_DIR = os.getenv("UPLOAD_DIR", "/app/uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 app = FastAPI(title="Shivutz User-Org Service", version="1.0.0")
+register_error_handlers(app)
 
 @app.on_event("startup")
 async def startup():

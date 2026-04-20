@@ -1,5 +1,5 @@
 """Admin tools for manual payment handling."""
-from fastapi import APIRouter, HTTPException, Header
+from fastapi import APIRouter, HTTPException, Header, Query
 from pydantic import BaseModel
 from typing import Optional
 from decimal import Decimal
@@ -37,23 +37,31 @@ class AdminActionInput(BaseModel):
 @router.get("/transactions")
 def list_admin_transactions(
     status: Optional[str] = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=500),
     x_user_role: Optional[str] = Header(default=None),
 ):
+    """Admin view of all transactions, optionally filtered by status. Paginated envelope."""
     if x_user_role != "admin":
         raise HTTPException(status_code=403, detail="Admin only")
+
+    offset = (page - 1) * page_size
+    where = "WHERE status=%s" if status else ""
+    params: tuple = (status,) if status else ()
+
     conn = get_db()
     try:
         cur = conn.cursor()
-        if status:
-            cur.execute(
-                "SELECT * FROM payment_transactions WHERE status=%s ORDER BY created_at DESC LIMIT 200",
-                (status,)
-            )
-        else:
-            cur.execute(
-                "SELECT * FROM payment_transactions ORDER BY created_at DESC LIMIT 200"
-            )
-        return [_serialize(r) for r in cur.fetchall()]
+        cur.execute(f"SELECT COUNT(*) AS c FROM payment_transactions {where}", params)
+        total = int(cur.fetchone()["c"])
+
+        cur.execute(
+            f"SELECT * FROM payment_transactions {where} "
+            f"ORDER BY created_at DESC LIMIT %s OFFSET %s",
+            params + (page_size, offset),
+        )
+        items = [_serialize(r) for r in cur.fetchall()]
+        return {"items": items, "page": page, "page_size": page_size, "total": total}
     finally:
         conn.close()
 

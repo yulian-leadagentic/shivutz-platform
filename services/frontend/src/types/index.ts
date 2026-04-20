@@ -238,6 +238,15 @@ export interface LeadFormData {
   notes?: string;
 }
 
+// ─── API response envelopes ────────────────────────────────────────────────
+
+export interface PaginatedResponse<T> {
+  items: T[];
+  page: number;
+  page_size: number;
+  total: number;
+}
+
 // ─── API request bodies ────────────────────────────────────────────────────
 
 export interface ContractorRegistration {

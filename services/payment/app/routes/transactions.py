@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Header
+from fastapi import APIRouter, HTTPException, Header, Query
 from pydantic import BaseModel
 from typing import Optional
 from decimal import Decimal
@@ -51,30 +51,40 @@ def _update_deal_payment_status(deal_id: str, payment_status: str):
 
 @router.get("/transactions")
 def list_transactions(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=500),
     x_entity_id:   Optional[str] = Header(default=None),
     x_org_id:      Optional[str] = Header(default=None),
     x_entity_type: Optional[str] = Header(default=None),
     x_user_role:   Optional[str] = Header(default=None),
 ):
+    """List transactions visible to the caller. Paginated envelope."""
     entity_id   = x_entity_id or x_org_id
     entity_type = x_entity_type
+    offset = (page - 1) * page_size
+    empty = {"items": [], "page": page, "page_size": page_size, "total": 0}
+
     conn = get_db()
     try:
         cur = conn.cursor()
         if x_user_role == "admin":
-            cur.execute(
-                "SELECT * FROM payment_transactions ORDER BY created_at DESC LIMIT 500"
-            )
+            where, params = "", ()
         elif entity_id and entity_type:
-            cur.execute(
-                "SELECT * FROM payment_transactions "
-                "WHERE charged_entity_type=%s AND charged_entity_id=%s "
-                "ORDER BY created_at DESC",
-                (entity_type, entity_id)
-            )
+            where = "WHERE charged_entity_type=%s AND charged_entity_id=%s"
+            params = (entity_type, entity_id)
         else:
-            return []
-        return [_serialize_tx(r) for r in cur.fetchall()]
+            return empty
+
+        cur.execute(f"SELECT COUNT(*) AS c FROM payment_transactions {where}", params)
+        total = int(cur.fetchone()["c"])
+
+        cur.execute(
+            f"SELECT * FROM payment_transactions {where} "
+            f"ORDER BY created_at DESC LIMIT %s OFFSET %s",
+            params + (page_size, offset),
+        )
+        items = [_serialize_tx(r) for r in cur.fetchall()]
+        return {"items": items, "page": page, "page_size": page_size, "total": total}
     finally:
         conn.close()
 

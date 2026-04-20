@@ -1,8 +1,25 @@
 import { apiFetch } from './client';
-import type { Deal, Message, Worker, DealCreate, DealReport } from '@/types';
+import type {
+  Deal,
+  Message,
+  Worker,
+  DealCreate,
+  DealReport,
+  PaginatedResponse,
+} from '@/types';
 
 export const dealApi = {
-  list: () => apiFetch<Deal[]>('/deals'),
+  /**
+   * List deals visible to the caller.
+   * Returns a paginated envelope; callers that just want the array should read `.items`.
+   */
+  list: (params?: { page?: number; page_size?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.page)      qs.set('page', String(params.page));
+    if (params?.page_size) qs.set('page_size', String(params.page_size));
+    const query = qs.toString();
+    return apiFetch<PaginatedResponse<Deal>>(`/deals${query ? '?' + query : ''}`);
+  },
   get: (id: string) => apiFetch<Deal>(`/deals/${id}`),
   create: (data: DealCreate) =>
     apiFetch<Deal>('/deals', {

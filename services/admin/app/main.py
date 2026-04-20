@@ -1,8 +1,10 @@
 from fastapi import FastAPI, HTTPException
 from app.routes import dashboard, enums, approvals, commissions, pricing, registration_log
 from app.db import get_db, init_db
+from app.errors import register_error_handlers
 
 app = FastAPI(title="Shivutz Admin Service", version="1.0.0")
+register_error_handlers(app)
 
 @app.on_event("startup")
 async def startup():

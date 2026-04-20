@@ -1,8 +1,10 @@
 from fastapi import FastAPI, HTTPException
 from app.routes import deals, messages, reports, commissions
 from app.db import get_db, init_db
+from app.errors import register_error_handlers
 
 app = FastAPI(title="Shivutz Deal Service", version="1.0.0")
+register_error_handlers(app)
 
 @app.on_event("startup")
 async def startup():

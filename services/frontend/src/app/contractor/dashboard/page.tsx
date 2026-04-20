@@ -100,7 +100,7 @@ export default function DashboardPage() {
       .finally(() => setLoadingJobs(false));
 
     dealApi.list()
-      .then(setDeals)
+      .then((res) => setDeals(res.items))
       .catch(() => {})
       .finally(() => setLoadingDeals(false));
   }, []);

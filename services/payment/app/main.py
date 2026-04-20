@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from app.db import get_db, init_db
+from app.errors import register_error_handlers
 from app.routes import payment_methods, transactions, webhooks, admin_payments, settings
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -25,6 +26,7 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+register_error_handlers(app)
 
 
 @app.get("/health")

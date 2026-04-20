@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Header
+from fastapi import APIRouter, HTTPException, Header, Query
 from pydantic import BaseModel
 from typing import List, Optional
 from decimal import Decimal
@@ -30,31 +30,39 @@ class DealCreate(BaseModel):
 
 @router.get("")
 def list_deals(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
     x_org_id: Optional[str] = Header(default=None),
     x_user_role: Optional[str] = Header(default=None),
 ):
+    """List deals visible to the caller. Paginated envelope."""
+    offset = (page - 1) * page_size
+    empty = {"items": [], "page": page, "page_size": page_size, "total": 0}
+
     conn = get_db()
     try:
         cur = conn.cursor()
         if x_user_role == "admin":
-            cur.execute("SELECT * FROM deals WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT 200")
+            where, params = "WHERE deleted_at IS NULL", ()
         elif x_user_role == "corporation" and x_org_id:
-            cur.execute(
-                "SELECT * FROM deals WHERE corporation_id=%s AND deleted_at IS NULL ORDER BY created_at DESC",
-                (x_org_id,),
-            )
+            where, params = "WHERE corporation_id=%s AND deleted_at IS NULL", (x_org_id,)
         elif x_org_id:
-            cur.execute(
-                "SELECT * FROM deals WHERE contractor_id=%s AND deleted_at IS NULL ORDER BY created_at DESC",
-                (x_org_id,),
-            )
+            where, params = "WHERE contractor_id=%s AND deleted_at IS NULL", (x_org_id,)
         else:
-            return []
+            return empty
+
+        cur.execute(f"SELECT COUNT(*) AS c FROM deals {where}", params)
+        total = int(cur.fetchone()["c"])
+
+        cur.execute(
+            f"SELECT * FROM deals {where} ORDER BY created_at DESC LIMIT %s OFFSET %s",
+            params + (page_size, offset),
+        )
         rows = cur.fetchall()
         for row in rows:
             if row.get("agreed_price") is not None:
                 row["agreed_price"] = float(row["agreed_price"])
-        return rows
+        return {"items": rows, "page": page, "page_size": page_size, "total": total}
     finally:
         conn.close()
 
