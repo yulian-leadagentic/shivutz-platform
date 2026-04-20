@@ -7,6 +7,7 @@ import { workerApi, enumApi } from '@/lib/api';
 import type { Worker } from '@/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { EXPERIENCE_LABEL } from '@/i18n/he';
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   available:   { label: 'זמין',     color: 'bg-green-100 text-green-700' },
@@ -23,12 +24,8 @@ const ROW_BG: Record<string, string> = {
 };
 
 const EXP_LABELS: Record<string, string> = {
-  '0-6':   '0–6 חודשים',
-  '6-12':  '6–12 חודשים',
-  '12-24': '12–24 חודשים',
-  '24-36': '24–36 חודשים',
-  '36+':   '36+ חודשים',
-  // Legacy year-based fallbacks
+  ...EXPERIENCE_LABEL,
+  // Legacy year-based fallbacks (pre-months schema).
   '1-3': '1–3 שנים',
   '3-5': '3–5 שנים',
   '5+':  '5+ שנים',

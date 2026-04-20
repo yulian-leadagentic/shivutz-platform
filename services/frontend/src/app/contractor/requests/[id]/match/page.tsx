@@ -13,6 +13,11 @@ import type { MatchBundle, WorkerMatchResult, JobRequest, Profession } from '@/t
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import {
+  heOrigin, heLang,
+  MATCH_QUALITY_HIGH_PCT, MATCH_QUALITY_MEDIUM_PCT,
+  MATCH_QUALITY_LABEL, matchQuality,
+} from '@/i18n/he';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -35,23 +40,6 @@ const MISSING_META: Record<string, string> = {
   languages: 'שפות', visa: 'ויזה',
 };
 
-const ORIGIN_HE: Record<string, string> = {
-  TH: 'תאילנד', CN: 'סין', IN: 'הודו', PH: 'פיליפינים',
-  MD: 'מולדובה', UA: 'אוקראינה', RO: 'רומניה', BG: 'בולגריה',
-  GE: 'גאורגיה', MX: 'מקסיקו', VN: 'וייטנאם', NP: 'נפאל',
-  SL: 'סרי לנקה', LK: 'סרי לנקה', ID: 'אינדונזיה',
-  ET: 'אתיופיה', ER: 'אריתריאה', IL: 'ישראל',
-};
-
-const LANG_HE: Record<string, string> = {
-  he: 'עברית', ar: 'ערבית', en: 'אנגלית', ru: 'רוסית',
-  ro: 'רומנית', th: 'תאילנדית', zh: 'סינית', uk: 'אוקראינית',
-  bg: 'בולגרית', tl: 'פיליפינית', hi: 'הינדי', vi: 'וייטנאמית',
-  ne: 'נפאלית', si: 'סינהלית',
-};
-
-function heOrigin(code: string) { return ORIGIN_HE[code?.toUpperCase()] ?? code ?? '—'; }
-function heLang(code: string)   { return LANG_HE[code?.toLowerCase()] ?? code; }
 function formatDate(s?: string) {
   if (!s) return '—';
   try { return new Date(s).toLocaleDateString('he-IL'); } catch { return s; }
@@ -59,15 +47,13 @@ function formatDate(s?: string) {
 function normalizeScore(raw: number) { return Math.min(1, Math.max(0, raw / MAX_SCORE)); }
 function scorePct(raw: number) { return Math.round(normalizeScore(raw) * 100); }
 function scoreColor(pct: number) {
-  if (pct >= 73) return 'success' as const;
-  if (pct >= 45) return 'warning' as const;
+  if (pct >= MATCH_QUALITY_HIGH_PCT) return 'success' as const;
+  if (pct >= MATCH_QUALITY_MEDIUM_PCT) return 'warning' as const;
   return 'secondary' as const;
 }
 /** Human-readable quality label */
 function qualityLabel(pct: number) {
-  if (pct >= 73) return 'התאמה גבוהה';
-  if (pct >= 45) return 'התאמה בינונית';
-  return 'התאמה נמוכה';
+  return MATCH_QUALITY_LABEL[matchQuality(pct)];
 }
 
 function expMonthsLabel(months: number) {

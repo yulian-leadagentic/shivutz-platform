@@ -12,38 +12,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import Link from 'next/link';
-
-// ── Shared constants (mirrors new/page.tsx) ────────────────────────────────
-
-const EXP_RANGES_MONTHS = [
-  { code: '0-6',   label: '0–6 חודשים' },
-  { code: '6-12',  label: '6–12 חודשים' },
-  { code: '12-24', label: '12–24 חודשים' },
-  { code: '24-36', label: '24–36 חודשים' },
-  { code: '36+',   label: '36+ חודשים' },
-] as const;
-
-type ExpRangeMonth = '0-6' | '6-12' | '12-24' | '24-36' | '36+';
-
-const EXP_RANGE_LOWER: Record<string, number> = {
-  '0-6': 0, '6-12': 6, '12-24': 12, '24-36': 24, '36+': 36,
-};
-
-const LANGUAGES = [
-  { code: 'he', name: 'עברית' },   { code: 'en', name: 'אנגלית' },
-  { code: 'ro', name: 'רומנית' },  { code: 'uk', name: 'אוקראינית' },
-  { code: 'ru', name: 'רוסית' },   { code: 'th', name: 'תאילנדית' },
-  { code: 'zh', name: 'סינית' },   { code: 'tl', name: 'פיליפינית' },
-  { code: 'hi', name: 'הינדית' },  { code: 'ar', name: 'ערבית' },
-  { code: 'vi', name: 'וייטנאמית' }, { code: 'ne', name: 'נפאלית' },
-  { code: 'si', name: 'סינהלית' },
-];
-
-const LEVELS = [
-  { code: 'basic',          name: 'בסיסי' },
-  { code: 'conversational', name: 'שיחות' },
-  { code: 'fluent',         name: 'שוטף' },
-];
+import {
+  EXPERIENCE_RANGES as EXP_RANGES_MONTHS,
+  EXPERIENCE_LOWER_MONTHS as EXP_RANGE_LOWER,
+  LANGUAGE_OPTIONS as LANGUAGES,
+  LANGUAGE_LEVELS as LEVELS,
+  type ExperienceRange as ExpRangeMonth,
+} from '@/i18n/he';
 
 interface LanguageReq { language: string; level: string; }
 

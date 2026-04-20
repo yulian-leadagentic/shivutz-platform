@@ -8,16 +8,16 @@ import type { Deal } from '@/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import StatusBadge from '@/components/StatusBadge';
+import {
+  DEAL_FILTER_LABEL as FILTER_LABELS,
+  dealMatchesFilter,
+  type DealFilter as Filter,
+} from '@/i18n/he';
 
 function fmt(iso?: string) {
   if (!iso) return '—';
   return new Date(iso).toLocaleDateString('he-IL');
 }
-
-type Filter = 'all' | 'proposed' | 'active' | 'completed';
-const FILTER_LABELS: Record<Filter, string> = {
-  all: 'הכל', proposed: 'ממתינות לתאגיד', active: 'פעילות', completed: 'הסתיימו',
-};
 
 const STATUS_CONTEXT: Record<string, string> = {
   proposed:         'נשלחה לתאגיד — ממתין לתגובה',
@@ -67,14 +67,8 @@ export default function ContractorDealsPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  const filtered = deals.filter((d) => {
-    if (filter === 'proposed')  return ['proposed', 'counter_proposed'].includes(d.status);
-    if (filter === 'active')    return ['accepted', 'active', 'reporting'].includes(d.status);
-    if (filter === 'completed') return ['completed', 'cancelled', 'disputed'].includes(d.status);
-    return true;
-  });
-
-  const proposedCount = deals.filter(d => ['proposed','counter_proposed'].includes(d.status)).length;
+  const filtered = deals.filter((d) => dealMatchesFilter(d.status, filter));
+  const proposedCount = deals.filter((d) => dealMatchesFilter(d.status, 'proposed')).length;
 
   return (
     <div className="space-y-4 max-w-6xl">

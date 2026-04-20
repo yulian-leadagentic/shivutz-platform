@@ -8,20 +8,21 @@ import { dealApi } from '@/lib/api';
 import type { Deal } from '@/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import StatusBadge from '@/components/StatusBadge';
+import { DEAL_STATUS_GROUP, type DealFilter as Filter } from '@/i18n/he';
 
-function fmt(iso?: string) {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleDateString('he-IL');
-}
-
-type Filter = 'all' | 'proposed' | 'active' | 'completed';
-
+// Corporation-side wording differs from the central DEAL_FILTER_LABEL
+// (e.g. "ממתינות לאישור" vs. "ממתינות לתאגיד") — kept local on purpose.
 const FILTER_LABELS: Record<Filter, string> = {
   all: 'הכל',
   proposed: 'ממתינות לאישור',
   active: 'פעילות',
   completed: 'הושלמו',
 };
+
+function fmt(iso?: string) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleDateString('he-IL');
+}
 
 function CorporationDealsPageContent() {
   const searchParams = useSearchParams();
@@ -39,13 +40,13 @@ function CorporationDealsPageContent() {
       .finally(() => setLoading(false));
   }, []);
 
+  // Corp-side "proposed" is stricter than the shared grouping — only deals still
+  // awaiting the corp's initial response (counter_proposed is already their ball).
   const filtered = deals.filter((d) => {
-    if (filter === 'proposed')  return d.status === 'proposed';
-    if (filter === 'active')    return ['accepted', 'active', 'reporting'].includes(d.status);
-    if (filter === 'completed') return ['completed', 'cancelled', 'disputed'].includes(d.status);
-    return true;
+    if (filter === 'all') return true;
+    if (filter === 'proposed') return d.status === 'proposed';
+    return (DEAL_STATUS_GROUP[filter] as string[]).includes(d.status);
   });
-
   const pendingCount = deals.filter((d) => d.status === 'proposed').length;
 
   return (

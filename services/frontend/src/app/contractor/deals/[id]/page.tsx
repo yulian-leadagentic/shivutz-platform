@@ -12,11 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import StatusBadge from '@/components/StatusBadge';
 import type { Deal, Message, Worker, Corporation } from '@/types';
-
-const EXP_LABELS: Record<string, string> = {
-  '0-6': '0–6 חודשים', '6-12': '6–12 חודשים',
-  '12-24': '12–24 חודשים', '24-36': '24–36 חודשים', '36+': '36+ חודשים',
-};
+import { EXPERIENCE_LABEL as EXP_LABELS } from '@/i18n/he';
 
 interface ReportForm {
   actual_workers: string;

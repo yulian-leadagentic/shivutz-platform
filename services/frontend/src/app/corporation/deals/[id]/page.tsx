@@ -13,17 +13,10 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import StatusBadge from '@/components/StatusBadge';
 import type { Deal, Message, Worker, PaymentMethod, CommitEngagementResult } from '@/types';
-
-// ─── Constants ─────────────────────────────────────────────────────────────────
-
-const EXP_LABELS: Record<string, string> = {
-  '0-6': '0–6 ח׳', '6-12': '6–12 ח׳',
-  '12-24': '12–24 ח׳', '24-36': '24–36 ח׳', '36+': '36+ ח׳',
-};
-
-const EXP_MONTHS: Record<string, number> = {
-  '0-6': 3, '6-12': 9, '12-24': 18, '24-36': 30, '36+': 42,
-};
+import {
+  EXPERIENCE_LABEL_SHORT as EXP_LABELS,
+  EXPERIENCE_MIDPOINT_MONTHS as EXP_MONTHS,
+} from '@/i18n/he';
 
 function expLabel(w: Worker) {
   return EXP_LABELS[w.experience_range ?? ''] ?? (w.experience_years ? `${w.experience_years} שנים` : '—');
