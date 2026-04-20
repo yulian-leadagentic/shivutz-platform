@@ -179,11 +179,15 @@ func fetchCandidates(ctx context.Context, li models.LineItem, region string, wit
 //
 // Scoring model (max 110):
 //   - Profession match:  30 (guaranteed — filtered by query)
-//   - Region match:      20 (exact), 10 (no region preference)
-//   - Experience:        20 (meets req), 12 (within 50%), 6 (some experience)
-//   - Origin preference: 15 (in list), 0 if no preference → not penalised
-//   - Languages:         10 (all), 5 (partial ≥50%)
-//   - Visa validity:     15 (>90d buffer), 8 (meets minimum), 0 (short/missing)
+//   - Region match:      20 (exact OR job has no region requirement), 5 (worker has no region)
+//   - Experience:        20 (meets req OR no req), 12 (within 50%), 6 (some experience)
+//   - Origin preference: 15 (in list OR no preference)
+//   - Languages:         10 (all OR no requirement), 5 (partial ≥50%)
+//   - Visa validity:     15 (>90d buffer OR job has no end date), 8 (meets minimum), 0 (short/missing)
+//
+// Principle: when the job doesn't specify a requirement for a criterion, every
+// worker vacuously satisfies it → full weight. This keeps MAX_SCORE = 110
+// always reachable, so a worker who meets every stated requirement scores 100%.
 func scoreWorkers(workers []models.Worker, li models.LineItem, requestRegion string) []models.WorkerMatch {
 	var matches []models.WorkerMatch
 
@@ -198,13 +202,14 @@ func scoreWorkers(workers []models.Worker, li models.LineItem, requestRegion str
 		workerRegion := strings.ToLower(strings.TrimSpace(w.AvailableRegion))
 		jobRegion    := strings.ToLower(strings.TrimSpace(requestRegion))
 		if jobRegion == "" {
-			// No region preference — give neutral bonus
-			score += 10
+			// No region requirement — vacuously satisfied
+			score += 20
+			matched = append(matched, "region")
 		} else if workerRegion == jobRegion {
 			score += 20
 			matched = append(matched, "region")
 		} else if workerRegion == "" {
-			// Worker has no preferred region — minor penalty, could still work
+			// Worker has no preferred region listed — partial credit
 			score += 5
 		} else {
 			missing = append(missing, "region")
@@ -214,7 +219,7 @@ func scoreWorkers(workers []models.Worker, li models.LineItem, requestRegion str
 		// MinExperience stored in months; worker.ExperienceYears in years
 		workerMonths := w.ExperienceYears * 12
 		if li.MinExperience == 0 {
-			// No requirement → full score
+			// No requirement → full credit (vacuously satisfied)
 			score += 20
 			matched = append(matched, "experience")
 		} else if workerMonths >= li.MinExperience {
@@ -232,18 +237,23 @@ func scoreWorkers(workers []models.Worker, li models.LineItem, requestRegion str
 		}
 
 		// ── Origin preference ───────────────────────────────────
-		if len(li.OriginPreference) > 0 {
-			if contains(li.OriginPreference, w.OriginCountry) {
-				score += 15
-				matched = append(matched, "origin")
-			} else {
-				missing = append(missing, "origin")
-			}
+		if len(li.OriginPreference) == 0 {
+			// No origin preference — vacuously satisfied
+			score += 15
+			matched = append(matched, "origin")
+		} else if contains(li.OriginPreference, w.OriginCountry) {
+			score += 15
+			matched = append(matched, "origin")
+		} else {
+			missing = append(missing, "origin")
 		}
-		// No origin preference → not penalised
 
 		// ── Languages ──────────────────────────────────────────
-		if len(li.RequiredLanguages) > 0 {
+		if len(li.RequiredLanguages) == 0 {
+			// No language requirement — vacuously satisfied
+			score += 10
+			matched = append(matched, "languages")
+		} else {
 			presentCount := countPresent(li.RequiredLanguages, w.Languages)
 			if presentCount == len(li.RequiredLanguages) {
 				score += 10
@@ -257,7 +267,11 @@ func scoreWorkers(workers []models.Worker, li models.LineItem, requestRegion str
 		}
 
 		// ── Visa validity ───────────────────────────────────────
-		if w.VisaValidUntil != nil && !w.VisaValidUntil.IsZero() && !li.EndDate.IsZero() {
+		if li.EndDate.IsZero() {
+			// No job end date — no visa window to check against; vacuously satisfied
+			score += 15
+			matched = append(matched, "visa")
+		} else if w.VisaValidUntil != nil && !w.VisaValidUntil.IsZero() {
 			buffer := w.VisaValidUntil.Time.Sub(li.EndDate)
 			bufferDays := int(buffer.Hours() / 24)
 			if bufferDays >= 90 {
@@ -269,12 +283,9 @@ func scoreWorkers(workers []models.Worker, li models.LineItem, requestRegion str
 			} else {
 				missing = append(missing, "visa")
 			}
-		} else if w.VisaValidUntil == nil && !li.EndDate.IsZero() {
+		} else {
+			// Job has end date but worker has no visa on record — required
 			missing = append(missing, "visa")
-		} else if w.VisaValidUntil != nil && !w.VisaValidUntil.IsZero() && w.VisaValidUntil.After(time.Now().AddDate(0, 3, 0)) {
-			// Has visa valid >3 months from now, no job end date specified
-			score += 10
-			matched = append(matched, "visa")
 		}
 
 		// ── Match tier ─────────────────────────────────────────
