@@ -126,7 +126,7 @@ export default function RegisterCorporationPage() {
         contact_name:            step1.full_name,
         contact_phone:           step1.normPhone,
         contact_email:           step3.contact_email || undefined,
-      }) as { id: string; status: string; org_type: string; access_token?: string; refresh_token?: string };
+      });
 
       if (result.access_token && result.refresh_token) {
         saveTokens(result.access_token, result.refresh_token);

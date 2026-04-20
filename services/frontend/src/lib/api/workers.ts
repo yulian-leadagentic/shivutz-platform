@@ -1,5 +1,5 @@
 import { apiFetch } from './client';
-import type { Worker } from '@/types';
+import type { Worker, WorkerInput, WorkerUpdate } from '@/types';
 
 export const workerApi = {
   list: (corporationId?: string) => {
@@ -7,19 +7,19 @@ export const workerApi = {
     return apiFetch<Worker[]>(`/workers${qs}`);
   },
   get: (id: string) => apiFetch<Worker>(`/workers/${id}`),
-  create: (data: unknown) =>
+  create: (data: WorkerInput) =>
     apiFetch<Worker>('/workers', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
-  update: (id: string, data: unknown) =>
+  update: (id: string, data: WorkerUpdate) =>
     apiFetch<Worker>(`/workers/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(data),
     }),
   delete: (id: string) =>
     apiFetch<void>(`/workers/${id}`, { method: 'DELETE' }),
-  bulkCreate: (data: unknown) =>
+  bulkCreate: (data: { workers: WorkerInput[] }) =>
     apiFetch<{ created: number; ids: string[] }>('/workers/bulk', {
       method: 'POST',
       body: JSON.stringify(data),

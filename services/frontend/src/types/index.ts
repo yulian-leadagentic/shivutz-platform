@@ -237,3 +237,95 @@ export interface LeadFormData {
   org_type: 'contractor' | 'corporation';
   notes?: string;
 }
+
+// ─── API request bodies ────────────────────────────────────────────────────
+
+export interface ContractorRegistration {
+  company_name_he: string;
+  business_number: string;
+  classification: 'general' | 'specialty' | 'infrastructure';
+  operating_regions: string[];
+  contact_name: string;
+  contact_phone: string;
+  contact_email?: string;
+}
+
+export interface CorporationRegistration {
+  company_name_he: string;
+  business_number: string;
+  countries_of_origin: string[];
+  minimum_contract_months: number;
+  contact_name: string;
+  contact_phone: string;
+  contact_email?: string;
+}
+
+export interface RegistrationResult {
+  id: string;
+  status: string;
+  org_type: string;
+  access_token?: string;
+  refresh_token?: string;
+}
+
+export interface JobLineItemInput {
+  profession_type: string;
+  quantity: number;
+  start_date: string;
+  end_date: string;
+  min_experience: number;
+  min_experience_range?: string;
+  min_experience_ranges?: string[];
+  origin_preference: string[];
+  required_languages: string[];
+}
+
+export interface JobRequestCreate {
+  project_name_he: string;
+  region: string;
+  project_start_date?: string;
+  project_end_date?: string;
+  line_items: JobLineItemInput[];
+}
+
+export interface JobRequestUpdate {
+  project_name_he?: string;
+  region?: string;
+  project_start_date?: string;
+  project_end_date?: string;
+}
+
+export interface WorkerInput {
+  first_name: string;
+  last_name: string;
+  profession_type: string;
+  experience_range?: string;
+  origin_country: string;
+  languages?: string[];
+  visa_valid_until?: string | null;
+  available_region?: string | null;
+  available_from?: string | null;
+  employee_number?: string | null;
+}
+
+// Update accepts any known mutable field plus an index signature for
+// dynamic inline editors (`{ [updateKey]: val }`).
+export type WorkerUpdate = Partial<WorkerInput> & {
+  status?: string;
+  [key: string]: unknown;
+};
+
+export interface DealCreate {
+  job_request_id: string;
+  corporation_id: string;
+  worker_ids: string[];
+  workers_count: number;
+  notes?: string;
+}
+
+export interface DealReport {
+  actual_workers: number;
+  actual_start_date: string;
+  actual_end_date: string;
+  notes?: string;
+}

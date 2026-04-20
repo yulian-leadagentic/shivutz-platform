@@ -1,14 +1,20 @@
 import { apiFetch } from './client';
-import type { Contractor, Corporation } from '@/types';
+import type {
+  Contractor,
+  Corporation,
+  ContractorRegistration,
+  CorporationRegistration,
+  RegistrationResult,
+} from '@/types';
 
 export const orgApi = {
-  registerContractor: (data: unknown) =>
-    apiFetch('/organizations/contractors', {
+  registerContractor: (data: ContractorRegistration) =>
+    apiFetch<RegistrationResult>('/organizations/contractors', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
-  registerCorporation: (data: unknown) =>
-    apiFetch('/organizations/corporations', {
+  registerCorporation: (data: CorporationRegistration) =>
+    apiFetch<RegistrationResult>('/organizations/corporations', {
       method: 'POST',
       body: JSON.stringify(data),
     }),

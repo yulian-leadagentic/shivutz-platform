@@ -124,12 +124,12 @@ export default function RegisterContractorPage() {
       const result = await orgApi.registerContractor({
         company_name_he:    step2.company_name_he,
         business_number:    step2.business_number,
-        classification:     step2.classification,
+        classification:     step2.classification as 'general' | 'specialty' | 'infrastructure',
         operating_regions:  step2.operating_regions,
         contact_name:       step1.full_name,
         contact_phone:      step1.normPhone,
         contact_email:      step3.contact_email || undefined,
-      }) as { id: string; status: string; org_type: string; access_token?: string; refresh_token?: string };
+      });
 
       if (result.access_token && result.refresh_token) {
         saveTokens(result.access_token, result.refresh_token);
