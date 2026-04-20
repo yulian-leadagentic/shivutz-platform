@@ -6,8 +6,9 @@ import {
   Loader2, AlertCircle, ArrowLeft, Plus, Trash2,
   ChevronDown, ChevronUp, Globe2, Languages, Save,
 } from 'lucide-react';
-import { jobApi, enumApi } from '@/lib/api';
+import { jobApi } from '@/lib/api';
 import type { Profession } from '@/types';
+import { useEnums } from '@/features/enums/EnumsContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -241,9 +242,7 @@ export default function EditRequestPage() {
   const [error, setError]       = useState('');
   const [notFound, setNotFound] = useState(false);
 
-  const [professions, setProfessions] = useState<Profession[]>([]);
-  const [regions, setRegions]         = useState<{ code: string; name_he: string; name_en: string }[]>([]);
-  const [origins, setOrigins]         = useState<{ code: string; name_he: string; name_en: string }[]>([]);
+  const { professions, regions, origins } = useEnums();
 
   const [projectName, setProjectName]   = useState('');
   const [region, setRegion]             = useState('');
@@ -253,10 +252,6 @@ export default function EditRequestPage() {
   const [expandedIdx, setExpandedIdx]   = useState<number>(0);
 
   useEffect(() => {
-    enumApi.professions().then(setProfessions).catch(() => {});
-    enumApi.regions().then(setRegions).catch(() => {});
-    enumApi.origins().then(setOrigins).catch(() => {});
-
     jobApi.get(id)
       .then((req) => {
         const r = req as unknown as Record<string, unknown>;

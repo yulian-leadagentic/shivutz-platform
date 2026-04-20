@@ -6,7 +6,8 @@ import {
   Loader2, Plus, Search, Zap, Pencil, Users, Briefcase, Calendar,
   CheckCircle2, AlertCircle, ChevronDown, ChevronUp, Handshake,
 } from 'lucide-react';
-import { jobApi, dealApi, enumApi } from '@/lib/api';
+import { jobApi, dealApi } from '@/lib/api';
+import { useEnums } from '@/features/enums/EnumsContext';
 import type { JobRequest, Deal } from '@/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -69,25 +70,16 @@ export default function RequestsPage() {
   const [loading, setLoading]           = useState(true);
   const [search, setSearch]             = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [regionMap, setRegionMap]       = useState<Record<string, string>>({});
-  const [profMap, setProfMap]           = useState<Record<string, string>>({});
+  const { regionMap, professionMap: profMap } = useEnums();
   const [expanded, setExpanded]         = useState<Set<string>>(new Set());
 
   useEffect(() => {
     Promise.all([
       jobApi.list(),
       dealApi.list().catch(() => []),
-      enumApi.regions().catch(() => []),
-      enumApi.professions().catch(() => []),
-    ]).then(([reqs, dealsData, regions, profs]) => {
+    ]).then(([reqs, dealsData]) => {
       setRequests(reqs);
       setDeals(dealsData as Deal[]);
-      const rm: Record<string, string> = {};
-      (regions as { code: string; name_he: string }[]).forEach((r) => { rm[r.code] = r.name_he; });
-      setRegionMap(rm);
-      const pm: Record<string, string> = {};
-      (profs as { code: string; name_he: string }[]).forEach((p) => { pm[p.code] = p.name_he; });
-      setProfMap(pm);
     }).catch(console.error).finally(() => setLoading(false));
   }, []);
 

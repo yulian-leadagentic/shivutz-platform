@@ -6,8 +6,9 @@ import {
   Search, Loader2, Home, Wrench, Briefcase, MoreHorizontal,
   Building2, Filter, X,
 } from 'lucide-react';
-import { marketplaceApi, enumApi } from '@/lib/api';
+import { marketplaceApi } from '@/lib/api';
 import type { MarketplaceListing } from '@/types';
+import { useEnums } from '@/features/enums/EnumsContext';
 import ListingCard from '@/components/marketplace/ListingCard';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -37,9 +38,9 @@ function SkeletonCard() {
 }
 
 export default function MarketplacePage() {
+  const { regions } = useEnums();
   const [listings, setListings] = useState<MarketplaceListing[]>([]);
   const [loading, setLoading]   = useState(true);
-  const [regions, setRegions]   = useState<{ code: string; name_he: string }[]>([]);
 
   const [category, setCategory] = useState('');
   const [region, setRegion]     = useState('');
@@ -59,10 +60,7 @@ export default function MarketplacePage() {
     finally { setLoading(false); }
   }, [category, region, search]);
 
-  useEffect(() => {
-    load();
-    enumApi.regions().then(setRegions).catch(() => {});
-  }, [load]);
+  useEffect(() => { load(); }, [load]);
 
   function handleSearch(e: React.FormEvent) {
     e.preventDefault();

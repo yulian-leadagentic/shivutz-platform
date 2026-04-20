@@ -6,7 +6,8 @@ import {
   Plus, AlertCircle, FolderOpen, Handshake, Clock,
   ChevronLeft, Zap, Users, Calendar, Briefcase,
 } from 'lucide-react';
-import { jobApi, dealApi, enumApi, orgApi } from '@/lib/api';
+import { jobApi, dealApi, orgApi } from '@/lib/api';
+import { useEnums } from '@/features/enums/EnumsContext';
 import { getAccessToken, decodeJwtPayload } from '@/lib/auth';
 import type { JobRequest, Deal } from '@/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -73,8 +74,7 @@ function KpiCard({ icon, label, value, loading, color = 'text-brand-600' }: {
 export default function DashboardPage() {
   const [jobs, setJobs]       = useState<JobRequest[]>([]);
   const [deals, setDeals]     = useState<Deal[]>([]);
-  const [regionMap, setRegionMap] = useState<Record<string, string>>({});
-  const [profMap, setProfMap]     = useState<Record<string, string>>({});
+  const { regionMap, professionMap: profMap } = useEnums();
   const [loadingJobs, setLoadingJobs]   = useState(true);
   const [loadingDeals, setLoadingDeals] = useState(true);
   const [approvalStatus, setApprovalStatus] = useState<string | null>(null);
@@ -103,20 +103,6 @@ export default function DashboardPage() {
       .then(setDeals)
       .catch(() => {})
       .finally(() => setLoadingDeals(false));
-
-    enumApi.regions()
-      .then((rs) => {
-        const m: Record<string, string> = {};
-        rs.forEach((r) => { m[r.code] = r.name_he; });
-        setRegionMap(m);
-      }).catch(() => {});
-
-    enumApi.professions()
-      .then((ps) => {
-        const m: Record<string, string> = {};
-        ps.forEach((p) => { m[p.code] = p.name_he; });
-        setProfMap(m);
-      }).catch(() => {});
   }, []);
 
   // KPI counts

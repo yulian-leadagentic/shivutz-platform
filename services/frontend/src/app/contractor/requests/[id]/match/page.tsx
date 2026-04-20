@@ -8,8 +8,9 @@ import {
   Info, CheckCheck, X as XIcon, Check, Star,
   MessageSquarePlus, AlertTriangle,
 } from 'lucide-react';
-import { jobApi, dealApi, enumApi } from '@/lib/api';
-import type { MatchBundle, WorkerMatchResult, JobRequest, Profession } from '@/types';
+import { jobApi, dealApi } from '@/lib/api';
+import type { MatchBundle, WorkerMatchResult, JobRequest } from '@/types';
+import { useEnums } from '@/features/enums/EnumsContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -485,7 +486,7 @@ export default function MatchPage() {
 
   const [bundles, setBundles]           = useState<MatchBundle[]>([]);
   const [jobRequest, setJobRequest]     = useState<JobRequest | null>(null);
-  const [profMap, setProfMap]           = useState<Record<string, string>>({});
+  const { professionMap: profMap }      = useEnums();
   const [loading, setLoading]           = useState(true);
   const [timedOut, setTimedOut]         = useState(false);
   const [error, setError]               = useState('');
@@ -503,18 +504,13 @@ export default function MatchPage() {
 
     const timer = setTimeout(() => { setTimedOut(true); setLoading(false); }, 8000);
     try {
-      const [reqData, results, professions] = await Promise.all([
+      const [reqData, results] = await Promise.all([
         jobApi.get(id).catch(() => null),
         jobApi.match(id),
-        enumApi.professions().catch(() => [] as Profession[]),
       ]);
       clearTimeout(timer);
       setJobRequest(reqData);
       setBundles(results);
-      // Build code → Hebrew name map
-      const pm: Record<string, string> = {};
-      professions.forEach((p: Profession) => { pm[p.code] = p.name_he; });
-      setProfMap(pm);
     } catch (err) {
       clearTimeout(timer);
       setError(err instanceof Error ? err.message : 'שגיאה בחיפוש התאמות');

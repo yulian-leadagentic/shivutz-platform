@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { AlertCircle, Users, Handshake, Clock } from 'lucide-react';
-import { dealApi, workerApi, enumApi } from '@/lib/api';
+import { dealApi, workerApi } from '@/lib/api';
+import { useEnums } from '@/features/enums/EnumsContext';
 import type { Deal, Worker } from '@/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -40,7 +41,7 @@ function fmt(iso?: string) {
 export default function CorporationDashboard() {
   const [deals, setDeals] = useState<Deal[]>([]);
   const [workers, setWorkers] = useState<Worker[]>([]);
-  const [profMap, setProfMap] = useState<Record<string, string>>({});
+  const { professionMap: profMap } = useEnums();
   const [loadingDeals, setLoadingDeals] = useState(true);
   const [loadingWorkers, setLoadingWorkers] = useState(true);
 
@@ -54,14 +55,6 @@ export default function CorporationDashboard() {
       .then(setWorkers)
       .catch(console.error)
       .finally(() => setLoadingWorkers(false));
-
-    enumApi.professions()
-      .then((list) => {
-        const m: Record<string, string> = {};
-        list.forEach((p) => { m[p.code] = p.name_he; });
-        setProfMap(m);
-      })
-      .catch(() => {});
   }, []);
 
   const incomingDeals = deals.filter((d) => d.status === 'proposed');

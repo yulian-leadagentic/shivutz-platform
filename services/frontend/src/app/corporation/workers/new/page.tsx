@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useState, useRef, FormEvent } from 'react';
+import { useState, useRef, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2, Plus, CheckCircle2, Users, User, FileSpreadsheet, Download, Upload } from 'lucide-react';
-import { workerApi, enumApi } from '@/lib/api';
+import { workerApi } from '@/lib/api';
 import type { Profession } from '@/types';
+import { useEnums } from '@/features/enums/EnumsContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -450,9 +451,7 @@ export default function NewWorkerPage() {
   const [error, setError]           = useState('');
   const [toast, setToast]           = useState('');
 
-  const [professions, setProfessions] = useState<Profession[]>([]);
-  const [origins, setOrigins]         = useState<Origin[]>([]);
-  const [regions, setRegions]         = useState<Region[]>([]);
+  const { professions, origins, regions } = useEnums();
 
   // single mode
   const [firstName, setFirstName] = useState('');
@@ -462,12 +461,6 @@ export default function NewWorkerPage() {
   // bulk mode — comma-separated names
   const [bulkNames, setBulkNames] = useState('');
   const [bulkShared, setBulkShared] = useState<SharedFields>(EMPTY_SHARED);
-
-  useEffect(() => {
-    enumApi.professions().then(setProfessions).catch(() => {});
-    enumApi.origins().then(setOrigins).catch(() => {});
-    enumApi.regions().then(setRegions).catch(() => {});
-  }, []);
 
   function showToast(msg: string) {
     setToast(msg);

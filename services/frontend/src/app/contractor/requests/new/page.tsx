@@ -6,8 +6,9 @@ import {
   Loader2, Trash2, Plus,
   ChevronDown, ChevronUp, Languages, Globe2, FolderOpen, FolderPlus,
 } from 'lucide-react';
-import { jobApi, enumApi } from '@/lib/api';
-import type { Profession, JobRequest } from '@/types';
+import { jobApi } from '@/lib/api';
+import type { JobRequest, Profession } from '@/types';
+import { useEnums } from '@/features/enums/EnumsContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -290,9 +291,7 @@ export default function NewRequestPage() {
   const [loading, setLoading]     = useState(false);
   const [error, setError]         = useState('');
 
-  const [professions, setProfessions] = useState<Profession[]>([]);
-  const [regions, setRegions]         = useState<{ code: string; name_he: string; name_en: string }[]>([]);
-  const [origins, setOrigins]         = useState<{ code: string; name_he: string; name_en: string }[]>([]);
+  const { professions, regions, origins } = useEnums();
   const [expandedIdx, setExpandedIdx] = useState<number>(0);
 
   const [step1, setStep1] = useState<Step1Data>({
@@ -300,12 +299,6 @@ export default function NewRequestPage() {
     project_start_date: '', project_end_date: '',
   });
   const [lineItems, setLineItems] = useState<LineItemDraft[]>([emptyLineItem()]);
-
-  useEffect(() => {
-    enumApi.professions().then(setProfessions).catch(() => {});
-    enumApi.regions().then(setRegions).catch(() => {});
-    enumApi.origins().then(setOrigins).catch(() => {});
-  }, []);
 
   // Load existing open requests when switching to 'existing' mode
   useEffect(() => {

@@ -1,15 +1,15 @@
 'use client';
 
-import { useState, useEffect, FormEvent, useRef } from 'react';
+import { useState, FormEvent, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Loader2, CheckCircle2 } from 'lucide-react';
-import { orgApi, enumApi, otpApi } from '@/lib/api';
+import { orgApi, otpApi } from '@/lib/api';
 import { saveTokens } from '@/lib/auth';
+import { useEnums } from '@/features/enums/EnumsContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import type { Region } from '@/types';
 
 const TOTAL_STEPS = 3;
 const CLASSIFICATIONS = [
@@ -53,7 +53,7 @@ export default function RegisterContractorPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState('');
   const [success, setSuccess] = useState(false);
-  const [regions, setRegions] = useState<Region[]>([]);
+  const { regions } = useEnums();
 
   const [step1, setStep1] = useState<Step1>({
     phone: '', normPhone: '', full_name: '',
@@ -65,8 +65,6 @@ export default function RegisterContractorPage() {
   const [step3, setStep3] = useState<Step3>({ contact_email: '' });
 
   const codeRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => { enumApi.regions().then(setRegions).catch(() => {}); }, []);
 
   const toggleRegion = (code: string) => setStep2((p) => ({
     ...p,

@@ -1,12 +1,13 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import Link from 'next/link';
 import { Loader2, Search, Plus, AlertTriangle, Check, X, Pencil } from 'lucide-react';
-import { workerApi, enumApi } from '@/lib/api';
+import { workerApi } from '@/lib/api';
 import type { Worker } from '@/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { useEnums } from '@/features/enums/EnumsContext';
 import { EXPERIENCE_LABEL } from '@/i18n/he';
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
@@ -304,36 +305,23 @@ export default function WorkersPage() {
   const [search, setSearch]               = useState('');
   const [statusFilter, setStatusFilter]   = useState<'all' | 'available' | 'assigned' | 'deactivated'>('all');
 
-  const [professionMap, setProfessionMap] = useState<Record<string, string>>({});
-  const [originMap, setOriginMap]         = useState<Record<string, string>>({});
-  const [professionOptions, setProfessionOptions] = useState<{ value: string; label: string }[]>([]);
-  const [originOptions, setOriginOptions]         = useState<{ value: string; label: string }[]>([]);
-  const [regionOptions, setRegionOptions]         = useState<{ value: string; label: string }[]>([]);
-  const [regionMap, setRegionMap]         = useState<Record<string, string>>({});
+  const { professions, origins, regions, professionMap, originMap, regionMap } = useEnums();
+
+  const professionOptions = useMemo(
+    () => professions.filter((p) => p.is_active).map((p) => ({ value: p.code, label: p.name_he })),
+    [professions],
+  );
+  const originOptions = useMemo(
+    () => origins.map((o) => ({ value: o.code, label: o.name_he })),
+    [origins],
+  );
+  const regionOptions = useMemo(
+    () => [{ value: '', label: 'כל הארץ' }, ...regions.map((r) => ({ value: r.code, label: r.name_he }))],
+    [regions],
+  );
 
   useEffect(() => {
     workerApi.list().then(setWorkers).catch(console.error).finally(() => setLoading(false));
-
-    enumApi.professions().then((list) => {
-      const m: Record<string, string> = {};
-      list.forEach((p) => { m[p.code] = p.name_he; });
-      setProfessionMap(m);
-      setProfessionOptions(list.filter((p) => p.is_active).map((p) => ({ value: p.code, label: p.name_he })));
-    }).catch(() => {});
-
-    enumApi.origins().then((list) => {
-      const m: Record<string, string> = {};
-      list.forEach((o) => { m[o.code] = o.name_he; });
-      setOriginMap(m);
-      setOriginOptions(list.map((o) => ({ value: o.code, label: o.name_he })));
-    }).catch(() => {});
-
-    enumApi.regions().then((list) => {
-      const m: Record<string, string> = {};
-      list.forEach((r) => { m[r.code] = r.name_he; });
-      setRegionMap(m);
-      setRegionOptions([{ value: '', label: 'כל הארץ' }, ...list.map((r) => ({ value: r.code, label: r.name_he }))]);
-    }).catch(() => {});
   }, []);
 
   // Update employee_number in local state after inline save

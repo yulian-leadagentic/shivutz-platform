@@ -7,7 +7,8 @@ import {
   AlertTriangle, MessageSquare, ChevronDown, ChevronUp,
   BadgeCheck, CircleAlert, UserCheck, CreditCard, ShieldCheck,
 } from 'lucide-react';
-import { dealApi, workerApi, enumApi, paymentApi } from '@/lib/api';
+import { dealApi, workerApi, paymentApi } from '@/lib/api';
+import { useEnums } from '@/features/enums/EnumsContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -276,7 +277,7 @@ export default function CorporationDealPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [allWorkers, setAllWorkers] = useState<Worker[]>([]);
   const [slots, setSlots]       = useState<ProfessionSlot[]>([]);
-  const [profMap, setProfMap]   = useState<Record<string, string>>({});
+  const { professionMap: profMap } = useEnums();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [msgInput, setMsgInput] = useState('');
   const [sending, setSending]   = useState(false);
@@ -312,20 +313,15 @@ export default function CorporationDealPage() {
     async function init() {
       setLoading(true);
       try {
-        const [d, msgs, stubs, profs, allW] = await Promise.all([
+        const [d, msgs, stubs, allW] = await Promise.all([
           dealApi.get(id),
           dealApi.messages(id).catch(() => [] as Message[]),
           dealApi.workers(id).catch(() => []),
-          enumApi.professions().catch(() => []),
           workerApi.list().catch(() => [] as Worker[]),
         ]);
 
         setDeal(d);
         setMessages(msgs);
-
-        const pm: Record<string, string> = {};
-        (profs as { code: string; name_he: string }[]).forEach((p) => { pm[p.code] = p.name_he; });
-        setProfMap(pm);
         setAllWorkers(allW);
 
         // Pre-select originally proposed workers
@@ -353,7 +349,7 @@ export default function CorporationDealPage() {
           const minExp = Math.max(0, ...pws.map((w) => expMonths(w)));
           builtSlots.push({
             profCode: code,
-            profName: pm[code] ?? code,
+            profName: profMap[code] ?? code,
             needed: pws.length,
             minExpMonths: minExp,
             proposedWorkerIds: new Set(pws.map((w) => w.id)),
