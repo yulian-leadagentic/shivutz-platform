@@ -1,7 +1,9 @@
 """Cardcom API Service — ALL external Cardcom calls go through here only."""
 import os
+import uuid
 import httpx
 import logging
+from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -9,6 +11,19 @@ CARDCOM_BASE_URL = os.getenv("CARDCOM_BASE_URL",       "https://secure.cardcom.s
 CARDCOM_TERMINAL = os.getenv("CARDCOM_TERMINAL_NUMBER", "1000")
 CARDCOM_API_NAME = os.getenv("CARDCOM_API_NAME",        "test2025")
 CARDCOM_API_PASS = os.getenv("CARDCOM_API_PASSWORD",    "test5000$")
+
+# PAYMENT_FAKE_MODE=1  — short-circuit all Cardcom calls with synthetic
+# responses. Enables local dev and UX simulation without touching Cardcom.
+# NEVER enable in production.
+PAYMENT_FAKE_MODE = os.getenv("PAYMENT_FAKE_MODE", "0") == "1"
+FAKE_AUTH_HOLD_DAYS = 30  # fake hold length — mirrors real-world J5 ceiling
+
+
+if PAYMENT_FAKE_MODE:
+    logger.warning("=" * 60)
+    logger.warning("PAYMENT_FAKE_MODE=1  —  Cardcom calls are SIMULATED.")
+    logger.warning("                       DO NOT USE THIS FLAG IN PRODUCTION.")
+    logger.warning("=" * 60)
 
 
 class CardcomApiError(Exception):
@@ -26,6 +41,11 @@ class CardcomDeclinedError(CardcomApiError):
 class CardcomNetworkError(CardcomApiError):
     """Network/timeout error reaching Cardcom."""
     pass
+
+
+def _fake_deal_id() -> str:
+    """Obviously-fake identifier so a leaked FAKE_ id is never mistaken for real."""
+    return "FAKE-" + uuid.uuid4().hex[:12].upper()
 
 
 async def create_low_profile(
@@ -234,3 +254,219 @@ async def refund_transaction(provider_transaction_id: str, amount: float = None)
 def _map_brand(brand_code) -> str:
     mapping = {"1": "visa", "2": "mastercard", "3": "amex", "6": "isracard"}
     return mapping.get(str(brand_code or ""), str(brand_code or ""))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# J5 pre-authorization flow (Pattern A)
+# ─────────────────────────────────────────────────────────────────────────────
+
+async def authorize_low_profile(
+    entity_id: str,
+    deal_id: str,
+    amount: float,
+    return_url: str,
+    webhook_url: str,
+    invoice_data: dict = None,
+) -> dict:
+    """
+    Create a J5 pre-authorization LowProfile page.
+
+    User is redirected to Cardcom's hosted form showing `amount`, enters
+    their card, and Cardcom places a hold (no actual charge) for that
+    amount. Capture must happen within ~7–30 days or the hold auto-voids.
+
+    `entity_id` is formatted "corporation:{uuid}" so the webhook can parse.
+    `deal_id` becomes the UniqueID — allows idempotent retries.
+
+    Returns: { "low_profile_id": str, "url": str }
+    """
+    if PAYMENT_FAKE_MODE:
+        fake_id = _fake_deal_id()
+        logger.info("[cardcom FAKE] authorize_low_profile deal=%s amount=%.2f → %s",
+                    deal_id, amount, fake_id)
+        # Route the user straight back to the return URL with a hint so the
+        # frontend can call the fake-auth-complete endpoint.
+        return {
+            "low_profile_id": fake_id,
+            "url": f"{return_url}?fake_auth=1&low_profile_id={fake_id}",
+        }
+
+    payload = {
+        "TerminalNumber": int(CARDCOM_TERMINAL),
+        "ApiName":        CARDCOM_API_NAME,
+        "ApiPassword":    CARDCOM_API_PASS,
+        "ReturnValue":    entity_id,
+        "Amount":         round(amount, 2),
+        "CoinID":         1,          # 1 = ILS
+        "Language":       "he",
+        "Operation":      "ChargeOnly",  # J5 signalled via DealType below
+        "ChargeBy":       "J5",       # Cardcom alias for DealType=3 (pre-auth)
+        "DealType":       3,
+        "UniqueID":       deal_id,
+        "SuccessRedirectUrl": return_url,
+        "ErrorRedirectUrl":   return_url + "?error=1",
+        "WebHookUrl":         webhook_url,
+        "CreateToken":        False,  # J5 does not need long-term token
+    }
+    if invoice_data:
+        payload["InvoiceHead"] = {
+            "CustName":     invoice_data.get("customer_name", ""),
+            "SendByEmail":  False,   # invoice only after capture
+            "EmailAddress": invoice_data.get("customer_email", ""),
+            "Language":     "he",
+            "CoinID":       1,
+            "VATIncluded":  True,
+        }
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(
+                f"{CARDCOM_BASE_URL}/api/v11/LowProfile/Create",
+                json=payload,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            logger.info("[cardcom] J5 LowProfile created deal=%s amount=%.2f code=%s",
+                        deal_id, amount, data.get("ResponseCode"))
+            if data.get("ResponseCode") != 0:
+                raise CardcomApiError(
+                    f"Cardcom J5 error: {data.get('Description', 'Unknown')}",
+                    code=str(data.get("ResponseCode"))
+                )
+            return {
+                "low_profile_id": data["LowProfileId"],
+                "url":            data["Url"],
+            }
+    except httpx.TimeoutException as e:
+        raise CardcomNetworkError(f"Timeout creating J5 LowProfile: {e}")
+    except httpx.HTTPError as e:
+        raise CardcomNetworkError(f"HTTP error: {e}")
+
+
+async def capture_transaction(
+    auth_provider_deal_id: str,
+    amount: float,
+    idempotency_key: str,
+    invoice_data: dict = None,
+) -> dict:
+    """
+    Capture (settle) a prior J5 authorization.
+
+    Converts the hold into a real charge using Cardcom's
+    TransactionByDealNumber — no card details are re-submitted.
+
+    Returns: provider_transaction_id, response_code, invoice_*, raw.
+    """
+    if PAYMENT_FAKE_MODE:
+        logger.info("[cardcom FAKE] capture auth=%s amount=%.2f", auth_provider_deal_id, amount)
+        return {
+            "provider_transaction_id": _fake_deal_id(),
+            "response_code":  "0",
+            "invoice_number": "",
+            "invoice_url":    None,
+            "raw":            {"fake": True, "captured_from": auth_provider_deal_id},
+        }
+
+    payload = {
+        "TerminalNumber":     int(CARDCOM_TERMINAL),
+        "ApiName":            CARDCOM_API_NAME,
+        "ApiPassword":        CARDCOM_API_PASS,
+        "InternalDealNumber": auth_provider_deal_id,
+        "Amount":             round(amount, 2),
+        "UniqueID":           idempotency_key,
+    }
+    if invoice_data:
+        payload["InvoiceHead"] = {
+            "CustName":     invoice_data.get("customer_name", ""),
+            "SendByEmail":  True,
+            "EmailAddress": invoice_data.get("customer_email", ""),
+            "Language":     "he",
+            "CoinID":       1,
+            "VATIncluded":  True,
+        }
+        payload["InvoiceLines"] = [{
+            "Description": invoice_data.get("description", "עמלת שיבוץ עובדים זרים"),
+            "Price":       invoice_data.get("base_amount", amount),
+            "Quantity":    1,
+            "IsTaxFree":   False,
+        }]
+
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(
+                f"{CARDCOM_BASE_URL}/api/v11/Transactions/TransactionByDealNumber",
+                json=payload,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            logger.info("[cardcom] capture auth=%s amount=%.2f code=%s",
+                        auth_provider_deal_id, amount, data.get("ResponseCode"))
+            if str(data.get("ResponseCode")) not in ("0", "000"):
+                desc = data.get("Description") or data.get("ReturnMessage", "Capture declined")
+                raise CardcomDeclinedError(
+                    f"Capture declined: {desc}",
+                    code=str(data.get("ResponseCode"))
+                )
+            inv = data.get("InvoiceResponse", {}) or {}
+            return {
+                "provider_transaction_id": str(
+                    data.get("InternalDealNumber") or data.get("TranzactionId", "")
+                ),
+                "response_code":  str(data.get("ResponseCode")),
+                "invoice_number": str(inv.get("InvoiceNumber", "") or ""),
+                "invoice_url":    inv.get("InvoiceUrl"),
+                "raw":            data,
+            }
+    except CardcomDeclinedError:
+        raise
+    except httpx.TimeoutException as e:
+        raise CardcomNetworkError(f"Timeout capturing: {e}")
+    except httpx.HTTPError as e:
+        raise CardcomNetworkError(f"HTTP error capturing: {e}")
+
+
+async def void_transaction(auth_provider_deal_id: str) -> dict:
+    """
+    Void (release) a J5 hold before it's captured.
+
+    No money moved — Cardcom releases the auth hold on the card. Safe to
+    call inside the grace window; fails if already captured or expired.
+    """
+    if PAYMENT_FAKE_MODE:
+        logger.info("[cardcom FAKE] void auth=%s", auth_provider_deal_id)
+        return {"voided": True, "raw": {"fake": True, "voided": auth_provider_deal_id}}
+
+    payload = {
+        "TerminalNumber":     int(CARDCOM_TERMINAL),
+        "ApiName":            CARDCOM_API_NAME,
+        "ApiPassword":        CARDCOM_API_PASS,
+        "InternalDealNumber": auth_provider_deal_id,
+    }
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(
+                f"{CARDCOM_BASE_URL}/api/v11/Transactions/CancelTransaction",
+                json=payload,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            logger.info("[cardcom] void auth=%s code=%s",
+                        auth_provider_deal_id, data.get("ResponseCode"))
+            if data.get("ResponseCode") != 0:
+                raise CardcomApiError(
+                    f"Void error: {data.get('Description')}",
+                    code=str(data.get("ResponseCode"))
+                )
+            return {"voided": True, "raw": data}
+    except httpx.TimeoutException as e:
+        raise CardcomNetworkError(f"Timeout on void: {e}")
+    except httpx.HTTPError as e:
+        raise CardcomNetworkError(f"HTTP error on void: {e}")
+
+
+def fake_auth_expiry() -> datetime:
+    """
+    Utility for the backend flow: in fake mode we still populate
+    `auth_expires_at` with a realistic-looking timestamp so TTL sweeps
+    behave the same way as in production.
+    """
+    return datetime.utcnow() + timedelta(days=FAKE_AUTH_HOLD_DAYS)
