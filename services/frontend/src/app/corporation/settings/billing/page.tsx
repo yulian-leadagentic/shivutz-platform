@@ -207,8 +207,20 @@ function BillingPageContent() {
       <div>
         <h1 className="text-2xl font-bold text-slate-900">חיוב ותשלום</h1>
         <p className="text-sm text-slate-500 mt-1">
-          ניהול אמצעי תשלום לחיוב עמלות שיבוץ עובדים
+          חיבור אמצעי תשלום מאובטח לחיוב עמלות שיבוץ עובדים
         </p>
+      </div>
+
+      {/* Security reassurance — always visible, top of page */}
+      <div className="flex items-start gap-3 bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3">
+        <ShieldCheck className="h-5 w-5 text-emerald-600 shrink-0 mt-0.5" />
+        <div className="space-y-1">
+          <p className="text-sm font-semibold text-slate-800">פרטי הכרטיס שלך לא נשמרים אצלנו</p>
+          <p className="text-xs text-slate-600 leading-relaxed">
+            מספר הכרטיס, תוקף ו-CVV מוחזקים במערכת המאובטחת של קארדקום (תקן PCI-DSS).
+            במערכת שלנו נשמר רק אסימון מוצפן שלא ניתן לשימוש מחוץ לחשבון שלנו — ניתן להסיר אותו בכל עת.
+          </p>
+        </div>
       </div>
 
       {/* Success notice after Cardcom return */}
@@ -216,8 +228,8 @@ function BillingPageContent() {
         <div className="flex items-center gap-3 bg-emerald-50 border border-emerald-200 rounded-2xl px-4 py-3">
           <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
           <div>
-            <p className="text-sm font-semibold text-emerald-800">הכרטיס נשמר בהצלחה</p>
-            <p className="text-xs text-emerald-700 mt-0.5">אמצעי התשלום נרשם ומוכן לחיוב</p>
+            <p className="text-sm font-semibold text-emerald-800">הכרטיס חובר בהצלחה</p>
+            <p className="text-xs text-emerald-700 mt-0.5">אמצעי התשלום מוכן לחיוב אוטומטי כשתתחייב לעסקה</p>
           </div>
         </div>
       )}
@@ -227,9 +239,9 @@ function BillingPageContent() {
         <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3">
           <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
           <div>
-            <p className="text-sm font-semibold text-amber-800">אין אמצעי תשלום פעיל</p>
+            <p className="text-sm font-semibold text-amber-800">טרם חובר אמצעי תשלום</p>
             <p className="text-xs text-amber-700 mt-0.5">
-              לא תוכל לאשר הצעות עובדים ולהתחייב לעסקאות ללא כרטיס אשראי פעיל
+              לא תוכל לאשר הצעות עובדים ולהתחייב לעסקאות עד שתחבר אמצעי תשלום פעיל
             </p>
           </div>
         </div>
@@ -249,7 +261,7 @@ function BillingPageContent() {
           <div className="flex items-center justify-between">
             <CardTitle className="flex items-center gap-2 text-base">
               <CreditCard className="h-4 w-4 text-brand-600" />
-              כרטיסי אשראי שמורים
+              אמצעי תשלום
             </CardTitle>
             <Button
               size="sm"
@@ -258,7 +270,7 @@ function BillingPageContent() {
             >
               {addingCard
                 ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />מנתב לקארדקום...</>
-                : <><Plus className="h-3.5 w-3.5" />הוסף כרטיס</>
+                : <><Plus className="h-3.5 w-3.5" />חבר כרטיס</>
               }
             </Button>
           </div>
@@ -272,13 +284,16 @@ function BillingPageContent() {
             <div className="text-center py-10 space-y-4">
               <CreditCard className="h-12 w-12 text-slate-200 mx-auto" />
               <div>
-                <p className="text-slate-600 font-medium">אין כרטיסים שמורים</p>
-                <p className="text-slate-400 text-sm mt-1">הוסף כרטיס אשראי כדי לאפשר חיוב אוטומטי</p>
+                <p className="text-slate-600 font-medium">טרם חובר כרטיס</p>
+                <p className="text-slate-400 text-sm mt-1">
+                  החיבור מתבצע בטופס מאובטח של קארדקום.<br />
+                  פרטי הכרטיס לא עוברים דרך השרתים שלנו.
+                </p>
               </div>
               <Button onClick={handleAddCard} disabled={addingCard}>
                 {addingCard
                   ? <><Loader2 className="h-4 w-4 animate-spin me-2" />מנתב...</>
-                  : <><Plus className="h-4 w-4 me-2" />הוסף כרטיס ראשון</>
+                  : <><Plus className="h-4 w-4 me-2" />חבר כרטיס</>
                 }
               </Button>
             </div>
@@ -309,7 +324,7 @@ function BillingPageContent() {
         <CardContent className="text-sm text-slate-600 space-y-2">
           <div className="flex items-start gap-2">
             <span className="shrink-0 font-bold text-brand-600 w-5 text-center">1</span>
-            <p>בעת לחיצה על <strong>אשר ושבץ</strong>, מתחיל מונה של 48 שעות עד לחיוב</p>
+            <p>בעת לחיצה על <strong>אשר ושבץ</strong>, מתחיל מונה של 48 שעות עד לחיוב — עד אז אין תנועה בכרטיס</p>
           </div>
           <div className="flex items-start gap-2">
             <span className="shrink-0 font-bold text-brand-600 w-5 text-center">2</span>
@@ -317,15 +332,11 @@ function BillingPageContent() {
           </div>
           <div className="flex items-start gap-2">
             <span className="shrink-0 font-bold text-brand-600 w-5 text-center">3</span>
-            <p>לאחר 48 שעות מבוצע חיוב אוטומטי בכרטיס ברירת המחדל</p>
+            <p>לאחר 48 שעות קארדקום מבצעים חיוב אוטומטי באמצעות האסימון המוצפן של הכרטיס המחובר</p>
           </div>
           <div className="flex items-start gap-2">
             <span className="shrink-0 font-bold text-brand-600 w-5 text-center">4</span>
             <p>חשבונית תישלח לדוא״ל לאחר החיוב המוצלח</p>
-          </div>
-          <div className="mt-3 flex items-center gap-1.5 text-xs text-slate-400">
-            <ExternalLink className="h-3 w-3" />
-            <span>הכרטיס מאובטח ומוצפן על ידי קארדקום — מספרי כרטיס לא נשמרים אצלנו</span>
           </div>
         </CardContent>
       </Card>
