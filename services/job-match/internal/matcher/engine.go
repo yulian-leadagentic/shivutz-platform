@@ -201,16 +201,13 @@ func scoreWorkers(workers []models.Worker, li models.LineItem, requestRegion str
 		// ── Region ─────────────────────────────────────────────
 		workerRegion := strings.ToLower(strings.TrimSpace(w.AvailableRegion))
 		jobRegion    := strings.ToLower(strings.TrimSpace(requestRegion))
-		if jobRegion == "" {
-			// No region requirement — vacuously satisfied
+		if jobRegion == "" || workerRegion == "" || workerRegion == jobRegion {
+			// Full credit when:
+			//   (a) job has no region requirement,
+			//   (b) worker has no region restriction (flexible — available anywhere), OR
+			//   (c) they match exactly.
 			score += 20
 			matched = append(matched, "region")
-		} else if workerRegion == jobRegion {
-			score += 20
-			matched = append(matched, "region")
-		} else if workerRegion == "" {
-			// Worker has no preferred region listed — partial credit
-			score += 5
 		} else {
 			missing = append(missing, "region")
 		}
