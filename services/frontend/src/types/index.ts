@@ -205,6 +205,31 @@ export interface CommitEngagementResult {
     vat_amount: number;
     total_amount: number;
   };
+  /** Pattern A (J5): when true, the backend ran in PAYMENT_FAKE_MODE and
+   *  the transaction is already authorized — the frontend can skip the
+   *  Cardcom redirect step. */
+  fake_mode?: boolean;
+  low_profile_id?: string;
+  /** Pattern A (J5): URL to redirect the user to for card entry. Null in
+   *  fake mode. */
+  redirect_url?: string | null;
+}
+
+export interface PaymentTransactionRow {
+  id: string;
+  deal_id: string;
+  status: string;
+  total_amount: number | null;
+  vat_amount: number | null;
+  base_amount: number | null;
+  grace_period_expires_at: string | null;
+  auth_provider_deal_id: string | null;
+  authorized_at: string | null;
+  auth_expires_at: string | null;
+  charged_at: string | null;
+  cancelled_at: string | null;
+  last_capture_error: string | null;
+  retry_count: number;
 }
 
 export interface MarketplaceListing {

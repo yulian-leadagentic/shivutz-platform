@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import {
   Loader2, Send, FileText, Users, CheckCircle, XCircle,
   AlertTriangle, MessageSquare, ChevronDown, ChevronUp,
@@ -18,6 +18,10 @@ import {
   EXPERIENCE_LABEL_SHORT as EXP_LABELS,
   EXPERIENCE_MIDPOINT_MONTHS as EXP_MONTHS,
 } from '@/i18n/he';
+import {
+  CommitEngagementModal, consumePendingLowProfile,
+} from '@/features/payment/CommitEngagementModal';
+import { GraceBadge } from '@/features/payment/GraceBadge';
 
 function expLabel(w: Worker) {
   return EXP_LABELS[w.experience_range ?? ''] ?? (w.experience_years ? `${w.experience_years} שנים` : '—');
@@ -271,7 +275,8 @@ function AssignmentSummary({
 
 export default function CorporationDealPage() {
   const { id } = useParams<{ id: string }>();
-  const router  = useRouter();
+  const router        = useRouter();
+  const searchParams  = useSearchParams();
 
   const [deal, setDeal]         = useState<Deal | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -296,6 +301,11 @@ export default function CorporationDealPage() {
   const [paymentMethods, setPaymentMethods]     = useState<PaymentMethod[]>([]);
   const [pmLoading, setPmLoading]               = useState(true);
   const [commitResult, setCommitResult]         = useState<CommitEngagementResult | null>(null);
+  // Pattern A modal state
+  const [showCommitModal, setShowCommitModal]   = useState(false);
+  const [previewAmount, setPreviewAmount]       = useState<number | undefined>(undefined);
+  const [previewVatRate, setPreviewVatRate]     = useState<number>(0.18);
+  const [completingAuth, setCompletingAuth]     = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const pollRef        = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -372,6 +382,35 @@ export default function CorporationDealPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  // Cardcom return leg — when the user comes back from the hosted J5 form,
+  // the URL has `?payment_result=complete&tx_id=...` (and `lowprofilecode`
+  // appended by Cardcom). Call complete-auth to flip the tx to authorized.
+  useEffect(() => {
+    if (searchParams.get('payment_result') !== 'complete') return;
+    const lpid = searchParams.get('lowprofilecode')
+              || searchParams.get('LowProfileId')
+              || consumePendingLowProfile(id);
+    if (!lpid) return;
+    setCompletingAuth(true);
+    paymentApi.completeAuth(id, lpid)
+      .then(async () => {
+        const fresh = await dealApi.get(id);
+        setDeal(fresh);
+        // Strip the query params without navigating away.
+        if (typeof window !== 'undefined') {
+          const url = new URL(window.location.href);
+          url.searchParams.delete('payment_result');
+          url.searchParams.delete('tx_id');
+          url.searchParams.delete('lowprofilecode');
+          url.searchParams.delete('LowProfileId');
+          window.history.replaceState({}, '', url.toString());
+        }
+      })
+      .catch((e) => setError(e instanceof Error ? e.message : 'שגיאה באימות התשלום'))
+      .finally(() => setCompletingAuth(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
+
   function toggleWorker(wid: string) {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -380,6 +419,13 @@ export default function CorporationDealPage() {
     });
   }
 
+  /**
+   * Pattern A flow:
+   *   1. Assign workers + mark deal accepted.
+   *   2. Fetch commission preview so we can show the amount.
+   *   3. Open the CommitEngagementModal — it calls commitEngagement on confirm
+   *      and handles the Cardcom redirect (or the fake-mode inline success).
+   */
   async function handleAccept() {
     if (selectedIds.size === 0) { setError('יש לבחור לפחות עובד אחד'); return; }
     setAccepting(true); setError('');
@@ -387,18 +433,35 @@ export default function CorporationDealPage() {
       await dealApi.updateWorkers(id, [...selectedIds]);
       await dealApi.updateStatus(id, 'accepted');
       setDeal((d) => d ? { ...d, status: 'accepted' } : d);
-      // Create pending_charge transaction (best-effort — show error but don't block)
+
+      // Best-effort commission preview — if it fails we still open the modal
+      // with unknown amount; the backend remains the source of truth.
       try {
-        const cr = await paymentApi.commitEngagement(id);
-        setCommitResult(cr);
-      } catch (payErr) {
-        setError(
-          `העסקה אושרה אך לא ניתן היה להתחיל תהליך חיוב: ${payErr instanceof Error ? payErr.message : 'שגיאה'}`
-        );
-      }
+        const preview = await paymentApi.previewCommission(id);
+        setPreviewAmount(preview.amounts.total_amount);
+        setPreviewVatRate(preview.amounts.vat_rate);
+      } catch { /* leave amount undefined */ }
+
+      setShowCommitModal(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'שגיאה באישור');
     } finally { setAccepting(false); }
+  }
+
+  function handleAuthorized(result: CommitEngagementResult) {
+    // Fake-mode success path — the backend already set status=authorized.
+    setCommitResult(result);
+    setShowCommitModal(false);
+    setDeal((d) => d ? { ...d, payment_status: 'authorized', payment_amount_estimated: result.amounts.total_amount } : d);
+  }
+
+  async function handleCancelled() {
+    // Refresh the deal so GraceBadge disappears.
+    try {
+      const fresh = await dealApi.get(id);
+      setDeal(fresh);
+      setCommitResult(null);
+    } catch { /* ignore */ }
   }
 
   async function handleReject() {
@@ -478,13 +541,37 @@ export default function CorporationDealPage() {
     return cnt >= sl.needed;
   });
 
-  // Payment checks — computed after allFilled
-  const hasActivePM = !pmLoading && paymentMethods.some((pm) => pm.status === 'active');
-  const canAccept   = allFilled && (hasActivePM || pmLoading);
+  // Pattern A: card entry happens at commit time, no pre-saved method required.
+  const canAccept = allFilled;
   const showPaymentCommitBanner = deal.status === 'accepted' && commitResult !== null;
+
+  const isAuthorized = deal.payment_status === 'authorized';
 
   return (
     <div className="space-y-5 max-w-5xl">
+
+      {/* ── Commit modal (Pattern A) ── */}
+      {showCommitModal && (
+        <CommitEngagementModal
+          dealId={id}
+          totalAmount={previewAmount}
+          vatRate={previewVatRate}
+          workerCount={totalSelected || deal.workers_count}
+          onAuthorized={handleAuthorized}
+          onClose={() => setShowCommitModal(false)}
+        />
+      )}
+
+      {/* ── Completing auth after Cardcom return ── */}
+      {completingAuth && (
+        <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3">
+          <Loader2 className="h-5 w-5 animate-spin text-slate-400 shrink-0" />
+          <div>
+            <p className="text-sm font-semibold text-slate-700">מאמת את התשלום מול קארדקום...</p>
+            <p className="text-xs text-slate-500">רק רגע.</p>
+          </div>
+        </div>
+      )}
 
       {/* ── Header ── */}
       <div className="flex items-start justify-between flex-wrap gap-3">
@@ -506,6 +593,18 @@ export default function CorporationDealPage() {
           </p>
         </div>
       </div>
+
+      {/* ── Grace period badge (visible while authorized) ── */}
+      {isAuthorized && (commitResult?.grace_period_expires_at || deal.payment_status === 'authorized') && (
+        <GraceBadge
+          dealId={id}
+          graceExpiresAt={
+            commitResult?.grace_period_expires_at
+            ?? new Date(Date.now() + 48 * 3600_000).toISOString()
+          }
+          onCancelled={handleCancelled}
+        />
+      )}
 
       {/* ── Contractor notes ── */}
       {deal.notes && (
@@ -532,9 +631,7 @@ export default function CorporationDealPage() {
                       <p className="font-semibold text-amber-900 text-sm">הצעה ממתינה לאישורך</p>
                       <p className="text-amber-700 text-xs mt-0.5">
                         בחר עובדים לשיבוץ לפי מקצוע ואשר את ההתקשרות.
-                        {hasActivePM && (
-                          <span className="text-amber-800 font-medium"> אישור זה מהווה התחייבות לתשלום — חיוב יבוצע תוך 48 שעות.</span>
-                        )}
+                        <span className="text-amber-800 font-medium"> אישור זה מהווה התחייבות לתשלום — הסכום יוקפא על הכרטיס, וחיוב יבוצע תוך 48 שעות אלא אם תבטל.</span>
                       </p>
                     </div>
                     <div className="flex gap-2 shrink-0">
@@ -543,7 +640,6 @@ export default function CorporationDealPage() {
                         className="bg-green-600 hover:bg-green-700 font-medium"
                         onClick={handleAccept}
                         disabled={accepting || rejecting || !canAccept}
-                        title={!hasActivePM && !pmLoading ? 'יש להוסיף כרטיס אשראי תחילה' : undefined}
                       >
                         {accepting
                           ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />שולח...</>
@@ -557,20 +653,8 @@ export default function CorporationDealPage() {
                     </div>
                   </div>
 
-                  {/* No payment method warning */}
-                  {!pmLoading && !hasActivePM && (
-                    <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm text-red-700">
-                      <CreditCard className="h-4 w-4 shrink-0" />
-                      <span>
-                        <strong>לא נמצא אמצעי תשלום פעיל.</strong>{' '}
-                        יש{' '}
-                        <a href="/corporation/settings/billing" className="underline font-medium hover:text-red-900">
-                          להוסיף כרטיס אשראי
-                        </a>
-                        {' '}לפני האישור.
-                      </span>
-                    </div>
-                  )}
+                  {/* Pattern A: card entry happens inside the commit modal —
+                      no pre-saved method required. */}
                 </div>
               ) : (
                 <div className="flex items-center gap-4 flex-wrap">

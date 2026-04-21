@@ -114,6 +114,27 @@ def get_transaction(
         conn.close()
 
 
+# ── GET /deals/:dealId/preview-commission ────────────────────────────────
+# Cheap no-side-effects endpoint so the frontend can show the amount inside
+# the "confirm commit" modal before the user actually commits.
+
+@router.get("/deals/{deal_id}/preview-commission")
+def preview_commission(
+    deal_id: str,
+    x_entity_id:  Optional[str] = Header(default=None),
+    x_org_id:     Optional[str] = Header(default=None),
+    x_user_role:  Optional[str] = Header(default=None),
+):
+    try:
+        result = calc_commission(deal_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return {
+        "deal_id": deal_id,
+        "amounts": result.to_dict(),
+    }
+
+
 # ── POST /deals/:dealId/commit-engagement ─────────────────────────────────
 # Pattern A (J5 pre-authorization):
 #   1. Calculate commission for the deal.
