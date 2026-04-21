@@ -10,10 +10,13 @@ from app.crypto import decrypt_token
 from app.system_settings import get_setting
 from app.services.commission_calculator import calculate as calc_commission
 from app.services.cardcom import (
-    charge_token, create_low_profile, CardcomApiError, CardcomDeclinedError, CardcomNetworkError
+    charge_token, create_low_profile,
+    authorize_low_profile, void_transaction, get_low_profile_result,
+    fake_auth_expiry, PAYMENT_FAKE_MODE,
+    CardcomApiError, CardcomDeclinedError, CardcomNetworkError,
 )
 from app.routes.payment_methods import get_active_payment_method
-from app.enums import PaymentStatus
+from app.enums import PaymentStatus, ACTIVE_STATUSES
 
 router = APIRouter()
 
@@ -112,70 +115,106 @@ def get_transaction(
 
 
 # ── POST /deals/:dealId/commit-engagement ─────────────────────────────────
+# Pattern A (J5 pre-authorization):
+#   1. Calculate commission for the deal.
+#   2. Create a transaction row in status=pending_auth.
+#   3. Ask Cardcom to host a J5 (pre-auth) form for the total amount.
+#   4. Return the Cardcom URL — the frontend redirects the user there.
+#   5. After the user completes the form and Cardcom redirects back, the
+#      frontend calls POST /deals/{id}/complete-auth which flips the row
+#      to status=authorized and starts the grace-period countdown.
+#
+# In PAYMENT_FAKE_MODE the whole flow short-circuits: the transaction is
+# created directly in status=authorized with a FAKE- deal id, and the
+# returned URL is a marker the frontend can use to simulate the redirect.
+
+def _grace_window() -> timedelta:
+    """Read grace period from settings. Prefers new `grace_period_hours`;
+    falls back to the legacy `grace_period_days` for backward compat."""
+    try:
+        hours = int(get_setting("grace_period_hours"))
+        return timedelta(hours=hours)
+    except (KeyError, Exception):
+        try:
+            days = int(get_setting("grace_period_days", 7))
+        except Exception:
+            days = 7
+        return timedelta(days=days)
+
 
 @router.post("/deals/{deal_id}/commit-engagement", status_code=201)
-def commit_engagement(
+async def commit_engagement(
     deal_id: str,
     x_entity_id:   Optional[str] = Header(default=None),
     x_org_id:      Optional[str] = Header(default=None),
     x_entity_type: Optional[str] = Header(default=None),
     x_user_id:     Optional[str] = Header(default=None),
 ):
-    """Corporation commits to a deal — creates a pending_charge transaction."""
+    """Corporation commits to a deal — initiates a J5 pre-authorization."""
     entity_id   = x_entity_id or x_org_id
     entity_type = x_entity_type or "corporation"
 
     if not entity_id:
         raise HTTPException(status_code=400, detail="Entity context required")
 
-    # 1. Verify active payment method exists
-    pm = get_active_payment_method(entity_type, entity_id)
-    if not pm:
-        raise HTTPException(
-            status_code=402,
-            detail="אין אמצעי תשלום פעיל — יש לשמור כרטיס אשראי תחילה"
-        )
-
     pay_conn = get_db()
     try:
         cur = pay_conn.cursor()
 
-        # 2. Guard: no duplicate active transaction for this deal
+        # 1. Guard: no duplicate active transaction for this deal.
+        active_csv = ",".join(f"'{s.value}'" for s in ACTIVE_STATUSES)
         cur.execute(
-            "SELECT id FROM payment_transactions WHERE deal_id=%s "
-            "AND status NOT IN ('cancelled_by_corp','cancelled_by_admin','charge_failed_final') "
-            "LIMIT 1",
+            f"SELECT id, status FROM payment_transactions "
+            f"WHERE deal_id=%s AND status IN ({active_csv}) LIMIT 1",
             (deal_id,)
         )
-        if cur.fetchone():
-            raise HTTPException(status_code=409, detail="כבר קיימת עסקת תשלום פעילה לעסקה זו")
+        existing = cur.fetchone()
+        if existing:
+            raise HTTPException(
+                status_code=409,
+                detail=f"כבר קיימת עסקת תשלום פעילה לעסקה זו (status={existing['status']})"
+            )
 
-        # 3. Calculate commission (snapshot at commit time)
+        # 2. Commission snapshot at commit time.
         try:
             result = calc_commission(deal_id)
         except ValueError as e:
             raise HTTPException(status_code=404, detail=str(e))
 
-        # 4. Grace period
-        grace_days       = int(get_setting("grace_period_days", 7))
-        grace_expires_at = datetime.utcnow() + timedelta(days=grace_days)
+        # 3. Schedule the grace window.
+        grace_expires_at = datetime.utcnow() + _grace_window()
 
-        # 5. Create transaction
-        idempotency_key = f"{deal_id}:{str(uuid.uuid4())}"
+        # 4. Create the transaction row.
         tx_id           = str(uuid.uuid4())
+        idempotency_key = f"auth:{tx_id}"
+        initial_status  = PaymentStatus.AUTHORIZED if PAYMENT_FAKE_MODE else PaymentStatus.PENDING_AUTH
 
-        cur.execute(
-            """INSERT INTO payment_transactions
-               (id, deal_id, charged_entity_type, charged_entity_id, payment_method_id,
-                base_amount, vat_rate, vat_amount, total_amount, currency,
-                status, grace_period_expires_at, idempotency_key)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'ILS',%s,%s,%s)""",
-            (tx_id, deal_id, entity_type, entity_id, pm["id"],
-             result.base_amount, result.vat_rate, result.vat_amount, result.total_amount,
-             PaymentStatus.PENDING_CHARGE, grace_expires_at, idempotency_key)
-        )
+        if PAYMENT_FAKE_MODE:
+            cur.execute(
+                """INSERT INTO payment_transactions
+                   (id, deal_id, charged_entity_type, charged_entity_id,
+                    base_amount, vat_rate, vat_amount, total_amount, currency,
+                    status, grace_period_expires_at, idempotency_key,
+                    auth_provider_deal_id, authorized_at, auth_expires_at)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'ILS',%s,%s,%s,%s,NOW(),%s)""",
+                (tx_id, deal_id, entity_type, entity_id,
+                 result.base_amount, result.vat_rate, result.vat_amount, result.total_amount,
+                 initial_status, grace_expires_at, idempotency_key,
+                 f"FAKE-{tx_id[:12].upper()}", fake_auth_expiry())
+            )
+        else:
+            cur.execute(
+                """INSERT INTO payment_transactions
+                   (id, deal_id, charged_entity_type, charged_entity_id,
+                    base_amount, vat_rate, vat_amount, total_amount, currency,
+                    status, grace_period_expires_at, idempotency_key)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'ILS',%s,%s,%s)""",
+                (tx_id, deal_id, entity_type, entity_id,
+                 result.base_amount, result.vat_rate, result.vat_amount, result.total_amount,
+                 initial_status, grace_expires_at, idempotency_key)
+            )
 
-        # 6. Update deal
+        # 5. Sync the deal's denormalised payment state.
         deal_conn = get_db("deal_db")
         try:
             deal_cur = deal_conn.cursor()
@@ -187,7 +226,7 @@ def commit_engagement(
                    active_payment_transaction_id=%s,
                    payment_amount_estimated=%s
                    WHERE id=%s""",
-                (datetime.utcnow(), x_user_id, PaymentStatus.PENDING_CHARGE,
+                (datetime.utcnow(), x_user_id, initial_status,
                  tx_id, result.total_amount, deal_id)
             )
             deal_conn.commit()
@@ -195,11 +234,50 @@ def commit_engagement(
             deal_conn.close()
 
         pay_conn.commit()
+
+        # 6. In fake mode we're done — no Cardcom redirect needed.
+        if PAYMENT_FAKE_MODE:
+            return {
+                "transaction_id":          tx_id,
+                "status":                  initial_status,
+                "grace_period_expires_at": grace_expires_at.isoformat(),
+                "amounts":                 result.to_dict(),
+                "fake_mode":               True,
+                "low_profile_id":          f"FAKE-{tx_id[:12].upper()}",
+                "redirect_url":            None,   # frontend skips redirect
+            }
+
+        # 7. Real mode — request a J5 LowProfile from Cardcom.
+        frontend_url    = os.environ.get("FRONTEND_URL", "")
+        payment_svc_url = os.environ.get("PAYMENT_SERVICE_URL", "")
+        return_url      = f"{frontend_url}/corporation/deals/{deal_id}?payment_result=complete&tx_id={tx_id}"
+
+        try:
+            cc = await authorize_low_profile(
+                entity_id   = f"{entity_type}:{entity_id}",
+                deal_id     = deal_id,
+                amount      = float(result.total_amount),
+                return_url  = return_url,
+                webhook_url = f"{payment_svc_url}/webhooks/cardcom",
+            )
+        except (CardcomApiError, CardcomNetworkError) as e:
+            # Roll the transaction row back to a failed state so the corp
+            # can retry. We don't delete — audit log.
+            cur.execute(
+                "UPDATE payment_transactions SET status=%s, failure_reason=%s WHERE id=%s",
+                (PaymentStatus.AUTH_FAILED, str(e), tx_id)
+            )
+            pay_conn.commit()
+            raise HTTPException(status_code=502, detail=f"Cardcom J5 error: {e}")
+
         return {
-            "transaction_id":        tx_id,
-            "status":                PaymentStatus.PENDING_CHARGE,
+            "transaction_id":          tx_id,
+            "status":                  initial_status,
             "grace_period_expires_at": grace_expires_at.isoformat(),
-            "amounts":               result.to_dict(),
+            "amounts":                 result.to_dict(),
+            "fake_mode":               False,
+            "low_profile_id":          cc["low_profile_id"],
+            "redirect_url":            cc["url"],
         }
     except HTTPException:
         raise
@@ -208,6 +286,161 @@ def commit_engagement(
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         pay_conn.close()
+
+
+# ── POST /deals/:dealId/complete-auth ────────────────────────────────────
+# Called by the frontend after Cardcom redirects the user back. Verifies
+# with Cardcom (GetLpResult) that the J5 actually succeeded, captures the
+# InternalDealNumber for later capture/void, and flips the row to authorized.
+
+class CompleteAuthInput(BaseModel):
+    low_profile_id: str
+
+
+@router.post("/deals/{deal_id}/complete-auth")
+async def complete_auth(
+    deal_id: str,
+    body: CompleteAuthInput,
+    x_entity_id:   Optional[str] = Header(default=None),
+    x_org_id:      Optional[str] = Header(default=None),
+    x_user_role:   Optional[str] = Header(default=None),
+):
+    entity_id = x_entity_id or x_org_id
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT * FROM payment_transactions WHERE deal_id=%s AND status IN (%s,%s) "
+            "ORDER BY created_at DESC LIMIT 1",
+            (deal_id, PaymentStatus.PENDING_AUTH, PaymentStatus.AUTHORIZED)
+        )
+        tx = cur.fetchone()
+        if not tx:
+            raise HTTPException(status_code=404, detail="No pending/authorized transaction for this deal")
+        if x_user_role != "admin" and tx["charged_entity_id"] != entity_id:
+            raise HTTPException(status_code=403, detail="Forbidden")
+
+        # Already authorized — idempotent success.
+        if tx["status"] == PaymentStatus.AUTHORIZED:
+            return _serialize_tx(tx)
+
+        # Fake mode — commit_engagement already set AUTHORIZED; nothing to do.
+        if PAYMENT_FAKE_MODE:
+            return _serialize_tx(tx)
+
+        # Verify with Cardcom — never trust the redirect params alone.
+        try:
+            cc_result = await get_low_profile_result(body.low_profile_id)
+        except (CardcomApiError, CardcomNetworkError) as e:
+            cur.execute(
+                "UPDATE payment_transactions SET status=%s, failure_reason=%s WHERE id=%s",
+                (PaymentStatus.AUTH_FAILED, str(e), tx["id"])
+            )
+            conn.commit()
+            raise HTTPException(status_code=502, detail=f"Cardcom verify failed: {e}")
+
+        auth_deal_id = (cc_result.get("raw") or {}).get("TranzactionInfo", {}).get("InternalDealNumber")
+        if not auth_deal_id:
+            # Sometimes Cardcom returns the deal number at the top level.
+            auth_deal_id = (cc_result.get("raw") or {}).get("InternalDealNumber")
+        if not auth_deal_id:
+            cur.execute(
+                "UPDATE payment_transactions SET status=%s, failure_reason='no_auth_deal_id' WHERE id=%s",
+                (PaymentStatus.AUTH_FAILED, tx["id"])
+            )
+            conn.commit()
+            raise HTTPException(status_code=502, detail="Cardcom result missing InternalDealNumber")
+
+        # Good — flip to AUTHORIZED.
+        cur.execute(
+            """UPDATE payment_transactions SET
+               status=%s, authorized_at=NOW(),
+               auth_provider_deal_id=%s,
+               auth_expires_at=%s
+               WHERE id=%s""",
+            (PaymentStatus.AUTHORIZED,
+             str(auth_deal_id),
+             datetime.utcnow() + timedelta(days=30),   # conservative default
+             tx["id"])
+        )
+        conn.commit()
+        _update_deal_payment_status(deal_id, PaymentStatus.AUTHORIZED)
+
+        cur.execute("SELECT * FROM payment_transactions WHERE id=%s", (tx["id"],))
+        return _serialize_tx(cur.fetchone())
+    finally:
+        conn.close()
+
+
+# ── POST /deals/:dealId/cancel-engagement ────────────────────────────────
+# Void the J5 hold. Allowed for the owning corp or any admin, inside the
+# grace window (grace_period_expires_at > NOW()). After the window the
+# scheduler captures automatically — cancellation is no longer possible.
+
+class CancelEngagementInput(BaseModel):
+    reason: Optional[str] = None
+
+
+@router.post("/deals/{deal_id}/cancel-engagement")
+async def cancel_engagement(
+    deal_id: str,
+    body: CancelEngagementInput,
+    x_entity_id:   Optional[str] = Header(default=None),
+    x_org_id:      Optional[str] = Header(default=None),
+    x_user_id:     Optional[str] = Header(default=None),
+    x_user_role:   Optional[str] = Header(default=None),
+):
+    entity_id = x_entity_id or x_org_id
+    is_admin  = x_user_role == "admin"
+
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT * FROM payment_transactions WHERE deal_id=%s AND status=%s LIMIT 1",
+            (deal_id, PaymentStatus.AUTHORIZED)
+        )
+        tx = cur.fetchone()
+        if not tx:
+            raise HTTPException(status_code=404, detail="No authorized transaction to cancel")
+
+        if not is_admin and tx["charged_entity_id"] != entity_id:
+            raise HTTPException(status_code=403, detail="Forbidden")
+
+        # Grace window guard — non-admin only.
+        if not is_admin and tx["grace_period_expires_at"] and tx["grace_period_expires_at"] <= datetime.utcnow():
+            raise HTTPException(
+                status_code=409,
+                detail="חלון הביטול (grace period) הסתיים — לא ניתן לבטל, החיוב כבר מתבצע או בוצע"
+            )
+
+        # Void at Cardcom (or synthetically in fake mode).
+        if tx["auth_provider_deal_id"]:
+            try:
+                await void_transaction(tx["auth_provider_deal_id"])
+            except (CardcomApiError, CardcomNetworkError) as e:
+                # Mark the tx so admin can retry the void, but don't block the user.
+                cur.execute(
+                    "UPDATE payment_transactions SET failure_reason=%s WHERE id=%s",
+                    (f"void_failed: {e}", tx["id"])
+                )
+                conn.commit()
+                raise HTTPException(status_code=502, detail=f"Cardcom void error: {e}")
+
+        final_status = PaymentStatus.VOIDED_BY_ADMIN if is_admin else PaymentStatus.VOIDED_BY_CORP
+        cur.execute(
+            """UPDATE payment_transactions SET
+               status=%s, cancelled_at=NOW(),
+               cancelled_by_user_id=%s, cancellation_reason=%s
+               WHERE id=%s""",
+            (final_status, x_user_id, body.reason, tx["id"])
+        )
+        conn.commit()
+        _update_deal_payment_status(deal_id, final_status)
+
+        return {"transaction_id": tx["id"], "status": final_status}
+    finally:
+        conn.close()
 
 
 # ── POST /deals/:dealId/approve-charge-now ────────────────────────────────

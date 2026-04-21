@@ -5,7 +5,14 @@ from app.errors import register_error_handlers
 from app.routes import payment_methods, transactions, webhooks, admin_payments, settings
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from app.services.auto_charge import process_expired_grace_periods, process_retry_failed
+from app.services.auto_charge import (
+    # Pattern A (J5 pre-auth) — runs frequently so grace expiry resolves within ~1 min.
+    process_expired_auths,
+    process_failed_captures,
+    # Pattern B (legacy token + scheduled charge) — kept working during transition.
+    process_expired_grace_periods,
+    process_retry_failed,
+)
 
 scheduler = AsyncIOScheduler()
 
@@ -13,9 +20,15 @@ scheduler = AsyncIOScheduler()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
-    # Daily cron jobs
-    scheduler.add_job(process_expired_grace_periods, "cron", hour=2,  minute=0, id="auto_charge")
-    scheduler.add_job(process_retry_failed,           "cron", hour=3,  minute=0, id="retry_failed")
+
+    # Pattern A sweeps (frequent — grace can be 24-48h so we want ~1-min resolution)
+    scheduler.add_job(process_expired_auths,   "interval", minutes=1, id="capture_expired_auths")
+    scheduler.add_job(process_failed_captures, "interval", minutes=5, id="capture_retry_failed")
+
+    # Pattern B legacy sweeps (daily — same cadence as before)
+    scheduler.add_job(process_expired_grace_periods, "cron", hour=2, minute=0, id="legacy_auto_charge")
+    scheduler.add_job(process_retry_failed,          "cron", hour=3, minute=0, id="legacy_retry_failed")
+
     scheduler.start()
     yield
     scheduler.shutdown()
