@@ -8,6 +8,21 @@ import type {
   PaginatedResponse,
 } from '@/types';
 
+/**
+ * Normalise a list response into the paginated envelope shape regardless
+ * of whether the backend has been upgraded to emit it yet. Accepts either
+ * `{items, page, page_size, total}` OR a bare array (legacy shape).
+ *
+ * This is transitional — once every backend service is rebuilt with the
+ * M6 changes, the bare-array branch is dead code and can be removed.
+ */
+function ensureEnvelope<T>(res: PaginatedResponse<T> | T[]): PaginatedResponse<T> {
+  if (Array.isArray(res)) {
+    return { items: res, page: 1, page_size: res.length, total: res.length };
+  }
+  return res;
+}
+
 export const dealApi = {
   /**
    * List deals visible to the caller.
@@ -18,7 +33,8 @@ export const dealApi = {
     if (params?.page)      qs.set('page', String(params.page));
     if (params?.page_size) qs.set('page_size', String(params.page_size));
     const query = qs.toString();
-    return apiFetch<PaginatedResponse<Deal>>(`/deals${query ? '?' + query : ''}`);
+    return apiFetch<PaginatedResponse<Deal> | Deal[]>(`/deals${query ? '?' + query : ''}`)
+      .then(ensureEnvelope);
   },
   get: (id: string) => apiFetch<Deal>(`/deals/${id}`),
   create: (data: DealCreate) =>
