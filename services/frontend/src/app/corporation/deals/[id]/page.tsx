@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import {
   Loader2, Send, FileText, Users, CheckCircle, XCircle,
@@ -273,7 +273,10 @@ function AssignmentSummary({
 
 // ─── Main page ─────────────────────────────────────────────────────────────────
 
-export default function CorporationDealPage() {
+// Next.js 16 requires any component using `useSearchParams` to be inside a
+// <Suspense> boundary. The page is wrapped below at the default export; the
+// actual content component is `CorporationDealPageInner`.
+function CorporationDealPageInner() {
   const { id } = useParams<{ id: string }>();
   const router        = useRouter();
   const searchParams  = useSearchParams();
@@ -876,5 +879,17 @@ export default function CorporationDealPage() {
         </Card>
       )}
     </div>
+  );
+}
+
+export default function CorporationDealPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center h-64 text-slate-500">
+        <Loader2 className="animate-spin h-6 w-6 me-2" />טוען עסקה...
+      </div>
+    }>
+      <CorporationDealPageInner />
+    </Suspense>
   );
 }
