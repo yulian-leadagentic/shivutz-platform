@@ -64,8 +64,14 @@ def readyz():
         raise HTTPException(status_code=503, detail=f"db_unreachable: {e}")
 
 
-app.include_router(settings.router,        prefix="/settings",        tags=["settings"])
-app.include_router(payment_methods.router, prefix="/payment-methods", tags=["payment-methods"])
-app.include_router(transactions.router,    prefix="",                 tags=["transactions"])
-app.include_router(webhooks.router,        prefix="/webhooks",        tags=["webhooks"])
-app.include_router(admin_payments.router,  prefix="/admin",           tags=["admin"])
+# Gateway strips `/api` from every request before proxying (see
+# services/gateway/src/index.js: pathRewrite). So /api/payments/foo arrives
+# here as /payments/foo — every router under the payment service must be
+# mounted with a /payments prefix.
+# Exception: /webhooks, which Cardcom POSTs directly to and the gateway
+# routes via /api/webhooks → /webhooks.
+app.include_router(settings.router,        prefix="/payments/settings",        tags=["settings"])
+app.include_router(payment_methods.router, prefix="/payments/payment-methods", tags=["payment-methods"])
+app.include_router(transactions.router,    prefix="/payments",                 tags=["transactions"])
+app.include_router(webhooks.router,        prefix="/webhooks",                 tags=["webhooks"])
+app.include_router(admin_payments.router,  prefix="/payments/admin",           tags=["admin"])
