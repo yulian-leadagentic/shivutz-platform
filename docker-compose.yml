@@ -97,7 +97,9 @@ services:
         condition: service_healthy
 
   user-org:
-    build: ./services/user-org
+    build:
+      context: .
+      dockerfile: services/user-org/Dockerfile
     restart: unless-stopped
     env_file: .env
     environment:
