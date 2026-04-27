@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from typing import Optional
 from app.db import get_db
 from app.publisher import publish_event
+from app.integrations import data_gov_il
 
 router = APIRouter()
 
@@ -62,3 +63,69 @@ async def decide(org_id: str, body: ApprovalDecision, org_type: str = "contracto
         return {"id": org_id, "status": status}
     finally:
         conn.close()
+
+
+@router.post("/contractors/revalidate")
+async def revalidate_tier_2_contractors():
+    """Re-check all tier_2 contractors that were verified via the registry
+    (email/sms) against the live פנקס הקבלנים. Manual approvals are skipped
+    — they didn't depend on registry presence.
+
+    Demote to tier_1 if the contractor is no longer in the pinkash dataset
+    (license revoked, suspended, or removed) and notify them so they can
+    re-verify. Called from the notification-service cron daily.
+    """
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT id, business_number, contact_email, contact_phone, contact_name, company_name_he
+               FROM contractors
+               WHERE verification_tier = 'tier_2'
+                 AND verification_method IN ('email','sms')
+                 AND revalidate_at <= NOW()
+                 AND deleted_at IS NULL"""
+        )
+        candidates = cur.fetchall()
+    finally:
+        conn.close()
+
+    checked = 0
+    revalidated = 0
+    demoted = 0
+    for c in candidates:
+        checked += 1
+        result = await data_gov_il.lookup(c["business_number"])
+        conn = get_db()
+        try:
+            cur = conn.cursor()
+            if result["pinkash_found"]:
+                cur.execute(
+                    """UPDATE contractors
+                       SET revalidate_at = DATE_ADD(NOW(), INTERVAL 183 DAY)
+                       WHERE id = %s""",
+                    (c["id"],),
+                )
+                conn.commit()
+                revalidated += 1
+            else:
+                cur.execute(
+                    """UPDATE contractors
+                       SET verification_tier = 'tier_1',
+                           verification_method = 'none'
+                       WHERE id = %s""",
+                    (c["id"],),
+                )
+                conn.commit()
+                demoted += 1
+                await publish_event("contractor.verification.expired", {
+                    "contractor_id":  c["id"],
+                    "company_name":   c["company_name_he"] or "",
+                    "contact_name":   c["contact_name"] or "",
+                    "contact_email":  c["contact_email"] or "",
+                    "contact_phone":  c["contact_phone"] or "",
+                })
+        finally:
+            conn.close()
+
+    return {"checked": checked, "revalidated": revalidated, "demoted": demoted}

@@ -27,10 +27,11 @@ function signRefresh(payload) {
  */
 function buildPayload(user, membership = null) {
   return {
-    sub:      user.id,
-    phone:    user.phone    || undefined,
-    email:    user.email    || undefined,
-    role:     user.role,
+    sub:       user.id,
+    phone:     user.phone     || undefined,
+    email:     user.email     || undefined,
+    full_name: user.full_name || undefined,
+    role:      user.role,
     // Legacy — kept so gateway x-org-id and downstream services don't break
     org_id:   user.org_id   || undefined,
     org_type: user.org_type || undefined,
@@ -142,6 +143,29 @@ router.post('/auth/verify-otp', async (req, res) => {
       return res.status(401).json({ error: 'otp_expired_or_not_found' });
     }
     console.error('[verify-otp]', err);
+    res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /auth/check-recent-otp
+// Internal — used by other services (e.g. user-org's contractor lookup) to
+// gate sensitive pre-registration calls behind a fresh OTP. Returns 200 if
+// the phone has a verified OTP for the given purpose within the last
+// 15 minutes; 401 otherwise.
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/auth/check-recent-otp', async (req, res) => {
+  try {
+    const { phone, purpose } = req.body;
+    if (!phone || !purpose) {
+      return res.status(400).json({ error: 'phone, purpose required' });
+    }
+    const ok = await hasRecentVerifiedOtp(phone, purpose);
+    if (!ok) return res.status(401).json({ error: 'no_recent_otp' });
+    res.json({ verified: true });
+  } catch (err) {
+    if (err.status === 400) return res.status(400).json({ error: err.message });
+    console.error('[check-recent-otp]', err);
     res.status(500).json({ error: 'internal_error' });
   }
 });
@@ -515,12 +539,22 @@ router.post('/auth/register', async (req, res) => {
         [normPhone]
       );
       if (existing[0]) {
-        await pool.query(
-          'UPDATE users SET org_id=?, org_type=?, role=? WHERE id=?',
-          [org_id || null, org_type || null, role, existing[0].id]
-        );
+        // Update full_name too if the registration carries a fresh one and the
+        // stored value is empty (don't clobber a name the user already has).
+        if (full_name) {
+          await pool.query(
+            'UPDATE users SET org_id=?, org_type=?, role=?, full_name=COALESCE(NULLIF(full_name,""), ?) WHERE id=?',
+            [org_id || null, org_type || null, role, full_name, existing[0].id]
+          );
+        } else {
+          await pool.query(
+            'UPDATE users SET org_id=?, org_type=?, role=? WHERE id=?',
+            [org_id || null, org_type || null, role, existing[0].id]
+          );
+        }
         if (include_tokens && org_id) {
-          const u = { id: existing[0].id, phone: normPhone, email: undefined, role, org_id: org_id || null, org_type: org_type || null };
+          const [refreshed] = await pool.query('SELECT full_name FROM users WHERE id=? LIMIT 1', [existing[0].id]);
+          const u = { id: existing[0].id, phone: normPhone, email: undefined, full_name: refreshed[0]?.full_name || full_name || undefined, role, org_id: org_id || null, org_type: org_type || null };
           const membership = { entity_id: org_id, entity_type: org_type, role: 'owner' };
           const at = signAccess(buildPayload(u, membership));
           const rt = await issueRefreshToken(pool, existing[0].id);
@@ -535,7 +569,7 @@ router.post('/auth/register', async (req, res) => {
         [id, normPhone, full_name || null, role, org_id || null, org_type || null]
       );
       if (include_tokens && org_id) {
-        const u = { id, phone: normPhone, email: undefined, role, org_id: org_id || null, org_type: org_type || null };
+        const u = { id, phone: normPhone, email: undefined, full_name: full_name || undefined, role, org_id: org_id || null, org_type: org_type || null };
         const membership = { entity_id: org_id, entity_type: org_type, role: 'owner' };
         const at = signAccess(buildPayload(u, membership));
         const rt = await issueRefreshToken(pool, id);

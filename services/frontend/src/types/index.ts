@@ -16,7 +16,13 @@ export interface Contractor {
   company_name: string;
   company_name_he: string;
   business_number: string;
-  classification: 'general' | 'specialty' | 'infrastructure';
+  kablan_number?: string | null;
+  kvutza?: string | null;
+  sivug?: number | null;
+  gov_branch?: string | null;
+  gov_company_status?: string | null;
+  verification_tier: 'tier_0' | 'tier_1' | 'tier_2';
+  verification_method?: 'email' | 'sms' | 'manual' | 'none' | null;
   operating_regions: string[];
   approval_status: 'pending' | 'approved' | 'rejected';
   contact_name: string;
@@ -27,11 +33,13 @@ export interface Contractor {
 export interface Worker {
   id: string;
   corporation_id: string;
+  internal_id?: string | null;       // EMP-XXXXXXXX (auto-generated, system-wide unique)
   first_name: string;
   last_name: string;
   profession_type: string;
   experience_years: number;
   experience_range?: string;  // month-based: '0-6' | '6-12' | '12-24' | '24-36' | '36+'
+  years_in_israel?: number | null;
   origin_country: string;
   languages: string[];
   visa_valid_until: string;
@@ -128,18 +136,35 @@ export interface MatchBundle {
 export interface Deal {
   id: string;
   request_line_item_id: string;
-  contractor_id: string;
-  corporation_id: string;
-  workers_count: number;
-  agreed_price?: number;
+  contractor_id: string | null;   // null when info-disclosure hides the counter-party
+  corporation_id: string | null;  // null when info-disclosure hides the counter-party
   status: string;
   notes?: string;
   created_at: string;
+  // Lifecycle (M2)
+  commission_amount?: number | null;
+  corp_committed_at?: string | null;
+  approved_at?: string | null;
+  rejected_at?: string | null;
+  expires_at?: string | null;
+  scheduled_capture_at?: string | null;
+  cancelled_at?: string | null;
+  cancelled_by?: 'corp' | null;
+  cancellation_reason?: string | null;
+  closed_at?: string | null;
+  // Enriched in list_deals via cross-DB join — visible to all parties.
+  worker_count?: number;
+  requested_count?: number;
+  profession_type?: string | null;
+  profession_he?: string | null;
+  region_he?: string | null;
+  // Legacy fields kept for older UIs that haven't been rewritten yet.
+  workers_count?: number;
+  agreed_price?: number;
   standard_contract_url?: string;
   standard_contract_doc_name?: string;
   payment_status?: string;
   payment_amount_estimated?: number;
-  corp_committed_at?: string;
 }
 
 export interface Message {
@@ -170,6 +195,9 @@ export interface Corporation {
   company_name: string;
   company_name_he: string;
   business_number: string;
+  gov_company_status?: string | null;
+  verification_tier: 'tier_0' | 'tier_1' | 'tier_2';
+  verification_method?: 'email' | 'sms' | 'manual' | 'none' | null;
   countries_of_origin: string[];
   minimum_contract_months: number;
   approval_status: 'pending' | 'approved' | 'rejected' | 'suspended';
@@ -177,6 +205,19 @@ export interface Corporation {
   contact_email: string;
   contact_phone: string;
   threshold_requirements?: Record<string, unknown> | null;
+}
+
+export interface CorporationLookupResult {
+  ok: boolean;
+  blocked?: boolean;
+  block_reason?: string | null;
+  ica_found?: boolean;
+  gov_company_status?: string | null;
+  prefill?: {
+    company_name_he?: string | null;
+  };
+  error?: string;
+  message?: string;
 }
 
 export interface PaymentMethod {
@@ -277,11 +318,34 @@ export interface PaginatedResponse<T> {
 export interface ContractorRegistration {
   company_name_he: string;
   business_number: string;
-  classification: 'general' | 'specialty' | 'infrastructure';
   operating_regions: string[];
   contact_name: string;
   contact_phone: string;
   contact_email?: string;
+}
+
+export interface RegistryChannel {
+  type: 'email' | 'sms';
+  target: string;
+}
+
+export interface RegistryLookupResult {
+  ok: boolean;
+  blocked?: boolean;
+  block_reason?: string | null;
+  pinkash_found?: boolean;
+  ica_found?: boolean;
+  gov_company_status?: string | null;
+  prefill?: {
+    company_name_he?: string | null;
+    kvutza?: string | null;
+    sivug?: number | null;
+    gov_branch?: string | null;
+    kablan_number?: string | null;
+  };
+  channels?: RegistryChannel[];
+  error?: string;
+  message?: string;
 }
 
 export interface CorporationRegistration {
@@ -292,12 +356,16 @@ export interface CorporationRegistration {
   contact_name: string;
   contact_phone: string;
   contact_email?: string;
+  tc_version?: string;
 }
 
 export interface RegistrationResult {
   id: string;
   status: string;
   org_type: string;
+  verification_tier?: 'tier_0' | 'tier_1' | 'tier_2';
+  registry_found?: boolean;
+  available_channels?: RegistryChannel[];
   access_token?: string;
   refresh_token?: string;
 }

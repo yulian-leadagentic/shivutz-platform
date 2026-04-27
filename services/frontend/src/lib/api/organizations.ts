@@ -5,6 +5,8 @@ import type {
   ContractorRegistration,
   CorporationRegistration,
   RegistrationResult,
+  RegistryLookupResult,
+  CorporationLookupResult,
 } from '@/types';
 
 export const orgApi = {
@@ -22,4 +24,32 @@ export const orgApi = {
     apiFetch<Contractor>(`/organizations/contractors/${id}`),
   getCorporation: (id: string) =>
     apiFetch<Corporation>(`/organizations/corporations/${id}`),
+
+  // ── Verification ─────────────────────────────────────────────────────────
+  lookupContractorBusiness: (business_number: string, phone: string) =>
+    apiFetch<RegistryLookupResult>('/organizations/contractors/lookup', {
+      method: 'POST',
+      body: JSON.stringify({ business_number, phone }),
+    }),
+  lookupCorporationBusiness: (business_number: string, phone: string) =>
+    apiFetch<CorporationLookupResult>('/organizations/corporations/lookup', {
+      method: 'POST',
+      body: JSON.stringify({ business_number, phone }),
+    }),
+  verifyStart: (contractor_id: string, channel: 'email' | 'sms', target: string) =>
+    apiFetch<{ ok: boolean; channel: string; expires_at: string }>(
+      `/organizations/contractors/${contractor_id}/verify/start`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ channel, target }),
+      },
+    ),
+  verifyConfirm: (contractor_id: string, channel: 'email' | 'sms', secret: string) =>
+    apiFetch<{ ok: boolean; tier: string; method: string }>(
+      `/organizations/contractors/${contractor_id}/verify/confirm`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ channel, secret }),
+      },
+    ),
 };

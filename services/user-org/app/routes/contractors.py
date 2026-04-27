@@ -1,26 +1,50 @@
 from fastapi import APIRouter, HTTPException, Header, UploadFile, File, Form
 from pydantic import BaseModel, EmailStr
-from typing import List, Optional
+from typing import List, Literal, Optional
 from datetime import datetime, timedelta
 import uuid, httpx, os, json, secrets, shutil
 
 from app.db import get_db
 from app.publisher import publish_event
+from app.services import verification, rate_limit
+from app.integrations import data_gov_il
+from app.integrations.israeli_id import is_valid_israeli_id
 
 router = APIRouter()
 AUTH_SERVICE = os.getenv("AUTH_SERVICE_URL", "http://auth:3001")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "https://app.shivutz.co.il")
+
+# Pre-registration lookup is gated by a recent OTP + a per-phone rate limit
+# (registration is low-volume, but a single user typing repeatedly should
+# still be bounded — the registry calls cost us latency, not money).
+LOOKUP_RATE_MAX = 20
+LOOKUP_RATE_WINDOW_SECONDS = 600
 
 
 class ContractorCreate(BaseModel):
     company_name: Optional[str] = None          # defaults to company_name_he
     company_name_he: str
     business_number: str
-    classification: str
     operating_regions: List[str]
     contact_name: str                           # owner full name (also used as user.full_name)
     contact_phone: str                          # owner mobile (used as user.phone for SMS login)
     contact_email: Optional[EmailStr] = None    # optional business email
-    # password removed — phone-first OTP registration
+    # No classification — pulled live from פנקס הקבלנים (kvutza + sivug).
+
+
+class LookupRequest(BaseModel):
+    business_number: str
+    phone: str                                  # the OTP-verified phone gating this lookup
+
+
+class VerifyStart(BaseModel):
+    channel: Literal["email", "sms"]
+    target: str                                 # the email or phone the user picked
+
+
+class VerifyConfirm(BaseModel):
+    channel: Literal["email", "sms"]
+    secret: str                                 # code (6 digits) or magic-link token
 
 
 class TeamInvite(BaseModel):
@@ -29,9 +53,73 @@ class TeamInvite(BaseModel):
     job_title: Optional[str] = None
 
 
+@router.post("/lookup")
+async def lookup_business_number(data: LookupRequest):
+    """Pre-registration lookup: validate business_number checksum + cross-check
+    both data.gov.il registries. Frontend calls this on-blur to prefill the
+    form and surface available verification channels.
+
+    Gate: requires a recent verified 'register' OTP for the supplied phone,
+    and is rate-limited per phone (20 / 10 minutes).
+    """
+    if not rate_limit.check(
+        f"lookup:{data.phone}", LOOKUP_RATE_MAX, LOOKUP_RATE_WINDOW_SECONDS
+    ):
+        raise HTTPException(status_code=429, detail="rate_limited")
+
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        try:
+            otp_resp = await client.post(
+                f"{AUTH_SERVICE}/auth/check-recent-otp",
+                json={"phone": data.phone, "purpose": "register"},
+            )
+        except httpx.HTTPError:
+            raise HTTPException(status_code=503, detail="auth_service_unreachable")
+        if otp_resp.status_code != 200:
+            raise HTTPException(status_code=401, detail="phone_not_verified")
+
+    return await verification.quick_lookup(data.business_number)
+
+
 @router.post("", status_code=201)
 async def register_contractor(data: ContractorCreate):
-    company_name = data.company_name or data.company_name_he
+    if not is_valid_israeli_id(data.business_number):
+        raise HTTPException(status_code=400, detail="invalid_business_number")
+
+    lookup = await verification.quick_lookup(data.business_number)
+
+    if lookup.get("blocked"):
+        # Block + admin notification — company is מחוקה / בפירוק.
+        await publish_event("contractor.blocked.deleted_company", {
+            "business_number":  data.business_number,
+            "company_status":   lookup.get("block_reason"),
+            "contact_name":     data.contact_name,
+            "contact_phone":    data.contact_phone,
+            "attempted_at":     datetime.utcnow().isoformat() + "Z",
+        })
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "company_blocked",
+                "message": f"החברה רשומה במצב '{lookup.get('block_reason')}' ברשם החברות. הרישום אינו אפשרי.",
+                "company_status": lookup.get("block_reason"),
+            },
+        )
+
+    prefill = lookup.get("prefill") or {}
+    company_name_he = prefill.get("company_name_he") or data.company_name_he
+    company_name = data.company_name or company_name_he
+
+    # quick_lookup already exposes ica status as gov_company_status; derive the
+    # active flag from it without re-hitting the registry.
+    status = lookup.get("gov_company_status")
+    company_active = (status == "פעילה") if status else None
+    initial_tier = verification.initial_tier_for(
+        pinkash_found=lookup.get("pinkash_found", False),
+        ica_found=lookup.get("ica_found", False),
+        company_active=company_active,
+    )
+
     org_id = str(uuid.uuid4())
     sla_deadline = datetime.utcnow() + timedelta(hours=48)
 
@@ -41,13 +129,20 @@ async def register_contractor(data: ContractorCreate):
         cur.execute(
             """INSERT INTO contractors
                (id, user_owner_id, company_name, company_name_he, business_number,
-                classification, operating_regions, contact_name, contact_phone,
-                contact_email, approval_sla_deadline)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-            (org_id, "PENDING", company_name, data.company_name_he,
-             data.business_number, data.classification,
+                kablan_number, kvutza, sivug, gov_branch, gov_company_status,
+                operating_regions, contact_name, contact_phone, contact_email,
+                verification_tier, approval_sla_deadline)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            (org_id, "PENDING", company_name, company_name_he,
+             data.business_number,
+             prefill.get("kablan_number"),
+             prefill.get("kvutza"),
+             prefill.get("sivug"),
+             prefill.get("gov_branch"),
+             lookup.get("gov_company_status"),
              json.dumps(data.operating_regions), data.contact_name,
-             data.contact_phone, data.contact_email, sla_deadline)
+             data.contact_phone, data.contact_email,
+             initial_tier, sla_deadline)
         )
 
         # Phone-first registration — auth service verifies OTP was confirmed recently
@@ -71,9 +166,17 @@ async def register_contractor(data: ContractorCreate):
             user = resp.json()
 
         cur.execute("UPDATE contractors SET user_owner_id = %s WHERE id = %s", (user["id"], org_id))
-        # Legacy org_users row
+        # Legacy org_users row — UPSERT because uq_user_id only allows one org per
+        # user in the legacy table. The new entity_memberships row below tracks
+        # multiple memberships properly.
         cur.execute(
-            "INSERT INTO org_users (id, user_id, org_id, org_type, role, joined_at) VALUES (%s,%s,%s,%s,%s,NOW())",
+            """INSERT INTO org_users (id, user_id, org_id, org_type, role, joined_at)
+               VALUES (%s,%s,%s,%s,%s,NOW())
+               ON DUPLICATE KEY UPDATE
+                 org_id = VALUES(org_id),
+                 org_type = VALUES(org_type),
+                 role = VALUES(role),
+                 joined_at = NOW()""",
             (str(uuid.uuid4()), user["id"], org_id, "contractor", "owner")
         )
         # New entity_memberships row in auth_db (same MySQL instance)
@@ -93,11 +196,14 @@ async def register_contractor(data: ContractorCreate):
         })
 
         return {
-            "id":            org_id,
-            "status":        "pending",
-            "org_type":      "contractor",
-            "access_token":  user.get("access_token"),
-            "refresh_token": user.get("refresh_token"),
+            "id":                  org_id,
+            "status":              "pending",
+            "org_type":            "contractor",
+            "verification_tier":   initial_tier,
+            "registry_found":      lookup.get("pinkash_found", False),
+            "available_channels":  lookup.get("channels", []),
+            "access_token":        user.get("access_token"),
+            "refresh_token":       user.get("refresh_token"),
         }
     except HTTPException:
         raise
@@ -106,6 +212,72 @@ async def register_contractor(data: ContractorCreate):
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         conn.close()
+
+
+@router.post("/{org_id}/verify/start")
+async def verify_start(org_id: str, data: VerifyStart):
+    """Issue a verification token on the chosen channel and dispatch the
+    notification (email magic link or SMS code)."""
+    result = verification.start_verification(org_id, data.channel, data.target)
+    if not result.get("ok"):
+        raise HTTPException(status_code=400, detail=result.get("error", "verify_start_failed"))
+
+    if data.channel == "email":
+        magic_link = (
+            f"{FRONTEND_URL}/register/contractor/verify?"
+            f"contractor_id={org_id}&token={result['send']['token']}"
+        )
+        await publish_event("contractor.verify.email_link", {
+            "recipient_email":    data.target,
+            "contact_name":       result.get("contact_name") or "",
+            "magic_link":         magic_link,
+            "expires_in_minutes": 30,
+        })
+    else:  # sms
+        await publish_event("contractor.verify.sms_code", {
+            "phone":        data.target,
+            "contact_name": result.get("contact_name") or "",
+            "code":         result["send"]["code"],
+        })
+
+    return {
+        "ok":         True,
+        "channel":    data.channel,
+        "expires_at": result["expires_at"],
+    }
+
+
+@router.post("/{org_id}/verify/confirm")
+async def verify_confirm(org_id: str, data: VerifyConfirm):
+    """Validate the user-supplied secret. On success the contractor moves to
+    tier_2 and approval_status flips to 'approved'. Fires
+    `contractor.verified` so the user gets a confirmation email + SMS."""
+    result = verification.confirm_verification(org_id, data.channel, data.secret)
+    if not result.get("ok"):
+        raise HTTPException(status_code=400, detail=result.get("error", "verify_failed"))
+
+    # Best-effort: pull contact info to enrich the success notification.
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT contact_name, contact_email, contact_phone, company_name_he
+               FROM contractors WHERE id = %s""",
+            (org_id,),
+        )
+        c = cur.fetchone() or {}
+    finally:
+        conn.close()
+
+    await publish_event("contractor.verified", {
+        "contractor_id":       org_id,
+        "company_name":        c.get("company_name_he") or "",
+        "contact_name":        c.get("contact_name") or "",
+        "contact_email":       c.get("contact_email") or "",
+        "contact_phone":       c.get("contact_phone") or "",
+        "verification_method": data.channel,
+    })
+    return result
 
 
 @router.get("/{org_id}")

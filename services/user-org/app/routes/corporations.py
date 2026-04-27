@@ -6,9 +6,17 @@ import uuid, httpx, os, json, secrets, shutil
 
 from app.db import get_db
 from app.publisher import publish_event
+from app.services import rate_limit
+from app.integrations import data_gov_il
+from app.integrations.israeli_id import is_valid_israeli_id
 
 router = APIRouter()
 AUTH_SERVICE = os.getenv("AUTH_SERVICE_URL", "http://auth:3001")
+
+# Pre-registration lookup is gated by a recent OTP + a per-phone rate limit
+# (same shape as the contractor lookup).
+LOOKUP_RATE_MAX = 20
+LOOKUP_RATE_WINDOW_SECONDS = 600
 
 
 class CorporationCreate(BaseModel):
@@ -20,7 +28,13 @@ class CorporationCreate(BaseModel):
     contact_name: str                           # owner full name (also used as user.full_name)
     contact_phone: str                          # owner mobile (used as user.phone for SMS login)
     contact_email: Optional[EmailStr] = None    # optional business email
+    tc_version: Optional[str] = None            # T&C version the corp accepted (required for tier_2 path)
     # password removed — phone-first OTP registration
+
+
+class CorpLookupRequest(BaseModel):
+    business_number: str
+    phone: str                                  # the OTP-verified phone gating this lookup
 
 
 class TeamInvite(BaseModel):
@@ -29,25 +43,110 @@ class TeamInvite(BaseModel):
     job_title: Optional[str] = None
 
 
+@router.post("/lookup")
+async def lookup_corporation_business(data: CorpLookupRequest):
+    """Pre-registration lookup against רשם החברות only — corporations are
+    not in פנקס הקבלנים. Returns prefill (company name, status) and a
+    `blocked` flag if the company is מחוקה / בפירוק.
+
+    Same OTP gate + per-phone rate limit as the contractor lookup.
+    """
+    if not rate_limit.check(
+        f"corp-lookup:{data.phone}", LOOKUP_RATE_MAX, LOOKUP_RATE_WINDOW_SECONDS
+    ):
+        raise HTTPException(status_code=429, detail="rate_limited")
+
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        try:
+            otp_resp = await client.post(
+                f"{AUTH_SERVICE}/auth/check-recent-otp",
+                json={"phone": data.phone, "purpose": "register"},
+            )
+        except httpx.HTTPError:
+            raise HTTPException(status_code=503, detail="auth_service_unreachable")
+        if otp_resp.status_code != 200:
+            raise HTTPException(status_code=401, detail="phone_not_verified")
+
+    if not is_valid_israeli_id(data.business_number):
+        return {
+            "ok": False,
+            "error": "invalid_business_number",
+            "message": "מספר ע.מ / ח.פ אינו תקין (checksum נכשל)",
+        }
+
+    result = await data_gov_il.lookup(data.business_number)
+    ica_fields = data_gov_il.extract_ica_fields(result["ica"]) if result["ica"] else {}
+    company_active = data_gov_il.is_company_active(result["ica"])
+    blocked = result["ica_found"] and company_active is False
+
+    return {
+        "ok": True,
+        "blocked": blocked,
+        "block_reason": ica_fields.get("gov_company_status") if blocked else None,
+        "ica_found": result["ica_found"],
+        "gov_company_status": ica_fields.get("gov_company_status"),
+        "prefill": {
+            "company_name_he": ica_fields.get("company_name_he"),
+        },
+        "from_cache": result["from_cache"],
+    }
+
+
 @router.post("", status_code=201)
 async def register_corporation(data: CorporationCreate):
-    company_name = data.company_name or data.company_name_he
+    if not is_valid_israeli_id(data.business_number):
+        raise HTTPException(status_code=400, detail="invalid_business_number")
+
+    # Cross-check רשם החברות. Corporations don't have an email/sms self-
+    # verification path; tier_2 ("תאגיד מאושר") is admin-only.
+    registry = await data_gov_il.lookup(data.business_number)
+    ica_fields = data_gov_il.extract_ica_fields(registry["ica"]) if registry["ica"] else {}
+    company_active = data_gov_il.is_company_active(registry["ica"])
+
+    if registry["ica_found"] and company_active is False:
+        await publish_event("contractor.blocked.deleted_company", {
+            "business_number": data.business_number,
+            "company_status":  ica_fields.get("gov_company_status"),
+            "contact_name":    data.contact_name,
+            "contact_phone":   data.contact_phone,
+            "attempted_at":    datetime.utcnow().isoformat() + "Z",
+        })
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "company_blocked",
+                "message": f"החברה רשומה במצב '{ica_fields.get('gov_company_status')}' ברשם החברות. הרישום אינו אפשרי.",
+                "company_status": ica_fields.get("gov_company_status"),
+            },
+        )
+
+    company_name_he = ica_fields.get("company_name_he") or data.company_name_he
+    company_name = data.company_name or company_name_he
+    initial_tier = "tier_1" if (registry["ica_found"] and company_active) else "tier_0"
+
     org_id = str(uuid.uuid4())
     sla_deadline = datetime.utcnow() + timedelta(hours=48)
 
     conn = get_db()
     try:
         cur = conn.cursor()
+        tc_signed_at = datetime.utcnow() if data.tc_version else None
         cur.execute(
             """INSERT INTO corporations
                (id, user_owner_id, company_name, company_name_he, business_number,
+                gov_company_status, verification_tier,
                 countries_of_origin, minimum_contract_months, contact_name,
-                contact_phone, contact_email, approval_sla_deadline)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-            (org_id, "PENDING", company_name, data.company_name_he,
-             data.business_number, json.dumps(data.countries_of_origin),
+                contact_phone, contact_email, approval_sla_deadline,
+                tc_version, tc_signed_at)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+            (org_id, "PENDING", company_name, company_name_he,
+             data.business_number,
+             ica_fields.get("gov_company_status"),
+             initial_tier,
+             json.dumps(data.countries_of_origin),
              data.minimum_contract_months, data.contact_name,
-             data.contact_phone, data.contact_email, sla_deadline)
+             data.contact_phone, data.contact_email, sla_deadline,
+             data.tc_version, tc_signed_at)
         )
 
         # Phone-first registration — auth service verifies OTP was confirmed recently
@@ -71,9 +170,17 @@ async def register_corporation(data: CorporationCreate):
             user = resp.json()
 
         cur.execute("UPDATE corporations SET user_owner_id = %s WHERE id = %s", (user["id"], org_id))
-        # Legacy org_users row
+        # Legacy org_users row — UPSERT (uq_user_id only allows one org per
+        # user in the legacy table; the new entity_memberships row below
+        # tracks multiple memberships).
         cur.execute(
-            "INSERT INTO org_users (id, user_id, org_id, org_type, role, joined_at) VALUES (%s,%s,%s,%s,%s,NOW())",
+            """INSERT INTO org_users (id, user_id, org_id, org_type, role, joined_at)
+               VALUES (%s,%s,%s,%s,%s,NOW())
+               ON DUPLICATE KEY UPDATE
+                 org_id = VALUES(org_id),
+                 org_type = VALUES(org_type),
+                 role = VALUES(role),
+                 joined_at = NOW()""",
             (str(uuid.uuid4()), user["id"], org_id, "corporation", "owner")
         )
         # New entity_memberships row in auth_db (same MySQL instance)
@@ -93,11 +200,13 @@ async def register_corporation(data: CorporationCreate):
         })
 
         return {
-            "id":            org_id,
-            "status":        "pending",
-            "org_type":      "corporation",
-            "access_token":  user.get("access_token"),
-            "refresh_token": user.get("refresh_token"),
+            "id":                org_id,
+            "status":            "pending",
+            "org_type":          "corporation",
+            "verification_tier": initial_tier,
+            "registry_found":    registry["ica_found"],
+            "access_token":      user.get("access_token"),
+            "refresh_token":     user.get("refresh_token"),
         }
     except HTTPException:
         raise
