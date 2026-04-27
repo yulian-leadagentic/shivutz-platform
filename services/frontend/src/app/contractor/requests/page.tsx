@@ -137,11 +137,11 @@ export default function RequestsPage() {
     <div className="space-y-4 max-w-6xl">
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <h2 className="text-xl font-bold text-slate-900">בקשות עבודה</h2>
+        <h2 className="text-xl font-bold text-slate-900">איתור עובדים</h2>
         <Button asChild>
           <Link href="/contractor/requests/new">
             <Plus className="h-4 w-4" />
-            בקשה חדשה
+            איתור חדש
           </Link>
         </Button>
       </div>

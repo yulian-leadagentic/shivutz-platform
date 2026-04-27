@@ -27,7 +27,7 @@ interface NavItem {
 
 const CONTRACTOR_NAV: NavItem[] = [
   { label: 'לוח בקרה',    href: '/contractor/dashboard', icon: LayoutDashboard },
-  { label: 'בקשות עבודה', href: '/contractor/requests',  icon: ClipboardList,
+  { label: 'איתור עובדים', href: '/contractor/requests',  icon: ClipboardList,
     sub: [{ label: '+ חדש', href: '/contractor/requests/new' }] },
   { label: 'עסקאות',      href: '/contractor/deals',     icon: Handshake },
   { label: 'צוות',        href: '/contractor/users',     icon: Users },

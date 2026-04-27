@@ -97,41 +97,51 @@ function CorporationDealsPageContent() {
                   <tr className="border-b border-slate-100 text-slate-500">
                     <th className="px-4 py-3 text-start font-medium">מזהה</th>
                     <th className="px-4 py-3 text-start font-medium">סטטוס</th>
+                    <th className="px-4 py-3 text-start font-medium">מקצוע</th>
                     <th className="px-4 py-3 text-start font-medium">עובדים</th>
-                    <th className="px-4 py-3 text-start font-medium">מחיר</th>
+                    <th className="px-4 py-3 text-start font-medium">אזור</th>
                     <th className="px-4 py-3 text-start font-medium">נוצרה</th>
                     <th className="px-4 py-3 text-start font-medium"></th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map((d) => (
-                    <tr
-                      key={d.id}
-                      className={`border-b border-slate-50 last:border-0 hover:bg-slate-50 ${
-                        d.status === 'proposed' ? 'bg-amber-50' : ''
-                      }`}
-                    >
-                      <td className="px-4 py-3 font-mono text-xs text-slate-700">
-                        #{d.id.slice(0, 8)}
-                      </td>
-                      <td className="px-4 py-3"><StatusBadge status={d.status} /></td>
-                      <td className="px-4 py-3 text-center text-slate-600">{d.workers_count}</td>
-                      <td className="px-4 py-3 text-slate-600">
-                        {d.agreed_price ? `₪${Number(d.agreed_price).toLocaleString('he-IL')}` : '—'}
-                      </td>
-                      <td className="px-4 py-3 text-slate-500">{fmt(d.created_at)}</td>
-                      <td className="px-4 py-3">
-                        <Link
-                          href={`/corporation/deals/${d.id}`}
-                          className={`text-xs font-medium hover:underline ${
-                            d.status === 'proposed' ? 'text-amber-600' : 'text-brand-600'
-                          }`}
-                        >
-                          {d.status === 'proposed' ? 'אשר / דחה' : 'פרטים'}
-                        </Link>
-                      </td>
-                    </tr>
-                  ))}
+                  {filtered.map((d) => {
+                    const offered  = d.worker_count ?? 0;
+                    const requested = d.requested_count ?? 0;
+                    return (
+                      <tr
+                        key={d.id}
+                        className={`border-b border-slate-50 last:border-0 hover:bg-slate-50 ${
+                          d.status === 'proposed' ? 'bg-amber-50' : ''
+                        }`}
+                      >
+                        <td className="px-4 py-3 font-mono text-xs text-slate-700">
+                          #{d.id.slice(0, 8)}
+                        </td>
+                        <td className="px-4 py-3"><StatusBadge status={d.status} /></td>
+                        <td className="px-4 py-3 text-slate-700 font-medium">
+                          {d.profession_he || '—'}
+                        </td>
+                        <td className="px-4 py-3 text-slate-600">
+                          {requested > 0
+                            ? <span><span className="font-medium text-slate-700">{offered}</span><span className="text-slate-400"> / {requested} ביקש</span></span>
+                            : (offered || '—')}
+                        </td>
+                        <td className="px-4 py-3 text-slate-500">{d.region_he || '—'}</td>
+                        <td className="px-4 py-3 text-slate-500">{fmt(d.created_at)}</td>
+                        <td className="px-4 py-3">
+                          <Link
+                            href={`/corporation/deals/${d.id}`}
+                            className={`text-xs font-medium hover:underline ${
+                              d.status === 'proposed' ? 'text-amber-600' : 'text-brand-600'
+                            }`}
+                          >
+                            {d.status === 'proposed' ? 'אשר / דחה' : 'פרטים'}
+                          </Link>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

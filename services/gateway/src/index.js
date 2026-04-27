@@ -69,8 +69,10 @@ const PUBLIC_PREFIXES = [
 
 // Public only for specific HTTP methods (exact path → allowed methods)
 const PUBLIC_METHOD_ROUTES = {
-  '/api/organizations/contractors': new Set(['POST']),  // self-registration
-  '/api/organizations/corporations': new Set(['POST']), // self-registration
+  '/api/organizations/contractors': new Set(['POST']),          // self-registration
+  '/api/organizations/contractors/lookup': new Set(['POST']),   // pre-registration registry lookup (gated by recent OTP)
+  '/api/organizations/corporations': new Set(['POST']),         // self-registration
+  '/api/organizations/corporations/lookup': new Set(['POST']),  // pre-registration registry lookup (gated by recent OTP)
 };
 
 // Public only for specific HTTP methods matched by prefix (prefix → allowed methods)
@@ -78,6 +80,14 @@ const PUBLIC_METHOD_ROUTES = {
 const PUBLIC_METHOD_PREFIXES = [
   { prefix: '/api/marketplace/leads', methods: new Set(['POST']) }, // lead capture — no auth
   { prefix: '/api/marketplace',       methods: new Set(['GET']) },  // public browse
+];
+
+// Public only for specific HTTP methods matched by suffix on a prefix
+// (e.g. /api/organizations/contractors/{any-id}/verify/start) — security
+// comes from the verification token in the body, not a JWT.
+const PUBLIC_METHOD_SUFFIXES = [
+  { prefix: '/api/organizations/contractors/', suffix: '/verify/start',   methods: new Set(['POST']) },
+  { prefix: '/api/organizations/contractors/', suffix: '/verify/confirm', methods: new Set(['POST']) },
 ];
 
 // Admin-only routes
@@ -92,14 +102,34 @@ for (const [prefix, target] of Object.entries(services)) {
     if (limited) return;
 
     // Auth check — use originalUrl so the full /api/... path is available
+    const url = req.originalUrl.split('?')[0];
     const isPublic =
       PUBLIC_PREFIXES.some(p => req.originalUrl.startsWith(p)) ||
       Object.entries(PUBLIC_METHOD_ROUTES).some(
-        ([path, methods]) => req.originalUrl === path && methods.has(req.method)
+        ([path, methods]) => url === path && methods.has(req.method)
       ) ||
       PUBLIC_METHOD_PREFIXES.some(
         ({ prefix: p, methods }) => req.originalUrl.startsWith(p) && methods.has(req.method)
+      ) ||
+      PUBLIC_METHOD_SUFFIXES.some(
+        ({ prefix: p, suffix: s, methods }) =>
+          url.startsWith(p) && url.endsWith(s) && methods.has(req.method)
       );
+    function attachUserHeaders(user) {
+      req.headers['x-user-id']   = user.sub;
+      req.headers['x-user-role'] = user.role;
+      if (user.org_id)          req.headers['x-org-id']          = user.org_id;
+      else                      delete req.headers['x-org-id'];
+      if (user.phone)           req.headers['x-phone']           = user.phone;
+      else                      delete req.headers['x-phone'];
+      if (user.entity_id)       req.headers['x-entity-id']       = user.entity_id;
+      else                      delete req.headers['x-entity-id'];
+      if (user.entity_type)     req.headers['x-entity-type']     = user.entity_type;
+      else                      delete req.headers['x-entity-type'];
+      if (user.membership_role) req.headers['x-membership-role'] = user.membership_role;
+      else                      delete req.headers['x-membership-role'];
+    }
+
     if (!isPublic) {
       const user = await validateToken(req);
       if (!user) return res.status(401).json({ error: 'Unauthorized' });
@@ -109,20 +139,12 @@ for (const [prefix, target] of Object.entries(services)) {
         return res.status(403).json({ error: 'Forbidden' });
       }
 
-      req.headers['x-user-id']   = user.sub;
-      req.headers['x-user-role'] = user.role;
-      // Legacy org context — kept for backward compat
-      if (user.org_id)          req.headers['x-org-id']          = user.org_id;
-      else                      delete req.headers['x-org-id'];
-      // New entity context — only present after entity selection (Phase 5+)
-      if (user.phone)           req.headers['x-phone']           = user.phone;
-      else                      delete req.headers['x-phone'];
-      if (user.entity_id)       req.headers['x-entity-id']       = user.entity_id;
-      else                      delete req.headers['x-entity-id'];
-      if (user.entity_type)     req.headers['x-entity-type']     = user.entity_type;
-      else                      delete req.headers['x-entity-type'];
-      if (user.membership_role) req.headers['x-membership-role'] = user.membership_role;
-      else                      delete req.headers['x-membership-role'];
+      attachUserHeaders(user);
+    } else if (req.headers.authorization) {
+      // Public route, but the caller IS logged in — pass identity headers so
+      // backends can offer scoped behaviour (e.g. /marketplace?mine=true).
+      const user = await validateToken(req).catch(() => null);
+      if (user) attachUserHeaders(user);
     }
 
     next();

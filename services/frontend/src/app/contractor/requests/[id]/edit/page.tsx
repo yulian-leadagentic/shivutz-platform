@@ -370,7 +370,7 @@ export default function EditRequestPage() {
         <Button variant="ghost" size="sm" asChild>
           <Link href="/contractor/requests"><ArrowLeft className="h-4 w-4" /> חזרה</Link>
         </Button>
-        <h2 className="text-xl font-bold text-slate-900">עריכת בקשת עבודה</h2>
+        <h2 className="text-xl font-bold text-slate-900">עריכת איתור עובדים</h2>
       </div>
 
       <form onSubmit={handleSubmit} noValidate className="space-y-5">

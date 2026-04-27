@@ -125,7 +125,7 @@ export default function ContractorDealsPage() {
               </p>
               {filter === 'all' && (
                 <p className="text-slate-400 text-sm">
-                  צור בקשת עבודה וחפש התאמות כדי לשלוח פנייה לתאגיד
+                  צור איתור עובדים וחפש התאמות כדי לשלוח פנייה לתאגיד
                 </p>
               )}
               {filter === 'all' && (

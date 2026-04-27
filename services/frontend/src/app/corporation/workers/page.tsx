@@ -437,6 +437,7 @@ export default function WorkersPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-100 text-slate-500">
+                    <th className="px-3 py-3 text-start font-medium">מס׳ פנימי</th>
                     <th className="px-3 py-3 text-start font-medium">מס׳ עובד</th>
                     <th className="px-3 py-3 text-start font-medium">שם</th>
                     <th className="px-3 py-3 text-start font-medium">מקצוע</th>
@@ -463,6 +464,9 @@ export default function WorkersPage() {
                     const regionLabel = availRegion ? (regionMap[availRegion] ?? availRegion) : '—';
                     return (
                       <tr key={w.id} className={`border-b border-slate-50 last:border-0 hover:brightness-95 transition-colors ${ROW_BG[w.status] ?? ''}`}>
+                        <td className="px-3 py-3 font-mono text-xs text-slate-600">
+                          {(w as unknown as { internal_id?: string }).internal_id || '—'}
+                        </td>
                         <td className="px-3 py-3">
                           <EmpNumCell
                             workerId={w.id}

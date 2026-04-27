@@ -17,7 +17,6 @@ import {
   EXPERIENCE_LOWER_MONTHS as EXP_RANGE_LOWER,
   LANGUAGE_OPTIONS as LANGUAGES,
   LANGUAGE_LEVELS as LEVELS,
-  ORIGIN_PRIMARY_LANGUAGE as ORIGIN_TO_LANG,
   type ExperienceRange as ExpRangeMonth,
 } from '@/i18n/he';
 
@@ -219,7 +218,7 @@ function LineItemCard({ li, index, total, expanded, professions, origins,
               <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">תאריך התחלה *</label>
               <input type="date" value={li.start_date} dir="ltr"
                 min={projectStart || undefined}
-                max={li.end_date || projectEnd || undefined}
+                max={li.end_date || undefined}
                 disabled={li.useProjectDates}
                 onChange={e => handleDateChange('start_date', e.target.value)}
                 className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:bg-slate-100 disabled:text-slate-400"
@@ -229,7 +228,6 @@ function LineItemCard({ li, index, total, expanded, professions, origins,
               <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">תאריך סיום *</label>
               <input type="date" value={li.end_date} dir="ltr"
                 min={li.start_date || projectStart || undefined}
-                max={projectEnd || undefined}
                 disabled={li.useProjectDates}
                 onChange={e => handleDateChange('end_date', e.target.value)}
                 className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:bg-slate-100 disabled:text-slate-400"
@@ -326,25 +324,11 @@ export default function NewRequestPage() {
   }, [step1.project_start_date, step1.project_end_date]);
 
   function updateLineItem(index: number, field: keyof LineItemDraft, value: unknown) {
-    setLineItems(prev => {
-      const updated = prev.map((li, i) => i === index ? { ...li, [field]: value } : li);
-      // Auto-add country language when origin_preference changes
-      if (field === 'origin_preference') {
-        const codes = value as string[];
-        const cur = updated[index];
-        const langs = [...cur.required_languages];
-        let changed = false;
-        for (const code of codes) {
-          const lang = ORIGIN_TO_LANG[code];
-          if (lang && !langs.some(l => l.language === lang)) {
-            langs.push({ language: lang, level: 'basic' });
-            changed = true;
-          }
-        }
-        if (changed) updated[index] = { ...cur, required_languages: langs };
-      }
-      return updated;
-    });
+    // The native language of the origin country is implied by the country
+    // selection itself — no need to mirror it into "additional languages".
+    // Additional languages are reserved for cross-language requirements
+    // (e.g. a Chinese worker who must also speak Hebrew or English).
+    setLineItems(prev => prev.map((li, i) => i === index ? { ...li, [field]: value } : li));
   }
 
   function addLineItem() {
@@ -377,7 +361,7 @@ export default function NewRequestPage() {
 
   function validateStep2(): string {
     if (lineItems.length === 0) return 'יש להוסיף לפחות מקצוע אחד';
-    const { project_start_date: ps, project_end_date: pe } = step1;
+    const { project_start_date: ps } = step1;
     for (let i = 0; i < lineItems.length; i++) {
       const li = lineItems[i], n = i + 1;
       if (!li.profession_type)                 return `מקצוע ${n}: יש לבחור מקצוע`;
@@ -386,7 +370,10 @@ export default function NewRequestPage() {
       if (!li.end_date)                         return `מקצוע ${n}: יש להזין תאריך סיום`;
       if (li.end_date <= li.start_date)         return `מקצוע ${n}: תאריך הסיום חייב להיות אחרי ההתחלה`;
       if (ps && li.start_date < ps)             return `מקצוע ${n}: תאריך ההתחלה לפני תחילת הפרויקט`;
-      if (pe && li.end_date > pe)               return `מקצוע ${n}: תאריך הסיום אחרי סיום הפרויקט`;
+      // Note: line-item end_date is intentionally NOT bounded by the project
+      // end_date — workforce needs may legitimately extend past the project's
+      // headline timeline (overruns, follow-on phases). The line-item dates
+      // are the authoritative search window.
     }
     return '';
   }

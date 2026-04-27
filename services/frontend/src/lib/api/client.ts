@@ -57,6 +57,12 @@ async function extractErrorMessage(res: Response): Promise<string> {
     }
     if (typeof errObj === 'string') return errObj;
     if (typeof b.detail === 'string') return b.detail;
+    // FastAPI HTTPException(detail={...}) serializes as `{"detail": {code, message, ...}}`.
+    if (b.detail && typeof b.detail === 'object' && !Array.isArray(b.detail)) {
+      const d = b.detail as Record<string, unknown>;
+      if (typeof d.message === 'string') return d.message;
+      if (typeof d.code    === 'string') return d.code;
+    }
     if (Array.isArray(b.detail) && b.detail.length > 0) {
       const first = b.detail[0] as Record<string, unknown>;
       if (typeof first?.msg === 'string') return first.msg;
