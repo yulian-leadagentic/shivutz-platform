@@ -1,0 +1,236 @@
+networks:
+  shivutz:
+    driver: bridge
+
+volumes:
+  mysql_data:
+  redis_data:
+  rabbitmq_data:
+  uploads_data:
+
+services:
+  # ─────────────────────────────────────────────────────────
+  # Infrastructure
+  # ─────────────────────────────────────────────────────────
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./db/migrations:/docker-entrypoint-initdb.d
+    # No host port binding — reachable by service name within shivutz network
+    networks:
+      - shivutz
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    # No host port binding — reachable by service name within shivutz network
+    networks:
+      - shivutz
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"   # Management UI
+    networks:
+      - shivutz
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  # ─────────────────────────────────────────────────────────
+  # Application Services
+  # ─────────────────────────────────────────────────────────
+  gateway:
+    build: ./services/gateway
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "3000:3000"
+    networks:
+      - shivutz
+    depends_on:
+      redis:
+        condition: service_healthy
+      auth:
+        condition: service_started
+
+  auth:
+    build: ./services/auth
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DB_NAME: ${AUTH_DB_NAME}
+    ports:
+      - "3001:3001"
+    networks:
+      - shivutz
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  user-org:
+    build:
+      context: .
+      dockerfile: services/user-org/Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DB_NAME: ${ORG_DB_NAME}
+    ports:
+      - "3002:3002"
+    volumes:
+      - uploads_data:/app/uploads
+    networks:
+      - shivutz
+    depends_on:
+      mysql:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  worker:
+    build: ./services/worker
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DB_NAME: ${WORKER_DB_NAME}
+    ports:
+      - "3003:3003"
+    networks:
+      - shivutz
+    depends_on:
+      mysql:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  job-match:
+    build: ./services/job-match
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DB_NAME: ${JOB_DB_NAME}
+    ports:
+      - "3004:3004"
+    networks:
+      - shivutz
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      worker:
+        condition: service_started
+
+  deal:
+    build: ./services/deal
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DB_NAME: ${DEAL_DB_NAME}
+    ports:
+      - "3005:3005"
+    networks:
+      - shivutz
+    depends_on:
+      mysql:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      worker:
+        condition: service_started
+
+  notification:
+    build: ./services/notification
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DB_NAME: ${NOTIF_DB_NAME}
+    ports:
+      - "3006:3006"
+    networks:
+      - shivutz
+    depends_on:
+      mysql:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  admin:
+    build: ./services/admin
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      USER_ORG_SERVICE_URL: http://user-org:3002
+      JOB_MATCH_SERVICE_URL: http://job-match:3004
+      DEAL_SERVICE_URL: http://deal:3005
+    ports:
+      - "3007:3007"
+    networks:
+      - shivutz
+    depends_on:
+      mysql:
+        condition: service_healthy
+      user-org:
+        condition: service_started
+      worker:
+        condition: service_started
+      deal:
+        condition: service_started
+
+  payment:
+    build: ./services/payment
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DB_NAME: ${PAYMENT_DB_NAME}
+    ports:
+      - "3009:3009"
+    networks:
+      - shivutz
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  # ─────────────────────────────────────────────────────────
+  # Frontend
+  # ─────────────────────────────────────────────────────────
+  frontend:
+    build: ./services/frontend
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:3000/api
+    ports:
+      - "3008:3008"
+    networks:
+      - shivutz
+    depends_on:
+      - gateway
