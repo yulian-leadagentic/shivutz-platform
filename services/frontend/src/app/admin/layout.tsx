@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { LayoutDashboard, ClipboardCheck, Handshake, Building2, LogOut, BadgeDollarSign, Percent, PhoneCall } from 'lucide-react';
+import { LayoutDashboard, ClipboardCheck, Handshake, Building2, LogOut, BadgeDollarSign, Percent, PhoneCall, Users, Inbox } from 'lucide-react';
 import { clearTokens } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 
@@ -11,8 +11,9 @@ const NAV = [
   { href: '/admin/approvals',  label: 'אישורים',        icon: ClipboardCheck, badge: true },
   { href: '/admin/deals',      label: 'עסקאות',         icon: Handshake },
   { href: '/admin/orgs',       label: 'ארגונים',        icon: Building2 },
-  { href: '/admin/pricing',      label: 'תמחור תאגידים',  icon: BadgeDollarSign },
-  { href: '/admin/commissions',      label: 'עמלות',         icon: Percent },
+  { href: '/admin/users',      label: 'משתמשים',        icon: Users },
+  { href: '/admin/leads',      label: 'פניות ובקשות',   icon: Inbox },
+  { href: '/admin/commissions',      label: 'עמלות ומע״מ',  icon: Percent },
   { href: '/admin/registration-log', label: 'לוג רישומים',  icon: PhoneCall },
 ];
 
@@ -72,7 +73,17 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <h1 className="text-lg font-semibold text-slate-800">
             {NAV.find(n => pathname.startsWith(n.href))?.label ?? 'ניהול'}
           </h1>
-          <span className="text-xs text-slate-400 bg-slate-100 px-2 py-1 rounded">מנהל מערכת</span>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-slate-400 bg-slate-100 px-2 py-1 rounded">מנהל מערכת</span>
+            <button
+              onClick={logout}
+              className="inline-flex items-center gap-1.5 text-sm text-slate-600 hover:text-red-600 hover:bg-red-50 px-3 py-1.5 rounded-md transition-colors"
+              aria-label="התנתקות"
+            >
+              <LogOut className="h-4 w-4" />
+              התנתקות
+            </button>
+          </div>
         </header>
         <main className="flex-1 p-8 overflow-auto">
           {children}

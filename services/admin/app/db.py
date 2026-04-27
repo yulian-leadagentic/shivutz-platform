@@ -16,7 +16,7 @@ async def init_db():
         cursorclass=pymysql.cursors.DictCursor,
     )
     # Verify connectivity
-    for db in ["org_db", "worker_db", "job_db", "deal_db"]:
+    for db in ["org_db", "worker_db", "job_db", "deal_db", "payment_db", "auth_db"]:
         conn = pymysql.connect(**_base_config, database=db)
         conn.close()
     print("Admin DB pools connected")

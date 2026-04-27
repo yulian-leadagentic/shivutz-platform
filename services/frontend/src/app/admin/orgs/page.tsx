@@ -1,10 +1,20 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Loader2, Search } from 'lucide-react';
+import Link from 'next/link';
+import { Loader2, Search, ChevronLeft } from 'lucide-react';
 import { adminApi, type PendingOrg } from '@/lib/adminApi';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+
+type StatusFilter = 'all' | 'approved' | 'pending' | 'rejected' | 'suspended';
+const STATUS_FILTER_LABEL: Record<StatusFilter, string> = {
+  all:       'הכל',
+  approved:  'מאושרים',
+  pending:   'ממתינים',
+  rejected:  'נדחו',
+  suspended: 'מושהים',
+};
 
 const STATUS_MAP: Record<string, { label: string; variant: 'success' | 'warning' | 'destructive' | 'secondary' | 'default' }> = {
   approved:  { label: 'מאושר',      variant: 'success' },
@@ -18,6 +28,7 @@ export default function AdminOrgsPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | 'contractor' | 'corporation'>('all');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
 
   useEffect(() => {
     adminApi.allOrgs()
@@ -27,11 +38,13 @@ export default function AdminOrgsPage() {
   }, []);
 
   const filtered = orgs.filter(o => {
-    const matchType = typeFilter === 'all' || o.org_type === typeFilter;
+    const matchType   = typeFilter === 'all'   || o.org_type === typeFilter;
+    const matchStatus = statusFilter === 'all' || (o as any).approval_status === statusFilter;
     const matchSearch = !search ||
-      o.company_name.toLowerCase().includes(search.toLowerCase()) ||
-      o.contact_email.toLowerCase().includes(search.toLowerCase());
-    return matchType && matchSearch;
+      (o.company_name || '').toLowerCase().includes(search.toLowerCase()) ||
+      (o.contact_email || '').toLowerCase().includes(search.toLowerCase()) ||
+      (o.business_number || '').includes(search);
+    return matchType && matchStatus && matchSearch;
   });
 
   function fmt(iso?: string) {
@@ -41,9 +54,11 @@ export default function AdminOrgsPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <h2 className="text-xl font-bold text-slate-900">כל הארגונים</h2>
-        <div className="flex gap-2">
+      <h2 className="text-xl font-bold text-slate-900">כל הארגונים</h2>
+
+      <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
+        <div className="flex gap-1.5 flex-wrap">
+          <span className="text-xs text-slate-500 self-center me-1">סוג:</span>
           {(['all', 'contractor', 'corporation'] as const).map(f => (
             <button
               key={f}
@@ -55,6 +70,22 @@ export default function AdminOrgsPage() {
               }`}
             >
               {f === 'all' ? 'הכל' : f === 'contractor' ? 'קבלנים' : 'תאגידים'}
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-1.5 flex-wrap">
+          <span className="text-xs text-slate-500 self-center me-1">סטטוס:</span>
+          {(Object.keys(STATUS_FILTER_LABEL) as StatusFilter[]).map(f => (
+            <button
+              key={f}
+              onClick={() => setStatusFilter(f)}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                statusFilter === f
+                  ? 'bg-brand-600 text-white'
+                  : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              {STATUS_FILTER_LABEL[f]}
             </button>
           ))}
         </div>
@@ -94,6 +125,7 @@ export default function AdminOrgsPage() {
                   <th className="pb-3 text-start font-medium">אימייל</th>
                   <th className="pb-3 text-start font-medium">סטטוס</th>
                   <th className="pb-3 text-start font-medium">נרשם</th>
+                  <th className="pb-3 text-end font-medium"></th>
                 </tr>
               </thead>
               <tbody>
@@ -114,9 +146,18 @@ export default function AdminOrgsPage() {
                       </td>
                       <td className="py-3 text-slate-600 text-xs">{o.contact_email}</td>
                       <td className="py-3">
-                        <Badge variant={s?.variant ?? 'secondary'}>{s?.label ?? o.approval_status}</Badge>
+                        <Badge variant={s?.variant ?? 'secondary'}>{s?.label ?? (o as any).approval_status}</Badge>
                       </td>
                       <td className="py-3 text-slate-500">{fmt(o.created_at)}</td>
+                      <td className="py-3 text-end">
+                        <Link
+                          href={`/admin/orgs/${o.id}?type=${o.org_type}`}
+                          className="inline-flex items-center gap-0.5 text-brand-600 text-xs font-medium hover:underline"
+                        >
+                          ערוך / צפה
+                          <ChevronLeft className="h-3 w-3" />
+                        </Link>
+                      </td>
                     </tr>
                   );
                 })}

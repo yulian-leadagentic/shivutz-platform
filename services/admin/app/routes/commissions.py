@@ -197,78 +197,64 @@ def update_commission_status(commission_id: str, body: StatusUpdate):
         conn.close()
 
 
-# ── Corporation commission-rate endpoints ─────────────────────────────────
+# ── Platform-wide commission rate (single value, all deals) ────────────────
 
-class CommissionRateInput(BaseModel):
-    commission_per_worker_amount: Decimal
-    currency: str = "ILS"
+class PlatformRateInput(BaseModel):
+    commission_per_worker_nis: Decimal
 
 
-@router.get("/corporations/{corp_id}/commission")
-def get_corporation_commission(corp_id: str):
-    """Return the current per-worker commission settings for a corporation."""
-    conn = get_db("org_db")
+@router.get("/settings/commission-rate")
+def get_platform_commission_rate():
+    """Return the platform-wide commission charged per worker placed.
+    Backed by payment_db.system_settings.commission_per_worker_nis."""
+    conn = get_db("payment_db")
     try:
         cur = conn.cursor()
         cur.execute(
-            "SELECT id FROM corporations WHERE id=%s AND deleted_at IS NULL",
-            (corp_id,)
-        )
-        if not cur.fetchone():
-            raise HTTPException(status_code=404, detail="Corporation not found")
-
-        cur.execute(
-            """SELECT commission_per_worker_amount, commission_currency,
-                      commission_set_by_user_id, commission_set_at
-               FROM corporations WHERE id=%s""",
-            (corp_id,)
+            "SELECT setting_value, updated_at, updated_by_user_id FROM system_settings WHERE setting_key=%s",
+            ("commission_per_worker_nis",),
         )
         row = cur.fetchone()
+        if not row:
+            return {"commission_per_worker_nis": None, "updated_at": None, "updated_by_user_id": None}
         return {
-            "corporation_id":                corp_id,
-            "commission_per_worker_amount":  float(row["commission_per_worker_amount"]) if row["commission_per_worker_amount"] is not None else None,
-            "currency":                      row["commission_currency"],
-            "commission_set_by_user_id":     row["commission_set_by_user_id"],
-            "commission_set_at":             row["commission_set_at"].isoformat() if row["commission_set_at"] else None,
+            "commission_per_worker_nis": float(row["setting_value"]),
+            "updated_at":               row["updated_at"].isoformat() if row["updated_at"] else None,
+            "updated_by_user_id":       row["updated_by_user_id"],
         }
     finally:
         conn.close()
 
 
-@router.patch("/corporations/{corp_id}/commission")
-def set_corporation_commission(
-    corp_id: str,
-    body: CommissionRateInput,
+@router.patch("/settings/commission-rate")
+def set_platform_commission_rate(
+    body: PlatformRateInput,
     x_user_id: Optional[str] = Header(default=None),
 ):
-    """Set the per-worker commission rate for a corporation."""
-    conn = get_db("org_db")
+    """Update the single platform commission rate (₪ per worker placed).
+    Existing deals' snapshot amounts are unaffected — only future
+    `corp_committed` events read this rate."""
+    if body.commission_per_worker_nis < 0:
+        raise HTTPException(status_code=400, detail="rate_must_be_non_negative")
+
+    conn = get_db("payment_db")
     try:
         cur = conn.cursor()
-
-        # Guard: corporation must exist and not be deleted
         cur.execute(
-            "SELECT id FROM corporations WHERE id=%s AND deleted_at IS NULL",
-            (corp_id,)
-        )
-        if not cur.fetchone():
-            raise HTTPException(status_code=404, detail="Corporation not found")
-
-        cur.execute(
-            """UPDATE corporations
-               SET commission_per_worker_amount=%s,
-                   commission_currency=%s,
-                   commission_set_by_user_id=%s,
-                   commission_set_at=NOW()
-               WHERE id=%s""",
-            (body.commission_per_worker_amount, body.currency, x_user_id, corp_id)
+            """INSERT INTO system_settings
+                 (setting_key, setting_value, value_type, description, updated_by_user_id)
+               VALUES (%s, %s, 'number', %s, %s)
+               ON DUPLICATE KEY UPDATE
+                 setting_value      = VALUES(setting_value),
+                 updated_by_user_id = VALUES(updated_by_user_id)""",
+            (
+                "commission_per_worker_nis",
+                str(body.commission_per_worker_nis),
+                "עמלת הפלטפורמה בש״ח לכל עובד שאוייש בעסקה (חיוב הקבלן). מקור יחיד.",
+                x_user_id,
+            ),
         )
         conn.commit()
-
-        return {
-            "corporation_id":               corp_id,
-            "commission_per_worker_amount": float(body.commission_per_worker_amount),
-            "currency":                     body.currency,
-        }
+        return {"commission_per_worker_nis": float(body.commission_per_worker_nis)}
     finally:
         conn.close()

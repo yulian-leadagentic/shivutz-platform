@@ -209,7 +209,7 @@ export default function DashboardPage() {
         <Card>
           <CardHeader className="pb-0">
             <div className="flex items-center justify-between">
-              <CardTitle className="text-base">בקשות עבודה</CardTitle>
+              <CardTitle className="text-base">איתור עובדים</CardTitle>
               <Link href="/contractor/requests" className="text-xs text-brand-600 hover:underline flex items-center gap-0.5">
                 הכל <ChevronLeft className="h-3 w-3" />
               </Link>
