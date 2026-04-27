@@ -310,8 +310,9 @@ function CorporationDealPageInner() {
   const [previewVatRate, setPreviewVatRate]     = useState<number>(0.18);
   const [completingAuth, setCompletingAuth]     = useState(false);
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const pollRef        = useRef<ReturnType<typeof setInterval> | null>(null);
+  const messagesEndRef    = useRef<HTMLDivElement>(null);
+  const lastMsgCountRef   = useRef<number>(0);
+  const pollRef           = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     // Load payment methods (don't block main load)
@@ -349,24 +350,39 @@ function CorporationDealPageInner() {
           .filter((r): r is PromiseFulfilledResult<Worker> => r.status === 'fulfilled')
           .map((r) => r.value);
 
-        // Build profession slots from proposed workers
-        const slotMap = new Map<string, { workers: Worker[] }>();
-        for (const w of proposed) {
-          const code = w.profession_type;
-          if (!slotMap.has(code)) slotMap.set(code, { workers: [] });
-          slotMap.get(code)!.workers.push(w);
-        }
-
+        // Build the slot from the contractor's REQUEST (line item) — this is
+        // the authoritative source of "what's needed". Fall back to grouping
+        // the proposed workers if the deal API didn't enrich the line-item
+        // info (older deals).
         const builtSlots: ProfessionSlot[] = [];
-        for (const [code, { workers: pws }] of slotMap) {
-          const minExp = Math.max(0, ...pws.map((w) => expMonths(w)));
+        const dealAny = deal as unknown as { profession_type?: string; profession_he?: string; requested_count?: number };
+        if (dealAny.profession_type && dealAny.requested_count) {
+          const code = dealAny.profession_type;
           builtSlots.push({
             profCode: code,
-            profName: profMap[code] ?? code,
-            needed: pws.length,
-            minExpMonths: minExp,
-            proposedWorkerIds: new Set(pws.map((w) => w.id)),
+            profName: dealAny.profession_he || profMap[code] || code,
+            needed: dealAny.requested_count,
+            minExpMonths: 0,
+            proposedWorkerIds: new Set(proposed.filter((w) => w.profession_type === code).map((w) => w.id)),
           });
+        } else {
+          // Legacy fallback: group proposed workers by their profession
+          const slotMap = new Map<string, { workers: Worker[] }>();
+          for (const w of proposed) {
+            const code = w.profession_type;
+            if (!slotMap.has(code)) slotMap.set(code, { workers: [] });
+            slotMap.get(code)!.workers.push(w);
+          }
+          for (const [code, { workers: pws }] of slotMap) {
+            const minExp = Math.max(0, ...pws.map((w) => expMonths(w)));
+            builtSlots.push({
+              profCode: code,
+              profName: profMap[code] ?? code,
+              needed: pws.length,
+              minExpMonths: minExp,
+              proposedWorkerIds: new Set(pws.map((w) => w.id)),
+            });
+          }
         }
         setSlots(builtSlots);
       } catch {
@@ -381,8 +397,16 @@ function CorporationDealPageInner() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
+  // Only scroll the message thread to bottom when NEW messages arrive (user
+  // sent or received). Skip the initial mount + skip same-length re-renders;
+  // otherwise opening the deal page jumps straight to the chat at the bottom.
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const prev = lastMsgCountRef.current;
+    const next = messages.length;
+    lastMsgCountRef.current = next;
+    if (prev > 0 && next > prev) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
   }, [messages]);
 
   // Cardcom return leg — when the user comes back from the hosted J5 form,
@@ -433,21 +457,32 @@ function CorporationDealPageInner() {
     if (selectedIds.size === 0) { setError('יש לבחור לפחות עובד אחד'); return; }
     setAccepting(true); setError('');
     try {
-      await dealApi.updateWorkers(id, [...selectedIds]);
-      await dealApi.updateStatus(id, 'accepted');
-      setDeal((d) => d ? { ...d, status: 'accepted' } : d);
-
-      // Best-effort commission preview — if it fails we still open the modal
-      // with unknown amount; the backend remains the source of truth.
+      await dealApi.commit(id, [...selectedIds]);
+      setDeal((d) => d ? { ...d, status: 'corp_committed' } : d);
       try {
         const preview = await paymentApi.previewCommission(id);
         setPreviewAmount(preview.amounts.total_amount);
         setPreviewVatRate(preview.amounts.vat_rate);
       } catch { /* leave amount undefined */ }
-
       setShowCommitModal(true);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'שגיאה באישור');
+      const raw = e instanceof Error ? e.message : 'שגיאה באישור';
+      // Friendlier messages for the common backend codes.
+      const msg =
+        raw.includes("Deal already in state") || raw === 'wrong_state'
+          ? 'העסקה כבר אושרה — מרענן את המסך'
+        : raw === 'worker_locked' || raw.includes('worker_locked')
+          ? 'אחד מהעובדים שבחרת כבר משובץ בעסקה אחרת — בחר אחר'
+        : raw === 'worker_not_yours' || raw.includes('worker_not_yours')
+          ? 'אחד מהעובדים אינו שייך לתאגיד שלך'
+        : raw === 'corporation_not_approved' || raw.includes('corporation_not_approved')
+          ? 'התאגיד עדיין לא אושר על ידי מנהל המערכת'
+        : raw;
+      setError(msg);
+      // On state-conflict, refresh the deal so the UI reflects the actual state.
+      if (raw.includes("Deal already in state") || raw === 'wrong_state') {
+        try { const fresh = await dealApi.get(id); setDeal(fresh); } catch { /* ignore */ }
+      }
     } finally { setAccepting(false); }
   }
 
@@ -470,7 +505,7 @@ function CorporationDealPageInner() {
   async function handleReject() {
     setRejecting(true);
     try {
-      await dealApi.updateStatus(id, 'cancelled');
+      await dealApi.cancel(id);
       router.push('/corporation/deals');
     } catch { /* silent */ } finally { setRejecting(false); setShowRejectConfirm(false); }
   }
@@ -559,7 +594,7 @@ function CorporationDealPageInner() {
           dealId={id}
           totalAmount={previewAmount}
           vatRate={previewVatRate}
-          workerCount={totalSelected || deal.workers_count}
+          workerCount={totalSelected || deal.worker_count || deal.workers_count || 0}
           onAuthorized={handleAuthorized}
           onClose={() => setShowCommitModal(false)}
         />
@@ -582,17 +617,29 @@ function CorporationDealPageInner() {
           <div className="flex items-center gap-2 flex-wrap">
             <h1 className="text-2xl font-bold text-slate-900">עסקה #{id.slice(0, 8)}</h1>
             <StatusBadge status={deal.status} />
-            {deal.agreed_price && (
-              <span className="text-sm font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 px-3 py-0.5 rounded-full">
-                ₪{Number(deal.agreed_price).toLocaleString('he-IL')}
-              </span>
-            )}
           </div>
-          <p className="text-sm text-slate-500 mt-0.5">
-            נוצרה: {fmtDate(deal.created_at)}
-            <span className="mx-2 text-slate-300">·</span>
-            <Users className="inline h-3.5 w-3.5 me-0.5 text-slate-400" />
-            {deal.workers_count} עובדים מבוקשים
+          <p className="text-sm text-slate-500 mt-0.5">נוצרה: {fmtDate(deal.created_at)}</p>
+        </div>
+      </div>
+
+      {/* ── Request summary — what the contractor is asking for, anonymized ── */}
+      <div className="rounded-2xl border-2 border-brand-200 bg-brand-50/40 p-4 grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div>
+          <p className="text-xs text-slate-500 mb-0.5">מקצוע מבוקש</p>
+          <p className="text-base font-bold text-slate-900">{deal.profession_he || '—'}</p>
+        </div>
+        <div>
+          <p className="text-xs text-slate-500 mb-0.5">אזור</p>
+          <p className="text-base font-bold text-slate-900">{deal.region_he || '—'}</p>
+        </div>
+        <div>
+          <p className="text-xs text-slate-500 mb-0.5">כמות מבוקשת</p>
+          <p className="text-base font-bold text-slate-900">{deal.requested_count ?? totalNeeded ?? '—'}</p>
+        </div>
+        <div>
+          <p className="text-xs text-slate-500 mb-0.5">{isProposed ? 'בחרת לשבץ' : 'שובצו'}</p>
+          <p className="text-base font-bold text-slate-900">
+            {isProposed ? totalSelected : (deal.worker_count ?? deal.workers_count ?? 0)}
           </p>
         </div>
       </div>
@@ -634,7 +681,7 @@ function CorporationDealPageInner() {
                       <p className="font-semibold text-amber-900 text-sm">הצעה ממתינה לאישורך</p>
                       <p className="text-amber-700 text-xs mt-0.5">
                         בחר עובדים לשיבוץ לפי מקצוע ואשר את ההתקשרות.
-                        <span className="text-amber-800 font-medium"> אישור זה מהווה התחייבות לתשלום — הסכום יוקפא על הכרטיס, וחיוב יבוצע תוך 48 שעות אלא אם תבטל.</span>
+                        <span className="text-amber-800 font-medium"> אישור זה מהווה התחייבות לתשלום — הסכום יוקפא על הכרטיס, וחיוב יבוצע תוך 48 שעות מקבלת אישור הקבלן.</span>
                       </p>
                     </div>
                     <div className="flex gap-2 shrink-0">

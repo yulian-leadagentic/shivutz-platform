@@ -56,14 +56,29 @@ export const dealApi = {
     }),
   workers: (id: string) =>
     apiFetch<Worker[]>(`/deals/${id}/workers`),
-  updateWorkers: (id: string, workerIds: string[]) =>
-    apiFetch<{ deal_id: string; assigned: number }>(`/deals/${id}/workers`, {
-      method: 'PUT',
-      body: JSON.stringify({ worker_ids: workerIds }),
-    }),
-  updateStatus: (id: string, status: string) =>
-    apiFetch<Deal>(`/deals/${id}/status`, {
-      method: 'PATCH',
-      body: JSON.stringify({ status }),
-    }),
+
+  // ── New deal lifecycle (replaces updateStatus + updateWorkers) ──────────
+  commit: (id: string, workerIds: string[]) =>
+    apiFetch<{ id: string; status: string; expires_at: string; commission_amount: number }>(
+      `/deals/${id}/commit`, { method: 'POST', body: JSON.stringify({ worker_ids: workerIds }) }
+    ),
+  approve: (id: string) =>
+    apiFetch<{ id: string; status: string; scheduled_capture_at: string }>(
+      `/deals/${id}/approve`, { method: 'POST' }
+    ),
+  reject: (id: string) =>
+    apiFetch<{ id: string; status: string }>(
+      `/deals/${id}/reject`, { method: 'POST' }
+    ),
+  cancel: (id: string, reason?: string) =>
+    apiFetch<{ id: string; status: string }>(
+      `/deals/${id}/cancel`, { method: 'POST', body: JSON.stringify({ reason: reason || null }) }
+    ),
+  replaceWorker: (id: string, oldWorkerId: string, newWorkerId: string) =>
+    apiFetch<{ id: string; status: string; material_change: boolean }>(
+      `/deals/${id}/replace_worker`, {
+        method: 'POST',
+        body: JSON.stringify({ old_worker_id: oldWorkerId, new_worker_id: newWorkerId }),
+      }
+    ),
 };

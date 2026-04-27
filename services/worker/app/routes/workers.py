@@ -2,11 +2,39 @@ from fastapi import APIRouter, HTTPException, Header, Query
 from pydantic import BaseModel
 from typing import List, Optional
 from datetime import date
-import uuid, json
+import uuid, json, secrets
 
 from app.db import get_db
 
 router = APIRouter()
+
+
+# ── internal_id (EMP-XXXXXXXX) helpers ────────────────────────────────────
+
+def _generate_internal_id() -> str:
+    """Generate an EMP-{8 random hex} ID. Caller must handle the rare
+    collision retry (uniqueness enforced by DB index)."""
+    return f"EMP-{secrets.token_hex(4).upper()}"
+
+
+def _insert_with_unique_internal_id(cur, sql: str, params_with_internal_id_index, attempts: int = 5):
+    """Helper to retry once on UNIQUE collision of `internal_id`.
+    `params_with_internal_id_index` is (params_tuple, index_of_internal_id)."""
+    params, idx = params_with_internal_id_index
+    last_err = None
+    for _ in range(attempts):
+        try:
+            cur.execute(sql, params)
+            return params[idx]
+        except Exception as e:
+            last_err = e
+            if "uq_internal_id" not in str(e):
+                raise
+            new_id = _generate_internal_id()
+            params = list(params)
+            params[idx] = new_id
+            params = tuple(params)
+    raise last_err
 
 # ── Experience range helpers ──────────────────────────────────────────────
 
@@ -43,6 +71,7 @@ class WorkerCreate(BaseModel):
     profession_type: str
     experience_years: int = 0
     experience_range: Optional[str] = None  # month-based: "0-6"|"6-12"|"12-24"|"24-36"|"36+"
+    years_in_israel: Optional[int] = None    # NEW — visible to contractor pre-approval
     origin_country: str
     languages: List[str] = []
     visa_type: Optional[str] = None
@@ -64,6 +93,7 @@ class WorkerBulkCreate(BaseModel):
     profession_type: str
     experience_years: int = 0
     experience_range: Optional[str] = None
+    years_in_israel: Optional[int] = None
     origin_country: str
     languages: List[str] = []
     visa_valid_until: Optional[date] = None
@@ -120,6 +150,33 @@ def _generate_employee_number(conn, corp_id: str) -> str:
 
 # ── Routes ────────────────────────────────────────────────────────────────
 
+def _require_corp_tier_2(corp_id: str) -> None:
+    """Block worker publishing for corporations that haven't been admin-
+    approved as 'תאגיד מאושר'. Tier_0 / tier_1 corporations can use the
+    rest of the platform; only publishing/offering workers is gated."""
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT verification_tier FROM org_db.corporations WHERE id = %s AND deleted_at IS NULL",
+            (corp_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="corporation_not_found")
+        if row["verification_tier"] != "tier_2":
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": "corporation_not_approved",
+                    "message": "פרסום עובדים מותר רק לתאגידים מאושרים. אישור התאגיד מבוצע על ידי מנהל המערכת.",
+                    "current_tier": row["verification_tier"],
+                },
+            )
+    finally:
+        conn.close()
+
+
 @router.post("", status_code=201)
 def create_worker(
     data: WorkerCreate,
@@ -128,6 +185,7 @@ def create_worker(
     corp_id = data.corporation_id or x_org_id
     if not corp_id:
         raise HTTPException(status_code=400, detail="corporation_id required")
+    _require_corp_tier_2(corp_id)
 
     exp_years = _resolve_exp(data.experience_years, data.experience_range)
     worker_id = str(uuid.uuid4())
@@ -141,22 +199,33 @@ def create_worker(
             experience_range=stored_range, employee_number=emp_num,
         )
         cur = conn.cursor()
-        cur.execute(
-            """INSERT INTO workers
-               (id, corporation_id, first_name, last_name, profession_type,
-                experience_years, origin_country, languages, visa_type, visa_number,
-                visa_valid_from, visa_valid_until, notes, extra_fields)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-            (worker_id, corp_id, data.first_name, data.last_name,
-             data.profession_type, exp_years, data.origin_country,
-             json.dumps(data.languages), data.visa_type, data.visa_number,
-             data.visa_valid_from, data.visa_valid_until, data.notes, extra)
-        )
+        internal_id = _generate_internal_id()
+        # Retry-on-collision pattern: rare, but cheap to handle.
+        for attempt in range(5):
+            try:
+                cur.execute(
+                    """INSERT INTO workers
+                       (id, corporation_id, internal_id, first_name, last_name, profession_type,
+                        experience_years, years_in_israel, origin_country, languages, visa_type, visa_number,
+                        visa_valid_from, visa_valid_until, notes, extra_fields)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                    (worker_id, corp_id, internal_id, data.first_name, data.last_name,
+                     data.profession_type, exp_years, data.years_in_israel, data.origin_country,
+                     json.dumps(data.languages), data.visa_type, data.visa_number,
+                     data.visa_valid_from, data.visa_valid_until, data.notes, extra)
+                )
+                break
+            except Exception as e:
+                if "uq_internal_id" not in str(e) or attempt == 4:
+                    raise
+                internal_id = _generate_internal_id()
         conn.commit()
         return {
             "id": worker_id,
+            "internal_id": internal_id,
             "experience_years": exp_years,
             "experience_range": stored_range,
+            "years_in_israel": data.years_in_israel,
             "employee_number": emp_num,
         }
     finally:
@@ -171,6 +240,7 @@ def bulk_create_workers(
     corp_id = data.corporation_id or x_org_id
     if not corp_id:
         raise HTTPException(status_code=400, detail="corporation_id required")
+    _require_corp_tier_2(corp_id)
     if not 1 <= data.quantity <= 50:
         raise HTTPException(status_code=400, detail="quantity must be 1-50")
 
@@ -184,17 +254,24 @@ def bulk_create_workers(
         cur = conn.cursor()
         for i in range(1, data.quantity + 1):
             wid = str(uuid.uuid4())
-            cur.execute(
-                """INSERT INTO workers
-                   (id, corporation_id, first_name, last_name, profession_type,
-                    experience_years, origin_country, languages,
-                    visa_valid_until, notes, extra_fields)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-                (wid, corp_id, prefix, str(i),
-                 data.profession_type, exp_years, data.origin_country,
-                 json.dumps(data.languages),
-                 data.visa_valid_until, data.notes, extra)
-            )
+            for attempt in range(5):
+                internal_id = _generate_internal_id()
+                try:
+                    cur.execute(
+                        """INSERT INTO workers
+                           (id, corporation_id, internal_id, first_name, last_name, profession_type,
+                            experience_years, years_in_israel, origin_country, languages,
+                            visa_valid_until, notes, extra_fields)
+                           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                        (wid, corp_id, internal_id, prefix, str(i),
+                         data.profession_type, exp_years, data.years_in_israel, data.origin_country,
+                         json.dumps(data.languages),
+                         data.visa_valid_until, data.notes, extra)
+                    )
+                    break
+                except Exception as e:
+                    if "uq_internal_id" not in str(e) or attempt == 4:
+                        raise
             created_ids.append(wid)
         conn.commit()
         return {

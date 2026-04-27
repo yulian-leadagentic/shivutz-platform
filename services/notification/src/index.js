@@ -4,6 +4,8 @@ const cron      = require('node-cron');
 const { initDb, getPool }    = require('./db');
 const { startConsumer } = require('./consumers');
 const { runVisaExpiryCron } = require('./cron/visaExpiry');
+const { runContractorRevalidationCron } = require('./cron/contractorRevalidation');
+const { runDealLifecycleCron } = require('./cron/dealLifecycle');
 const notifRoutes = require('./routes/notifications');
 
 const app = express();
@@ -41,6 +43,17 @@ const PORT = process.env.NOTIF_PORT || 3006;
   cron.schedule('0 6 * * *', () => {
     console.log('[cron] Running visa expiry check');
     runVisaExpiryCron().catch(console.error);
+  });
+
+  // Daily at 06:30 — re-check tier_2 contractors against פנקס הקבלנים
+  cron.schedule('30 6 * * *', () => {
+    console.log('[cron] Running contractor revalidation');
+    runContractorRevalidationCron().catch(console.error);
+  });
+
+  // Hourly — deal lifecycle (expire / capture / admin-nudge)
+  cron.schedule('0 * * * *', () => {
+    runDealLifecycleCron().catch(console.error);
   });
 
   app.listen(PORT, () => console.log(`Notification service listening on ${PORT}`));

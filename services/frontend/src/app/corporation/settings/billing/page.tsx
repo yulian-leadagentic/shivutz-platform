@@ -1,15 +1,17 @@
 'use client';
 
 import { useEffect, useState, useCallback, Suspense } from 'react';
+import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import {
   CreditCard, Loader2, Trash2, Star, ShieldCheck,
-  AlertTriangle, CheckCircle2, ExternalLink, Plus,
+  AlertTriangle, CheckCircle2, ExternalLink, Plus, Receipt, X, Undo2, Clock,
 } from 'lucide-react';
-import { paymentApi } from '@/lib/api';
+import { paymentApi, dealApi } from '@/lib/api';
+import { apiFetch } from '@/lib/api/client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import type { PaymentMethod } from '@/types';
+import type { PaymentMethod, Deal } from '@/types';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -234,14 +236,15 @@ function BillingPageContent() {
         </div>
       )}
 
-      {/* No active PM warning */}
+      {/* No active PM informational note (not blocking) */}
       {!loading && !hasActive && (
         <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3">
           <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
           <div>
             <p className="text-sm font-semibold text-amber-800">טרם חובר אמצעי תשלום</p>
             <p className="text-xs text-amber-700 mt-0.5">
-              לא תוכל לאשר הצעות עובדים ולהתחייב לעסקאות עד שתחבר אמצעי תשלום פעיל
+              ניתן לאשר עסקאות גם ללא כרטיס מחובר — תועבר לטופס קארדקום בכל אישור ותזין את הפרטים מחדש.
+              חיבור כרטיס בקליק אחד חוסך לך את הזנת הפרטים בעתיד.
             </p>
           </div>
         </div>
@@ -341,6 +344,9 @@ function BillingPageContent() {
         </CardContent>
       </Card>
 
+      {/* My deals — pending + closed */}
+      <DealsCard />
+
       {/* Active default summary */}
       {activeDefault && (
         <div className="flex items-center gap-3 bg-white border border-slate-200 rounded-2xl px-4 py-3 shadow-sm">
@@ -369,5 +375,190 @@ export default function BillingPage() {
     <Suspense fallback={<div className="flex items-center justify-center py-20 text-slate-400"><Loader2 className="h-5 w-5 animate-spin me-2" />טוען...</div>}>
       <BillingPageContent />
     </Suspense>
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────
+// DealsCard — pending + closed deals with cancel + refund-request actions
+// ─────────────────────────────────────────────────────────────────────────
+
+const DEAL_STATUS_LABEL: Record<string, string> = {
+  proposed:           'המתנה לתאגיד',
+  corp_committed:     'הצעתי רשימה — ממתין לקבלן',
+  approved:           'אושר — חיוב ב-48 שעות',
+  rejected:           'נדחה',
+  expired:            'פג תוקף',
+  cancelled_by_corp:  'בוטל על ידך',
+  closed:             'נסגר',
+};
+
+function fmtDate(iso: string | null | undefined) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' });
+}
+
+function DealsCard() {
+  const [deals, setDeals] = useState<Deal[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [refundForm, setRefundForm] = useState<{ id: string; reason: string } | null>(null);
+  const [toast, setToast] = useState('');
+
+  function pushToast(msg: string) { setToast(msg); setTimeout(() => setToast(''), 4000); }
+
+  function load() {
+    setLoading(true);
+    dealApi.list({ page_size: 200 })
+      .then((res) => setDeals(res.items))
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }
+
+  useEffect(() => { load(); }, []);
+
+  async function cancel(id: string) {
+    const reason = prompt('סיבת ביטול (אופציונלי):') || '';
+    setBusyId(id);
+    try {
+      await dealApi.cancel(id, reason);
+      pushToast('✓ העסקה בוטלה');
+      load();
+    } catch (e) {
+      pushToast(`✗ ${e instanceof Error ? e.message : 'שגיאה'}`);
+    } finally { setBusyId(null); }
+  }
+
+  async function submitRefund() {
+    if (!refundForm) return;
+    if (!refundForm.reason.trim()) { pushToast('✗ יש להזין סיבה'); return; }
+    setBusyId(refundForm.id);
+    try {
+      await apiFetch('/admin/refund-requests', {
+        method: 'POST',
+        body: JSON.stringify({ deal_id: refundForm.id, reason: refundForm.reason.trim() }),
+      });
+      pushToast('✓ הבקשה נשלחה למנהל המערכת');
+      setRefundForm(null);
+    } catch (e) {
+      pushToast(`✗ ${e instanceof Error ? e.message : 'שגיאה'}`);
+    } finally { setBusyId(null); }
+  }
+
+  const active = deals.filter((d) => ['proposed', 'corp_committed', 'approved'].includes(d.status));
+  const closed = deals.filter((d) => d.status === 'closed');
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Receipt className="h-4 w-4 text-brand-600" />
+          העסקאות שלי
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {loading ? (
+          <div className="flex justify-center py-6"><Loader2 className="h-5 w-5 animate-spin text-slate-400" /></div>
+        ) : (
+          <>
+            {/* Active */}
+            <div>
+              <p className="text-xs font-semibold text-slate-500 mb-2">פעילות ({active.length})</p>
+              {active.length === 0 ? (
+                <p className="text-sm text-slate-400 py-2">אין עסקאות פעילות</p>
+              ) : (
+                <ul className="divide-y divide-slate-100">
+                  {active.map((d) => {
+                    const canCancel = d.status === 'approved';   // 48h window
+                    return (
+                      <li key={d.id} className="py-2.5 flex items-center justify-between gap-3 flex-wrap">
+                        <Link href={`/corporation/deals/${d.id}`} className="flex-1 min-w-[200px] hover:underline">
+                          <span className="font-mono text-xs text-slate-400">#{d.id.slice(0, 8)}</span>
+                          <span className="ms-2 text-sm font-medium text-slate-800">{DEAL_STATUS_LABEL[d.status] || d.status}</span>
+                          <span className="ms-2 text-xs text-slate-500">{(d.worker_count ?? d.workers_count ?? 0)} עובדים</span>
+                          {d.commission_amount != null && (
+                            <span className="ms-2 text-xs font-medium text-slate-700">₪{d.commission_amount.toLocaleString('he-IL')}</span>
+                          )}
+                        </Link>
+                        {canCancel && (
+                          <Button size="sm" variant="outline" onClick={() => cancel(d.id)}
+                                  disabled={busyId === d.id}
+                                  className="text-red-700 border-red-200 hover:bg-red-50">
+                            <X className="h-3 w-3" /> בטל לפני חיוב
+                          </Button>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+
+            {/* Closed */}
+            <div className="pt-2 border-t border-slate-100">
+              <p className="text-xs font-semibold text-slate-500 mb-2">נסגרו ({closed.length})</p>
+              {closed.length === 0 ? (
+                <p className="text-sm text-slate-400 py-2">אין עסקאות סגורות</p>
+              ) : (
+                <ul className="divide-y divide-slate-100 max-h-72 overflow-y-auto">
+                  {closed.map((d) => (
+                    <li key={d.id} className="py-2.5 flex items-center justify-between gap-3 flex-wrap">
+                      <Link href={`/corporation/deals/${d.id}`} className="flex-1 min-w-[200px] hover:underline">
+                        <span className="font-mono text-xs text-slate-400">#{d.id.slice(0, 8)}</span>
+                        <span className="ms-2 text-xs text-slate-500">{(d.worker_count ?? d.workers_count ?? 0)} עובדים</span>
+                        {d.commission_amount != null && (
+                          <span className="ms-2 text-xs font-medium text-slate-700">₪{d.commission_amount.toLocaleString('he-IL')}</span>
+                        )}
+                        <span className="ms-2 text-xs text-slate-400">{fmtDate(d.closed_at)}</span>
+                      </Link>
+                      <Button size="sm" variant="outline" onClick={() => setRefundForm({ id: d.id, reason: '' })}
+                              disabled={busyId === d.id}>
+                        <Undo2 className="h-3 w-3" /> בקש החזר
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </>
+        )}
+
+        {/* Refund form modal */}
+        {refundForm && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+               onClick={(e) => { if (e.target === e.currentTarget) setRefundForm(null); }}>
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-5 space-y-3" dir="rtl">
+              <h3 className="text-lg font-bold text-slate-900">בקשת החזר כספי</h3>
+              <p className="text-sm text-slate-600">
+                הבקשה תישלח למנהל המערכת לטיפול. אין החזר אוטומטי — מנהל יחזור אליך לבירור.
+              </p>
+              <p className="text-xs text-slate-500 bg-slate-50 rounded p-2">
+                עסקה: <span className="font-mono" dir="ltr">#{refundForm.id.slice(0, 8)}</span>
+              </p>
+              <div>
+                <label className="text-xs text-slate-500 block mb-1">סיבת הבקשה</label>
+                <textarea rows={3} value={refundForm.reason}
+                  onChange={(e) => setRefundForm({ ...refundForm, reason: e.target.value })}
+                  placeholder="פרט את סיבת ההחזר..."
+                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm" />
+              </div>
+              <div className="flex gap-2 justify-end">
+                <Button variant="ghost" onClick={() => setRefundForm(null)}>ביטול</Button>
+                <Button onClick={submitRefund} disabled={busyId === refundForm.id}>
+                  {busyId === refundForm.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Undo2 className="h-3 w-3" />}
+                  שלח בקשה
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {toast && (
+          <div className={`fixed bottom-6 start-6 px-4 py-3 rounded-lg shadow-lg text-sm font-medium text-white z-50 ${toast.startsWith('✓') ? 'bg-green-600' : 'bg-red-600'}`}>
+            {toast}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

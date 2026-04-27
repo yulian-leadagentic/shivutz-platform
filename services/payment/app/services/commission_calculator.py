@@ -1,7 +1,14 @@
-"""Commission calculator — computes base amount, VAT, total for a deal."""
+"""Commission calculator — computes base amount, VAT, total for a deal.
+
+Updated for the new deal lifecycle (migration 014):
+  - workers_count comes from deal_workers join (the column was dropped)
+  - commission rate comes from the CONTRACTOR's commission_per_worker_amount
+    (charging side per the new model; falls back to the system default)
+  - VAT comes from vat_periods (multi-period; lookup by today's date)
+"""
 from decimal import Decimal
 from app.db import get_db
-from app.system_settings import get_setting
+from app.services.vat_lookup import get_vat_for_date
 
 
 class CommissionResult:
@@ -26,19 +33,16 @@ class CommissionResult:
 
 
 def calculate(deal_id: str) -> CommissionResult:
-    """
-    Calculate commission for a deal.
-    commission_per_worker_amount  ← org_db.corporations
-    workers_count                 ← deal_db.deals
-    vat_rate                      ← payment_db.system_settings (snapshot at call time)
-    """
     deal_conn = get_db("deal_db")
     org_conn  = get_db("org_db")
     try:
         deal_cur = deal_conn.cursor()
         deal_cur.execute(
-            "SELECT corporation_id, workers_count FROM deals WHERE id=%s AND deleted_at IS NULL",
-            (deal_id,)
+            """SELECT contractor_id,
+                      (SELECT COUNT(*) FROM deal_workers dw
+                       WHERE dw.deal_id=d.id AND dw.removed_at IS NULL) AS worker_count
+               FROM deals d WHERE d.id=%s AND d.deleted_at IS NULL""",
+            (deal_id,),
         )
         deal = deal_cur.fetchone()
         if not deal:
@@ -46,18 +50,16 @@ def calculate(deal_id: str) -> CommissionResult:
 
         corp_cur = org_conn.cursor()
         corp_cur.execute(
-            "SELECT commission_per_worker_amount FROM corporations WHERE id=%s AND deleted_at IS NULL",
-            (deal["corporation_id"],)
+            "SELECT commission_per_worker_amount FROM contractors WHERE id=%s AND deleted_at IS NULL",
+            (deal["contractor_id"],),
         )
-        corp = corp_cur.fetchone()
-        if not corp:
-            raise ValueError(f"Corporation for deal '{deal_id}' not found")
+        contractor = corp_cur.fetchone()
+        commission_per_worker = Decimal(str((contractor or {}).get("commission_per_worker_amount") or 0))
 
-        commission_per_worker = Decimal(str(corp["commission_per_worker_amount"] or 0))
-        workers_count         = int(deal["workers_count"] or 0)
-        base_amount           = (commission_per_worker * workers_count).quantize(Decimal("0.01"))
+        workers_count = int(deal["worker_count"] or 0)
+        base_amount   = (commission_per_worker * workers_count).quantize(Decimal("0.01"))
 
-        vat_rate   = Decimal(str(get_setting("vat_rate", 0.18)))
+        vat_rate   = get_vat_for_date()
         vat_amount = (base_amount * vat_rate).quantize(Decimal("0.01"))
         total      = (base_amount + vat_amount).quantize(Decimal("0.01"))
 

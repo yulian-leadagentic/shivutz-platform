@@ -23,29 +23,49 @@ interface ReportForm {
 const STATUS_EXPLANATION: Record<string, { icon: React.ReactNode; text: string; color: string }> = {
   proposed: {
     icon: <Clock className="h-4 w-4 shrink-0" />,
-    text: 'הפנייה נשלחה לתאגיד — ממתינים לאישור',
+    text: 'הפנייה נשלחה לתאגיד — ממתין שהתאגיד יציג רשימת עובדים',
     color: 'bg-blue-50 border-blue-200 text-blue-800',
   },
-  counter_proposed: {
-    icon: <Clock className="h-4 w-4 shrink-0" />,
-    text: 'התאגיד שלח הצעה נגדית — בדוק את הצ׳אט',
+  corp_committed: {
+    icon: <Users className="h-4 w-4 shrink-0" />,
+    text: 'התאגיד הציג רשימת עובדים — בדוק ואשר תוך 7 ימים',
     color: 'bg-amber-50 border-amber-200 text-amber-800',
   },
-  accepted: {
+  approved: {
     icon: <CheckCircle2 className="h-4 w-4 shrink-0" />,
-    text: 'התאגיד אישר ושיבץ עובדים — בדוק את פרטי יצירת הקשר ואשר את ההתקשרות',
+    text: 'אישרת — חיוב יבוצע אוטומטית בתום 48 שעות (אלא אם התאגיד יבטל)',
     color: 'bg-emerald-50 border-emerald-200 text-emerald-800',
   },
-  active: {
+  rejected: {
+    icon: <Clock className="h-4 w-4 shrink-0" />,
+    text: 'דחית את ההצעה — הבקשה נשארת פתוחה',
+    color: 'bg-slate-50 border-slate-200 text-slate-700',
+  },
+  expired: {
+    icon: <Clock className="h-4 w-4 shrink-0" />,
+    text: 'ההצעה פגה (לא אושרה תוך 7 ימים) — הבקשה נשארת פתוחה',
+    color: 'bg-slate-50 border-slate-200 text-slate-700',
+  },
+  cancelled_by_corp: {
+    icon: <Clock className="h-4 w-4 shrink-0" />,
+    text: 'התאגיד ביטל לפני החיוב — לא חויבת. הבקשה נשארת פתוחה',
+    color: 'bg-red-50 border-red-200 text-red-800',
+  },
+  closed: {
     icon: <CheckCircle2 className="h-4 w-4 shrink-0" />,
-    text: 'עסקה פעילה — העובדים בשטח',
-    color: 'bg-green-50 border-green-200 text-green-800',
+    text: 'העסקה נסגרה — חשבונית הופקה',
+    color: 'bg-emerald-50 border-emerald-200 text-emerald-800',
   },
-  reporting: {
-    icon: <FileText className="h-4 w-4 shrink-0" />,
-    text: 'שלב דיווח — יש להגיש דוח ביצוע',
-    color: 'bg-amber-50 border-amber-200 text-amber-800',
-  },
+};
+
+const STATUS_LABEL_HE: Record<string, string> = {
+  proposed:           'הפנייה נשלחה',
+  corp_committed:     'תאגיד הציג רשימה',
+  approved:           'אושר — ממתין לחיוב',
+  rejected:           'נדחה',
+  expired:            'פג תוקף',
+  cancelled_by_corp:  'בוטל ע״י התאגיד',
+  closed:             'נסגר',
 };
 
 export default function DealDetailPage() {
@@ -91,16 +111,12 @@ export default function DealDetailPage() {
 
   async function loadWorkers() {
     try {
-      const stubs = await dealApi.workers(id);
-      if (!stubs || stubs.length === 0) return;
-      const full = await Promise.allSettled(
-        stubs.map((s: { id: string }) => workerApi.get(s.id))
-      );
-      setWorkers(
-        full
-          .filter((r): r is PromiseFulfilledResult<Worker> => r.status === 'fulfilled')
-          .map((r) => r.value)
-      );
+      // The deal-service endpoint already applies the disclosure rules: pre-
+      // approval, contractors get { full_name, internal_id, profession_type,
+      // origin_country, years_in_israel, languages }. Don't re-fetch from
+      // worker-service — that would leak phone/visa/etc.
+      const list = await dealApi.workers(id);
+      setWorkers((list as unknown as Worker[]) || []);
     } catch { /* graceful */ }
   }
 
@@ -141,11 +157,24 @@ export default function DealDetailPage() {
     setConfirming(true);
     setConfirmError('');
     try {
-      await dealApi.updateStatus(id, 'active');
-      // Reload deal + messages to get the system message
-      await Promise.all([loadDeal(), loadMessages()]);
+      await dealApi.approve(id);
+      await Promise.all([loadDeal(), loadMessages(), loadWorkers()]);
     } catch (e: unknown) {
       setConfirmError(e instanceof Error ? e.message : 'שגיאה באישור ההתקשרות');
+    } finally {
+      setConfirming(false);
+    }
+  }
+
+  async function handleReject() {
+    if (!confirm('לדחות את הרשימה? הבקשה תישאר פתוחה ונחפש מענה במקום אחר.')) return;
+    setConfirming(true);
+    setConfirmError('');
+    try {
+      await dealApi.reject(id);
+      await Promise.all([loadDeal(), loadMessages()]);
+    } catch (e: unknown) {
+      setConfirmError(e instanceof Error ? e.message : 'שגיאה בדחיית ההצעה');
     } finally {
       setConfirming(false);
     }
@@ -191,10 +220,16 @@ export default function DealDetailPage() {
   }
 
   const showReport     = ['active', 'reporting'].includes(deal.status);
-  const showConfirm    = deal.status === 'accepted';
-  const showWorkers    = ['accepted', 'active', 'reporting', 'completed'].includes(deal.status);
+  const showConfirm    = deal.status === 'corp_committed';
+  const showWorkers    = ['corp_committed', 'approved', 'closed', 'cancelled_by_corp',
+                           'accepted', 'active', 'reporting', 'completed'].includes(deal.status);
+  const isPostDisclosure = ['approved', 'closed', 'cancelled_by_corp'].includes(deal.status);
   const statusInfo     = STATUS_EXPLANATION[deal.status];
   const corpName       = corp?.company_name_he || corp?.company_name || '';
+  const dealAny        = deal as unknown as { profession_he?: string; region_he?: string; requested_count?: number; worker_count?: number; expires_at?: string; commission_amount?: number };
+  const expiresHours   = dealAny.expires_at
+    ? Math.max(0, Math.round((new Date(dealAny.expires_at).getTime() - Date.now()) / 3_600_000))
+    : null;
 
   return (
     <div className="space-y-5 max-w-5xl">
@@ -203,30 +238,57 @@ export default function DealDetailPage() {
         <div className="space-y-1">
           <div className="flex items-center gap-2 flex-wrap">
             <h1 className="text-2xl font-bold text-slate-900">עסקה #{id.slice(0, 8)}</h1>
-            <StatusBadge status={deal.status} />
+            <span className="text-xs font-medium px-2.5 py-0.5 rounded-full border border-slate-300 bg-slate-50 text-slate-700">
+              {STATUS_LABEL_HE[deal.status] || deal.status}
+            </span>
           </div>
           <div className="flex items-center gap-3 text-sm text-slate-500">
             <span>נוצרה: {formatDate(deal.created_at)}</span>
-            {corpName && (
+            {isPostDisclosure && corpName && (
               <span className="flex items-center gap-1">
                 <Building2 className="h-3.5 w-3.5" />
                 {corpName}
               </span>
             )}
-            {deal.workers_count && (
-              <span className="flex items-center gap-1">
-                <Users className="h-3.5 w-3.5" />
-                {deal.workers_count} עובדים
-              </span>
-            )}
-            {deal.agreed_price && (
-              <span className="font-medium text-slate-700 bg-slate-100 px-2.5 py-0.5 rounded-full">
-                ₪{Number(deal.agreed_price).toLocaleString('he-IL')}
-              </span>
-            )}
           </div>
         </div>
       </div>
+
+      {/* Request summary — what we asked for vs what's offered */}
+      <div className="rounded-2xl border-2 border-brand-200 bg-brand-50/40 p-4 grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div>
+          <p className="text-xs text-slate-500 mb-0.5">מקצוע</p>
+          <p className="text-base font-bold text-slate-900">{dealAny.profession_he || '—'}</p>
+        </div>
+        <div>
+          <p className="text-xs text-slate-500 mb-0.5">אזור</p>
+          <p className="text-base font-bold text-slate-900">{dealAny.region_he || '—'}</p>
+        </div>
+        <div>
+          <p className="text-xs text-slate-500 mb-0.5">כמות מבוקשת</p>
+          <p className="text-base font-bold text-slate-900">{dealAny.requested_count ?? '—'}</p>
+        </div>
+        <div>
+          <p className="text-xs text-slate-500 mb-0.5">הוצעו לך</p>
+          <p className="text-base font-bold text-slate-900">{dealAny.worker_count ?? workers.length ?? 0}</p>
+        </div>
+      </div>
+
+      {/* 7-day countdown for corp_committed */}
+      {deal.status === 'corp_committed' && expiresHours !== null && (
+        <div className={`flex items-center gap-2 text-sm rounded-xl px-4 py-2.5 border ${
+          expiresHours < 24
+            ? 'bg-red-50 border-red-200 text-red-800'
+            : 'bg-amber-50 border-amber-200 text-amber-800'
+        }`}>
+          <Clock className="h-4 w-4 shrink-0" />
+          <span>
+            {expiresHours > 0
+              ? `נותרו ${expiresHours} שעות לאישור — לאחר מכן ההצעה תפוג והעובדים ישוחררו`
+              : 'ההצעה פגה'}
+          </span>
+        </div>
+      )}
 
       {/* Status banner */}
       {statusInfo && (
@@ -307,24 +369,35 @@ export default function DealDetailPage() {
               </div>
             )}
 
-            {/* Assigned workers preview */}
+            {/* Workers list (with disclosure-rule fields applied by backend) */}
             {workers.length > 0 && (
               <div className="bg-white rounded-xl border border-emerald-100 p-4">
                 <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
-                  עובדים משובצים ({workers.length})
+                  רשימת עובדים שהוצעה ({workers.length})
                 </p>
                 <div className="space-y-2">
                   {workers.map((w) => {
-                    const expCode  = w.experience_range ?? '';
-                    const expLabel = EXP_LABELS[expCode] ?? (w.experience_years ? `${w.experience_years} שנים` : '—');
+                    const wAny = w as unknown as { full_name?: string; internal_id?: string; years_in_israel?: number };
+                    const name = wAny.full_name || `${w.first_name ?? ''} ${w.last_name ?? ''}`.trim() || '—';
+                    const initials = name.split(/\s+/).filter(Boolean).map((p) => p[0]).slice(0, 2).join('');
                     return (
-                      <div key={w.id} className="flex items-center gap-3">
+                      <div key={w.id} className="flex items-center gap-3 py-1.5 border-b border-slate-50 last:border-0">
                         <div className="h-8 w-8 rounded-full bg-brand-100 flex items-center justify-center shrink-0 text-xs font-bold text-brand-700">
-                          {w.first_name?.[0]}{w.last_name?.[0]}
+                          {initials || '?'}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-slate-900">{w.first_name} {w.last_name}</p>
-                          <p className="text-xs text-slate-500">{w.profession_type} · {expLabel} · ויזה עד {formatDate(w.visa_valid_until)}</p>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="text-sm font-medium text-slate-900">{name}</p>
+                            {wAny.internal_id && (
+                              <span className="text-[10px] font-mono text-slate-400" dir="ltr">{wAny.internal_id}</span>
+                            )}
+                          </div>
+                          <p className="text-xs text-slate-500">
+                            {w.profession_type}
+                            {w.origin_country && <> · {w.origin_country}</>}
+                            {wAny.years_in_israel != null && <> · {wAny.years_in_israel} שנים בישראל</>}
+                            {Array.isArray(w.languages) && w.languages.length > 0 && <> · {w.languages.join(', ')}</>}
+                          </p>
                         </div>
                       </div>
                     );
@@ -333,22 +406,32 @@ export default function DealDetailPage() {
               </div>
             )}
 
-            {/* Confirm button */}
+            {/* Approve / Reject actions */}
             {confirmError && (
               <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
                 {confirmError}
               </div>
             )}
-            <Button
-              onClick={handleConfirm}
-              disabled={confirming}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white w-full sm:w-auto"
-            >
-              {confirming
-                ? <><Loader2 className="h-4 w-4 animate-spin me-2" />מאשר...</>
-                : <><CheckCircle2 className="h-4 w-4 me-2" />אשר התקשרות</>
-              }
-            </Button>
+            <div className="flex gap-2 flex-wrap">
+              <Button
+                onClick={handleConfirm}
+                disabled={confirming || workers.length === 0}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              >
+                {confirming
+                  ? <><Loader2 className="h-4 w-4 animate-spin me-2" />מעבד...</>
+                  : <><CheckCircle2 className="h-4 w-4 me-2" />אשר רשימה ({workers.length} עובדים)</>
+                }
+              </Button>
+              <Button
+                onClick={handleReject}
+                disabled={confirming}
+                variant="outline"
+                className="text-red-700 border-red-200 hover:bg-red-50"
+              >
+                דחה
+              </Button>
+            </div>
           </CardContent>
         </Card>
       )}
@@ -366,7 +449,7 @@ export default function DealDetailPage() {
             <CardContent>
               {!showWorkers ? (
                 <p className="text-slate-400 text-sm text-center py-4">
-                  שמות העובדים יוצגו לאחר אישור התאגיד
+                  שמות העובדים יוצגו ברגע שהתאגיד יציג רשימה
                 </p>
               ) : workers.length === 0 ? (
                 <p className="text-slate-400 text-sm text-center py-4">אין עובדים משובצים</p>
@@ -375,21 +458,23 @@ export default function DealDetailPage() {
                   <thead>
                     <tr className="text-slate-500 border-b border-slate-100">
                       <th className="pb-2 font-medium text-start">שם</th>
+                      <th className="pb-2 font-medium text-start">מס׳ פנימי</th>
                       <th className="pb-2 font-medium text-start">מקצוע</th>
-                      <th className="pb-2 font-medium text-start">ניסיון</th>
-                      <th className="pb-2 font-medium text-start">ויזה עד</th>
+                      <th className="pb-2 font-medium text-start">מדינה</th>
+                      <th className="pb-2 font-medium text-start">שנים בארץ</th>
                     </tr>
                   </thead>
                   <tbody>
                     {workers.map((w) => {
-                      const expCode  = w.experience_range ?? '';
-                      const expLabel = EXP_LABELS[expCode] ?? (w.experience_years ? `${w.experience_years} שנים` : '—');
+                      const wAny = w as unknown as { full_name?: string; internal_id?: string; years_in_israel?: number };
+                      const name = wAny.full_name || `${w.first_name ?? ''} ${w.last_name ?? ''}`.trim() || '—';
                       return (
                         <tr key={w.id} className="border-b border-slate-50 last:border-0">
-                          <td className="py-2 font-medium">{w.first_name} {w.last_name}</td>
+                          <td className="py-2 font-medium">{name}</td>
+                          <td className="py-2 text-slate-500 text-xs font-mono" dir="ltr">{wAny.internal_id ?? '—'}</td>
                           <td className="py-2 text-slate-600">{w.profession_type}</td>
-                          <td className="py-2 text-slate-500 text-xs">{expLabel}</td>
-                          <td className="py-2 text-slate-600">{formatDate(w.visa_valid_until)}</td>
+                          <td className="py-2 text-slate-600">{w.origin_country || '—'}</td>
+                          <td className="py-2 text-slate-500 text-xs">{wAny.years_in_israel ?? '—'}</td>
                         </tr>
                       );
                     })}

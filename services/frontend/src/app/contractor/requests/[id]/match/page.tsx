@@ -20,7 +20,7 @@ import {
 import {
   groupWorkers, getBundleWorkers, bundleAvgScorePct,
 } from '@/features/match/group';
-import { detectMismatches } from '@/features/match/mismatch';
+import { detectMismatches, fulfilledLine, missingLine, PARTIAL_FOOTER } from '@/features/match/mismatch';
 import { CompareCell } from '@/features/match/components/CompareCell';
 import { ScoreBreakdown, TierBadge } from '@/features/match/components/ScoreBreakdown';
 import { ThresholdRequirements } from '@/features/match/components/ThresholdRequirements';
@@ -211,11 +211,12 @@ export default function MatchPage() {
         <Card>
           <CardContent className="py-12 flex flex-col items-center gap-4 text-center">
             <Users className="h-12 w-12 text-slate-300" />
-            <p className="text-slate-600 font-medium">לא נמצאו התאמות מתאימות</p>
-            <p className="text-slate-400 text-sm">נסה לשנות את דרישות הבקשה</p>
-            <Button variant="outline" asChild>
-              <Link href="/contractor/requests/new">בקשה חדשה</Link>
-            </Button>
+            <p className="text-slate-700 font-medium max-w-sm">
+              לא נמצאה כרגע התאמה מדויקת לבקשה שלך, אבל אנחנו כבר עובדים על זה 👍
+            </p>
+            <p className="text-slate-500 text-sm max-w-sm">
+              נמשיך לחפש עבורך ונעדכן אותך מיד כשנמצא התאמה מתאימה.
+            </p>
           </CardContent>
         </Card>
       )}
@@ -223,7 +224,9 @@ export default function MatchPage() {
       {/* ── Inquiry modal ───────────────────────────────────────────────── */}
       {modalBundle && (() => {
         const modalMismatches = detectMismatches(modalBundle, lineItemMap, profMap);
-        const canSend = !modalMismatches.hasMismatch || mismatchAcknowledged;
+        // Origin/lang/exp conflicts require explicit checkbox consent.
+        // Pure count gaps are informational — partial inquiries can be sent freely.
+        const canSend = !modalMismatches.hasBlockingMismatch || mismatchAcknowledged;
         return (
           <div
             className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
@@ -269,8 +272,34 @@ export default function MatchPage() {
                 ))}
               </div>
 
-              {/* ── Mismatch acknowledgment (shown only when mismatches exist) ── */}
-              {modalMismatches.hasMismatch && (
+              {/* ── Partial-match summary (informational, no checkbox) ── */}
+              {modalMismatches.hasMismatch && !modalMismatches.hasBlockingMismatch && (
+                <div className="rounded-xl border-2 border-amber-200 bg-amber-50 p-4 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="h-5 w-5 shrink-0 text-amber-500" />
+                    <p className="font-bold text-sm text-amber-800">
+                      שים לב — רגע לפני השליחה:
+                    </p>
+                  </div>
+                  <div className="space-y-1 ps-7 text-sm leading-relaxed text-amber-800">
+                    {modalMismatches.fulfilled.map((f, i) => (
+                      <p key={`f-${i}`}>{fulfilledLine(f)}</p>
+                    ))}
+                    {modalMismatches.missing.length > 0 && (
+                      <>
+                        <p className="pt-1 font-medium">לעומת זאת:</p>
+                        {modalMismatches.missing.map((m, i) => (
+                          <p key={`m-${i}`}>{missingLine(m)}</p>
+                        ))}
+                      </>
+                    )}
+                    <p className="pt-2 text-amber-700">{PARTIAL_FOOTER}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* ── Blocking conflicts (origin / language / experience) — needs ack ── */}
+              {modalMismatches.hasBlockingMismatch && (
                 <div className={`rounded-xl border-2 p-4 space-y-3 transition-colors ${
                   mismatchAcknowledged
                     ? 'bg-green-50 border-green-200'
@@ -279,7 +308,7 @@ export default function MatchPage() {
                   <div className="flex items-center gap-2">
                     <AlertTriangle className={`h-5 w-5 shrink-0 ${mismatchAcknowledged ? 'text-green-500' : 'text-amber-500'}`} />
                     <p className={`font-bold text-sm ${mismatchAcknowledged ? 'text-green-800' : 'text-amber-800'}`}>
-                      שים לב — לפני השליחה
+                      שים לב — אי-התאמה לדרישות
                     </p>
                   </div>
                   <div className="space-y-2 ps-7">
@@ -320,13 +349,20 @@ export default function MatchPage() {
                 <p className="text-xs text-slate-400">ההערות ישלחו כהודעה ראשונה בערוץ התקשורת עם התאגיד</p>
               </div>
 
+              {/* Inline error display (e.g. tier_2 verification gate) */}
+              {error && (
+                <div className="rounded-md bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">
+                  {error}
+                </div>
+              )}
+
               {/* Actions */}
               <div className="flex gap-3 pt-1">
                 <Button
                   onClick={handleConfirmInquiry}
                   disabled={creatingDeal !== null || !canSend}
                   className="flex-1"
-                  title={!canSend ? 'יש לאשר את האי-התאמות תחילה' : undefined}
+                  title={!canSend ? 'יש לאשר את אי-ההתאמה לדרישות תחילה' : undefined}
                 >
                   {creatingDeal
                     ? <><Loader2 className="h-4 w-4 animate-spin" />שולח פנייה...</>
@@ -362,8 +398,9 @@ export default function MatchPage() {
             return (
               <div key={bundle.corporation_id} className="space-y-2">
 
-              {/* ── Mismatch banner ── */}
-              {mismatches.hasMismatch && (
+              {/* ── Mismatch banner — shown only for blocking conflicts;
+                   count gaps are surfaced inside the inquiry modal instead ── */}
+              {mismatches.hasBlockingMismatch && (
                 <div className="bg-amber-50 border-2 border-amber-300 rounded-xl px-4 py-4 flex items-start gap-3">
                   <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
                   <div className="space-y-2">
