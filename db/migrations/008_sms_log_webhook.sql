@@ -31,25 +31,11 @@ CREATE TABLE IF NOT EXISTS sms_log (
   INDEX idx_created    (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Idempotent: add DLR columns only if the table was created by an earlier migration
--- without them (MySQL does not support ADD COLUMN IF NOT EXISTS before 8.0.31).
-DROP PROCEDURE IF EXISTS _add_dlr_columns;
-DELIMITER $$
-CREATE PROCEDURE _add_dlr_columns()
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
-    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'sms_log' AND COLUMN_NAME = 'delivery_status'
-  ) THEN
-    ALTER TABLE sms_log
-      ADD COLUMN delivery_status VARCHAR(30) NULL AFTER error,
-      ADD COLUMN delivery_err    VARCHAR(10) NULL AFTER delivery_status,
-      ADD COLUMN delivered_at    DATETIME    NULL AFTER delivery_err;
-  END IF;
-END$$
-DELIMITER ;
-CALL _add_dlr_columns();
-DROP PROCEDURE IF EXISTS _add_dlr_columns;
+-- DLR columns (delivery_status, delivery_err, delivered_at) are included
+-- in the CREATE TABLE IF NOT EXISTS above, so a fresh install already has
+-- them. Legacy bridge for older envs is intentionally omitted — this
+-- migration runs via PyMySQL which does not support DELIMITER / stored
+-- procedure blocks.
 
 -- Inbound SMS log — messages received from Vonage inbound webhook
 CREATE TABLE IF NOT EXISTS inbound_sms_log (
