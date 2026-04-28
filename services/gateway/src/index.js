@@ -164,4 +164,4 @@ for (const [prefix, target] of Object.entries(services)) {
 }
 
 const PORT = process.env.GATEWAY_PORT || 3000;
-app.listen(PORT, () => console.log(`API Gateway listening on ${PORT}`));
+app.listen(PORT, '::', () => console.log(`API Gateway listening on ${PORT}`));

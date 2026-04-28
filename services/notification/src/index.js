@@ -56,5 +56,5 @@ const PORT = process.env.NOTIF_PORT || 3006;
     runDealLifecycleCron().catch(console.error);
   });
 
-  app.listen(PORT, () => console.log(`Notification service listening on ${PORT}`));
+  app.listen(PORT, '::', () => console.log(`Notification service listening on ${PORT}`));
 })();
