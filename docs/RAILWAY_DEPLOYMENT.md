@@ -266,11 +266,37 @@ data goes. The next boot re-runs every migration cleanly.
 
 ## Troubleshooting
 
+### Variable references must be picked from the autocomplete dropdown
+- **The biggest single time-sink during the first deploy.** Typing
+  `${{MySQL.MYSQLPASSWORD}}` into the value field with the keyboard
+  produces a literal text string — Railway sends those exact 28
+  characters to your container as the password.
+- **Always type `${{` and pick the option from the autocomplete
+  dropdown** so it binds as a chip (the value cell renders as a colored
+  pill with the source plugin's icon, not as plain text).
+- Symptom of a broken binding: container logs show
+  `ValueError: invalid literal for int() with base 10: 'MYSQL_PORT'`,
+  `Access denied for user 'root'`, or `NOAUTH Authentication required`
+  — basically any error where the env var value is being treated as
+  the literal reference string.
+
+### Redis plugin's `REDIS_URL` may contain a placeholder password
+- We hit this on the first deploy: the Redis plugin's `REDIS_URL`
+  variable was literally `redis://default:abc123XYZ987@redis.railway.internal:6379`
+  — the documentation example, not the real password. The real password
+  was in the `REDIS_PASSWORD` variable on the same plugin.
+- **Always inspect the plugin's `REDIS_URL` value before referencing it.**
+  If it contains placeholder text like `abc123XYZ987`, fix the plugin's
+  variable (replace with the real password from `REDIS_PASSWORD`) before
+  any service references it.
+
 ### "Cannot connect to MySQL"
 - Check that **MYSQL_ROOT_PASSWORD** on the service equals
   `${{MySQL.MYSQLPASSWORD}}` (Railway's auto-generated password).
 - Plugin names are case-sensitive. If you renamed the plugin to
   `mysql-prod`, the reference becomes `${{mysql-prod.MYSQLPASSWORD}}`.
+- `MYSQL_PORT` can be hardcoded to `3306` (the Railway internal port
+  is always 3306) — bypasses the chip-binding issue entirely.
 
 ### "RabbitMQ connection refused"
 - Own container: confirm the RabbitMQ service has a private domain
@@ -286,6 +312,30 @@ data goes. The next boot re-runs every migration cleanly.
 - Frontend (Next.js): healthcheck `/`. Next.js 16 standalone needs a
   fresh `npm run build` baked into the image; if you forget, the
   container starts but immediately exits.
+- **Set `PORT` env var to match the service's listening port** —
+  Railway's healthcheck routes to the port specified by the `PORT` env
+  var (defaults to `8080`). Our services listen on hardcoded ports
+  (3001-3009), so each service needs `PORT=<its_port>`.
+- **First-boot timing:** user-org takes 30-60s to apply 18 migrations
+  and seed admin before uvicorn starts. The default 5-minute healthcheck
+  window is enough, but if it fails, just redeploy — second boot skips
+  all migrations (idempotent) and starts in ~3 seconds.
+
+### "502 Bad Gateway" with `x-railway-fallback: true`
+- This 502 comes from Railway's edge proxy, not from your gateway.
+  Means the gateway service itself is down or unhealthy.
+- Common cause: gateway crashed on Redis connection (rate limiter
+  needs Redis) — check gateway Deploy Logs for `[ioredis] NOAUTH`.
+- Gateway needs `REDIS_URL` even though it's "just a proxy" — the
+  rate limiter on every request requires it.
+
+### Don't bind services to `--host ::` on Railway
+- Railway's container runtime doesn't dual-stack reliably. If you set
+  `uvicorn --host ::`, the IPv4 healthcheck (source `100.64.0.0/16`)
+  will fail and the deploy never goes healthy.
+- Stick with `--host 0.0.0.0`. Railway's private networking still
+  works fine over IPv4 from one container to another (we briefly
+  thought IPv6 was required — it isn't).
 
 ### Cross-DB JOIN errors after migration
 - Schema names are not configurable per-env — they're hardcoded in SQL.
@@ -296,8 +346,31 @@ data goes. The next boot re-runs every migration cleanly.
 - `NEXT_PUBLIC_API_URL` is baked at build time. Changing it requires a
   redeploy of the frontend service (Railway does this automatically when
   you change the var).
+- **The Dockerfile must declare `ARG NEXT_PUBLIC_API_URL`** before
+  `RUN npm run build`. Without the ARG, Railway doesn't pass the
+  variable to the build context, AND Docker layer caching skips the
+  build step entirely on subsequent deploys (you'll see
+  `RUN npm run build cached` in the build log — that's the smoking
+  gun). Adding the ARG also makes the value part of the cache key, so
+  any URL change forces a real rebuild.
+- **The value must end in `/api`** — `client.ts` appends paths like
+  `/auth/login` to `NEXT_PUBLIC_API_URL` to form
+  `<URL>/api/auth/login`. Set
+  `NEXT_PUBLIC_API_URL=https://${{gateway.RAILWAY_PUBLIC_DOMAIN}}/api`.
 - Verify in browser devtools → Network — the request `Host` header
   should be the gateway's public domain.
+
+### SMS sender ID rejected (Vonage error code 15)
+- Vonage requires alphanumeric sender IDs to be pre-registered for
+  most countries, including Israel. Trial accounts can only send to
+  test/whitelisted numbers.
+- Symptom: Vonage logs show "rejected" with code 15 ("Illegal Sender
+  Address").
+- Fixes: (a) upgrade Vonage account out of trial, (b) whitelist the
+  test number in the dashboard, (c) use a numeric sender via
+  `VONAGE_FROM=<numeric>` instead of `Shivutz`, (d) for production,
+  pre-register the sender ID with Vonage support, or switch to an
+  Israeli SMS provider (InforU, Cellact).
 
 ### "phone_not_verified" on Cardcom return
 - Cardcom redirects back to the frontend with query params. The
