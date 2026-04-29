@@ -25,5 +25,5 @@ const PORT = process.env.AUTH_PORT || 3001;
 
 (async () => {
   await initDb();
-  app.listen(PORT, '::', () => console.log(`Auth service listening on ${PORT}`));
+  app.listen(PORT, () => console.log(`Auth service listening on ${PORT}`));
 })();

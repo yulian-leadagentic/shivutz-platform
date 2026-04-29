@@ -17,4 +17,4 @@ EXPOSE 3002
 # launch uvicorn. The migration runner is idempotent and the seed script
 # is a no-op once any admin exists, so this is safe on every container
 # boot. A migration failure exits non-zero and Railway holds the deploy.
-CMD ["sh", "-c", "python /scripts/run_migrations.py --dir /db/migrations && python /scripts/seed_admin.py && uvicorn app.main:app --host :: --port 3002"]
+CMD ["sh", "-c", "python /scripts/run_migrations.py --dir /db/migrations && python /scripts/seed_admin.py && uvicorn app.main:app --host 0.0.0.0 --port 3002"]
