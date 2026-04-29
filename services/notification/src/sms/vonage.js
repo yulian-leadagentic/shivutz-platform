@@ -22,7 +22,9 @@ async function send(phone, message) {
   // Vonage expects E.164 without the leading + for the `to` field
   const to = phone.startsWith('+') ? phone.slice(1) : phone;
 
-  const payload = JSON.stringify({ api_key: apiKey, api_secret: apiSecret, to, from, text: message });
+  // type:'unicode' — required for Hebrew. Without it Vonage encodes as GSM-7
+  // and every non-Latin character is replaced with '?'.
+  const payload = JSON.stringify({ api_key: apiKey, api_secret: apiSecret, to, from, text: message, type: 'unicode' });
 
   return new Promise((resolve, reject) => {
     const options = {
