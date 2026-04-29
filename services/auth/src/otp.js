@@ -115,9 +115,12 @@ async function verifyOtp(phone, code, purpose) {
     throw Object.assign(new Error('max_attempts'), { status: 401, reason: 'max_attempts' });
   }
 
-  // Master bypass code for development/testing — set MASTER_OTP env var (default 999999)
-  const masterCode = process.env.MASTER_OTP || '999999';
-  const isMasterCode = code === masterCode;
+  // Master bypass code for development/testing only.
+  // SECURITY: must be opt-in via env var. NO default — if MASTER_OTP is
+  // unset, no bypass code works. (Previously defaulted to '999999', which
+  // meant production accepted that code with no env-var ever set.)
+  const masterCode = process.env.MASTER_OTP;
+  const isMasterCode = !!masterCode && code === masterCode;
 
   const match = isMasterCode || await bcrypt.compare(code, otp.code);
   if (!match) {
