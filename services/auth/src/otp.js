@@ -134,6 +134,16 @@ async function verifyOtp(phone, code, purpose) {
 
   // Mark OTP as used
   await pool.query('UPDATE sms_otp SET verified_at = NOW() WHERE otp_id = ?', [otp.otp_id]);
+
+  // The rate limit on /send-otp is for *failed* attempts — once the user
+  // proves they can complete a verification, reset the counter so a real
+  // user struggling with their first one or two codes isn't locked out
+  // afterwards. Buckets are 10-minute windows; clear current + previous
+  // to cover the case where their failed sends straddled the boundary.
+  const window = Math.floor(Date.now() / 600_000);
+  await redis.del(`sms_rl:phone:${normPhone}:${window}`);
+  await redis.del(`sms_rl:phone:${normPhone}:${window - 1}`);
+
   return { valid: true, normPhone };
 }
 
