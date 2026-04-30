@@ -45,7 +45,7 @@ export default function CorporationSidebar() {
 
   function handleLogout() {
     clearTokens();
-    router.push('/login');
+    router.push('/');
   }
 
   return (

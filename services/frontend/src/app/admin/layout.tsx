@@ -68,7 +68,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   function logout() {
     clearTokens();
-    router.push('/login');
+    router.push('/');
   }
 
   return (

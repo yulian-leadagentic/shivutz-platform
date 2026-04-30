@@ -103,7 +103,7 @@ export default function TopBar({ mobileNav }: TopBarProps = {}) {
 
   function handleLogout() {
     clearTokens();
-    router.push('/login');
+    router.push('/');
   }
 
   return (

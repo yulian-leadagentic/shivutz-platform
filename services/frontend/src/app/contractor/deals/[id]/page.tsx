@@ -454,32 +454,34 @@ export default function DealDetailPage() {
               ) : workers.length === 0 ? (
                 <p className="text-slate-400 text-sm text-center py-4">אין עובדים משובצים</p>
               ) : (
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-slate-500 border-b border-slate-100">
-                      <th className="pb-2 font-medium text-start">שם</th>
-                      <th className="pb-2 font-medium text-start">מס׳ פנימי</th>
-                      <th className="pb-2 font-medium text-start">מקצוע</th>
-                      <th className="pb-2 font-medium text-start">מדינה</th>
-                      <th className="pb-2 font-medium text-start">שנים בארץ</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {workers.map((w) => {
-                      const wAny = w as unknown as { full_name?: string; internal_id?: string; years_in_israel?: number };
-                      const name = wAny.full_name || `${w.first_name ?? ''} ${w.last_name ?? ''}`.trim() || '—';
-                      return (
-                        <tr key={w.id} className="border-b border-slate-50 last:border-0">
-                          <td className="py-2 font-medium">{name}</td>
-                          <td className="py-2 text-slate-500 text-xs font-mono" dir="ltr">{wAny.internal_id ?? '—'}</td>
-                          <td className="py-2 text-slate-600">{w.profession_type}</td>
-                          <td className="py-2 text-slate-600">{w.origin_country || '—'}</td>
-                          <td className="py-2 text-slate-500 text-xs">{wAny.years_in_israel ?? '—'}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                <div className="-mx-4 sm:mx-0 overflow-x-auto">
+                  <table className="w-full text-sm min-w-[560px] sm:min-w-0">
+                    <thead>
+                      <tr className="text-slate-500 border-b border-slate-100">
+                        <th className="px-4 sm:px-0 pb-2 font-medium text-start">שם</th>
+                        <th className="px-4 sm:px-0 pb-2 font-medium text-start">מס׳ פנימי</th>
+                        <th className="px-4 sm:px-0 pb-2 font-medium text-start">מקצוע</th>
+                        <th className="px-4 sm:px-0 pb-2 font-medium text-start">מדינה</th>
+                        <th className="px-4 sm:px-0 pb-2 font-medium text-start">שנים בארץ</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {workers.map((w) => {
+                        const wAny = w as unknown as { full_name?: string; internal_id?: string; years_in_israel?: number };
+                        const name = wAny.full_name || `${w.first_name ?? ''} ${w.last_name ?? ''}`.trim() || '—';
+                        return (
+                          <tr key={w.id} className="border-b border-slate-50 last:border-0">
+                            <td className="px-4 sm:px-0 py-2 font-medium">{name}</td>
+                            <td className="px-4 sm:px-0 py-2 text-slate-500 text-xs font-mono" dir="ltr">{wAny.internal_id ?? '—'}</td>
+                            <td className="px-4 sm:px-0 py-2 text-slate-600">{w.profession_type}</td>
+                            <td className="px-4 sm:px-0 py-2 text-slate-600">{w.origin_country || '—'}</td>
+                            <td className="px-4 sm:px-0 py-2 text-slate-500 text-xs">{wAny.years_in_israel ?? '—'}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </CardContent>
           </Card>

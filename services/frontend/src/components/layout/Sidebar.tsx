@@ -50,7 +50,7 @@ export default function Sidebar() {
 
   function handleLogout() {
     clearTokens();
-    router.push('/login');
+    router.push('/');
   }
 
   return (

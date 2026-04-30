@@ -154,7 +154,7 @@ function LineItemCard({ li, index, total, expanded, professions, origins,
       {expanded && (
         <div className="px-4 pb-4 space-y-3 border-t border-slate-100 pt-3 bg-slate-50/50">
           {/* Profession + Quantity */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="flex flex-col gap-1">
               <label className="text-xs font-medium text-slate-600">מקצוע *</label>
               <select value={li.profession_type}
@@ -175,7 +175,7 @@ function LineItemCard({ li, index, total, expanded, professions, origins,
           </div>
 
           {/* Dates */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="flex flex-col gap-1">
               <label className="text-xs font-medium text-slate-600">תאריך התחלה *</label>
               <input type="date" value={li.start_date} dir="ltr"
@@ -392,7 +392,7 @@ export default function EditRequestPage() {
               </select>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <Input label="תאריך תחילת הפרויקט" type="date" dir="ltr"
                 value={projectStart}
                 onChange={(e) => setProjectStart(e.target.value)} />
