@@ -5,6 +5,7 @@ from datetime import date
 import uuid, json, secrets
 
 from app.db import get_db
+from app.publisher import publish_event
 
 router = APIRouter()
 
@@ -178,7 +179,7 @@ def _require_corp_tier_2(corp_id: str) -> None:
 
 
 @router.post("", status_code=201)
-def create_worker(
+async def create_worker(
     data: WorkerCreate,
     x_org_id: Optional[str] = Header(default=None),
 ):
@@ -220,20 +221,27 @@ def create_worker(
                     raise
                 internal_id = _generate_internal_id()
         conn.commit()
-        return {
-            "id": worker_id,
-            "internal_id": internal_id,
-            "experience_years": exp_years,
-            "experience_range": stored_range,
-            "years_in_israel": data.years_in_israel,
-            "employee_number": emp_num,
-        }
     finally:
         conn.close()
 
+    await publish_event("worker.changed", {
+        "worker_id":       worker_id,
+        "corporation_id":  corp_id,
+        "profession_type": data.profession_type,
+        "action":          "created",
+    })
+    return {
+        "id": worker_id,
+        "internal_id": internal_id,
+        "experience_years": exp_years,
+        "experience_range": stored_range,
+        "years_in_israel": data.years_in_israel,
+        "employee_number": emp_num,
+    }
+
 
 @router.post("/bulk", status_code=201)
-def bulk_create_workers(
+async def bulk_create_workers(
     data: WorkerBulkCreate,
     x_org_id: Optional[str] = Header(default=None),
 ):
@@ -274,16 +282,24 @@ def bulk_create_workers(
                         raise
             created_ids.append(wid)
         conn.commit()
-        return {
-            "created": len(created_ids),
-            "ids": created_ids,
-            "experience_range": exp_range(exp_years),
-        }
     except Exception as e:
         conn.rollback()
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         conn.close()
+
+    # One event covers the whole batch — same corp, same profession.
+    await publish_event("worker.changed", {
+        "worker_ids":      created_ids,
+        "corporation_id":  corp_id,
+        "profession_type": data.profession_type,
+        "action":          "created",
+    })
+    return {
+        "created": len(created_ids),
+        "ids": created_ids,
+        "experience_range": exp_range(exp_years),
+    }
 
 
 @router.get("")
@@ -362,7 +378,7 @@ def get_worker(worker_id: str):
 
 
 @router.patch("/{worker_id}")
-def update_worker(worker_id: str, data: WorkerUpdate):
+async def update_worker(worker_id: str, data: WorkerUpdate):
     conn = get_db()
     try:
         cur = conn.cursor()
@@ -402,17 +418,52 @@ def update_worker(worker_id: str, data: WorkerUpdate):
         params.append(worker_id)
         cur.execute(f"UPDATE workers SET {', '.join(updates)} WHERE id = %s AND deleted_at IS NULL", params)
         conn.commit()
-        return {"id": worker_id, "updated": True}
+
+        # Re-read the worker so the event reflects the new state. The
+        # rematch consumer needs corporation_id + (current) profession_type
+        # to scope the work.
+        cur.execute(
+            "SELECT corporation_id, profession_type, status FROM workers WHERE id=%s",
+            (worker_id,),
+        )
+        row = cur.fetchone() or {}
     finally:
         conn.close()
 
+    # status went to deactivated/on_leave → effectively a "left the pool"
+    # change; otherwise treat as a regular update.
+    new_status = (row.get("status") or "").lower()
+    action = "deactivated" if new_status in ("deactivated", "on_leave") else "updated"
+    await publish_event("worker.changed", {
+        "worker_id":       worker_id,
+        "corporation_id":  row.get("corporation_id"),
+        "profession_type": row.get("profession_type"),
+        "action":          action,
+    })
+    return {"id": worker_id, "updated": True}
+
 
 @router.delete("/{worker_id}", status_code=204)
-def delete_worker(worker_id: str):
+async def delete_worker(worker_id: str):
     conn = get_db()
     try:
         cur = conn.cursor()
+        # Capture corp + profession before the soft-delete so we can scope
+        # the rematch downstream.
+        cur.execute(
+            "SELECT corporation_id, profession_type FROM workers WHERE id=%s AND deleted_at IS NULL",
+            (worker_id,),
+        )
+        row = cur.fetchone()
         cur.execute("UPDATE workers SET deleted_at = NOW() WHERE id = %s", (worker_id,))
         conn.commit()
     finally:
         conn.close()
+
+    if row:
+        await publish_event("worker.changed", {
+            "worker_id":       worker_id,
+            "corporation_id":  row.get("corporation_id"),
+            "profession_type": row.get("profession_type"),
+            "action":          "deactivated",
+        })

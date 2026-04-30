@@ -1,4 +1,5 @@
 const USER_ORG_URL   = process.env.USER_ORG_SERVICE_URL || 'http://user-org:3002';
+const JOB_MATCH_URL  = process.env.JOB_MATCH_SERVICE_URL || 'http://job-match:3004';
 const ADMIN_EMAIL    = process.env.ADMIN_EMAIL || 'admin@shivutz-platform.co.il';
 const NOTIF_URL      = `http://localhost:${process.env.PORT || 3006}`;
 const FRONTEND_URL   = process.env.FRONTEND_URL || 'https://app.shivutz.co.il';
@@ -20,6 +21,82 @@ async function sendSmsInternal(phone, message) {
     if (!resp.ok) console.error('[handlers] SMS failed:', await resp.text());
   } catch (err) {
     console.error('[handlers] SMS unreachable:', err.message);
+  }
+}
+
+// ── Match-found helpers ─────────────────────────────────────────────────
+//
+// matchInternalResult shape (from job-match's /internal endpoints):
+//   {
+//     request_id, should_notify, skipped,
+//     contractor_id, contact_name, contact_phone, contact_email,
+//     project_name, project_name_he, region, worker_count, best_fill_pct
+//   }
+//
+// We send SMS + email for every entry where should_notify=true. Skipped
+// entries (debounced) are silently ignored.
+
+async function notifyMatchFound(result, sendEmail) {
+  if (!result || !result.should_notify) return;
+
+  const matchUrl  = `${FRONTEND_URL}/contractor/requests/${result.request_id}/match`;
+  const project   = result.project_name_he || result.project_name || 'הבקשה שלך';
+  const firstName = (result.contact_name || '').split(' ')[0] || 'שלום';
+
+  if (result.contact_phone) {
+    await sendSmsInternal(
+      result.contact_phone,
+      `שיבוץ — ${firstName}, נמצאה התאמה מלאה ל"${project}" (${result.worker_count || 0} עובדים). ` +
+      `לצפייה בהצעה: ${matchUrl}`
+    );
+  }
+
+  if (result.contact_email) {
+    await sendEmail('match.found', result.contact_email, result.contractor_id || null, {
+      contact_name:    result.contact_name || '',
+      project_name:    project,
+      worker_count:    result.worker_count || 0,
+      region:          result.region || '',
+      match_url:       matchUrl,
+    });
+  }
+}
+
+async function rematchForCorp(corporationId, professionType) {
+  if (!professionType) return [];
+  try {
+    const resp = await fetch(`${JOB_MATCH_URL}/internal/rematch-for-corp`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ corporation_id: corporationId, profession_type: professionType }),
+    });
+    if (!resp.ok) {
+      console.error('[rematch-corp] non-2xx:', resp.status, await resp.text());
+      return [];
+    }
+    const json = await resp.json();
+    return json.results || [];
+  } catch (err) {
+    console.error('[rematch-corp] unreachable:', err.message);
+    return [];
+  }
+}
+
+async function rematchForRequest(requestId, force) {
+  try {
+    const resp = await fetch(`${JOB_MATCH_URL}/internal/rematch-for-request`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ request_id: requestId, force: !!force }),
+    });
+    if (!resp.ok) {
+      console.error('[rematch-request] non-2xx:', resp.status, await resp.text());
+      return null;
+    }
+    return await resp.json();
+  } catch (err) {
+    console.error('[rematch-request] unreachable:', err.message);
+    return null;
   }
 }
 
@@ -370,6 +447,28 @@ async function handle(routingKey, payload, sendEmail) {
         expires_at:        payload.expires_at
           ? new Date(payload.expires_at).toLocaleString('he-IL') : '',
       });
+      break;
+    }
+
+    // ── Match-found notification flow ───────────────────────────────────
+
+    case 'worker.changed': {
+      // Corp added/edited/deactivated a worker. Re-match every open
+      // request whose line items include that profession. job-match
+      // applies the 5-min per-request debounce internally.
+      const results = await rematchForCorp(payload.corporation_id, payload.profession_type);
+      for (const r of results) {
+        await notifyMatchFound(r, sendEmail);
+      }
+      break;
+    }
+
+    case 'job_request.changed': {
+      // Contractor created/edited their own request. Re-match just this
+      // one, force=true to bypass the debounce (the contractor's edit
+      // should be reflected immediately).
+      const result = await rematchForRequest(payload.request_id, true);
+      await notifyMatchFound(result, sendEmail);
       break;
     }
 

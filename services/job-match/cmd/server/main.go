@@ -9,6 +9,7 @@ import (
 
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/shivutz/job-match/internal/handler"
+	"github.com/shivutz/job-match/internal/publisher"
 )
 
 func main() {
@@ -30,7 +31,10 @@ func main() {
 	}
 	log.Println("Job-Match DB connected")
 
-	h := handler.New(db)
+	pub := publisher.New()
+	defer pub.Close()
+
+	h := handler.New(db, pub)
 
 	mux := http.NewServeMux()
 	// Liveness — static OK, independent of dependencies.
@@ -57,6 +61,11 @@ func main() {
 	mux.HandleFunc("POST /job-requests/{id}/match", h.RunMatch)
 	mux.HandleFunc("GET /job-requests/{id}/match-results", h.GetMatchResults)
 	mux.HandleFunc("GET /contractors/{id}/job-requests", h.ListByContractor)
+	// Internal-only endpoints — driven by the notification service in
+	// response to AMQP change events. Must NOT be exposed via the public
+	// gateway; only reachable on the Railway private network.
+	mux.HandleFunc("POST /internal/rematch-for-request", h.RematchForRequest)
+	mux.HandleFunc("POST /internal/rematch-for-corp", h.RematchForCorp)
 
 	port := getEnv("PORT", "3004")
 	log.Printf("Job-Match service listening on :%s", port)

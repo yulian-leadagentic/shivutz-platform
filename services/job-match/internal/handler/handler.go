@@ -14,15 +14,22 @@ import (
 	"github.com/google/uuid"
 	"github.com/shivutz/job-match/internal/matcher"
 	"github.com/shivutz/job-match/internal/models"
+	"github.com/shivutz/job-match/internal/publisher"
 )
 
 type Handler struct {
-	db *sql.DB
+	db  *sql.DB
+	pub *publisher.Publisher
 }
 
-func New(db *sql.DB) *Handler {
-	return &Handler{db: db}
+func New(db *sql.DB, pub *publisher.Publisher) *Handler {
+	return &Handler{db: db, pub: pub}
 }
+
+// rematchDebounceWindow — a request that was matched more recently than this
+// is treated as "fresh" and skipped by the corp-change rematch path.
+// Contractor-side changes pass force=true and bypass this check.
+const rematchDebounceWindow = 5 * time.Minute
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
@@ -243,6 +250,10 @@ func (h *Handler) CreateJobRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if status == "open" {
+		h.publishRequestChanged(id)
+	}
+
 	writeJSON(w, 201, map[string]any{"id": id, "status": status, "line_item_ids": lineItemIDs})
 }
 
@@ -352,6 +363,7 @@ func (h *Handler) AddLineItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.db.Exec("UPDATE job_requests SET status='open' WHERE id=?", requestID)
+	h.publishRequestChanged(requestID)
 	writeJSON(w, 201, map[string]string{"id": id})
 }
 
@@ -412,9 +424,30 @@ func (h *Handler) RunMatch(w http.ResponseWriter, r *http.Request) {
 		bestFillPct = bundles[0].FillPercentage
 		bestIsComplete = bundles[0].IsComplete
 	}
+	// The UI just showed the contractor this result, so we treat them as
+	// "already informed" of the current fill state — set last_notified to
+	// match. That prevents the background re-match path from sending an
+	// SMS for a state the contractor already saw on screen. If the match
+	// later degrades and recovers, the background path will reset to
+	// 'none' on degradation and a fresh notification will fire on the
+	// next recovery.
+	uiState := "none"
+	if bestIsComplete {
+		uiState = "complete"
+	}
 	h.db.Exec(
-		"REPLACE INTO match_cache (request_id, result_json, computed_at, expires_at, best_fill_pct, best_is_complete) VALUES (?,?,NOW(),DATE_ADD(NOW(), INTERVAL 30 MINUTE),?,?)",
-		requestID, string(bundlesJSON), bestFillPct, bestIsComplete,
+		`INSERT INTO match_cache
+		   (request_id, result_json, computed_at, expires_at,
+		    best_fill_pct, best_is_complete, last_notified_fill_state)
+		 VALUES (?, ?, NOW(), DATE_ADD(NOW(), INTERVAL 30 MINUTE), ?, ?, ?)
+		 ON DUPLICATE KEY UPDATE
+		   result_json              = VALUES(result_json),
+		   computed_at              = VALUES(computed_at),
+		   expires_at               = VALUES(expires_at),
+		   best_fill_pct            = VALUES(best_fill_pct),
+		   best_is_complete         = VALUES(best_is_complete),
+		   last_notified_fill_state = VALUES(last_notified_fill_state)`,
+		requestID, string(bundlesJSON), bestFillPct, bestIsComplete, uiState,
 	)
 
 	writeJSON(w, 200, map[string]any{"request_id": requestID, "bundles": bundles})
@@ -512,6 +545,7 @@ func (h *Handler) UpdateJobRequest(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 404, "not found")
 		return
 	}
+	h.publishRequestChanged(id)
 	writeJSON(w, 200, map[string]string{"id": id})
 }
 
@@ -576,6 +610,7 @@ func (h *Handler) ReplaceLineItems(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 500, err.Error())
 		return
 	}
+	h.publishRequestChanged(id)
 	writeJSON(w, 200, map[string]any{"id": id, "line_items_count": len(body.LineItems)})
 }
 
@@ -609,4 +644,251 @@ func nullStr(s string) any {
 		return nil
 	}
 	return s
+}
+
+// ── Match-found notification flow ──────────────────────────────────────
+//
+// runMatchInternal is the engine for the background re-match path. Unlike
+// the public RunMatch (which the UI calls and which never fires a
+// notification), this version updates last_notified_fill_state and reports
+// whether a state transition warrants notifying the contractor.
+//
+// The contract: notify exactly once when fill_state crosses from 'none' to
+// 'complete'. If the match later degrades, set last_notified_fill_state
+// back to 'none' so the next recovery is notifiable again. No timer-based
+// re-spam.
+//
+// `force=false` applies the 5-min debounce: if a recent match exists, we
+// skip re-running. Contractor-side triggers pass force=true (they want
+// their own edit reflected immediately).
+
+type matchInternalResult struct {
+	RequestID    string `json:"request_id"`
+	ShouldNotify bool   `json:"should_notify"`
+	Skipped      bool   `json:"skipped"` // true when debounced or request not found
+
+	// Populated when ShouldNotify=true so the notification service can
+	// hand them straight to the SMS/email templates without a second hop.
+	ContractorID  string  `json:"contractor_id,omitempty"`
+	ContactName   string  `json:"contact_name,omitempty"`
+	ContactPhone  string  `json:"contact_phone,omitempty"`
+	ContactEmail  string  `json:"contact_email,omitempty"`
+	ProjectName   string  `json:"project_name,omitempty"`
+	ProjectNameHe string  `json:"project_name_he,omitempty"`
+	Region        string  `json:"region,omitempty"`
+	WorkerCount   int     `json:"worker_count,omitempty"`
+	BestFillPct   float64 `json:"best_fill_pct,omitempty"`
+}
+
+func (h *Handler) runMatchInternal(ctx context.Context, requestID string, force bool) matchInternalResult {
+	res := matchInternalResult{RequestID: requestID}
+
+	// Debounce check (corp-side only; contractor-side passes force=true).
+	if !force {
+		var computedAt sql.NullTime
+		_ = h.db.QueryRow("SELECT computed_at FROM match_cache WHERE request_id=?", requestID).
+			Scan(&computedAt)
+		if computedAt.Valid && time.Since(computedAt.Time) < rematchDebounceWindow {
+			res.Skipped = true
+			return res
+		}
+	}
+
+	// Fetch the request + line items (same shape as RunMatch).
+	row := h.db.QueryRow(
+		`SELECT id, contractor_id, COALESCE(project_name,'') as project_name,
+		        COALESCE(region,'') as region, status
+		 FROM job_requests
+		 WHERE id=? AND deleted_at IS NULL AND status='open'`,
+		requestID,
+	)
+	var req models.JobRequest
+	if err := row.Scan(&req.ID, &req.ContractorID, &req.ProjectName, &req.Region, &req.Status); err != nil {
+		res.Skipped = true
+		return res
+	}
+
+	rows, err := h.db.Query(
+		`SELECT id, profession_type, quantity, start_date, end_date, min_experience, origin_preference, required_languages
+		 FROM job_request_line_items WHERE request_id=?`,
+		requestID,
+	)
+	if err != nil {
+		log.Printf("[rematch] line items query failed for %s: %v", requestID, err)
+		res.Skipped = true
+		return res
+	}
+	defer rows.Close()
+
+	var lineItems []models.LineItem
+	totalQty := 0
+	for rows.Next() {
+		var li models.LineItem
+		var origins, langs string
+		if err := rows.Scan(&li.ID, &li.ProfessionType, &li.Quantity, &li.StartDate, &li.EndDate, &li.MinExperience, &origins, &langs); err != nil {
+			continue
+		}
+		json.Unmarshal([]byte(origins), &li.OriginPreference)
+		json.Unmarshal([]byte(langs), &li.RequiredLanguages)
+		lineItems = append(lineItems, li)
+		totalQty += li.Quantity
+	}
+	if len(lineItems) == 0 {
+		res.Skipped = true
+		return res
+	}
+
+	// Run the matcher.
+	mctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	bundles, err := matcher.Run(mctx, req, lineItems)
+	if err != nil {
+		log.Printf("[rematch] matcher.Run failed for %s: %v", requestID, err)
+		res.Skipped = true
+		return res
+	}
+
+	var bestFillPct float64
+	var bestIsComplete bool
+	if len(bundles) > 0 {
+		bestFillPct = bundles[0].FillPercentage
+		bestIsComplete = bundles[0].IsComplete
+	}
+	bundlesJSON, _ := json.Marshal(bundles)
+
+	// Fetch the previous notification state before we overwrite the row.
+	var prevState string
+	_ = h.db.QueryRow("SELECT last_notified_fill_state FROM match_cache WHERE request_id=?", requestID).
+		Scan(&prevState)
+	if prevState == "" {
+		prevState = "none"
+	}
+	newState := "none"
+	if bestIsComplete {
+		newState = "complete"
+	}
+
+	// REPLACE the cache row but preserve the new last_notified_fill_state.
+	if _, err := h.db.Exec(
+		`REPLACE INTO match_cache
+		   (request_id, result_json, computed_at, expires_at,
+		    best_fill_pct, best_is_complete, last_notified_fill_state)
+		 VALUES (?,?,NOW(),DATE_ADD(NOW(), INTERVAL 30 MINUTE),?,?,?)`,
+		requestID, string(bundlesJSON), bestFillPct, bestIsComplete, newState,
+	); err != nil {
+		log.Printf("[rematch] match_cache write failed for %s: %v", requestID, err)
+	}
+
+	// Notify only on the upward transition: none → complete.
+	if !(prevState != "complete" && newState == "complete") {
+		return res
+	}
+
+	// Cross-DB join to fetch the contractor's contact info.
+	var contactName, contactPhone, contactEmail sql.NullString
+	if err := h.db.QueryRow(
+		`SELECT c.contact_name, c.contact_phone, c.contact_email
+		 FROM org_db.contractors c WHERE c.id=?`,
+		req.ContractorID,
+	).Scan(&contactName, &contactPhone, &contactEmail); err != nil {
+		log.Printf("[rematch] contact lookup failed for contractor %s: %v", req.ContractorID, err)
+		// Still report the transition; let the notification service decide.
+	}
+
+	// Optional: project_name_he from the same row we already loaded once.
+	var projectNameHe sql.NullString
+	_ = h.db.QueryRow(
+		`SELECT project_name_he FROM job_requests WHERE id=?`, requestID,
+	).Scan(&projectNameHe)
+
+	res.ShouldNotify = true
+	res.ContractorID = req.ContractorID
+	res.ContactName = contactName.String
+	res.ContactPhone = contactPhone.String
+	res.ContactEmail = contactEmail.String
+	res.ProjectName = req.ProjectName
+	res.ProjectNameHe = projectNameHe.String
+	res.Region = req.Region
+	res.WorkerCount = totalQty
+	res.BestFillPct = bestFillPct
+	return res
+}
+
+// publishRequestChanged emits job_request.changed. Best-effort.
+func (h *Handler) publishRequestChanged(requestID string) {
+	if h.pub == nil {
+		return
+	}
+	h.pub.Publish("job_request.changed", map[string]any{
+		"request_id": requestID,
+	})
+}
+
+// POST /internal/rematch-for-request — re-runs the matcher for one request
+// and returns whether the contractor should be notified. force=true bypasses
+// the 5-min debounce (used when the contractor edited their own request).
+func (h *Handler) RematchForRequest(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		RequestID string `json:"request_id"`
+		Force     bool   `json:"force"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, 400, "invalid JSON")
+		return
+	}
+	if body.RequestID == "" {
+		writeError(w, 400, "request_id required")
+		return
+	}
+	res := h.runMatchInternal(r.Context(), body.RequestID, body.Force)
+	writeJSON(w, 200, res)
+}
+
+// POST /internal/rematch-for-corp — re-runs the matcher for every open
+// request whose line items include the changed worker's profession. Each
+// individual re-match is debounced by rematchDebounceWindow.
+//
+// Body: { "corporation_id": "...", "profession_type": "..." }
+// Response: { "results": [matchInternalResult, ...] }
+func (h *Handler) RematchForCorp(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		CorporationID  string `json:"corporation_id"`
+		ProfessionType string `json:"profession_type"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, 400, "invalid JSON")
+		return
+	}
+	if body.ProfessionType == "" {
+		writeError(w, 400, "profession_type required")
+		return
+	}
+
+	rows, err := h.db.Query(
+		`SELECT DISTINCT jr.id
+		 FROM job_requests jr
+		 JOIN job_request_line_items li ON li.request_id = jr.id
+		 WHERE jr.deleted_at IS NULL AND jr.status='open'
+		   AND li.profession_type = ?`,
+		body.ProfessionType,
+	)
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
+	defer rows.Close()
+
+	var requestIDs []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err == nil {
+			requestIDs = append(requestIDs, id)
+		}
+	}
+
+	results := make([]matchInternalResult, 0, len(requestIDs))
+	for _, id := range requestIDs {
+		results = append(results, h.runMatchInternal(r.Context(), id, false))
+	}
+	writeJSON(w, 200, map[string]any{"results": results})
 }

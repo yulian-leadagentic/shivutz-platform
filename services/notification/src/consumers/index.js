@@ -31,6 +31,11 @@ async function startConsumer() {
     'message.new', 'commission.invoiced',
     'worker.visa.expiring_30d', 'worker.visa.expiring_7d', 'worker.visa.expired',
     'team.invited',   // Phase 4: SMS invitation
+    // Match-found notification flow — these drive the background re-match
+    // path. The handler calls the job-match service's /internal endpoints
+    // and sends SMS+email only when fill_state transitions to 'complete'.
+    'worker.changed',
+    'job_request.changed',
   ];
   for (const key of keys) {
     await channel.bindQueue(queue, EXCHANGE_NAME, key);
