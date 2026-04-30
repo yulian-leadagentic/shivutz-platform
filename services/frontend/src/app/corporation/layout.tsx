@@ -4,10 +4,12 @@ import TopBar from '@/components/layout/TopBar';
 export default function CorporationLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen bg-slate-50">
-      <CorporationSidebar />
+      <div className="hidden lg:block">
+        <CorporationSidebar />
+      </div>
       <div className="flex flex-col flex-1 min-w-0">
-        <TopBar />
-        <main className="flex-1 p-6 overflow-auto">
+        <TopBar mobileNav={<CorporationSidebar />} />
+        <main className="flex-1 p-4 sm:p-6 overflow-auto">
           {children}
         </main>
       </div>

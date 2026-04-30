@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Heebo } from 'next/font/google';
 import { AuthProvider } from '@/lib/AuthContext';
 import { EnumsProvider } from '@/features/enums/EnumsContext';
@@ -9,6 +9,11 @@ const heebo = Heebo({ subsets: ['hebrew', 'latin'], variable: '--font-heebo' });
 export const metadata: Metadata = {
   title: 'שיבוץ פלטפורמה',
   description: 'פלטפורמה לשיבוץ עובדים זרים בענף הבנייה',
+};
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

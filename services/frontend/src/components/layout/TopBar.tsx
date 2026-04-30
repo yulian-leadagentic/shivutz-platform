@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { LogOut, ChevronDown } from 'lucide-react';
 import { getAccessToken, decodeJwtPayload, clearTokens } from '@/lib/auth';
+import MobileNavDrawer from './MobileNavDrawer';
 
 const pageTitles: Record<string, string> = {
   '/contractor/dashboard':     'לוח בקרה',
@@ -57,7 +58,18 @@ function getDisplayName(payload: Record<string, unknown> | null): string {
   return ''; // never fall back to the raw UUID — looks broken
 }
 
-export default function TopBar() {
+interface TopBarProps {
+  /**
+   * Optional drawer-content for the mobile nav trigger. When provided,
+   * a hamburger button appears at the start of the bar (visible only
+   * below `lg:`) and opens a slide-over drawer rendering this content.
+   * Layouts pass their existing <Sidebar /> here so the same nav serves
+   * both desktop and mobile.
+   */
+  mobileNav?: React.ReactNode;
+}
+
+export default function TopBar({ mobileNav }: TopBarProps = {}) {
   const pathname = usePathname();
   const router   = useRouter();
   const [name, setName]         = useState<string>('');
@@ -95,10 +107,13 @@ export default function TopBar() {
   }
 
   return (
-    <header className="h-14 bg-white border-b border-slate-200/80 flex items-center justify-between px-6 shrink-0">
-      <h1 className="text-sm font-semibold text-slate-800 text-start tracking-tight">
-        {getPageTitle(pathname)}
-      </h1>
+    <header className="h-14 bg-white border-b border-slate-200/80 flex items-center justify-between gap-2 px-3 sm:px-4 lg:px-6 shrink-0">
+      <div className="flex items-center gap-2 min-w-0">
+        {mobileNav && <MobileNavDrawer nav={mobileNav} />}
+        <h1 className="text-sm font-semibold text-slate-800 text-start tracking-tight truncate">
+          {getPageTitle(pathname)}
+        </h1>
+      </div>
 
       {name && (
         <div className="relative" ref={menuRef}>
