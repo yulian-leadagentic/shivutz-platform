@@ -472,7 +472,7 @@ function DealsCard() {
                     const canCancel = d.status === 'approved';   // 48h window
                     return (
                       <li key={d.id} className="py-2.5 flex items-center justify-between gap-3 flex-wrap">
-                        <Link href={`/corporation/deals/${d.id}`} className="flex-1 min-w-[200px] hover:underline">
+                        <Link href={`/corporation/deals/${d.id}`} className="flex-1 min-w-0 hover:underline">
                           <span className="font-mono text-xs text-slate-400">#{d.id.slice(0, 8)}</span>
                           <span className="ms-2 text-sm font-medium text-slate-800">{DEAL_STATUS_LABEL[d.status] || d.status}</span>
                           <span className="ms-2 text-xs text-slate-500">{(d.worker_count ?? d.workers_count ?? 0)} עובדים</span>
@@ -503,7 +503,7 @@ function DealsCard() {
                 <ul className="divide-y divide-slate-100 max-h-72 overflow-y-auto">
                   {closed.map((d) => (
                     <li key={d.id} className="py-2.5 flex items-center justify-between gap-3 flex-wrap">
-                      <Link href={`/corporation/deals/${d.id}`} className="flex-1 min-w-[200px] hover:underline">
+                      <Link href={`/corporation/deals/${d.id}`} className="flex-1 min-w-0 hover:underline">
                         <span className="font-mono text-xs text-slate-400">#{d.id.slice(0, 8)}</span>
                         <span className="ms-2 text-xs text-slate-500">{(d.worker_count ?? d.workers_count ?? 0)} עובדים</span>
                         {d.commission_amount != null && (

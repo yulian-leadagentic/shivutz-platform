@@ -150,7 +150,7 @@ export default function EditListingPage() {
         <div className="bg-white rounded-2xl border border-slate-200 shadow-card p-6 space-y-5">
           <h2 className="text-base font-bold text-slate-900">פרטי מודעה</h2>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <Label className="text-sm font-semibold text-slate-700 mb-1.5 block">קטגוריה</Label>
               <select
@@ -200,7 +200,7 @@ export default function EditListingPage() {
         {/* Location */}
         <div className="bg-white rounded-2xl border border-slate-200 shadow-card p-6 space-y-4">
           <h2 className="text-base font-bold text-slate-900">מיקום</h2>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <Label htmlFor="city" className="text-sm font-semibold text-slate-700 mb-1.5 block">עיר</Label>
               <Input id="city" value={form.city} onChange={(e) => set('city', e.target.value)} placeholder="תל אביב" />
@@ -215,7 +215,7 @@ export default function EditListingPage() {
         {/* Price + capacity */}
         <div className="bg-white rounded-2xl border border-slate-200 shadow-card p-6 space-y-4">
           <h2 className="text-base font-bold text-slate-900">מחיר וקיבולת</h2>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <Label htmlFor="price" className="text-sm font-semibold text-slate-700 mb-1.5 block">מחיר (₪)</Label>
               <Input id="price" type="number" min={0} value={form.price} onChange={(e) => set('price', e.target.value)} placeholder="1800" />
@@ -259,7 +259,7 @@ export default function EditListingPage() {
         {/* Contact */}
         <div className="bg-white rounded-2xl border border-slate-200 shadow-card p-6 space-y-4">
           <h2 className="text-base font-bold text-slate-900">פרטי קשר</h2>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <Label htmlFor="contact_name" className="text-sm font-semibold text-slate-700 mb-1.5 block">שם איש קשר</Label>
               <Input id="contact_name" value={form.contact_name} onChange={(e) => set('contact_name', e.target.value)} placeholder="ישראל ישראלי" />

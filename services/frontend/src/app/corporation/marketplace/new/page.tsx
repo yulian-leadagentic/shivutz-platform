@@ -138,7 +138,7 @@ export default function NewListingPage() {
             </div>
 
             {/* City + Region */}
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <label className="text-sm font-medium text-slate-700">עיר</label>
                 <Input placeholder="תל אביב" value={form.city} onChange={(e) => update('city', e.target.value)} />
@@ -150,7 +150,7 @@ export default function NewListingPage() {
             </div>
 
             {/* Price */}
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <label className="text-sm font-medium text-slate-700">מחיר (₪)</label>
                 <Input type="number" min={0} placeholder="3500" value={form.price} onChange={(e) => update('price', e.target.value)} />
@@ -170,7 +170,7 @@ export default function NewListingPage() {
             </div>
 
             {/* Capacity + furnished */}
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <label className="text-sm font-medium text-slate-700">קיבולת (מספר עובדים)</label>
                 <Input type="number" min={1} placeholder="7" value={form.capacity} onChange={(e) => update('capacity', e.target.value)} />
@@ -194,7 +194,7 @@ export default function NewListingPage() {
             </div>
 
             {/* Contact */}
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <label className="text-sm font-medium text-slate-700">שם איש קשר</label>
                 <Input placeholder="משה לוי" value={form.contact_name} onChange={(e) => update('contact_name', e.target.value)} />

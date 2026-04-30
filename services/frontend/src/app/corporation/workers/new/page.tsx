@@ -171,7 +171,7 @@ export default function NewWorkerPage() {
           <Card>
             <CardHeader className="pb-2"><CardTitle className="text-base">פרטים אישיים</CardTitle></CardHeader>
             <CardContent>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <Input label="שם פרטי *" value={firstName}
                   onChange={(e) => setFirstName(e.target.value)} autoFocus />
                 <Input label="שם משפחה *" value={lastName}
