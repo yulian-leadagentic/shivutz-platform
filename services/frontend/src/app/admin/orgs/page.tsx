@@ -117,15 +117,16 @@ export default function AdminOrgsPage() {
           ) : filtered.length === 0 ? (
             <p className="text-center text-slate-400 py-8">לא נמצאו ארגונים</p>
           ) : (
-            <table className="w-full text-sm">
+            <div className="-mx-4 sm:mx-0 overflow-x-auto">
+            <table className="w-full text-sm min-w-[640px] sm:min-w-0">
               <thead>
                 <tr className="border-b border-slate-100 text-slate-500">
-                  <th className="pb-3 text-start font-medium">שם חברה</th>
-                  <th className="pb-3 text-start font-medium">סוג</th>
-                  <th className="pb-3 text-start font-medium">אימייל</th>
-                  <th className="pb-3 text-start font-medium">סטטוס</th>
-                  <th className="pb-3 text-start font-medium">נרשם</th>
-                  <th className="pb-3 text-end font-medium"></th>
+                  <th className="pb-3 px-4 sm:px-0 text-start font-medium">שם חברה</th>
+                  <th className="pb-3 px-4 sm:px-0 text-start font-medium">סוג</th>
+                  <th className="pb-3 px-4 sm:px-0 text-start font-medium">אימייל</th>
+                  <th className="pb-3 px-4 sm:px-0 text-start font-medium">סטטוס</th>
+                  <th className="pb-3 px-4 sm:px-0 text-start font-medium">נרשם</th>
+                  <th className="pb-3 px-4 sm:px-0 text-end font-medium"></th>
                 </tr>
               </thead>
               <tbody>
@@ -133,23 +134,23 @@ export default function AdminOrgsPage() {
                   const s = STATUS_MAP[(o as any).approval_status ?? 'pending'];
                   return (
                     <tr key={o.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50">
-                      <td className="py-3 font-medium text-slate-900">
+                      <td className="py-3 px-4 sm:px-0 font-medium text-slate-900">
                         {o.company_name}
                         {o.company_name_he && (
                           <span className="block text-xs text-slate-400">{o.company_name_he}</span>
                         )}
                       </td>
-                      <td className="py-3">
+                      <td className="py-3 px-4 sm:px-0">
                         <Badge variant={o.org_type === 'contractor' ? 'default' : 'secondary'}>
                           {o.org_type === 'contractor' ? 'קבלן' : 'תאגיד'}
                         </Badge>
                       </td>
-                      <td className="py-3 text-slate-600 text-xs">{o.contact_email}</td>
-                      <td className="py-3">
+                      <td className="py-3 px-4 sm:px-0 text-slate-600 text-xs">{o.contact_email}</td>
+                      <td className="py-3 px-4 sm:px-0">
                         <Badge variant={s?.variant ?? 'secondary'}>{s?.label ?? (o as any).approval_status}</Badge>
                       </td>
-                      <td className="py-3 text-slate-500">{fmt(o.created_at)}</td>
-                      <td className="py-3 text-end">
+                      <td className="py-3 px-4 sm:px-0 text-slate-500 whitespace-nowrap">{fmt(o.created_at)}</td>
+                      <td className="py-3 px-4 sm:px-0 text-end">
                         <Link
                           href={`/admin/orgs/${o.id}?type=${o.org_type}`}
                           className="inline-flex items-center gap-0.5 text-brand-600 text-xs font-medium hover:underline"
@@ -163,6 +164,7 @@ export default function AdminOrgsPage() {
                 })}
               </tbody>
             </table>
+            </div>
           )}
         </CardContent>
       </Card>

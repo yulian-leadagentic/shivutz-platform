@@ -66,33 +66,34 @@ export default function AdminDealsPage() {
           ) : filtered.length === 0 ? (
             <p className="text-center text-slate-400 py-8">אין עסקאות תואמות</p>
           ) : (
-            <table className="w-full text-sm">
+            <div className="-mx-4 sm:mx-0 overflow-x-auto">
+            <table className="w-full text-sm min-w-[640px] sm:min-w-0">
               <thead>
                 <tr className="border-b border-slate-100 text-slate-500">
-                  <th className="pb-3 text-start font-medium">מזהה</th>
-                  <th className="pb-3 text-start font-medium">סטטוס</th>
-                  <th className="pb-3 text-start font-medium">קבלן</th>
-                  <th className="pb-3 text-start font-medium">תאגיד</th>
-                  <th className="pb-3 text-start font-medium">עובדים</th>
-                  <th className="pb-3 text-start font-medium">נוצר</th>
-                  <th className="pb-3 text-start font-medium"></th>
+                  <th className="pb-3 px-4 sm:px-0 text-start font-medium">מזהה</th>
+                  <th className="pb-3 px-4 sm:px-0 text-start font-medium">סטטוס</th>
+                  <th className="pb-3 px-4 sm:px-0 text-start font-medium">קבלן</th>
+                  <th className="pb-3 px-4 sm:px-0 text-start font-medium">תאגיד</th>
+                  <th className="pb-3 px-4 sm:px-0 text-start font-medium">עובדים</th>
+                  <th className="pb-3 px-4 sm:px-0 text-start font-medium">נוצר</th>
+                  <th className="pb-3 px-4 sm:px-0 text-start font-medium"></th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.map(d => (
                   <tr key={d.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50">
-                    <td className="py-3 font-mono text-xs text-slate-600">
+                    <td className="py-3 px-4 sm:px-0 font-mono text-xs text-slate-600">
                       {d.id.slice(0, 8)}
                       {(d as any).discrepancy_flag && (
                         <AlertTriangle className="inline h-3 w-3 text-red-500 ms-1" />
                       )}
                     </td>
-                    <td className="py-3"><StatusBadge status={d.status} /></td>
-                    <td className="py-3 text-slate-600 text-xs truncate max-w-[120px]">{d.contractor_id?.slice(0, 8)}</td>
-                    <td className="py-3 text-slate-600 text-xs truncate max-w-[120px]">{d.corporation_id?.slice(0, 8)}</td>
-                    <td className="py-3 text-center">{d.workers_count}</td>
-                    <td className="py-3 text-slate-500">{fmt(d.created_at)}</td>
-                    <td className="py-3">
+                    <td className="py-3 px-4 sm:px-0"><StatusBadge status={d.status} /></td>
+                    <td className="py-3 px-4 sm:px-0 text-slate-600 text-xs truncate max-w-[120px]">{d.contractor_id?.slice(0, 8)}</td>
+                    <td className="py-3 px-4 sm:px-0 text-slate-600 text-xs truncate max-w-[120px]">{d.corporation_id?.slice(0, 8)}</td>
+                    <td className="py-3 px-4 sm:px-0 text-center">{d.workers_count}</td>
+                    <td className="py-3 px-4 sm:px-0 text-slate-500 whitespace-nowrap">{fmt(d.created_at)}</td>
+                    <td className="py-3 px-4 sm:px-0">
                       <Link
                         href={`/admin/deals/${d.id}`}
                         className="text-brand-600 hover:underline text-xs"
@@ -104,6 +105,7 @@ export default function AdminDealsPage() {
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </CardContent>
       </Card>

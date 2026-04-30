@@ -103,7 +103,8 @@ export default function RegistrationLogPage() {
             <p>אין רשומות</p>
           </div>
         ) : (
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[680px] sm:min-w-0">
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50/70 text-xs text-slate-500 font-medium">
                 <th className="text-start px-5 py-3">טלפון</th>
@@ -144,6 +145,7 @@ export default function RegistrationLogPage() {
               })}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </div>

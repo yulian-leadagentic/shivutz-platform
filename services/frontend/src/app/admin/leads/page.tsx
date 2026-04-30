@@ -121,7 +121,7 @@ export default function AdminLeadsPage() {
                 return (
                   <li key={l.id} className={`px-4 py-3 ${handled ? 'bg-slate-50/60' : ''} ${isRefund ? 'border-r-4 border-r-red-500' : ''}`}>
                     <div className="flex items-start justify-between gap-3 flex-wrap">
-                      <div className="flex-1 min-w-[200px]">
+                      <div className="flex-1 min-w-0 sm:min-w-[200px]">
                         <div className="flex items-center gap-2 flex-wrap">
                           <p className="font-medium text-slate-900">{l.full_name}</p>
                           <Badge variant={l.org_type === 'contractor' ? 'default' : 'secondary'}>
