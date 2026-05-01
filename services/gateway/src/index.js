@@ -90,8 +90,11 @@ const PUBLIC_METHOD_SUFFIXES = [
   { prefix: '/api/organizations/contractors/', suffix: '/verify/confirm', methods: new Set(['POST']) },
 ];
 
-// Admin-only routes
-const ADMIN_ONLY = ['/api/admin'];
+// Admin-only routes — matched against the request URL (not the service
+// prefix) so we can mark sub-paths admin-only without affecting the rest
+// of the upstream service. e.g. /api/marketplace/admin/* is admin-only,
+// but /api/marketplace/* (browse) stays public for everyone.
+const ADMIN_ONLY = ['/api/admin', '/api/marketplace/admin'];
 
 for (const [prefix, target] of Object.entries(services)) {
   app.use(prefix, async (req, res, next) => {
@@ -134,8 +137,10 @@ for (const [prefix, target] of Object.entries(services)) {
       const user = await validateToken(req);
       if (!user) return res.status(401).json({ error: 'Unauthorized' });
 
-      // Role guard for admin routes
-      if (ADMIN_ONLY.some(p => prefix.startsWith(p)) && user.role !== 'admin') {
+      // Role guard for admin routes — match against request URL so a
+      // sub-path (e.g. /api/marketplace/admin) can be admin-only while
+      // its parent (/api/marketplace) stays public for browse traffic.
+      if (ADMIN_ONLY.some(p => url.startsWith(p)) && user.role !== 'admin') {
         return res.status(403).json({ error: 'Forbidden' });
       }
 

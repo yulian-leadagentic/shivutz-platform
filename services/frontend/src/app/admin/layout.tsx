@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { LayoutDashboard, ClipboardCheck, Handshake, Building2, LogOut, Percent, PhoneCall, Users, Inbox } from 'lucide-react';
+import { LayoutDashboard, ClipboardCheck, Handshake, Building2, LogOut, Percent, PhoneCall, Users, Inbox, Store } from 'lucide-react';
 import { clearTokens } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 import MobileNavDrawer from '@/components/layout/MobileNavDrawer';
@@ -14,6 +14,7 @@ const NAV = [
   { href: '/admin/orgs',       label: 'ארגונים',        icon: Building2 },
   { href: '/admin/users',      label: 'משתמשים',        icon: Users },
   { href: '/admin/leads',      label: 'פניות ובקשות',   icon: Inbox },
+  { href: '/admin/marketplace', label: 'שוק — קטגוריות', icon: Store },
   { href: '/admin/commissions',      label: 'עמלות ומע״מ',  icon: Percent },
   { href: '/admin/registration-log', label: 'לוג רישומים',  icon: PhoneCall },
 ];
