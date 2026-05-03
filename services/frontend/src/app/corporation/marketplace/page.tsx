@@ -4,12 +4,17 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
   Loader2, Plus, Pencil, Trash2, PauseCircle, PlayCircle,
-  Home, AlertTriangle,
+  Home, AlertTriangle, CreditCard, ShieldCheck,
 } from 'lucide-react';
 import { marketplaceApi } from '@/lib/api';
+import {
+  marketplaceSubscriptionsApi,
+  type Subscription,
+} from '@/lib/api/marketplaceSubscriptions';
 import type { MarketplaceListing } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 
 const STATUS_LABELS: Record<string, { label: string; cls: string }> = {
   active:  { label: 'פעיל',      cls: 'bg-emerald-100 text-emerald-700' },
@@ -28,22 +33,29 @@ function fmtDate(s?: string) {
 }
 
 export default function CorporationMarketplacePage() {
-  const [listings, setListings] = useState<MarketplaceListing[]>([]);
-  const [loading, setLoading]   = useState(true);
-  const [error, setError]       = useState('');
-  const [actionId, setActionId] = useState<string | null>(null);
+  const [listings, setListings]         = useState<MarketplaceListing[]>([]);
+  const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
+  const [loading, setLoading]           = useState(true);
+  const [error, setError]               = useState('');
+  const [actionId, setActionId]         = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
     try {
-      const data = await marketplaceApi.list({ mine: true });
-      setListings(data);
+      const [listingsData, subsData] = await Promise.all([
+        marketplaceApi.list({ mine: true }),
+        marketplaceSubscriptionsApi.mine().catch(() => [] as Subscription[]),
+      ]);
+      setListings(listingsData);
+      setSubscriptions(subsData);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'שגיאה');
     } finally { setLoading(false); }
   }
 
   useEffect(() => { load(); }, []);
+
+  const activeSubs = subscriptions.filter((s) => s.status === 'active');
 
   async function handleTogglePause(l: MarketplaceListing) {
     setActionId(l.id);
@@ -67,14 +79,21 @@ export default function CorporationMarketplacePage() {
 
   return (
     <div className="space-y-6 max-w-5xl">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">המודעות שלי</h1>
           <p className="text-sm text-slate-500 mt-1">ניהול פרסומים בשוק — דיור, ציוד ושירותים</p>
         </div>
-        <Link href="/corporation/marketplace/new">
-          <Button><Plus className="h-4 w-4 me-2" />פרסם מודעה חדשה</Button>
-        </Link>
+        <div className="flex gap-2">
+          <Link href="/corporation/marketplace/subscribe">
+            <Button variant="outline">
+              <CreditCard className="h-4 w-4 me-2" />רכוש / נהל מנוי
+            </Button>
+          </Link>
+          <Link href="/corporation/marketplace/new">
+            <Button><Plus className="h-4 w-4 me-2" />פרסם מודעה חדשה</Button>
+          </Link>
+        </div>
       </div>
 
       {error && (
@@ -82,6 +101,52 @@ export default function CorporationMarketplacePage() {
           {error}
         </div>
       )}
+
+      {/* Subscriptions panel — what categories the corp can publish in
+          and how many slots are used / available. */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <ShieldCheck className="h-4 w-4 text-brand-600" />
+            המנויים שלי
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="flex justify-center py-4 text-slate-400">
+              <Loader2 className="animate-spin h-4 w-4" />
+            </div>
+          ) : activeSubs.length === 0 ? (
+            <div className="text-center py-4 space-y-2">
+              <p className="text-sm text-slate-600">אין מנוי פעיל. רכוש מנוי כדי לפרסם מודעות בשוק.</p>
+              <Link href="/corporation/marketplace/subscribe">
+                <Button size="sm">
+                  <CreditCard className="h-3.5 w-3.5 me-1" />רכוש מנוי
+                </Button>
+              </Link>
+            </div>
+          ) : (
+            <ul className="divide-y divide-slate-100 -my-2">
+              {activeSubs.map((s) => (
+                <li key={s.id} className="py-3 flex items-center justify-between gap-3 flex-wrap">
+                  <div className="min-w-0">
+                    <p className="font-medium text-slate-900">
+                      {s.category_name_he ?? s.category_code}
+                    </p>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      בתוקף עד {fmtDate(s.expires_at)}
+                      {s.auto_renew ? ' · חידוש אוטומטי' : ' · חד-פעמי'}
+                    </p>
+                  </div>
+                  <Badge variant="secondary" className="bg-slate-100 text-slate-700">
+                    {s.slots_used ?? 0}/{s.slot_count} מודעות בשימוש
+                  </Badge>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader className="pb-3">

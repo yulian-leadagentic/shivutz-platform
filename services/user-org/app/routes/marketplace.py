@@ -87,10 +87,18 @@ def list_listings(
 
         if mine:
             entity_id = x_entity_id or x_org_id
+            entity_type = (x_entity_type or "").lower()
             if not entity_id:
                 raise HTTPException(status_code=401, detail="Auth required for mine=true")
-            conditions.append("ml.corporation_id = %s")
+            # Match against advertiser_entity_* (the new dimension).
+            # corporation_id is kept in sync for legacy corp rows so we
+            # could query either, but advertiser_entity_* covers both
+            # contractor and corp advertisers cleanly.
+            conditions.append("ml.advertiser_entity_id = %s")
             params.append(entity_id)
+            if entity_type in ("contractor", "corporation"):
+                conditions.append("ml.advertiser_entity_type = %s")
+                params.append(entity_type)
         else:
             conditions.append("ml.status = 'active'")
 
@@ -174,32 +182,103 @@ def create_listing(
     x_org_id:     Optional[str] = Header(default=None),
     x_entity_type: Optional[str] = Header(default=None),
 ):
+    """Publish a new listing.
+
+    Phase 2.1 changes:
+    - Both contractors and corporations can publish (V0 was corp-only).
+    - Requires an active subscription in the chosen category with at
+      least one available slot. The subscription is found from the
+      caller + body.category and recorded on the listing for billing
+      and for slot accounting.
+    """
     entity_id   = x_entity_id or x_org_id
-    entity_type = x_entity_type
-    if not entity_id or entity_type != "corporation":
-        raise HTTPException(status_code=403, detail="Only corporations can create listings")
+    entity_type = (x_entity_type or "").lower()
+    if not entity_id or entity_type not in ("contractor", "corporation"):
+        raise HTTPException(status_code=403, detail="advertiser_required")
     if not body.title.strip():
-        raise HTTPException(status_code=400, detail="Title is required")
+        raise HTTPException(status_code=400, detail="title_required")
+    if not body.category:
+        raise HTTPException(status_code=400, detail="category_required")
 
     listing_id = str(uuid.uuid4())
     conn = get_db()
     try:
         cur = conn.cursor()
+
+        # Find an active subscription that covers this category + has a
+        # free slot. Locking the row would matter only at very high
+        # concurrency; for now a serialized read is fine.
+        cur.execute(
+            """SELECT id, slot_count
+                 FROM marketplace_subscriptions
+                WHERE advertiser_entity_type = %s
+                  AND advertiser_entity_id   = %s
+                  AND category_code          = %s
+                  AND status                 = 'active'
+                  AND expires_at             > NOW()
+                ORDER BY expires_at DESC LIMIT 1""",
+            (entity_type, entity_id, body.category),
+        )
+        sub = cur.fetchone()
+        if not sub:
+            raise HTTPException(
+                status_code=402,  # 402 Payment Required — closest fit
+                detail={
+                    "code": "no_active_subscription",
+                    "message": "אין מנוי פעיל בקטגוריה זו. רכוש מנוי כדי לפרסם.",
+                    "category": body.category,
+                },
+            )
+
+        cur.execute(
+            """SELECT COUNT(*) AS n FROM marketplace_listings
+                WHERE subscription_id = %s
+                  AND deleted_at IS NULL
+                  AND status = 'active'""",
+            (sub["id"],),
+        )
+        used = int(cur.fetchone()["n"])
+        if used >= sub["slot_count"]:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "no_slots_available",
+                    "message": "כל מקומות הפרסום במנוי הזה מנוצלים. השבת מודעה קיימת או שדרג את המנוי.",
+                    "slot_count": sub["slot_count"],
+                    "slots_used": used,
+                },
+            )
+
+        # `corporation_id` is preserved for the V0 read path until 2.2
+        # rewrites browse to use advertiser_entity_*; for contractor
+        # advertisers we leave it NULL.
+        legacy_corp_id = entity_id if entity_type == "corporation" else None
         cur.execute("""
             INSERT INTO marketplace_listings
-              (id, corporation_id, category, subcategory, title, description,
+              (id, corporation_id, subscription_id,
+               advertiser_entity_type, advertiser_entity_id,
+               category, subcategory, title, description,
                city, region, price, price_unit, capacity, is_furnished,
                available_from, contact_phone, contact_name)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         """, (
-            listing_id, entity_id, body.category,
-            body.subcategory, body.title.strip(), body.description,
+            listing_id, legacy_corp_id, sub["id"],
+            entity_type, entity_id,
+            body.category, body.subcategory, body.title.strip(), body.description,
             body.city, body.region, body.price, body.price_unit,
             body.capacity, body.is_furnished, body.available_from,
             body.contact_phone, body.contact_name,
         ))
         conn.commit()
-        return {"id": listing_id, "status": "active"}
+        return {
+            "id": listing_id,
+            "status": "active",
+            "subscription_id": sub["id"],
+            "slots_used": used + 1,
+            "slot_count": sub["slot_count"],
+        }
+    except HTTPException:
+        raise
     except Exception as e:
         conn.rollback()
         raise HTTPException(status_code=500, detail=str(e))
@@ -221,13 +300,18 @@ def update_listing(
     try:
         cur = conn.cursor()
         cur.execute(
-            "SELECT id, corporation_id FROM marketplace_listings WHERE id=%s AND deleted_at IS NULL",
-            (listing_id,)
+            """SELECT id, corporation_id, advertiser_entity_id
+                 FROM marketplace_listings WHERE id=%s AND deleted_at IS NULL""",
+            (listing_id,),
         )
         row = cur.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Listing not found")
-        if row["corporation_id"] != entity_id:
+        # Owner check — match either the legacy corporation_id (existing
+        # corp-side rows) or the new advertiser_entity_id (contractor or
+        # newly-created rows).
+        is_owner = (row["corporation_id"] == entity_id) or (row["advertiser_entity_id"] == entity_id)
+        if not is_owner:
             raise HTTPException(status_code=403, detail="Forbidden")
 
         updates, params = [], []
@@ -264,13 +348,15 @@ def delete_listing(
     try:
         cur = conn.cursor()
         cur.execute(
-            "SELECT id, corporation_id FROM marketplace_listings WHERE id=%s AND deleted_at IS NULL",
-            (listing_id,)
+            """SELECT id, corporation_id, advertiser_entity_id
+                 FROM marketplace_listings WHERE id=%s AND deleted_at IS NULL""",
+            (listing_id,),
         )
         row = cur.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Listing not found")
-        if x_user_role != "admin" and row["corporation_id"] != entity_id:
+        is_owner = (row["corporation_id"] == entity_id) or (row["advertiser_entity_id"] == entity_id)
+        if x_user_role != "admin" and not is_owner:
             raise HTTPException(status_code=403, detail="Forbidden")
 
         cur.execute("UPDATE marketplace_listings SET deleted_at=NOW(), status='paused' WHERE id=%s", (listing_id,))
