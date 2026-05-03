@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, Header, Query
 from pydantic import BaseModel
 from typing import Optional, List
 from decimal import Decimal
+import json
 import uuid
 
 from app.db import get_db
@@ -28,6 +29,10 @@ class ListingCreate(BaseModel):
     available_from: Optional[str] = None   # ISO date
     contact_phone:  Optional[str] = None
     contact_name:   Optional[str] = None
+    # Cloudinary secure_urls — accepted from the frontend after the
+    # browser → Cloudinary direct upload completes. Capped server-side
+    # so a malicious client can't pad the JSON column with thousands.
+    images_json:    Optional[List[str]] = None
 
 class ListingUpdate(BaseModel):
     title:          Optional[str] = None
@@ -42,6 +47,12 @@ class ListingUpdate(BaseModel):
     contact_phone:  Optional[str] = None
     contact_name:   Optional[str] = None
     status:         Optional[str] = None   # active | rented | sold | paused
+    images_json:    Optional[List[str]] = None
+
+# Soft-cap on stored image URLs per listing — protects against runaway
+# JSON columns. Not enforced at the DB level; FE shouldn't allow more
+# either (Cloudinary uploader caps too).
+_MAX_IMAGES_PER_LISTING = 12
 
 class LeadCreate(BaseModel):
     full_name: str
@@ -53,6 +64,17 @@ class LeadCreate(BaseModel):
 def _serialize(row: dict) -> dict:
     result = {}
     for k, v in row.items():
+        # JSON columns come back as strings from PyMySQL — parse so the
+        # frontend gets a real array. Defensively skip if already a list.
+        if k == "images_json":
+            if isinstance(v, str):
+                try:
+                    result[k] = json.loads(v)
+                except json.JSONDecodeError:
+                    result[k] = []
+            else:
+                result[k] = v or []
+            continue
         if hasattr(v, 'isoformat'):
             result[k] = v.isoformat()
         elif isinstance(v, Decimal):
@@ -253,14 +275,17 @@ def create_listing(
         # rewrites browse to use advertiser_entity_*; for contractor
         # advertisers we leave it NULL.
         legacy_corp_id = entity_id if entity_type == "corporation" else None
+        images = body.images_json or []
+        if len(images) > _MAX_IMAGES_PER_LISTING:
+            images = images[:_MAX_IMAGES_PER_LISTING]
         cur.execute("""
             INSERT INTO marketplace_listings
               (id, corporation_id, subscription_id,
                advertiser_entity_type, advertiser_entity_id,
                category, subcategory, title, description,
                city, region, price, price_unit, capacity, is_furnished,
-               available_from, contact_phone, contact_name)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+               available_from, contact_phone, contact_name, images_json)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         """, (
             listing_id, legacy_corp_id, sub["id"],
             entity_type, entity_id,
@@ -268,6 +293,7 @@ def create_listing(
             body.city, body.region, body.price, body.price_unit,
             body.capacity, body.is_furnished, body.available_from,
             body.contact_phone, body.contact_name,
+            json.dumps(images) if images else None,
         ))
         conn.commit()
         return {
@@ -316,8 +342,16 @@ def update_listing(
 
         updates, params = [], []
         for field, val in body.model_dump(exclude_none=True).items():
-            updates.append(f"{field}=%s")
-            params.append(val)
+            if field == "images_json":
+                # images_json is a JSON column; cap and serialize.
+                imgs = val if isinstance(val, list) else []
+                if len(imgs) > _MAX_IMAGES_PER_LISTING:
+                    imgs = imgs[:_MAX_IMAGES_PER_LISTING]
+                updates.append("images_json=%s")
+                params.append(json.dumps(imgs) if imgs else None)
+            else:
+                updates.append(f"{field}=%s")
+                params.append(val)
         if not updates:
             return {"id": listing_id, "updated": False}
 

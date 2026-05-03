@@ -8,6 +8,7 @@ import type { MarketplaceListing } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import ImageUploader from '@/components/marketplace/ImageUploader';
 
 const CATEGORIES = [
   { value: 'housing',   label: '🏠 דיור' },
@@ -55,6 +56,7 @@ export default function EditListingPage() {
     contact_name:   '',
     status:         'active',
   });
+  const [images, setImages] = useState<string[]>([]);
 
   useEffect(() => {
     marketplaceApi.get(id).then((l: MarketplaceListing) => {
@@ -74,6 +76,10 @@ export default function EditListingPage() {
         contact_name:   l.contact_name   || '',
         status:         l.status         || 'active',
       });
+      // images_json comes back already-parsed (server-side _serialize
+      // does the JSON.parse). Defensive: tolerate either shape.
+      const imgs = Array.isArray(l.images_json) ? l.images_json : [];
+      setImages(imgs);
     }).catch(() => setError('המודעה לא נמצאה')).finally(() => setLoading(false));
   }, [id]);
 
@@ -96,6 +102,7 @@ export default function EditListingPage() {
         contact_phone:  form.contact_phone.trim() || undefined,
         contact_name:   form.contact_name.trim() || undefined,
         status:         form.status,
+        images_json:    images,
       });
       setSuccess(true);
       setTimeout(() => router.push('/corporation/marketplace'), 1500);
@@ -254,6 +261,11 @@ export default function EditListingPage() {
               </>
             )}
           </div>
+        </div>
+
+        {/* Images */}
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-card p-6">
+          <ImageUploader value={images} onChange={setImages} />
         </div>
 
         {/* Contact */}

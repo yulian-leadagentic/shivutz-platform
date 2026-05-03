@@ -7,6 +7,7 @@ import { marketplaceApi } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import ImageUploader from '@/components/marketplace/ImageUploader';
 
 const CATEGORIES = [
   { value: 'housing',   label: 'דיור' },
@@ -39,6 +40,7 @@ export default function NewListingPage() {
     contact_phone: '',
     contact_name:  '',
   });
+  const [images, setImages]  = useState<string[]>([]);
   const [saving, setSaving]  = useState(false);
   const [error, setError]    = useState('');
 
@@ -51,7 +53,7 @@ export default function NewListingPage() {
     if (!form.title.trim()) { setError('כותרת היא שדה חובה'); return; }
     setSaving(true); setError('');
     try {
-      const { id } = await marketplaceApi.create({
+      await marketplaceApi.create({
         category:       form.category,
         title:          form.title.trim(),
         description:    form.description || undefined,
@@ -64,6 +66,7 @@ export default function NewListingPage() {
         available_from: form.available_from || undefined,
         contact_phone:  form.contact_phone || undefined,
         contact_name:   form.contact_name || undefined,
+        images_json:    images.length > 0 ? images : undefined,
       });
       router.push('/corporation/marketplace');
     } catch (e) {
@@ -204,6 +207,9 @@ export default function NewListingPage() {
                 <Input type="tel" dir="ltr" placeholder="050-1234567" value={form.contact_phone} onChange={(e) => update('contact_phone', e.target.value)} />
               </div>
             </div>
+
+            {/* Images */}
+            <ImageUploader value={images} onChange={setImages} />
 
             {error && (
               <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">

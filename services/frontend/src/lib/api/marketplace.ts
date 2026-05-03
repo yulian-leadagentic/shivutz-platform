@@ -40,8 +40,9 @@ export const marketplaceApi = {
     contact_phone?: string;
     contact_name?: string;
     subcategory?: string;
+    images_json?: string[];
   }) =>
-    apiFetch<{ id: string; status: string }>('/marketplace', {
+    apiFetch<{ id: string; status: string; subscription_id?: string; slots_used?: number; slot_count?: number }>('/marketplace', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
@@ -59,6 +60,7 @@ export const marketplaceApi = {
     contact_phone: string;
     contact_name: string;
     status: string;
+    images_json: string[];
   }>) =>
     apiFetch<{ id: string; updated: boolean }>(`/marketplace/${id}`, {
       method: 'PATCH',

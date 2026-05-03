@@ -1,7 +1,7 @@
 import os
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
-from app.routes import contractors, corporations, users, admin_approvals, marketplace, marketplace_admin, marketplace_subscriptions
+from app.routes import contractors, corporations, users, admin_approvals, marketplace, marketplace_admin, marketplace_subscriptions, marketplace_uploads
 from app.db import get_db, init_db
 from app.errors import register_error_handlers
 
@@ -46,3 +46,4 @@ app.include_router(admin_approvals.router, prefix="/admin", tags=["admin"])
 app.include_router(marketplace.router, prefix="/marketplace", tags=["marketplace"])
 app.include_router(marketplace_admin.router, prefix="/marketplace/admin", tags=["marketplace-admin"])
 app.include_router(marketplace_subscriptions.router, prefix="/marketplace", tags=["marketplace-subscriptions"])
+app.include_router(marketplace_uploads.router, prefix="/marketplace/uploads", tags=["marketplace-uploads"])

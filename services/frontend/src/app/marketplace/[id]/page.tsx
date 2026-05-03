@@ -105,8 +105,37 @@ export default function ListingDetailPage() {
 
           {/* Main content */}
           <div className="lg:col-span-2 space-y-5">
-            {/* Category color bar */}
-            <div className={`h-2 w-full ${catColor} rounded-full`} />
+            {/* Image gallery — first image as hero, rest as a horizontal
+                strip below for quick browse. Falls back to the category
+                color bar when no images. */}
+            {Array.isArray(listing.images_json) && listing.images_json.length > 0 ? (
+              <div className="space-y-2">
+                <div className="aspect-[16/10] rounded-2xl overflow-hidden bg-slate-100">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={listing.images_json[0]}
+                    alt={listing.title}
+                    className="w-full h-full object-cover"
+                    loading="eager"
+                  />
+                </div>
+                {listing.images_json.length > 1 && (
+                  <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+                    {listing.images_json.slice(1).map((url, idx) => (
+                      <div
+                        key={url + idx}
+                        className="shrink-0 h-20 w-28 rounded-lg overflow-hidden bg-slate-100 border border-slate-200"
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={url} alt="" className="w-full h-full object-cover" loading="lazy" />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className={`h-2 w-full ${catColor} rounded-full`} />
+            )}
 
             {/* Title card */}
             <div className="bg-white rounded-2xl border border-slate-200 shadow-card p-6 space-y-4">

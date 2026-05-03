@@ -33,12 +33,30 @@ export default function ListingCard({ listing }: { listing: MarketplaceListing }
       href={`/marketplace/${listing.id}`}
       className="group block bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 overflow-hidden"
     >
-      {/* Color header bar by category */}
-      <div className={`h-1.5 w-full ${
-        listing.category === 'housing'   ? 'bg-brand-500' :
-        listing.category === 'equipment' ? 'bg-amber-500' :
-        listing.category === 'services'  ? 'bg-emerald-500' : 'bg-slate-400'
-      }`} />
+      {/* Hero image — first image from images_json if any; otherwise the
+          color header bar serves as a category indicator. */}
+      {Array.isArray(listing.images_json) && listing.images_json.length > 0 ? (
+        <div className="relative aspect-[16/10] bg-slate-100 overflow-hidden">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={listing.images_json[0]}
+            alt=""
+            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+            loading="lazy"
+          />
+          {listing.images_json.length > 1 && (
+            <span className="absolute bottom-2 end-2 text-[10px] font-medium bg-black/55 text-white px-1.5 py-0.5 rounded">
+              +{listing.images_json.length - 1}
+            </span>
+          )}
+        </div>
+      ) : (
+        <div className={`h-1.5 w-full ${
+          listing.category === 'housing'   ? 'bg-brand-500' :
+          listing.category === 'equipment' ? 'bg-amber-500' :
+          listing.category === 'services'  ? 'bg-emerald-500' : 'bg-slate-400'
+        }`} />
+      )}
 
       <div className="p-4 space-y-3">
         {/* Category + age */}
