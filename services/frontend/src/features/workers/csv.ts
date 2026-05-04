@@ -26,28 +26,13 @@ export interface ExcelRow {
   _errors: string[];
 }
 
-/** Download a CSV template (with example row + reference code tables). */
-export function downloadTemplate(professions: Profession[], origins: Origin[], regions: Region[]): void {
-  const rows: string[][] = [
-    EXCEL_COLUMNS,
-    EXCEL_EXAMPLE,
-    [],
-    ['--- קודי מקצועות ---'],
-    ...professions.filter(p => p.is_active).map(p => [p.code, p.name_he]),
-    [],
-    ['--- קודי מדינות ---'],
-    ...origins.map(o => [o.code, o.name_he]),
-    [],
-    ['--- קודי אזורים ---'],
-    ...regions.map(r => [r.code, r.name_he]),
-    [],
-    ['--- טווחי ניסיון ---'],
-    ['0-6', '0–6 חודשים'],
-    ['6-12', '6–12 חודשים'],
-    ['12-24', '12–24 חודשים'],
-    ['24-36', '24–36 חודשים'],
-    ['36+', '36+ חודשים'],
-  ];
+/** Download a CSV template — header row + a single example row, nothing
+ * else. Per key-user feedback (2026-05) the prior template's giant
+ * reference-code blocks were noise — corps know what code to type. The
+ * column-validation pass on import names legal codes when something
+ * doesn't match. */
+export function downloadTemplate(_professions: Profession[], _origins: Origin[], _regions: Region[]): void {
+  const rows: string[][] = [EXCEL_COLUMNS, EXCEL_EXAMPLE];
   const csv = rows.map(r => r.map(c => `"${c}"`).join(',')).join('\n');
   const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);

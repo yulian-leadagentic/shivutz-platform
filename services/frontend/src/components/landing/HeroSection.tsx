@@ -1,18 +1,17 @@
 'use client';
 
 import Link from 'next/link';
-import { CheckCircle2, ChevronDown, ArrowLeft, Home, Wrench, Briefcase, Store } from 'lucide-react';
+import { ChevronDown, ArrowLeft, Home, Wrench, Briefcase, Store, Users } from 'lucide-react';
+import { useAuth } from '@/lib/AuthContext';
 
 interface HeroSectionProps {
   onLeadCapture: () => void;
 }
 
-const STATS = [
-  { value: '150+', label: 'תאגידים מאושרים' },
-  { value: '500+', label: 'קבלנים רשומים' },
-  { value: '1,200+', label: 'עובדים פעילים' },
-  { value: '48 ש׳', label: 'זמן אישור ממוצע' },
-];
+// Per key-user feedback (2026-05): the "active workers" tile is the one
+// number that drives action. Other stats removed to reduce hero density.
+// The tile itself is now a CTA — tap = login (or dashboard if logged in).
+const HERO_STAT = { value: '1,200+', label: 'עובדים פעילים' };
 
 const MARKET_CATS = [
   {
@@ -62,6 +61,15 @@ const MARKET_CATS = [
 ];
 
 export default function HeroSection({ onLeadCapture }: HeroSectionProps) {
+  const { isLoggedIn, entityType } = useAuth();
+  // Logged-in visitors land on their role dashboard; everyone else
+  // funnels to /login (which has the "register here" link below).
+  const heroCtaHref = !isLoggedIn
+    ? '/login'
+    : entityType === 'corporation' ? '/corporation/dashboard'
+    : entityType === 'contractor'  ? '/contractor/dashboard'
+    : '/login';
+
   return (
     <section
       className="relative flex flex-col overflow-hidden"
@@ -105,16 +113,6 @@ export default function HeroSection({ onLeadCapture }: HeroSectionProps) {
                 מחבר קבלנים עם תאגידי כוח אדם מורשים — בחירת עובדים, שיבוץ, עסקאות ותשלום — הכל במקום אחד.
               </p>
 
-              {/* Trust chips */}
-              <div className="flex flex-wrap gap-2">
-                {['תאגידים מורשים בלבד', 'תשלום מאובטח', 'ממשק עברי', 'אישור 48 שעות'].map((t) => (
-                  <span key={t} className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-400 bg-emerald-400/10 border border-emerald-400/20 px-3 py-1.5 rounded-full">
-                    <CheckCircle2 className="h-3 w-3 shrink-0" />
-                    {t}
-                  </span>
-                ))}
-              </div>
-
               {/* CTAs */}
               <div className="flex flex-wrap gap-3 pt-1">
                 <Link
@@ -139,26 +137,42 @@ export default function HeroSection({ onLeadCapture }: HeroSectionProps) {
               </div>
             </div>
 
-            {/* Stats */}
-            <div className="hidden lg:grid grid-cols-2 gap-4">
-              {STATS.map((s) => (
-                <div key={s.label} className="bg-slate-800/50 border border-slate-700/60 rounded-2xl p-6 hover:bg-slate-800 hover:border-slate-600 transition-all duration-200">
-                  <div className="text-4xl font-extrabold text-white mb-1">{s.value}</div>
-                  <div className="text-sm text-slate-400">{s.label}</div>
+            {/* Single CTA stat — the only number on the hero now. */}
+            <div className="hidden lg:flex justify-center">
+              <Link
+                href={heroCtaHref}
+                className="group flex flex-col items-center justify-center bg-slate-800/50 hover:bg-slate-800 border border-slate-700/60 hover:border-amber-400/50 rounded-3xl p-12 w-full max-w-md transition-all duration-200 hover:-translate-y-1 hover:shadow-2xl hover:shadow-amber-500/10"
+              >
+                <div className="h-14 w-14 rounded-2xl bg-amber-500/20 flex items-center justify-center mb-5">
+                  <Users className="h-7 w-7 text-amber-300" />
                 </div>
-              ))}
+                <div className="text-6xl font-extrabold text-white mb-2 group-hover:text-amber-300 transition-colors">
+                  {HERO_STAT.value}
+                </div>
+                <div className="text-base text-slate-400 mb-1">{HERO_STAT.label}</div>
+                <div className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-amber-300 group-hover:text-amber-200">
+                  לחץ כאן לאיתור עובדים
+                  <ArrowLeft className="h-4 w-4 group-hover:-translate-x-1 transition-transform" />
+                </div>
+              </Link>
             </div>
           </div>
 
-          {/* Mobile stats */}
-          <div className="lg:hidden mt-10 grid grid-cols-2 gap-3">
-            {STATS.map((s) => (
-              <div key={s.label} className="bg-slate-800/60 border border-slate-700/60 rounded-xl p-4 text-center">
-                <div className="text-2xl font-extrabold text-white">{s.value}</div>
-                <div className="text-xs text-slate-400 mt-0.5">{s.label}</div>
-              </div>
-            ))}
-          </div>
+          {/* Mobile single stat — same CTA, smaller */}
+          <Link
+            href={heroCtaHref}
+            className="lg:hidden mt-10 flex flex-col items-center justify-center bg-slate-800/60 border border-slate-700/60 rounded-2xl p-7 hover:border-amber-400/50 transition-colors"
+          >
+            <div className="h-10 w-10 rounded-xl bg-amber-500/20 flex items-center justify-center mb-3">
+              <Users className="h-5 w-5 text-amber-300" />
+            </div>
+            <div className="text-4xl font-extrabold text-white">{HERO_STAT.value}</div>
+            <div className="text-sm text-slate-400 mt-0.5 mb-3">{HERO_STAT.label}</div>
+            <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-amber-300">
+              לחץ כאן לאיתור עובדים
+              <ArrowLeft className="h-4 w-4" />
+            </span>
+          </Link>
         </div>
       </div>
 

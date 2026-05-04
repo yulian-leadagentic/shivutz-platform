@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Building2, Menu, X } from 'lucide-react';
+import { Building2, Menu, X, LayoutDashboard } from 'lucide-react';
+import { useAuth } from '@/lib/AuthContext';
 
 interface LandingNavProps {
   onLeadCapture: () => void;
@@ -11,6 +12,15 @@ interface LandingNavProps {
 export default function LandingNav({ onLeadCapture }: LandingNavProps) {
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const { isLoggedIn, displayName, entityType } = useAuth();
+
+  // Logged-in visitors should never be asked to "log in" again from
+  // the home page (that was triggering an OTP loop because they'd
+  // bounce through /login while still holding a valid token).
+  const dashboardHref =
+    entityType === 'corporation' ? '/corporation/dashboard' :
+    entityType === 'contractor'  ? '/contractor/dashboard'  :
+    '/select-entity';
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20);
@@ -51,20 +61,39 @@ export default function LandingNav({ onLeadCapture }: LandingNavProps) {
 
         {/* Desktop buttons */}
         <div className="hidden md:flex items-center gap-2">
-          <Link
-            href="/login"
-            className={`text-sm font-medium px-4 py-2 rounded-lg transition-colors ${
-              scrolled ? 'text-slate-600 hover:bg-slate-100' : 'text-slate-300 hover:text-white hover:bg-slate-800/60'
-            }`}
-          >
-            התחבר
-          </Link>
-          <Link
-            href="/register/contractor"
-            className="text-sm font-semibold bg-brand-600 hover:bg-brand-500 text-white px-4 py-2 rounded-lg transition-colors shadow-sm"
-          >
-            הצטרף בחינם
-          </Link>
+          {isLoggedIn ? (
+            <>
+              {displayName && (
+                <span className={`text-xs font-medium ${scrolled ? 'text-slate-500' : 'text-slate-400'}`}>
+                  מחובר: <span className={scrolled ? 'text-slate-700' : 'text-slate-200'}>{displayName}</span>
+                </span>
+              )}
+              <Link
+                href={dashboardHref}
+                className="inline-flex items-center gap-1.5 text-sm font-semibold bg-brand-600 hover:bg-brand-500 text-white px-4 py-2 rounded-lg transition-colors shadow-sm"
+              >
+                <LayoutDashboard className="h-4 w-4" />
+                לוח בקרה
+              </Link>
+            </>
+          ) : (
+            <>
+              <Link
+                href="/login"
+                className={`text-sm font-medium px-4 py-2 rounded-lg transition-colors ${
+                  scrolled ? 'text-slate-600 hover:bg-slate-100' : 'text-slate-300 hover:text-white hover:bg-slate-800/60'
+                }`}
+              >
+                משתמש רשום? לחץ כאן
+              </Link>
+              <Link
+                href="/register/contractor"
+                className="text-sm font-semibold bg-brand-600 hover:bg-brand-500 text-white px-4 py-2 rounded-lg transition-colors shadow-sm"
+              >
+                הצטרף בחינם
+              </Link>
+            </>
+          )}
         </div>
 
         {/* Mobile toggle */}
@@ -83,8 +112,19 @@ export default function LandingNav({ onLeadCapture }: LandingNavProps) {
           <Link href="/marketplace" className="block text-sm font-medium text-slate-700 py-2.5 hover:text-brand-600" onClick={() => setMenuOpen(false)}>שוק תאגידים</Link>
           <button className="block text-sm font-medium text-slate-700 py-2.5 hover:text-brand-600 w-full text-start" onClick={() => { setMenuOpen(false); onLeadCapture(); }}>השאר פרטים</button>
           <div className="pt-3 flex flex-col gap-2 border-t border-slate-100 mt-1">
-            <Link href="/login" className="w-full text-center text-sm font-medium text-slate-600 py-2.5 rounded-lg hover:bg-slate-50 border border-slate-200" onClick={() => setMenuOpen(false)}>התחבר</Link>
-            <Link href="/register/contractor" className="w-full text-center text-sm font-semibold text-white bg-brand-600 hover:bg-brand-500 py-2.5 rounded-lg" onClick={() => setMenuOpen(false)}>הצטרף בחינם</Link>
+            {isLoggedIn ? (
+              <>
+                {displayName && (
+                  <p className="text-xs text-slate-500 text-center">מחובר: <span className="text-slate-700 font-medium">{displayName}</span></p>
+                )}
+                <Link href={dashboardHref} className="w-full text-center text-sm font-semibold text-white bg-brand-600 hover:bg-brand-500 py-2.5 rounded-lg" onClick={() => setMenuOpen(false)}>לוח בקרה</Link>
+              </>
+            ) : (
+              <>
+                <Link href="/login" className="w-full text-center text-sm font-medium text-slate-600 py-2.5 rounded-lg hover:bg-slate-50 border border-slate-200" onClick={() => setMenuOpen(false)}>משתמש רשום? לחץ כאן</Link>
+                <Link href="/register/contractor" className="w-full text-center text-sm font-semibold text-white bg-brand-600 hover:bg-brand-500 py-2.5 rounded-lg" onClick={() => setMenuOpen(false)}>הצטרף בחינם</Link>
+              </>
+            )}
           </div>
         </div>
       )}
