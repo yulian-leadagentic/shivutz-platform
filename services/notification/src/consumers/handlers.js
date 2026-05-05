@@ -4,10 +4,11 @@ const ADMIN_EMAIL    = process.env.ADMIN_EMAIL || 'admin@shivutz-platform.co.il'
 const NOTIF_URL      = `http://localhost:${process.env.PORT || 3006}`;
 const FRONTEND_URL   = process.env.FRONTEND_URL || 'https://app.shivutz.co.il';
 
+// 'operator' was dropped Wave 2 (2026-05) — kept in the legacy fallback
+// case `payload.role` for any in-flight events from older deploys.
 const ROLE_LABELS_HE = {
   owner:    'בעלים',
   admin:    'מנהל',
-  operator: 'מפעיל',
   viewer:   'צופה',
 };
 

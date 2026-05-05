@@ -1,14 +1,18 @@
 import type { Profession } from '@/types';
 import type { Origin, Region } from './types';
 
-/** Column headers for the Excel template (order matters). */
+/** Column headers for the Excel template (order matters).
+ *
+ * Wave 2 (2026-05) per key-user feedback: dropped "אזור זמינות" — the
+ * corporation's regions cover that. profession is the only required
+ * column; everything else is informational and accepts blanks. */
 export const EXCEL_COLUMNS = [
   'שם פרטי', 'שם משפחה', 'מקצוע (קוד)', 'טווח ניסיון',
-  'מדינת מוצא (קוד)', 'ויזה תוקף עד', 'אזור זמינות (קוד)', 'מספר עובד',
+  'מדינת מוצא (קוד)', 'ויזה תוקף עד', 'מספר עובד',
 ];
 
 export const EXCEL_EXAMPLE = [
-  'יוחנן', 'כהן', 'carpenter', '12-24', 'RO', '2026-12-31', 'center', 'W-0042',
+  'יוחנן', 'כהן', 'carpenter', '12-24', 'RO', '2026-12-31', 'W-0042',
 ];
 
 const VALID_EXPERIENCE_RANGES = new Set(['0-6', '6-12', '12-24', '24-36', '36+']);
@@ -20,7 +24,6 @@ export interface ExcelRow {
   experience_range: string;
   origin_country: string;
   visa_valid_until: string;
-  available_region: string;
   employee_number: string;
   _valid: boolean;
   _errors: string[];
@@ -34,7 +37,7 @@ export interface ExcelRow {
 export function downloadTemplate(_professions: Profession[], _origins: Origin[], _regions: Region[]): void {
   const rows: string[][] = [EXCEL_COLUMNS, EXCEL_EXAMPLE];
   const csv = rows.map(r => r.map(c => `"${c}"`).join(',')).join('\n');
-  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url; a.download = 'תבנית_עובדים.csv'; a.click();
@@ -56,6 +59,10 @@ export function parseCSV(text: string): string[][] {
   });
 }
 
+/** Validate parsed rows. Wave 2: only first_name / last_name / profession
+ * are required. experience_range / origin_country / visa_valid_until
+ * accept blank ("לא צויין"); we only flag a value that's PRESENT but
+ * malformed (e.g. an unknown code). */
 export function validateRows(
   raw: string[][],
   professions: Profession[],
@@ -66,17 +73,20 @@ export function validateRows(
 
   return raw.map((cells) => {
     const [first_name = '', last_name = '', profession_type = '', experience_range = '',
-      origin_country = '', visa_valid_until = '', available_region = '', employee_number = ''] = cells;
+      origin_country = '', visa_valid_until = '', employee_number = ''] = cells;
     const errors: string[] = [];
     if (!first_name) errors.push('שם פרטי חסר');
     if (!last_name) errors.push('שם משפחה חסר');
     if (!profCodes.has(profession_type)) errors.push(`מקצוע לא תקין: ${profession_type}`);
-    if (!VALID_EXPERIENCE_RANGES.has(experience_range)) errors.push(`טווח ניסיון לא תקין: ${experience_range}`);
-    if (!originCodes.has(origin_country)) errors.push(`מדינת מוצא לא תקינה: ${origin_country}`);
-    if (!visa_valid_until) errors.push('תאריך ויזה חסר');
+    if (experience_range && !VALID_EXPERIENCE_RANGES.has(experience_range)) {
+      errors.push(`טווח ניסיון לא תקין: ${experience_range}`);
+    }
+    if (origin_country && !originCodes.has(origin_country)) {
+      errors.push(`מדינת מוצא לא תקינה: ${origin_country}`);
+    }
     return {
       first_name, last_name, profession_type, experience_range, origin_country,
-      visa_valid_until, available_region, employee_number,
+      visa_valid_until, employee_number,
       _valid: errors.length === 0, _errors: errors,
     };
   });

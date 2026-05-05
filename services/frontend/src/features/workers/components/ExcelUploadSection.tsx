@@ -13,7 +13,9 @@ import {
 interface Props {
   professions: Profession[];
   origins: Origin[];
-  regions: Region[];
+  /** Optional — kept in the signature so callers don't break, but the
+   *  Excel flow no longer collects per-worker availability_region. */
+  regions?: Region[];
   onDone: () => void;
   onToast: (msg: string) => void;
 }
@@ -62,10 +64,9 @@ export function ExcelUploadSection({
           first_name:       row.first_name,
           last_name:        row.last_name,
           profession_type:  row.profession_type,
-          experience_range: row.experience_range,
-          origin_country:   row.origin_country,
+          experience_range: row.experience_range || null,
+          origin_country:   row.origin_country   || null,
           visa_valid_until: row.visa_valid_until || null,
-          available_region: row.available_region || null,
           employee_number:  row.employee_number  || null,
         });
         created++;
@@ -86,7 +87,7 @@ export function ExcelUploadSection({
           <p className="text-xs text-slate-500 mt-0.5">מלא את הקובץ ואז העלה אותו</p>
         </div>
         <Button type="button" variant="outline" size="sm"
-          onClick={() => downloadTemplate(professions, origins, regions)}>
+          onClick={() => downloadTemplate(professions, origins, regions ?? [])}>
           <Download className="h-4 w-4" /> הורד תבנית
         </Button>
       </div>

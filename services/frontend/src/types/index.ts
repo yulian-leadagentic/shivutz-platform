@@ -397,12 +397,16 @@ export interface JobRequestUpdate {
   project_end_date?: string;
 }
 
+// Wave 2 (2026-05): origin_country + experience_range relaxed to
+// optional/nullable (corp can leave them blank — "לא צויין").
+// available_region kept on the type for API compatibility but the form
+// no longer sends it.
 export interface WorkerInput {
   first_name: string;
   last_name: string;
   profession_type: string;
-  experience_range?: string;
-  origin_country: string;
+  experience_range?: string | null;
+  origin_country?: string | null;
   languages?: string[];
   visa_valid_until?: string | null;
   available_region?: string | null;

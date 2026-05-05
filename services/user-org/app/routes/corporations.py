@@ -39,8 +39,12 @@ class CorpLookupRequest(BaseModel):
 
 class TeamInvite(BaseModel):
     phone: str
-    role: str = "operator"    # owner | admin | operator | viewer
-    job_title: Optional[str] = None
+    role: str = "admin"       # owner | admin | viewer  (operator dropped Wave 2)
+    job_title:  Optional[str] = None
+    # First/last name added Wave 2 — captured by inviter so the pending
+    # row in the team UI shows who they invited.
+    first_name: Optional[str] = None
+    last_name:  Optional[str] = None
 
 
 @router.post("/lookup")
@@ -240,6 +244,7 @@ def list_corporation_users(org_id: str):
         cur.execute(
             """SELECT em.membership_id, em.user_id, em.role, em.job_title,
                       em.is_active, em.invitation_accepted_at, em.created_at,
+                      em.invited_first_name, em.invited_last_name,
                       u.phone, u.full_name, u.email
                FROM auth_db.entity_memberships em
                LEFT JOIN auth_db.users u ON u.id = em.user_id
@@ -253,6 +258,10 @@ def list_corporation_users(org_id: str):
                 if hasattr(r.get(col), "isoformat"):
                     r[col] = r[col].isoformat()
             r["pending"] = r["invitation_accepted_at"] is None
+            # Surface the inviter-provided name on pending rows (the
+            # joined users.full_name is null until the invitee accepts).
+            if not r.get("full_name") and (r.get("invited_first_name") or r.get("invited_last_name")):
+                r["full_name"] = f"{r.get('invited_first_name','') or ''} {r.get('invited_last_name','') or ''}".strip()
         return rows
     finally:
         conn.close()
@@ -294,10 +303,14 @@ async def invite_corporation_user(
         cur.execute(
             """INSERT INTO auth_db.entity_memberships
                (membership_id, user_id, entity_type, entity_id, role, job_title,
+                invited_first_name, invited_last_name,
                 invited_by, invitation_token, is_active)
-               VALUES (%s, NULL, 'corporation', %s, %s, %s, %s, %s, FALSE)""",
+               VALUES (%s, NULL, 'corporation', %s, %s, %s, %s, %s, %s, %s, FALSE)""",
             (membership_id,
-             org_id, data.role, data.job_title, inviter_user_id, invite_token)
+             org_id, data.role, data.job_title,
+             (data.first_name or '').strip() or None,
+             (data.last_name  or '').strip() or None,
+             inviter_user_id, invite_token)
         )
         conn.commit()
 

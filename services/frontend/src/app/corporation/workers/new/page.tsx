@@ -34,7 +34,7 @@ export default function NewWorkerPage() {
   const [error, setError]           = useState('');
   const [toast, setToast]           = useState('');
 
-  const { professions, origins, regions } = useEnums();
+  const { professions, origins } = useEnums();
 
   // single mode
   const [firstName, setFirstName] = useState('');
@@ -47,13 +47,12 @@ export default function NewWorkerPage() {
   }
 
   // ── Single ────────────────────────────────────────────────────────────────
+  // Wave 2: only first/last/profession are required. The other fields
+  // (experience / origin / visa) submit as null when blank.
   function validateSingle(): string {
     if (!firstName.trim())        return 'יש להזין שם פרטי';
     if (!lastName.trim())         return 'יש להזין שם משפחה';
     if (!shared.profession_type)  return 'יש לבחור מקצוע';
-    if (!shared.experience_range) return 'יש לבחור טווח ניסיון';
-    if (!shared.origin_country)   return 'יש לבחור מדינת מוצא';
-    if (!shared.visa_valid_until) return 'יש להזין תאריך ויזה';
     return '';
   }
 
@@ -67,11 +66,10 @@ export default function NewWorkerPage() {
         first_name:       firstName,
         last_name:        lastName,
         profession_type:  shared.profession_type,
-        experience_range: shared.experience_range,
-        origin_country:   shared.origin_country,
+        experience_range: shared.experience_range || null,
+        origin_country:   shared.origin_country   || null,
         languages:        shared.languages,
         visa_valid_until: shared.visa_valid_until || null,
-        available_region: shared.available_region || null,
         available_from:   shared.available_from   || null,
         employee_number:  shared.employee_number  || null,
       });
@@ -130,7 +128,6 @@ export default function NewWorkerPage() {
                 fields={shared}
                 professions={professions}
                 origins={origins}
-                regions={regions}
                 showEmployeeNumber={true}
                 onChange={(delta) => setShared((s) => ({ ...s, ...delta }))}
               />
@@ -153,7 +150,6 @@ export default function NewWorkerPage() {
         <ExcelUploadSection
           professions={professions}
           origins={origins}
-          regions={regions}
           onDone={() => router.push('/corporation/workers')}
           onToast={showToast}
         />

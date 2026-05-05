@@ -8,14 +8,14 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
+// Wave 2: 'operator' dropped — three roles cover the cases.
 const ROLE_LABELS: Record<string, string> = {
-  owner: 'בעלים', admin: 'מנהל', operator: 'מפעיל', viewer: 'צופה',
+  owner: 'בעלים', admin: 'מנהל', viewer: 'צופה',
 };
 const ROLE_COLORS: Record<string, string> = {
-  owner:    'bg-purple-100 text-purple-700',
-  admin:    'bg-blue-100 text-blue-700',
-  operator: 'bg-green-100 text-green-700',
-  viewer:   'bg-slate-100 text-slate-600',
+  owner:  'bg-purple-100 text-purple-700',
+  admin:  'bg-blue-100 text-blue-700',
+  viewer: 'bg-slate-100 text-slate-600',
 };
 
 export default function ContractorUsersPage() {
@@ -23,8 +23,10 @@ export default function ContractorUsersPage() {
   const [members, setMembers]     = useState<TeamMember[]>([]);
   const [loading, setLoading]     = useState(true);
   const [showForm, setShowForm]   = useState(false);
+  const [firstName, setFirstName] = useState('');
+  const [lastName,  setLastName]  = useState('');
   const [phone, setPhone]         = useState('');
-  const [role, setRole]           = useState('operator');
+  const [role, setRole]           = useState('admin');
   const [jobTitle, setJobTitle]   = useState('');
   const [saving, setSaving]       = useState(false);
   const [error, setError]         = useState('');
@@ -44,14 +46,23 @@ export default function ContractorUsersPage() {
     if (!phone.trim()) { setError('יש להזין מספר טלפון'); return; }
     setSaving(true); setError(''); setSuccess('');
     try {
-      const m = await memberApi.invite('contractors', entityId, phone.trim(), role, jobTitle || undefined);
+      const m = await memberApi.invite('contractors', entityId, {
+        phone:      phone.trim(),
+        role,
+        jobTitle:   jobTitle || undefined,
+        firstName:  firstName.trim() || undefined,
+        lastName:   lastName.trim()  || undefined,
+      });
+      const fullName = [firstName.trim(), lastName.trim()].filter(Boolean).join(' ') || null;
       setMembers((p) => [...p, {
         membership_id: m.membership_id, user_id: null, role: m.role,
         job_title: jobTitle || null, is_active: false,
         invitation_accepted_at: null, created_at: new Date().toISOString(),
-        phone: phone.trim(), full_name: null, email: null, pending: true,
+        phone: phone.trim(), full_name: fullName, email: null, pending: true,
+        invited_first_name: firstName.trim() || null,
+        invited_last_name:  lastName.trim()  || null,
       }]);
-      setPhone(''); setRole('operator'); setJobTitle('');
+      setFirstName(''); setLastName(''); setPhone(''); setRole('admin'); setJobTitle('');
       setShowForm(false);
       setSuccess('ההזמנה נשלחה ב-SMS');
       setTimeout(() => setSuccess(''), 4000);
@@ -95,6 +106,20 @@ export default function ContractorUsersPage() {
           <CardContent className="pt-4 space-y-3">
             <h3 className="font-semibold text-slate-800 text-sm">הזמנת חבר צוות חדש</h3>
             <p className="text-xs text-slate-500">קוד הזמנה ישלח ב-SMS למספר הטלפון שתזין</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Input
+                label="שם פרטי"
+                placeholder="ישראל"
+                value={firstName}
+                onChange={(e) => setFirstName(e.target.value)}
+              />
+              <Input
+                label="שם משפחה"
+                placeholder="ישראלי"
+                value={lastName}
+                onChange={(e) => setLastName(e.target.value)}
+              />
+            </div>
             <Input
               label="מספר טלפון נייד"
               type="tel"
@@ -116,9 +141,8 @@ export default function ContractorUsersPage() {
                 onChange={(e) => setRole(e.target.value)}
                 className="flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
               >
-                <option value="operator">מפעיל — יכול לנהל בקשות ועסקאות</option>
+                <option value="admin">מנהל — גישה מלאה לבקשות, עסקאות וצוות</option>
                 <option value="viewer">צופה — קריאה בלבד</option>
-                <option value="admin">מנהל — גישה מלאה</option>
               </select>
             </div>
             {error && <p className="text-sm text-red-600">{error}</p>}
