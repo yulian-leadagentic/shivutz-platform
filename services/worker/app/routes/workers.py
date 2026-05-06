@@ -73,7 +73,7 @@ class WorkerCreate(BaseModel):
     experience_years: int = 0
     experience_range: Optional[str] = None  # month-based: "0-6"|"6-12"|"12-24"|"24-36"|"36+"
     years_in_israel: Optional[int] = None    # NEW — visible to contractor pre-approval
-    origin_country: str
+    origin_country: Optional[str] = None     # Wave 2 — relaxed; FE submits null when blank
     languages: List[str] = []
     visa_type: Optional[str] = None
     visa_number: Optional[str] = None
@@ -95,7 +95,7 @@ class WorkerBulkCreate(BaseModel):
     experience_years: int = 0
     experience_range: Optional[str] = None
     years_in_israel: Optional[int] = None
-    origin_country: str
+    origin_country: Optional[str] = None     # Wave 2 — relaxed; FE submits null when blank
     languages: List[str] = []
     visa_valid_until: Optional[date] = None
     available_region: Optional[str] = None
