@@ -9,7 +9,11 @@ const { generateOtp, verifyOtp, hasRecentVerifiedOtp, normalisePhone } = require
 
 const ACCESS_SECRET  = process.env.JWT_SECRET;
 const REFRESH_SECRET = process.env.JWT_SECRET + '_refresh';
-const ACCESS_TTL     = process.env.JWT_ACCESS_EXPIRES_IN  || '15m';
+// Wave 2 feedback: "אל תבקש סיסמה כל פעם" — keep users signed in for
+// at least 3 hours of active use. The FE already silent-refreshes on
+// 401, but a longer access TTL means fewer refresh round-trips and a
+// smoother feel.
+const ACCESS_TTL     = process.env.JWT_ACCESS_EXPIRES_IN  || '3h';
 const REFRESH_TTL    = process.env.JWT_REFRESH_EXPIRES_IN || '7d';
 const NOTIF_URL      = process.env.NOTIF_SERVICE_URL || 'http://notification:3006';
 
