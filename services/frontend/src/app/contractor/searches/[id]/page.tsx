@@ -11,7 +11,7 @@ import { ChevronRight, Loader2, RefreshCw } from 'lucide-react';
 import { searchApi } from '@/lib/api/jobs';
 import { dealApi } from '@/lib/api/deals';
 import { enumApi } from '@/lib/api/enums';
-import { getProfessionIcon } from '@/features/searches/professionIcons';
+import { ProfessionIcon } from '@/features/searches/ProfessionIcon';
 import type { CorpMatch, Profession, WorkerSearch } from '@/types';
 
 export default function SearchDetailPage() {
@@ -32,20 +32,19 @@ export default function SearchDetailPage() {
         const cur = ps.find((p) => p.code === search?.profession_type);
         if (cur) setProfDef(cur);
       }),
+      // Hydrate sentInquiry from existing deals so the button stays
+      // "פנייה נשלחה" across reloads.
+      dealApi.list({ page_size: 200 }).then((res) => {
+        const sentMap: Record<string, boolean> = {};
+        for (const d of res.items) {
+          if (d.search_id === id && d.corporation_id) {
+            sentMap[d.corporation_id] = true;
+          }
+        }
+        setSentInquiry(sentMap);
+      }).catch(() => {}),
     ]);
   }, [id, search?.profession_type]);
-
-  // Hydrate corp names if cache returned them without names.
-  useEffect(() => {
-    if (!corps || !corps.length) return;
-    if (corps[0].corporation_name) return;
-    Promise.allSettled(corps.map(async (c) => {
-      try {
-        // Re-running match also hydrates names, but that costs a roundtrip.
-        // For simplicity here we just mark them with the ID until /match runs.
-      } catch {}
-    }));
-  }, [corps]);
 
   async function rematch() {
     if (!id) return;
@@ -75,8 +74,6 @@ export default function SearchDetailPage() {
     return <div className="text-center text-sm text-slate-500 py-12">טוען...</div>;
   }
 
-  const Icon = getProfessionIcon(search.profession_type);
-
   return (
     <div className="max-w-3xl mx-auto px-4 py-6 space-y-5">
       <header className="space-y-2">
@@ -84,9 +81,7 @@ export default function SearchDetailPage() {
           <ChevronRight className="w-3 h-3 ml-1" /> חזרה לחיפושים שלי
         </Link>
         <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-xl bg-brand-50 flex items-center justify-center">
-            <Icon className="w-6 h-6 text-brand-600" />
-          </div>
+          <ProfessionIcon code={search.profession_type} size={56} alt={profDef?.name_he} />
           <div>
             <h1 className="text-xl font-bold text-slate-900">
               {profDef?.name_he ?? search.profession_type}
@@ -159,7 +154,7 @@ export default function SearchDetailPage() {
                       : 'bg-brand-600 hover:bg-brand-500 text-white'
                   }`}
                 >
-                  {sentInquiry[c.corporation_id] ? 'נשלח ✓' : 'שלח פנייה'}
+                  {sentInquiry[c.corporation_id] ? '✓ פנייה נשלחה' : 'שלח פנייה'}
                 </button>
               </li>
             ))}

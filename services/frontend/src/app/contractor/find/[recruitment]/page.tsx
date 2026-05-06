@@ -9,7 +9,7 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { ChevronRight } from 'lucide-react';
 import { enumApi } from '@/lib/api/enums';
-import { getProfessionIcon } from '@/features/searches/professionIcons';
+import { ProfessionIcon } from '@/features/searches/ProfessionIcon';
 import type { Profession, RecruitmentType } from '@/types';
 
 const TITLES: Record<RecruitmentType, string> = {
@@ -44,27 +44,26 @@ export default function ProfessionTilesPage() {
         <div className="text-center text-sm text-slate-500 py-12">טוען...</div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-          {profs.map((p) => {
-            const Icon = getProfessionIcon(p.code);
-            return (
-              <Link
-                key={p.code}
-                href={`/contractor/find/${recruitment}/${p.code}`}
-                className="group flex flex-col items-center justify-center text-center
-                           rounded-2xl border border-slate-200 bg-white px-3 py-6
-                           hover:border-brand-500 hover:bg-brand-50/30
-                           active:scale-[0.98] transition shadow-sm aspect-square"
-              >
-                <div className="w-12 h-12 rounded-xl bg-brand-50 group-hover:bg-brand-100
-                                flex items-center justify-center mb-2">
-                  <Icon className="w-6 h-6 text-brand-600" />
-                </div>
-                <div className="text-sm font-semibold text-slate-900 leading-tight">
-                  {p.name_he}
-                </div>
-              </Link>
-            );
-          })}
+          {profs.map((p) => (
+            <Link
+              key={p.code}
+              href={`/contractor/find/${recruitment}/${p.code}`}
+              className="group flex flex-col items-center justify-center text-center
+                         rounded-2xl border border-slate-200 bg-white px-3 py-5
+                         hover:border-brand-500 hover:shadow-md hover:bg-brand-50/30
+                         active:scale-[0.98] transition shadow-sm aspect-square"
+            >
+              <ProfessionIcon
+                code={p.code}
+                size={88}
+                alt={p.name_he}
+                className="mb-2 object-contain"
+              />
+              <div className="text-sm font-semibold text-slate-900 leading-tight">
+                {p.name_he}
+              </div>
+            </Link>
+          ))}
         </div>
       )}
     </div>

@@ -17,7 +17,7 @@ import { ChevronRight, Loader2, Search as SearchIcon } from 'lucide-react';
 import { enumApi } from '@/lib/api/enums';
 import { searchApi } from '@/lib/api/jobs';
 import { dealApi } from '@/lib/api/deals';
-import { getProfessionIcon } from '@/features/searches/professionIcons';
+import { ProfessionIcon } from '@/features/searches/ProfessionIcon';
 import type {
   CorpMatch,
   Profession,
@@ -50,7 +50,6 @@ export default function FindFormPage() {
   }, []);
 
   const profDef = useMemo(() => profs.find((p) => p.code === profession), [profs, profession]);
-  const Icon = getProfessionIcon(profession);
 
   // ── Form state ────────────────────────────────────────────────────
   const [quantity, setQuantity] = useState<number>(1);
@@ -129,9 +128,7 @@ export default function FindFormPage() {
           <ChevronRight className="w-3 h-3 ml-1" /> חזרה למקצועות
         </Link>
         <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-xl bg-brand-50 flex items-center justify-center">
-            <Icon className="w-6 h-6 text-brand-600" />
-          </div>
+          <ProfessionIcon code={profession} size={56} alt={profDef?.name_he} />
           <div>
             <h1 className="text-xl font-bold text-slate-900">
               {profDef?.name_he ?? profession}
@@ -295,7 +292,7 @@ export default function FindFormPage() {
                         : 'bg-brand-600 hover:bg-brand-500 text-white'
                     }`}
                   >
-                    {sentInquiry[c.corporation_id] ? 'נשלח ✓' : 'שלח פנייה'}
+                    {sentInquiry[c.corporation_id] ? '✓ פנייה נשלחה' : 'שלח פנייה'}
                   </button>
                 </li>
               ))}

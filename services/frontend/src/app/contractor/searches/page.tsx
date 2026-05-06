@@ -8,7 +8,7 @@ import { useEffect, useState } from 'react';
 import { Plus, Search as SearchIcon } from 'lucide-react';
 import { searchApi } from '@/lib/api/jobs';
 import { enumApi } from '@/lib/api/enums';
-import { getProfessionIcon } from '@/features/searches/professionIcons';
+import { ProfessionIcon } from '@/features/searches/ProfessionIcon';
 import type { Profession, WorkerSearch } from '@/types';
 
 const STATUS_LABEL: Record<string, string> = {
@@ -62,7 +62,6 @@ export default function SearchesListPage() {
       {items && items.length > 0 && (
         <ul className="space-y-2">
           {items.map((s) => {
-            const Icon = getProfessionIcon(s.profession_type);
             const prof = profByCode[s.profession_type]?.name_he ?? s.profession_type;
             return (
               <li key={s.id}>
@@ -70,9 +69,12 @@ export default function SearchesListPage() {
                   href={`/contractor/searches/${s.id}`}
                   className="flex items-center gap-3 bg-white border border-slate-200 rounded-xl p-3 shadow-sm hover:border-brand-400 transition"
                 >
-                  <div className="w-10 h-10 rounded-lg bg-brand-50 flex items-center justify-center flex-shrink-0">
-                    <Icon className="w-5 h-5 text-brand-600" />
-                  </div>
+                  <ProfessionIcon
+                    code={s.profession_type}
+                    size={44}
+                    alt={prof}
+                    className="flex-shrink-0"
+                  />
                   <div className="min-w-0 flex-1">
                     <div className="font-semibold text-slate-900 text-sm truncate">
                       {prof} — {s.quantity} עובדים
