@@ -29,9 +29,9 @@ async function sendSmsInternal(phone, message) {
 //
 // matchInternalResult shape (from job-match's /internal endpoints):
 //   {
-//     request_id, should_notify, skipped,
+//     search_id, should_notify, skipped,
 //     contractor_id, contact_name, contact_phone, contact_email,
-//     project_name, project_name_he, region, worker_count, best_fill_pct
+//     profession, region, worker_count, best_fill_pct
 //   }
 //
 // We send SMS + email for every entry where should_notify=true. Skipped
@@ -40,25 +40,25 @@ async function sendSmsInternal(phone, message) {
 async function notifyMatchFound(result, sendEmail) {
   if (!result || !result.should_notify) return;
 
-  const matchUrl  = `${FRONTEND_URL}/contractor/requests/${result.request_id}/match`;
-  const project   = result.project_name_he || result.project_name || 'הבקשה שלך';
-  const firstName = (result.contact_name || '').split(' ')[0] || 'שלום';
+  const matchUrl   = `${FRONTEND_URL}/contractor/searches/${result.search_id}`;
+  const profession = result.profession || 'החיפוש שלך';
+  const firstName  = (result.contact_name || '').split(' ')[0] || 'שלום';
 
   if (result.contact_phone) {
     await sendSmsInternal(
       result.contact_phone,
-      `שיבוץ — ${firstName}, נמצאה התאמה מלאה ל"${project}" (${result.worker_count || 0} עובדים). ` +
+      `שיבוץ — ${firstName}, נמצאה התאמה מלאה לחיפוש "${profession}" (${result.worker_count || 0} עובדים). ` +
       `לצפייה בהצעה: ${matchUrl}`
     );
   }
 
   if (result.contact_email) {
     await sendEmail('match.found', result.contact_email, result.contractor_id || null, {
-      contact_name:    result.contact_name || '',
-      project_name:    project,
-      worker_count:    result.worker_count || 0,
-      region:          result.region || '',
-      match_url:       matchUrl,
+      contact_name: result.contact_name || '',
+      profession,
+      worker_count: result.worker_count || 0,
+      region:       result.region || '',
+      match_url:    matchUrl,
     });
   }
 }
@@ -83,20 +83,20 @@ async function rematchForCorp(corporationId, professionType) {
   }
 }
 
-async function rematchForRequest(requestId, force) {
+async function rematchForSearch(searchId, force) {
   try {
-    const resp = await fetch(`${JOB_MATCH_URL}/internal/rematch-for-request`, {
+    const resp = await fetch(`${JOB_MATCH_URL}/internal/rematch-for-search`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ request_id: requestId, force: !!force }),
+      body:    JSON.stringify({ search_id: searchId, force: !!force }),
     });
     if (!resp.ok) {
-      console.error('[rematch-request] non-2xx:', resp.status, await resp.text());
+      console.error('[rematch-search] non-2xx:', resp.status, await resp.text());
       return null;
     }
     return await resp.json();
   } catch (err) {
-    console.error('[rematch-request] unreachable:', err.message);
+    console.error('[rematch-search] unreachable:', err.message);
     return null;
   }
 }
@@ -118,15 +118,15 @@ async function handle(routingKey, payload, sendEmail) {
         contact_name: payload.contact_name,
         org_name:     payload.org_name,
       });
-      // Send SMS with direct link — contractors get link to create worker request
+      // Send SMS with direct link — contractors get link to start a search
       if (payload.contact_phone) {
         const link = payload.org_type === 'contractor'
-          ? `${FRONTEND_URL}/contractor/requests/new`
+          ? `${FRONTEND_URL}/contractor/find`
           : `${FRONTEND_URL}/corporation/dashboard`;
         const firstName = (payload.contact_name || '').split(' ')[0] || 'שלום';
         await sendSmsInternal(
           payload.contact_phone,
-          `${firstName}, החשבון שלך בפלטפורמת שיבוץ אושר ✓\n${payload.org_type === 'contractor' ? 'לפתיחת בקשה לעובדים: ' : 'כניסה לחשבון: '}${link}`
+          `${firstName}, החשבון שלך בפלטפורמת שיבוץ אושר ✓\n${payload.org_type === 'contractor' ? 'לאיתור עובדים: ' : 'כניסה לחשבון: '}${link}`
         );
       }
       break;
@@ -149,7 +149,7 @@ async function handle(routingKey, payload, sendEmail) {
       // Notify the corporation
       await sendEmail('deal.proposed', payload.corporation_email || ADMIN_EMAIL, null, {
         contractor_name: payload.contractor_name || payload.contractor_id,
-        project_name:    payload.project_name || 'פרויקט חדש',
+        profession:      payload.profession_he || 'חיפוש חדש',
         deal_id:         payload.deal_id,
       });
       break;
@@ -157,7 +157,7 @@ async function handle(routingKey, payload, sendEmail) {
     case 'deal.accepted':
       await sendEmail('deal.accepted', payload.contractor_email || ADMIN_EMAIL, null, {
         corporation_name: payload.corporation_name || payload.corporation_id,
-        project_name:     payload.project_name || '',
+        profession:       payload.profession_he || '',
         deal_id:          payload.deal_id,
       });
       break;
@@ -464,11 +464,11 @@ async function handle(routingKey, payload, sendEmail) {
       break;
     }
 
-    case 'job_request.changed': {
-      // Contractor created/edited their own request. Re-match just this
+    case 'worker_search.changed': {
+      // Contractor created/edited their own search. Re-match just this
       // one, force=true to bypass the debounce (the contractor's edit
       // should be reflected immediately).
-      const result = await rematchForRequest(payload.request_id, true);
+      const result = await rematchForSearch(payload.search_id, true);
       await notifyMatchFound(result, sendEmail);
       break;
     }

@@ -4,12 +4,12 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
   Plus, AlertCircle, FolderOpen, Handshake, Clock,
-  ChevronLeft, Zap, Users, Calendar, Briefcase,
+  ChevronLeft, Zap, Users, Calendar,
 } from 'lucide-react';
-import { jobApi, dealApi, orgApi } from '@/lib/api';
+import { searchApi, dealApi, orgApi } from '@/lib/api';
 import { useEnums } from '@/features/enums/EnumsContext';
 import { getAccessToken, decodeJwtPayload } from '@/lib/auth';
-import type { JobRequest, Deal } from '@/types';
+import type { WorkerSearch, Deal } from '@/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import StatusBadge from '@/components/StatusBadge';
@@ -72,7 +72,7 @@ function KpiCard({ icon, label, value, loading, color = 'text-brand-600' }: {
 // ─── Page ──────────────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
-  const [jobs, setJobs]       = useState<JobRequest[]>([]);
+  const [searches, setSearches] = useState<WorkerSearch[]>([]);
   const [deals, setDeals]     = useState<Deal[]>([]);
   const { regionMap, professionMap: profMap } = useEnums();
   const [loadingJobs, setLoadingJobs]   = useState(true);
@@ -94,8 +94,8 @@ export default function DashboardPage() {
       }
     }
 
-    jobApi.list()
-      .then(setJobs)
+    searchApi.list()
+      .then(setSearches)
       .catch(() => {})
       .finally(() => setLoadingJobs(false));
 
@@ -106,15 +106,15 @@ export default function DashboardPage() {
   }, []);
 
   // KPI counts
-  const openJobs      = jobs.filter((j) => j.status === 'open').length;
+  const openJobs      = searches.filter((s) => s.status === 'open').length;
   const pendingDeals  = deals.filter((d) => ['proposed', 'counter_proposed'].includes(d.status)).length;
   const activeDeals   = deals.filter((d) => ['accepted', 'active', 'reporting'].includes(d.status)).length;
 
   // Urgent items — deals needing contractor action
   const urgentDeals = deals.filter((d) => ['counter_proposed', 'accepted'].includes(d.status));
 
-  // Recent open requests (up to 4)
-  const recentOpenJobs = jobs.filter((j) => j.status !== 'cancelled').slice(0, 4);
+  // Recent open searches (up to 4)
+  const recentOpenJobs = searches.filter((s) => s.status !== 'cancelled').slice(0, 4);
 
   // Active + recent deals
   const recentActiveDeals = deals
@@ -143,9 +143,9 @@ export default function DashboardPage() {
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold text-slate-900">לוח בקרה</h2>
         <Button asChild>
-          <Link href="/contractor/requests/new">
+          <Link href="/contractor/find">
             <Plus className="h-4 w-4" />
-            בקשה חדשה
+            חיפוש עובדים
           </Link>
         </Button>
       </div>
@@ -210,7 +210,7 @@ export default function DashboardPage() {
           <CardHeader className="pb-0">
             <div className="flex items-center justify-between">
               <CardTitle className="text-base">איתור עובדים</CardTitle>
-              <Link href="/contractor/requests" className="text-xs text-brand-600 hover:underline flex items-center gap-0.5">
+              <Link href="/contractor/searches" className="text-xs text-brand-600 hover:underline flex items-center gap-0.5">
                 הכל <ChevronLeft className="h-3 w-3" />
               </Link>
             </div>
@@ -234,66 +234,51 @@ export default function DashboardPage() {
             ) : recentOpenJobs.length === 0 ? (
               <div className="flex flex-col items-center gap-3 py-10 text-center px-4">
                 <FolderOpen className="h-8 w-8 text-slate-200" />
-                <p className="text-slate-400 text-sm">אין בקשות עדיין</p>
+                <p className="text-slate-400 text-sm">אין חיפושים עדיין</p>
                 <Button asChild variant="outline" size="sm">
-                  <Link href="/contractor/requests/new"><Plus className="h-3.5 w-3.5" />צור בקשה</Link>
+                  <Link href="/contractor/find"><Plus className="h-3.5 w-3.5" />חיפוש חדש</Link>
                 </Button>
               </div>
             ) : (
               <div className="divide-y divide-slate-50">
-                {recentOpenJobs.map((j) => {
-                  const lineItems = (j as unknown as { line_items?: { profession_type: string; quantity: number }[] }).line_items ?? [];
-                  const fillPct   = j.best_fill_pct ?? -1;
+                {recentOpenJobs.map((s) => {
+                  const fillPct = s.best_fill_pct ?? -1;
+                  const profLabel = profMap[s.profession_type] ?? s.profession_type;
 
                   return (
-                    <div key={j.id} className="px-4 py-3 hover:bg-slate-50 transition-colors">
+                    <div key={s.id} className="px-4 py-3 hover:bg-slate-50 transition-colors">
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex-1 min-w-0 space-y-1">
                           <div className="flex items-center gap-2 flex-wrap">
                             <Link
-                              href={`/contractor/requests/${j.id}/match`}
+                              href={`/contractor/searches/${s.id}`}
                               className="text-sm font-semibold text-slate-900 hover:text-brand-600 hover:underline truncate"
                             >
-                              {j.project_name_he || j.project_name || '—'}
+                              {profLabel} — {s.quantity} עובדים
                             </Link>
-                            <StatusBadge status={j.status} />
+                            <StatusBadge status={s.status} />
                           </div>
 
-                          {/* Region + date */}
                           <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-slate-500">
-                            <span>{regionMap[j.region] ?? j.region ?? '—'}</span>
-                            {j.project_start_date && (
+                            <span>
+                              {s.recruitment_type === 'foreign' ? 'מחו״ל' : 'מהארץ'}
+                            </span>
+                            {s.region && <span>{regionMap[s.region] ?? s.region}</span>}
+                            {s.start_date && (
                               <span className="flex items-center gap-1" dir="ltr">
                                 <Calendar className="h-3 w-3" />
-                                {formatDate(j.project_start_date)}
+                                {formatDate(s.start_date)}
                               </span>
                             )}
                           </div>
-
-                          {/* Profession chips */}
-                          {lineItems.length > 0 && (
-                            <div className="flex flex-wrap gap-1 mt-0.5">
-                              {lineItems.slice(0, 3).map((li, i) => (
-                                <span key={i} className="inline-flex items-center gap-1 text-[11px] bg-slate-100 text-slate-600 rounded-full px-2 py-0.5">
-                                  <Briefcase className="h-2.5 w-2.5" />
-                                  {profMap[li.profession_type] ?? li.profession_type}
-                                  <span className="text-slate-400">×{li.quantity}</span>
-                                </span>
-                              ))}
-                              {lineItems.length > 3 && (
-                                <span className="text-[11px] text-slate-400">+{lineItems.length - 3}</span>
-                              )}
-                            </div>
-                          )}
                         </div>
 
-                        {/* Match action */}
                         <Link
-                          href={`/contractor/requests/${j.id}/match`}
+                          href={`/contractor/searches/${s.id}`}
                           className="shrink-0 inline-flex items-center gap-1 text-xs font-medium text-brand-600 border border-brand-200 rounded-lg px-2 py-1.5 hover:bg-brand-50 transition-colors"
                         >
                           <Zap className="h-3 w-3" />
-                          {fillPct >= 0 ? 'עדכן' : 'חפש'}
+                          {fillPct >= 0 ? `${Math.round(fillPct)}%` : 'חפש'}
                         </Link>
                       </div>
                     </div>

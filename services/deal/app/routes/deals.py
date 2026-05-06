@@ -20,9 +20,13 @@ WORKER_URL   = os.getenv("WORKER_SERVICE_URL",   "http://worker:3003")
 class DealCreate(BaseModel):
     """Inquiry sent by contractor to corp. The corp side commits the worker
     list later via POST /deals/{id}/commit. No price field — commission is
-    applied at corp-commit time as accepted_count × system_settings rate."""
-    job_request_id: Optional[str] = None
-    request_line_item_id: Optional[str] = None
+    applied at corp-commit time as accepted_count × system_settings rate.
+
+    Wave 3 (2026-05-06): the project umbrella was dropped — `search_id`
+    points directly at job_db.worker_searches. The legacy
+    `request_line_item_id` field is accepted as an alias for one release."""
+    search_id: Optional[str] = None
+    request_line_item_id: Optional[str] = None  # legacy alias — to be removed
     contractor_id: Optional[str] = None
     corporation_id: str
     proposed_by: Optional[str] = None
@@ -92,7 +96,7 @@ def _read_setting_int(conn, key: str, default: int) -> int:
 
 def _enrich_event_payload(deal_id: str, contractor_id: str, corporation_id: str,
                           worker_count: Optional[int] = None,
-                          line_item_id: Optional[str] = None) -> dict:
+                          search_id: Optional[str] = None) -> dict:
     """Pull party contact info + profession/region context so the notification
     consumer can route emails/SMS to the right recipients without extra
     round-trips. Best-effort — empty values fall through gracefully."""
@@ -128,25 +132,24 @@ def _enrich_event_payload(deal_id: str, contractor_id: str, corporation_id: str,
             "corp_contact_phone":       p.get("contact_phone") or "",
             "corp_name":                p.get("company_name_he") or "",
         })
-        # profession_he/region_he: best-effort lookup via the line item.
+        # profession_he/region_he: best-effort lookup via the search row.
         # Cross-service join is fragile; we skip it on any error and the
         # template falls back to a generic phrasing.
-        if line_item_id:
+        if search_id:
             try:
                 cur.execute(
-                    "SELECT li.profession_type, li.quantity, "
-                    "       COALESCE(pt.name_he, li.profession_type) AS prof_he, "
-                    "       jr.region "
-                    "FROM job_db.job_request_line_items li "
-                    "LEFT JOIN job_db.job_requests jr ON jr.id = li.request_id "
-                    "LEFT JOIN worker_db.profession_types pt ON pt.code = li.profession_type "
-                    "WHERE li.id=%s",
-                    (line_item_id,),
+                    "SELECT ws.profession_type, ws.quantity, "
+                    "       COALESCE(pt.name_he, ws.profession_type) AS prof_he, "
+                    "       ws.region "
+                    "FROM job_db.worker_searches ws "
+                    "LEFT JOIN worker_db.profession_types pt ON pt.code = ws.profession_type "
+                    "WHERE ws.id=%s",
+                    (search_id,),
                 )
-                li = cur.fetchone() or {}
-                out["profession_he"]   = li.get("prof_he") or ""
-                out["region_he"]       = li.get("region")  or ""
-                out["requested_count"] = int(li.get("quantity") or 0)
+                ws = cur.fetchone() or {}
+                out["profession_he"]   = ws.get("prof_he") or ""
+                out["region_he"]       = ws.get("region")  or ""
+                out["requested_count"] = int(ws.get("quantity") or 0)
             except Exception:
                 out["profession_he"]   = ""
                 out["region_he"]       = ""
@@ -227,14 +230,13 @@ def list_deals(
             f"""SELECT d.*,
                        (SELECT COUNT(*) FROM deal_workers dw
                         WHERE dw.deal_id=d.id AND dw.removed_at IS NULL) AS worker_count,
-                       li.profession_type,
-                       li.quantity AS requested_count,
-                       COALESCE(pt.name_he, li.profession_type) AS profession_he,
-                       jr.region AS region_he
+                       ws.profession_type,
+                       ws.quantity AS requested_count,
+                       COALESCE(pt.name_he, ws.profession_type) AS profession_he,
+                       ws.region AS region_he
                 FROM deals d
-                LEFT JOIN job_db.job_request_line_items li ON li.id = d.request_line_item_id
-                LEFT JOIN job_db.job_requests jr           ON jr.id = li.request_id
-                LEFT JOIN worker_db.profession_types pt       ON pt.code = li.profession_type
+                LEFT JOIN job_db.worker_searches ws       ON ws.id = d.search_id
+                LEFT JOIN worker_db.profession_types pt   ON pt.code = ws.profession_type
                 WHERE {where}
                 ORDER BY d.created_at DESC
                 LIMIT %s OFFSET %s""",
@@ -289,19 +291,9 @@ async def create_deal(
     if x_user_role == "contractor" and contractor_id:
         _require_contractor_tier_2(contractor_id)
 
-    # Resolve line_item_id — call job-match service if only job_request_id provided
-    line_item_id = data.request_line_item_id
-    if not line_item_id and data.job_request_id:
-        try:
-            async with httpx.AsyncClient(timeout=3.0) as client:
-                resp = await client.get(f"{JOB_MATCH_URL}/job-requests/{data.job_request_id}")
-                if resp.status_code == 200:
-                    jr = resp.json()
-                    items = jr.get("line_items", [])
-                    if items:
-                        line_item_id = items[0]["id"]
-        except Exception:
-            pass  # proceed without line_item_id
+    # Wave 3: search_id directly references job_db.worker_searches.
+    # Accept the legacy field name as a fallback for one release.
+    search_id = data.search_id or data.request_line_item_id
 
     deal_id = str(uuid.uuid4())
     conn = get_db()
@@ -309,9 +301,9 @@ async def create_deal(
         cur = conn.cursor()
         cur.execute(
             """INSERT INTO deals
-               (id, request_line_item_id, contractor_id, corporation_id, proposed_by, notes)
+               (id, search_id, contractor_id, corporation_id, proposed_by, notes)
                VALUES (%s,%s,%s,%s,%s,%s)""",
-            (deal_id, line_item_id, contractor_id, data.corporation_id,
+            (deal_id, search_id, contractor_id, data.corporation_id,
              proposed_by, data.notes)
         )
         conn.commit()
@@ -439,7 +431,7 @@ async def commit_deal(
 
         payload = _enrich_event_payload(
             deal_id, deal["contractor_id"], deal["corporation_id"],
-            worker_count=len(body.worker_ids), line_item_id=deal.get("request_line_item_id"),
+            worker_count=len(body.worker_ids), search_id=deal.get("search_id"),
         )
         payload.update({
             "commission_amount": float(commission_amount),
@@ -506,7 +498,7 @@ async def approve_deal(
         wc = int((cur.fetchone() or {}).get("c") or 0)
         payload = _enrich_event_payload(
             deal_id, deal["contractor_id"], deal["corporation_id"],
-            worker_count=wc, line_item_id=deal.get("request_line_item_id"),
+            worker_count=wc, search_id=deal.get("search_id"),
         )
         payload.update({
             "commission_amount":   float(deal["commission_amount"] or 0),
@@ -578,7 +570,7 @@ async def reject_deal(
         wc = int((cur.fetchone() or {}).get("c") or 0)
         payload = _enrich_event_payload(
             deal_id, deal["contractor_id"], deal["corporation_id"],
-            worker_count=wc, line_item_id=deal.get("request_line_item_id"),
+            worker_count=wc, search_id=deal.get("search_id"),
         )
         payload.update({
             "commission_amount": float(deal["commission_amount"] or 0),
@@ -644,7 +636,7 @@ async def cancel_deal(
         wc = int((cur.fetchone() or {}).get("c") or 0)
         payload = _enrich_event_payload(
             deal_id, deal["contractor_id"], deal["corporation_id"],
-            worker_count=wc, line_item_id=deal.get("request_line_item_id"),
+            worker_count=wc, search_id=deal.get("search_id"),
         )
         payload.update({
             "commission_amount":   float(deal["commission_amount"] or 0),
@@ -774,7 +766,7 @@ async def cron_expire_pending():
         cur = conn.cursor()
         cur.execute(
             """SELECT d.id, d.contractor_id, d.corporation_id, d.commission_amount,
-                      d.request_line_item_id,
+                      d.search_id,
                       (SELECT COUNT(*) FROM deal_workers dw WHERE dw.deal_id=d.id) AS worker_count
                FROM deals d
                WHERE d.status='corp_committed' AND d.expires_at <= NOW()
@@ -801,7 +793,7 @@ async def cron_expire_pending():
         payload = _enrich_event_payload(
             d["id"], d["contractor_id"], d["corporation_id"],
             worker_count=int(d.get("worker_count") or 0),
-            line_item_id=d.get("request_line_item_id"),
+            search_id=d.get("search_id"),
         )
         payload["commission_amount"] = float(d["commission_amount"] or 0)
         await publish_event("deal.expired", payload)
@@ -817,7 +809,7 @@ async def cron_capture_due():
         cur = conn.cursor()
         cur.execute(
             """SELECT d.id, d.contractor_id, d.corporation_id, d.commission_amount,
-                      d.request_line_item_id,
+                      d.search_id,
                       (SELECT COUNT(*) FROM deal_workers dw WHERE dw.deal_id=d.id) AS worker_count
                FROM deals d
                WHERE d.status='approved' AND d.scheduled_capture_at <= NOW()
@@ -855,7 +847,7 @@ async def cron_capture_due():
         payload = _enrich_event_payload(
             d["id"], d["contractor_id"], d["corporation_id"],
             worker_count=int(d.get("worker_count") or 0),
-            line_item_id=d.get("request_line_item_id"),
+            search_id=d.get("search_id"),
         )
         payload["commission_amount"] = float(d["commission_amount"] or 0)
         await publish_event("deal.closed", payload)
@@ -872,7 +864,7 @@ async def cron_admin_nudge():
         nudge_after = _read_setting_int(conn, "admin_nudge_after_hours", 24)
         cur.execute(
             """SELECT d.id, d.contractor_id, d.corporation_id, d.commission_amount,
-                      d.corp_committed_at, d.expires_at, d.request_line_item_id,
+                      d.corp_committed_at, d.expires_at, d.search_id,
                       TIMESTAMPDIFF(HOUR, d.corp_committed_at, NOW()) AS hours_pending,
                       (SELECT COUNT(*) FROM deal_workers dw WHERE dw.deal_id=d.id) AS worker_count
                FROM deals d
@@ -889,7 +881,7 @@ async def cron_admin_nudge():
         payload = _enrich_event_payload(
             d["id"], d["contractor_id"], d["corporation_id"],
             worker_count=int(d.get("worker_count") or 0),
-            line_item_id=d.get("request_line_item_id"),
+            search_id=d.get("search_id"),
         )
         payload.update({
             "commission_amount": float(d["commission_amount"] or 0),
@@ -996,14 +988,13 @@ def get_deal(
             """SELECT d.*,
                       (SELECT COUNT(*) FROM deal_workers dw
                        WHERE dw.deal_id=d.id AND dw.removed_at IS NULL) AS worker_count,
-                      li.profession_type,
-                      li.quantity AS requested_count,
-                      COALESCE(pt.name_he, li.profession_type) AS profession_he,
-                      jr.region AS region_he
+                      ws.profession_type,
+                      ws.quantity AS requested_count,
+                      COALESCE(pt.name_he, ws.profession_type) AS profession_he,
+                      ws.region AS region_he
                FROM deals d
-               LEFT JOIN job_db.job_request_line_items li ON li.id = d.request_line_item_id
-               LEFT JOIN job_db.job_requests jr           ON jr.id = li.request_id
-               LEFT JOIN worker_db.profession_types pt       ON pt.code = li.profession_type
+               LEFT JOIN job_db.worker_searches ws       ON ws.id = d.search_id
+               LEFT JOIN worker_db.profession_types pt   ON pt.code = ws.profession_type
                WHERE d.id=%s AND d.deleted_at IS NULL""",
             (deal_id,),
         )

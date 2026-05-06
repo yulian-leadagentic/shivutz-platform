@@ -35,7 +35,7 @@ async function startConsumer() {
     // path. The handler calls the job-match service's /internal endpoints
     // and sends SMS+email only when fill_state transitions to 'complete'.
     'worker.changed',
-    'job_request.changed',
+    'worker_search.changed',
   ];
   for (const key of keys) {
     await channel.bindQueue(queue, EXCHANGE_NAME, key);

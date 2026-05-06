@@ -51,9 +51,19 @@ export interface Worker {
   };
 }
 
-export interface JobLineItem {
+// ─── Worker-search types (Wave 3 — replaces project + line-items) ─────────────
+//
+// A WorkerSearch is a contractor's standalone request for N workers of a
+// given profession starting on a date. No project umbrella.
+
+export type RecruitmentType = 'domestic' | 'foreign';
+
+export interface WorkerSearch {
   id: string;
-  request_id: string;
+  contractor_id: string;
+  recruitment_type: RecruitmentType;
+  region?: string;
+  address?: string;
   profession_type: string;
   quantity: number;
   start_date: string;
@@ -61,33 +71,34 @@ export interface JobLineItem {
   min_experience: number;
   required_languages: string[];
   origin_preference: string[];
+  special_requirements?: string;
   status: string;
-}
-
-export interface JobLineItemSummary {
-  id: string;
-  profession_type: string;
-  quantity: number;
-  status: string;
-}
-
-export interface JobRequest {
-  id: string;
-  contractor_id: string;
-  project_name: string;
-  project_name_he: string;
-  region: string;
-  status: string;
-  line_items: JobLineItem[];
   created_at?: string;
-  address?: string;
-  project_start_date?: string;
-  project_end_date?: string;
-  professions_count?: number;
-  total_workers?: number;
-  /** -1 = no match run yet; 0-100 = fill percentage from best bundle */
+  /** -1 = no match run yet; 0-100 = fill percentage from best corp */
   best_fill_pct?: number;
   best_is_complete?: boolean;
+}
+
+export interface WorkerSearchCreate {
+  recruitment_type: RecruitmentType;
+  profession_type: string;
+  quantity: number;
+  start_date: string;
+  end_date?: string;
+  region?: string;
+  address?: string;
+  min_experience?: number;
+  origin_preference?: string[];
+  required_languages?: string[];
+}
+
+export interface WorkerSearchUpdate {
+  quantity?: number;
+  start_date?: string;
+  end_date?: string;
+  region?: string;
+  min_experience?: number;
+  status?: string;
 }
 
 // ─── Match types (Go job-match service response) ──────────────────────────────
@@ -107,35 +118,32 @@ export interface MatchedWorkerDetail {
 export interface WorkerMatchResult {
   worker: MatchedWorkerDetail;
   score: number;           // raw 0-110
-  line_item_id: string;
+  search_id: string;
   match_tier: string;      // "perfect" | "good" | "partial"
   matched_criteria: string[];
   missing_criteria: string[];
 }
 
-export interface LineItemFill {
-  line_item_id: string;
+// CorpMatch — for a single search, a single corporation's offer of
+// up to N workers. The matcher returns a sorted list of these per
+// search (one entry per corp that has any matching worker).
+export interface CorpMatch {
+  search_id: string;
+  corporation_id: string;
+  corporation_name?: string;   // resolved client-side after fetch
+  threshold_requirements?: Record<string, unknown> | null;
   profession: string;
   needed: number;
   workers: WorkerMatchResult[];
-  is_filled: boolean;
-}
-
-export interface MatchBundle {
-  corporation_id: string;
-  corporation_name?: string;   // resolved client-side after fetch
-  threshold_requirements?: Record<string, unknown> | null;  // resolved client-side
-  line_items: LineItemFill[];
-  total_score: number;
+  filled_workers: number;
   is_complete: boolean;
   fill_percentage: number;     // 0-100
-  filled_workers: number;
-  needed_workers: number;
+  total_score: number;
 }
 
 export interface Deal {
   id: string;
-  request_line_item_id: string;
+  search_id: string;
   contractor_id: string | null;   // null when info-disclosure hides the counter-party
   corporation_id: string | null;  // null when info-disclosure hides the counter-party
   status: string;
@@ -370,32 +378,8 @@ export interface RegistrationResult {
   refresh_token?: string;
 }
 
-export interface JobLineItemInput {
-  profession_type: string;
-  quantity: number;
-  start_date: string;
-  end_date: string;
-  min_experience: number;
-  min_experience_range?: string;
-  min_experience_ranges?: string[];
-  origin_preference: string[];
-  required_languages: string[];
-}
-
-export interface JobRequestCreate {
-  project_name_he: string;
-  region: string;
-  project_start_date?: string;
-  project_end_date?: string;
-  line_items: JobLineItemInput[];
-}
-
-export interface JobRequestUpdate {
-  project_name_he?: string;
-  region?: string;
-  project_start_date?: string;
-  project_end_date?: string;
-}
+// (Wave 3) JobLineItemInput / JobRequestCreate / JobRequestUpdate were
+// removed — replaced by WorkerSearchCreate / WorkerSearchUpdate above.
 
 // Wave 2 (2026-05): origin_country + experience_range relaxed to
 // optional/nullable (corp can leave them blank — "לא צויין").
@@ -422,10 +406,10 @@ export type WorkerUpdate = Partial<WorkerInput> & {
 };
 
 export interface DealCreate {
-  job_request_id: string;
+  search_id?: string;
   corporation_id: string;
-  worker_ids: string[];
-  workers_count: number;
+  worker_ids?: string[];
+  workers_count?: number;
   notes?: string;
 }
 

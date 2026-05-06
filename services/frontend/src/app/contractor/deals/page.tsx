@@ -130,7 +130,7 @@ export default function ContractorDealsPage() {
               )}
               {filter === 'all' && (
                 <Button asChild variant="outline" size="sm">
-                  <Link href="/contractor/requests/new">+ בקשה חדשה</Link>
+                  <Link href="/contractor/find">+ חיפוש עובדים</Link>
                 </Button>
               )}
             </div>
