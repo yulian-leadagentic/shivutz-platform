@@ -30,8 +30,13 @@ const CONTRACTOR_NAV: NavItem[] = [
   { label: 'איתור עובדים', href: '/contractor/searches',  icon: ClipboardList,
     sub: [{ label: '+ חדש', href: '/contractor/find' }] },
   { label: 'עסקאות',      href: '/contractor/deals',     icon: Handshake },
-  { label: 'צוות',        href: '/contractor/users',     icon: Users },
-  { label: 'מסמכים',      href: '/contractor/documents', icon: FileText },
+  // Wave 4 — צוות + מסמכים now grouped under ניהול on the dashboard.
+  // Kept directly in the sidebar for power-user shortcuts.
+  { label: 'ניהול',       href: '/contractor/manage',    icon: Users,
+    sub: [
+      { label: 'צוות',     href: '/contractor/users' },
+      { label: 'מסמכים',   href: '/contractor/documents' },
+    ] },
 ];
 
 const CORPORATION_NAV: NavItem[] = [

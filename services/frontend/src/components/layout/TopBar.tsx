@@ -11,6 +11,7 @@ const pageTitles: Record<string, string> = {
   '/contractor/searches':      'איתור עובדים',
   '/contractor/find':          'איתור עובדים חדש',
   '/contractor/deals':         'עסקאות',
+  '/contractor/manage':        'ניהול',
   '/contractor/users':         'ניהול צוות',
   '/contractor/documents':     'מסמכים',
   '/corporation/dashboard':    'לוח בקרה',

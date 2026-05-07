@@ -1,14 +1,16 @@
 'use client';
 
-// Wave 3 — Step 3: search form + match results.
+// Wave 4 (2026-05-07) — search form simplified per UX feedback:
 //
-// Required: quantity, start_date.
-// Optional: end_date, region, min_experience, origin_preference,
-//           required_languages.
-//
-// Submit creates a worker_search row, runs the matcher, displays
-// CorpMatch results inline. Each CorpMatch row has a "send inquiry"
-// CTA that creates a deal (existing flow).
+// Form is FLAT (no collapsible "advanced" section). Field order is the
+// order users actually think about it:
+//   1. כמות עובדים        (required)
+//   2. ארץ מוצא          (multi-select pills, optional)
+//   3. ניסיון            (range pills, optional, like the worker form)
+//   4. תאריך תחילת עבודה  (required)
+//   5. זמן תעסוקה        (duration pills — auto-derives end_date)
+//   6. אזור עבודה         (optional, dropdown — kept tucked since most
+//                        contractors leave it blank)
 
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
@@ -18,6 +20,7 @@ import { enumApi } from '@/lib/api/enums';
 import { searchApi } from '@/lib/api/jobs';
 import { dealApi } from '@/lib/api/deals';
 import { ProfessionIcon } from '@/features/searches/ProfessionIcon';
+import { EXPERIENCE_RANGES, EXPERIENCE_LOWER_MONTHS } from '@/i18n/he';
 import type {
   CorpMatch,
   Profession,
@@ -29,6 +32,23 @@ const RECRUITMENT_LABELS: Record<RecruitmentType, string> = {
   foreign:  'מחו״ל',
 };
 
+// Employment-duration pill options. End date is computed as
+// start_date + duration_months.
+const DURATIONS = [
+  { code: '1',   label: 'חודש' },
+  { code: '3',   label: '3 חודשים' },
+  { code: '6',   label: '6 חודשים' },
+  { code: '12',  label: 'שנה' },
+  { code: '24',  label: 'שנתיים+' },
+] as const;
+
+function addMonths(iso: string, months: number): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  d.setMonth(d.getMonth() + months);
+  return d.toISOString().slice(0, 10);
+}
+
 export default function FindFormPage() {
   const { recruitment, profession } = useParams<{
     recruitment: RecruitmentType;
@@ -36,7 +56,7 @@ export default function FindFormPage() {
   }>();
   const router = useRouter();
 
-  // ── Reference data (professions, regions, origins) ─────────────────
+  // ── Reference data ────────────────────────────────────────────────
   const [profs, setProfs] = useState<Profession[]>([]);
   const [regions, setRegions] = useState<{ code: string; name_he: string }[]>([]);
   const [origins, setOrigins] = useState<{ code: string; name_he: string }[]>([]);
@@ -52,19 +72,19 @@ export default function FindFormPage() {
   const profDef = useMemo(() => profs.find((p) => p.code === profession), [profs, profession]);
 
   // ── Form state ────────────────────────────────────────────────────
-  const [quantity, setQuantity] = useState<number>(1);
-  const [startDate, setStartDate] = useState<string>('');
-  const [endDate, setEndDate] = useState<string>('');
-  const [region, setRegion] = useState<string>('');
-  const [minExpYears, setMinExpYears] = useState<number>(0);
-  const [originPref, setOriginPref] = useState<string[]>([]);
+  const [quantity, setQuantity]       = useState<number>(1);
+  const [originPref, setOriginPref]   = useState<string[]>([]);
+  const [expRange, setExpRange]       = useState<string>(''); // '' | '0-6' | …
+  const [startDate, setStartDate]     = useState<string>('');
+  const [durationCode, setDurationCode] = useState<string>('3');
+  const [region, setRegion]           = useState<string>('');
 
   // ── UI state ──────────────────────────────────────────────────────
-  const [submitting, setSubmitting] = useState(false);
-  const [matching, setMatching] = useState(false);
-  const [searchId, setSearchId] = useState<string | null>(null);
-  const [corps, setCorps] = useState<CorpMatch[] | null>(null);
-  const [error, setError] = useState<string>('');
+  const [submitting, setSubmitting]   = useState(false);
+  const [matching, setMatching]       = useState(false);
+  const [searchId, setSearchId]       = useState<string | null>(null);
+  const [corps, setCorps]             = useState<CorpMatch[] | null>(null);
+  const [error, setError]             = useState<string>('');
   const [sentInquiry, setSentInquiry] = useState<Record<string, boolean>>({});
 
   function toggleOrigin(code: string) {
@@ -76,8 +96,12 @@ export default function FindFormPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError('');
-    if (quantity < 1)        { setError('כמות חייבת להיות לפחות 1'); return; }
-    if (!startDate)          { setError('יש לבחור תאריך התחלה'); return; }
+    if (quantity < 1) { setError('כמות חייבת להיות לפחות 1'); return; }
+    if (!startDate)   { setError('יש לבחור תאריך התחלה'); return; }
+
+    const months = parseInt(durationCode, 10) || 3;
+    const endDate = addMonths(startDate, months);
+    const minExp  = expRange ? (EXPERIENCE_LOWER_MONTHS[expRange] ?? 0) : 0;
 
     setSubmitting(true);
     try {
@@ -88,7 +112,7 @@ export default function FindFormPage() {
         start_date:         startDate,
         end_date:           endDate || undefined,
         region:             region || undefined,
-        min_experience:     minExpYears * 12,
+        min_experience:     minExp,
         origin_preference:  originPref,
         required_languages: [],
       });
@@ -141,94 +165,131 @@ export default function FindFormPage() {
       </header>
 
       {!corps && (
-        <form onSubmit={handleSubmit} className="space-y-4 bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1">
-              <label className="text-xs font-semibold text-slate-700">
-                כמות עובדים <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="number" min={1} max={50}
-                value={quantity}
-                onChange={(e) => setQuantity(parseInt(e.target.value || '1', 10))}
-                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none"
-                required
-              />
+        <form
+          onSubmit={handleSubmit}
+          className="space-y-5 bg-white border border-slate-200 rounded-2xl p-5 shadow-sm"
+        >
+          {/* 1. Quantity */}
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-slate-700">
+              כמות עובדים <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="number" min={1} max={50}
+              value={quantity}
+              onChange={(e) => setQuantity(parseInt(e.target.value || '1', 10))}
+              className="w-32 border border-slate-300 rounded-lg px-3 py-2 text-sm
+                         focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none"
+              required
+            />
+          </div>
+
+          {/* 2. Country of origin (first per spec) */}
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-slate-700">ארץ מוצא</label>
+            <div className="flex flex-wrap gap-1.5">
+              {origins.map((o) => {
+                const active = originPref.includes(o.code);
+                return (
+                  <button
+                    type="button"
+                    key={o.code}
+                    onClick={() => toggleOrigin(o.code)}
+                    className={`text-xs px-3 py-1.5 rounded-full border transition ${
+                      active
+                        ? 'bg-brand-600 text-white border-brand-600'
+                        : 'bg-white text-slate-700 border-slate-300 hover:border-brand-400'
+                    }`}
+                  >
+                    {o.name_he}
+                  </button>
+                );
+              })}
             </div>
+          </div>
+
+          {/* 3. Experience range pills */}
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-slate-700">ניסיון</label>
+            <div className="flex flex-wrap gap-1.5">
+              <button
+                type="button"
+                onClick={() => setExpRange('')}
+                className={`text-xs px-3 py-1.5 rounded-full border transition ${
+                  expRange === ''
+                    ? 'bg-slate-700 text-white border-slate-700'
+                    : 'bg-white text-slate-700 border-slate-300 hover:border-brand-400'
+                }`}
+              >
+                ללא הגבלה
+              </button>
+              {EXPERIENCE_RANGES.map((r) => (
+                <button
+                  type="button"
+                  key={r.code}
+                  onClick={() => setExpRange(r.code)}
+                  className={`text-xs px-3 py-1.5 rounded-full border transition ${
+                    expRange === r.code
+                      ? 'bg-brand-600 text-white border-brand-600'
+                      : 'bg-white text-slate-700 border-slate-300 hover:border-brand-400'
+                  }`}
+                >
+                  {r.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 4 + 5 — start date + employment duration, side-by-side */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1">
               <label className="text-xs font-semibold text-slate-700">
-                תאריך התחלה <span className="text-red-500">*</span>
+                תאריך תחילת עבודה <span className="text-red-500">*</span>
               </label>
               <input
                 type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
-                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none"
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm
+                           focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none"
                 required
               />
             </div>
-          </div>
-
-          <details className="border border-slate-200 rounded-lg p-3 bg-slate-50/50">
-            <summary className="text-sm font-medium text-slate-700 cursor-pointer">
-              שדות נוספים (רשות)
-            </summary>
-            <div className="grid grid-cols-2 gap-4 mt-3">
-              <div className="space-y-1">
-                <label className="text-xs font-semibold text-slate-600">תאריך סיום</label>
-                <input
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-xs font-semibold text-slate-600">אזור עבודה</label>
-                <select
-                  value={region}
-                  onChange={(e) => setRegion(e.target.value)}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white outline-none"
-                >
-                  <option value="">לא צויין</option>
-                  {regions.map((r) => (
-                    <option key={r.code} value={r.code}>{r.name_he}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="space-y-1 col-span-2">
-                <label className="text-xs font-semibold text-slate-600">מינימום ניסיון (שנים)</label>
-                <input
-                  type="number" min={0} max={30}
-                  value={minExpYears}
-                  onChange={(e) => setMinExpYears(parseInt(e.target.value || '0', 10))}
-                  className="w-32 border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none"
-                />
-              </div>
-              <div className="space-y-1 col-span-2">
-                <label className="text-xs font-semibold text-slate-600">העדפת מדינות מוצא</label>
-                <div className="flex flex-wrap gap-1.5 mt-1">
-                  {origins.map((o) => {
-                    const active = originPref.includes(o.code);
-                    return (
-                      <button
-                        type="button"
-                        key={o.code}
-                        onClick={() => toggleOrigin(o.code)}
-                        className={`text-xs px-2.5 py-1 rounded-full border transition ${
-                          active
-                            ? 'bg-brand-600 text-white border-brand-600'
-                            : 'bg-white text-slate-700 border-slate-300 hover:border-brand-400'
-                        }`}
-                      >
-                        {o.name_he}
-                      </button>
-                    );
-                  })}
-                </div>
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-slate-700">זמן תעסוקה</label>
+              <div className="flex flex-wrap gap-1.5">
+                {DURATIONS.map((d) => (
+                  <button
+                    type="button"
+                    key={d.code}
+                    onClick={() => setDurationCode(d.code)}
+                    className={`text-xs px-3 py-1.5 rounded-full border transition ${
+                      durationCode === d.code
+                        ? 'bg-brand-600 text-white border-brand-600'
+                        : 'bg-white text-slate-700 border-slate-300 hover:border-brand-400'
+                    }`}
+                  >
+                    {d.label}
+                  </button>
+                ))}
               </div>
             </div>
-          </details>
+          </div>
+
+          {/* 6. Region (last — least common to set) */}
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-slate-700">אזור עבודה</label>
+            <select
+              value={region}
+              onChange={(e) => setRegion(e.target.value)}
+              className="w-full sm:w-64 border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white outline-none"
+            >
+              <option value="">לא צויין</option>
+              {regions.map((r) => (
+                <option key={r.code} value={r.code}>{r.name_he}</option>
+              ))}
+            </select>
+          </div>
 
           {error && <div className="text-sm text-red-600">{error}</div>}
 
@@ -249,9 +310,7 @@ export default function FindFormPage() {
 
       {(matching || corps) && (
         <section className="space-y-3">
-          <h2 className="text-lg font-bold text-slate-900">
-            התאמות מתאגידים
-          </h2>
+          <h2 className="text-lg font-bold text-slate-900">התאמות מתאגידים</h2>
 
           {matching && !corps && (
             <div className="text-center text-sm text-slate-500 py-12">
