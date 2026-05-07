@@ -78,7 +78,7 @@ export default function FindFormPage() {
   // ── Form state ────────────────────────────────────────────────────
   const [quantity, setQuantity]       = useState<number>(1);
   const [originPref, setOriginPref]   = useState<string[]>([]);
-  const [expRange, setExpRange]       = useState<string>(''); // '' | '0-6' | …
+  const [expRanges, setExpRanges]     = useState<string[]>([]); // multi-select
   const [startDate, setStartDate]     = useState<string>('');
   const [durationCode, setDurationCode] = useState<string>('3');
   const [region, setRegion]           = useState<string>('');
@@ -97,6 +97,12 @@ export default function FindFormPage() {
     );
   }
 
+  function toggleExpRange(code: string) {
+    setExpRanges((prev) =>
+      prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code]
+    );
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError('');
@@ -105,7 +111,13 @@ export default function FindFormPage() {
 
     const months = parseInt(durationCode, 10) || 3;
     const endDate = addMonths(startDate, months);
-    const minExp  = expRange ? (EXPERIENCE_LOWER_MONTHS[expRange] ?? 0) : 0;
+    // Multi-select: take the LOWEST lower-bound across all selected
+    // ranges as the matcher's `min_experience`. The matcher only knows
+    // about a single floor today, so multi-select is interpreted as
+    // "any of these or higher" — looser than single-select.
+    const minExp  = expRanges.length === 0
+      ? 0
+      : Math.min(...expRanges.map((r) => EXPERIENCE_LOWER_MONTHS[r] ?? 0));
 
     setSubmitting(true);
     try {
@@ -228,35 +240,40 @@ export default function FindFormPage() {
             </div>
           </div>
 
-          {/* 3. Experience range pills */}
+          {/* 3. Experience range pills — multi-select */}
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1.5">ניסיון</label>
+            <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+              ניסיון <span className="text-[10px] font-normal text-slate-500">(אפשר לבחור כמה)</span>
+            </label>
             <div className="flex flex-wrap gap-1.5">
               <button
                 type="button"
-                onClick={() => setExpRange('')}
+                onClick={() => setExpRanges([])}
                 className={`text-xs px-3 py-1.5 rounded-full border transition ${
-                  expRange === ''
+                  expRanges.length === 0
                     ? 'bg-slate-700 text-white border-slate-700'
                     : 'bg-white text-slate-700 border-slate-300 hover:border-brand-400'
                 }`}
               >
                 ללא הגבלה
               </button>
-              {EXPERIENCE_RANGES.map((r) => (
-                <button
-                  type="button"
-                  key={r.code}
-                  onClick={() => setExpRange(r.code)}
-                  className={`text-xs px-3 py-1.5 rounded-full border transition ${
-                    expRange === r.code
-                      ? 'bg-brand-600 text-white border-brand-600'
-                      : 'bg-white text-slate-700 border-slate-300 hover:border-brand-400'
-                  }`}
-                >
-                  {r.label}
-                </button>
-              ))}
+              {EXPERIENCE_RANGES.map((r) => {
+                const active = expRanges.includes(r.code);
+                return (
+                  <button
+                    type="button"
+                    key={r.code}
+                    onClick={() => toggleExpRange(r.code)}
+                    className={`text-xs px-3 py-1.5 rounded-full border transition ${
+                      active
+                        ? 'bg-brand-600 text-white border-brand-600'
+                        : 'bg-white text-slate-700 border-slate-300 hover:border-brand-400'
+                    }`}
+                  >
+                    {r.label}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -335,53 +352,93 @@ export default function FindFormPage() {
         </div>
       )}
 
-      {corps && (
+      {corps && corps.length === 0 && (
+        <div className="text-sm text-slate-600 bg-amber-50 border border-amber-200 rounded-lg p-4">
+          לא נמצאו התאמות זמינות. נסה לרכך את התנאים או חזור מאוחר יותר.
+        </div>
+      )}
+
+      {corps && corps.length > 0 && (
         <section className="space-y-4">
-          <h2 className="text-lg font-bold text-slate-900">התאמות מתאגידים</h2>
-
-          {corps.length === 0 && (
-            <div className="text-sm text-slate-600 bg-amber-50 border border-amber-200 rounded-lg p-4">
-              לא נמצאו התאמות זמינות. נסה לרכך את התנאים או חזור מאוחר יותר.
+          {/* WOW celebratory header — emerald gradient with sparkle + count */}
+          <div className="relative overflow-hidden rounded-2xl
+                          bg-gradient-to-br from-emerald-500 via-emerald-600 to-teal-600
+                          text-white p-5 shadow-lg">
+            <div className="absolute -top-6 -end-6 w-32 h-32 bg-white/10 rounded-full blur-2xl" />
+            <div className="absolute -bottom-8 -start-4 w-24 h-24 bg-white/10 rounded-full blur-2xl" />
+            <div className="relative flex items-center gap-3">
+              <div className="text-3xl drop-shadow-sm" aria-hidden>🎉</div>
+              <div>
+                <div className="text-lg font-bold leading-tight">
+                  מצאנו {corps.length} {corps.length === 1 ? 'התאמה' : 'התאמות'} עבורך
+                </div>
+                <div className="text-sm text-emerald-50/90 mt-0.5">
+                  לחץ &quot;צור קשר עם התאגיד&quot; ליד התאגיד שמתאים לך
+                </div>
+              </div>
             </div>
-          )}
+          </div>
 
-          {corps.length > 0 && (
-            <ul className="space-y-2">
-              {corps.map((c) => (
+          <ul className="space-y-2.5">
+            {corps.map((c, idx) => {
+              const isTop = idx === 0;
+              return (
                 <li
                   key={c.corporation_id}
-                  className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex items-center justify-between gap-3"
+                  className={`relative bg-white rounded-2xl p-4 sm:p-5 shadow-sm
+                              flex flex-col sm:flex-row sm:items-center justify-between gap-3
+                              ${isTop
+                                ? 'border-2 border-emerald-400 ring-4 ring-emerald-100'
+                                : 'border border-slate-200'}`}
                 >
-                  <div className="min-w-0">
-                    <div className="font-semibold text-slate-900 truncate">
+                  {isTop && (
+                    <div className="absolute -top-2.5 end-4 inline-flex items-center gap-1
+                                    bg-emerald-500 text-white text-[10px] font-bold
+                                    uppercase tracking-wide px-2.5 py-1 rounded-full
+                                    shadow-md">
+                      ⭐ ההתאמה הטובה ביותר
+                    </div>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <div className="font-bold text-slate-900 text-base sm:text-lg truncate">
                       {c.corporation_name ?? 'תאגיד'}
                     </div>
-                    <div className="text-xs text-slate-500 mt-0.5">
-                      {c.filled_workers}/{c.needed} עובדים זמינים
-                      <span className="mx-1.5">•</span>
-                      {Math.round(c.fill_percentage)}% מילוי
+                    <div className="text-xs text-slate-500 mt-1 flex flex-wrap gap-x-3 gap-y-1">
+                      <span className="inline-flex items-center gap-1">
+                        <span className="font-semibold text-slate-700">{c.filled_workers}/{c.needed}</span>
+                        עובדים זמינים
+                      </span>
+                      <span className="inline-flex items-center gap-1">
+                        <span className={`font-semibold ${c.is_complete ? 'text-emerald-600' : 'text-amber-600'}`}>
+                          {Math.round(c.fill_percentage)}%
+                        </span>
+                        מילוי
+                      </span>
                     </div>
                   </div>
                   <button
                     onClick={() => handleSendInquiry(c.corporation_id)}
                     disabled={!!sentInquiry[c.corporation_id]}
-                    className={`text-xs font-semibold px-3 py-1.5 rounded-lg whitespace-nowrap transition ${
+                    className={`px-4 py-2.5 rounded-lg whitespace-nowrap font-semibold text-sm
+                                transition shrink-0 ${
                       sentInquiry[c.corporation_id]
                         ? 'bg-emerald-100 text-emerald-700 cursor-default'
-                        : 'bg-brand-600 hover:bg-brand-500 text-white'
+                        : isTop
+                          ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-md hover:shadow-lg animate-pulse'
+                          : 'bg-brand-600 hover:bg-brand-500 text-white'
                     }`}
                   >
-                    {sentInquiry[c.corporation_id] ? '✓ פנייה נשלחה' : 'שלח פנייה'}
+                    {sentInquiry[c.corporation_id] ? '✓ נשלח לתאגיד' : 'צור קשר עם התאגיד'}
                   </button>
                 </li>
-              ))}
-            </ul>
-          )}
+              );
+            })}
+          </ul>
 
           {/* Post-results "what next" tiles */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
             <Link
-              href="/contractor/find"
+              href={`/contractor/find/${recruitment}`}
               className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white
                          p-4 hover:border-brand-500 hover:bg-brand-50/30 transition shadow-sm"
             >

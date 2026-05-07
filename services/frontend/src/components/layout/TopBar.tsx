@@ -8,8 +8,8 @@ import MobileNavDrawer from './MobileNavDrawer';
 
 const pageTitles: Record<string, string> = {
   '/contractor/dashboard':     'לוח בקרה',
-  '/contractor/searches':      'איתור עובדים',
-  '/contractor/find':          'איתור עובדים חדש',
+  '/contractor/searches':      'סטטוס בקשות',
+  '/contractor/find':          'חיפוש חדש',
   '/contractor/deals':         'עסקאות',
   '/contractor/manage':        'ניהול',
   '/contractor/users':         'ניהול צוות',

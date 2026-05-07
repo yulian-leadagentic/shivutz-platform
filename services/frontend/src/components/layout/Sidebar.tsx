@@ -27,11 +27,13 @@ interface NavItem {
 
 const CONTRACTOR_NAV: NavItem[] = [
   { label: 'לוח בקרה',    href: '/contractor/dashboard', icon: LayoutDashboard },
-  { label: 'איתור עובדים', href: '/contractor/searches',  icon: ClipboardList,
-    sub: [{ label: '+ חדש', href: '/contractor/find' }] },
+  // Wave 4 polish — חיפוש חדש standalone (no parent), goes straight
+  // to the recruitment-category page.
+  { label: 'חיפוש חדש',   href: '/contractor/find',      icon: Plus },
+  // Renamed from "איתור עובדים" — now this entry is purely the
+  // status-tracking list of past searches.
+  { label: 'סטטוס בקשות', href: '/contractor/searches',  icon: ClipboardList },
   { label: 'עסקאות',      href: '/contractor/deals',     icon: Handshake },
-  // Wave 4 — צוות + מסמכים now grouped under ניהול on the dashboard.
-  // Kept directly in the sidebar for power-user shortcuts.
   { label: 'ניהול',       href: '/contractor/manage',    icon: Users,
     sub: [
       { label: 'צוות',     href: '/contractor/users' },

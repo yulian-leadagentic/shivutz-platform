@@ -154,7 +154,7 @@ export default function SearchDetailPage() {
                       : 'bg-brand-600 hover:bg-brand-500 text-white'
                   }`}
                 >
-                  {sentInquiry[c.corporation_id] ? '✓ פנייה נשלחה' : 'שלח פנייה'}
+                  {sentInquiry[c.corporation_id] ? '✓ נשלח לתאגיד' : 'צור קשר עם התאגיד'}
                 </button>
               </li>
             ))}
