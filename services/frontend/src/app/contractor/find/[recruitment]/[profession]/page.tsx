@@ -353,8 +353,8 @@ export default function FindFormPage() {
       )}
 
       {corps && corps.length === 0 && (
-        <div className="text-sm text-slate-600 bg-amber-50 border border-amber-200 rounded-lg p-4">
-          לא נמצאו התאמות זמינות. נסה לרכך את התנאים או חזור מאוחר יותר.
+        <div className="text-sm text-slate-700 bg-sky-50 border border-sky-200 rounded-lg p-4">
+          לא נמצאו התאמות זמינות. המערכת תמשיך לחפש התאמות ותעדכן אותך בהקדם.
         </div>
       )}
 
