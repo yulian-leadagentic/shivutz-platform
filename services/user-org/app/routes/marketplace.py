@@ -428,3 +428,4 @@ def submit_lead(body: LeadCreate):
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         conn.close()
+# Wave 4 deploy probe — 2026-05-07T09:12:51Z

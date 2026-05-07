@@ -169,3 +169,4 @@ for (const [prefix, target] of Object.entries(services)) {
 
 const PORT = process.env.GATEWAY_PORT || 3000;
 app.listen(PORT, () => console.log(`API Gateway listening on ${PORT}`));
+// Wave 4 deploy probe — 2026-05-07T09:12:51Z

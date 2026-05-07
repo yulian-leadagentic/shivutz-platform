@@ -77,3 +77,4 @@ func getEnv(key, fallback string) string {
 	}
 	return fallback
 }
+// Wave 4 deploy probe — 2026-05-07T09:12:51Z
