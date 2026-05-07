@@ -49,17 +49,20 @@ export default function ProfessionTilesPage() {
               key={p.code}
               href={`/contractor/find/${recruitment}/${p.code}`}
               className="group flex flex-col items-center justify-center text-center
-                         rounded-2xl border border-slate-200 bg-white px-3 py-5
+                         rounded-2xl border border-slate-200 bg-white p-2
                          hover:border-brand-500 hover:shadow-md hover:bg-brand-50/30
                          active:scale-[0.98] transition shadow-sm aspect-square"
             >
-              <ProfessionIcon
-                code={p.code}
-                size={88}
-                alt={p.name_he}
-                className="mb-2 object-contain"
-              />
-              <div className="text-sm font-semibold text-slate-900 leading-tight">
+              {/* Icon takes ~75% of the tile, label sits below in remaining space */}
+              <div className="flex-1 flex items-center justify-center w-full min-h-0">
+                <ProfessionIcon
+                  code={p.code}
+                  size={160}
+                  alt={p.name_he}
+                  className="object-contain w-full h-full max-w-full max-h-full"
+                />
+              </div>
+              <div className="text-sm font-semibold text-slate-900 leading-tight pb-1">
                 {p.name_he}
               </div>
             </Link>
