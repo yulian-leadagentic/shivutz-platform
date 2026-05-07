@@ -15,7 +15,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ChevronRight, Loader2, Search as SearchIcon } from 'lucide-react';
+import {
+  ChevronRight, Loader2, Search as SearchIcon, Sparkles,
+  LayoutDashboard, Plus,
+} from 'lucide-react';
 import { enumApi } from '@/lib/api/enums';
 import { searchApi } from '@/lib/api/jobs';
 import { dealApi } from '@/lib/api/deals';
@@ -117,14 +120,22 @@ export default function FindFormPage() {
         required_languages: [],
       });
       setSearchId(created.id);
+      setSubmitting(false);
 
+      // Show the matching animation for AT LEAST 5 seconds even if the
+      // matcher returns sooner — gives the user a moment to see what's
+      // happening + sells the AI-search story.
       setMatching(true);
-      const m = await searchApi.match(created.id);
+      const minDelay = new Promise((r) => setTimeout(r, 5000));
+      const [m] = await Promise.all([
+        searchApi.match(created.id),
+        minDelay,
+      ]);
       setCorps(m);
     } catch (e) {
       setError((e as Error).message ?? 'שגיאה ביצירת החיפוש');
-    } finally {
       setSubmitting(false);
+    } finally {
       setMatching(false);
     }
   }
@@ -164,14 +175,22 @@ export default function FindFormPage() {
         </div>
       </header>
 
-      {!corps && (
+      {!corps && !matching && (
         <form
           onSubmit={handleSubmit}
           className="space-y-5 bg-white border border-slate-200 rounded-2xl p-5 shadow-sm"
         >
+          {/* AI hint banner */}
+          <div className="flex items-start gap-2 bg-brand-50/60 border border-brand-100 rounded-lg px-3 py-2.5">
+            <Sparkles className="w-4 h-4 text-brand-600 shrink-0 mt-0.5" />
+            <p className="text-xs text-slate-700 leading-relaxed">
+              ככל שתספק יותר פרטים, מנוע ה-AI שלנו יימצא התאמה יותר מדויקת
+            </p>
+          </div>
+
           {/* 1. Quantity */}
-          <div className="space-y-1">
-            <label className="text-xs font-semibold text-slate-700">
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1.5">
               כמות עובדים <span className="text-red-500">*</span>
             </label>
             <input
@@ -185,8 +204,8 @@ export default function FindFormPage() {
           </div>
 
           {/* 2. Country of origin (first per spec) */}
-          <div className="space-y-2">
-            <label className="text-xs font-semibold text-slate-700">ארץ מוצא</label>
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1.5">ארץ מוצא</label>
             <div className="flex flex-wrap gap-1.5">
               {origins.map((o) => {
                 const active = originPref.includes(o.code);
@@ -209,8 +228,8 @@ export default function FindFormPage() {
           </div>
 
           {/* 3. Experience range pills */}
-          <div className="space-y-2">
-            <label className="text-xs font-semibold text-slate-700">ניסיון</label>
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1.5">ניסיון</label>
             <div className="flex flex-wrap gap-1.5">
               <button
                 type="button"
@@ -242,8 +261,8 @@ export default function FindFormPage() {
 
           {/* 4 + 5 — start date + employment duration, side-by-side */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-1">
-              <label className="text-xs font-semibold text-slate-700">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                 תאריך תחילת עבודה <span className="text-red-500">*</span>
               </label>
               <input
@@ -255,8 +274,8 @@ export default function FindFormPage() {
                 required
               />
             </div>
-            <div className="space-y-1">
-              <label className="text-xs font-semibold text-slate-700">זמן תעסוקה</label>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">זמן תעסוקה</label>
               <div className="flex flex-wrap gap-1.5">
                 {DURATIONS.map((d) => (
                   <button
@@ -277,8 +296,8 @@ export default function FindFormPage() {
           </div>
 
           {/* 6. Region (last — least common to set) */}
-          <div className="space-y-1">
-            <label className="text-xs font-semibold text-slate-700">אזור עבודה</label>
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1.5">אזור עבודה</label>
             <select
               value={region}
               onChange={(e) => setRegion(e.target.value)}
@@ -308,24 +327,22 @@ export default function FindFormPage() {
         </form>
       )}
 
-      {(matching || corps) && (
-        <section className="space-y-3">
+      {/* Matching animation — shown for ≥5 seconds (see handleSubmit) */}
+      {matching && (
+        <SearchAnimation profession={profDef?.name_he ?? profession} />
+      )}
+
+      {corps && (
+        <section className="space-y-4">
           <h2 className="text-lg font-bold text-slate-900">התאמות מתאגידים</h2>
 
-          {matching && !corps && (
-            <div className="text-center text-sm text-slate-500 py-12">
-              <Loader2 className="w-5 h-5 animate-spin inline ml-2" />
-              מחפש התאמות...
-            </div>
-          )}
-
-          {corps && corps.length === 0 && (
+          {corps.length === 0 && (
             <div className="text-sm text-slate-600 bg-amber-50 border border-amber-200 rounded-lg p-4">
               לא נמצאו התאמות זמינות. נסה לרכך את התנאים או חזור מאוחר יותר.
             </div>
           )}
 
-          {corps && corps.length > 0 && (
+          {corps.length > 0 && (
             <ul className="space-y-2">
               {corps.map((c) => (
                 <li
@@ -358,6 +375,36 @@ export default function FindFormPage() {
             </ul>
           )}
 
+          {/* Post-results "what next" tiles */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+            <Link
+              href="/contractor/find"
+              className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white
+                         p-4 hover:border-brand-500 hover:bg-brand-50/30 transition shadow-sm"
+            >
+              <div className="w-10 h-10 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center shrink-0">
+                <Plus className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="text-sm font-bold text-slate-900">חיפוש נוסף</div>
+                <div className="text-xs text-slate-500">חזרה לבחירת מקצוע</div>
+              </div>
+            </Link>
+            <Link
+              href="/contractor/dashboard"
+              className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white
+                         p-4 hover:border-brand-500 hover:bg-brand-50/30 transition shadow-sm"
+            >
+              <div className="w-10 h-10 rounded-lg bg-slate-100 text-slate-600 flex items-center justify-center shrink-0">
+                <LayoutDashboard className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="text-sm font-bold text-slate-900">לוח בקרה</div>
+                <div className="text-xs text-slate-500">סקירת המצב הכללי</div>
+              </div>
+            </Link>
+          </div>
+
           {searchId && (
             <button
               onClick={() => router.push(`/contractor/searches/${searchId}`)}
@@ -368,6 +415,64 @@ export default function FindFormPage() {
           )}
         </section>
       )}
+    </div>
+  );
+}
+
+// ── SearchAnimation ─────────────────────────────────────────────────────
+//
+// 5-second "AI is searching" animation that plays while we wait on the
+// matcher. Three rotating status hints + a pulsing magnifying glass +
+// shimmer skeleton rows (so the user sees the result-list shape coming).
+function SearchAnimation({ profession }: { profession: string }) {
+  const HINTS = [
+    'סורקים תאגידים מורשים...',
+    'בודקים זמינות עובדים לפי המקצוע...',
+    'מצליבים אזור, ניסיון ושפות...',
+    'מדרגים את ההתאמות הטובות ביותר...',
+  ];
+  const [hintIdx, setHintIdx] = useState(0);
+
+  useEffect(() => {
+    const t = setInterval(() => setHintIdx((i) => (i + 1) % HINTS.length), 1300);
+    return () => clearInterval(t);
+  }, []);
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-5">
+      <div className="flex items-center gap-3">
+        <div className="relative w-12 h-12 rounded-full bg-brand-50 flex items-center justify-center shrink-0">
+          <SearchIcon className="w-5 h-5 text-brand-600" />
+          <span className="absolute inset-0 rounded-full border-2 border-brand-500 animate-ping" />
+        </div>
+        <div className="min-w-0">
+          <div className="text-sm font-bold text-slate-900 inline-flex items-center gap-1.5">
+            <Sparkles className="w-3.5 h-3.5 text-brand-600" />
+            מנוע ה-AI מחפש התאמות
+          </div>
+          <div className="text-xs text-slate-500 mt-0.5 truncate">{HINTS[hintIdx]}</div>
+        </div>
+      </div>
+
+      <div className="space-y-2 pt-1">
+        {[0, 1, 2].map((i) => (
+          <div
+            key={i}
+            className="flex items-center justify-between gap-3 border border-slate-100 rounded-xl p-3 animate-pulse"
+            style={{ animationDelay: `${i * 200}ms` }}
+          >
+            <div className="flex-1 min-w-0 space-y-1.5">
+              <div className="h-3 bg-slate-200 rounded w-1/2" />
+              <div className="h-2.5 bg-slate-100 rounded w-1/3" />
+            </div>
+            <div className="h-6 w-20 bg-slate-100 rounded-lg" />
+          </div>
+        ))}
+      </div>
+
+      <div className="text-center text-[11px] text-slate-400">
+        חיפוש על מקצוע: {profession}
+      </div>
     </div>
   );
 }

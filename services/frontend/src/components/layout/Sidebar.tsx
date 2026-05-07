@@ -4,7 +4,7 @@ import React from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
-  LayoutDashboard, ClipboardList, Handshake,
+  Home, LayoutDashboard, ClipboardList, Handshake,
   LogOut, Plus, Users, FileText,
 } from 'lucide-react';
 import { clearTokens, getAccessToken, decodeJwtPayload } from '@/lib/auth';
@@ -61,19 +61,29 @@ export default function Sidebar() {
   return (
     <aside className="flex flex-col w-60 min-h-screen bg-slate-900 shrink-0">
 
-      {/* Logo */}
-      <div className="flex items-center h-14 px-5 border-b border-slate-800">
+      {/* Logo — clickable, returns to public landing */}
+      <Link href="/" className="flex items-center h-14 px-5 border-b border-slate-800 hover:bg-slate-800/40 transition-colors">
         <div className="flex items-center gap-2.5">
           <div className="w-7 h-7 rounded-lg bg-primary-600 flex items-center justify-center shrink-0">
             <span className="text-white text-xs font-bold">ש</span>
           </div>
           <span className="text-white text-base font-semibold tracking-tight">שיבוץ</span>
         </div>
-      </div>
+      </Link>
 
       {/* Nav */}
       <nav className="flex-1 py-3 overflow-y-auto sidebar-scroll">
         <ul className="space-y-0.5 px-2">
+          {/* Home link to public landing — first item in every shell */}
+          <li>
+            <Link
+              href="/"
+              className="group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-400 hover:bg-slate-800/60 hover:text-slate-200 transition-colors"
+            >
+              <Home className="h-4 w-4 shrink-0 text-slate-500 group-hover:text-slate-300" />
+              <span>דף הבית</span>
+            </Link>
+          </li>
           {navItems.map((item) => {
             const isActive =
               pathname === item.href ||
