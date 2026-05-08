@@ -19,14 +19,22 @@ const config: Config = {
           900: '#312e81',
           950: '#1e1b4b',
         },
-        // Keep brand alias for backward compat
+        // Keep brand alias for backward compat. Filled out the
+        // mid-shades (200/300/400/800/950) so utilities like
+        // `text-brand-300` resolve — previously they were silently
+        // dropped, causing invisible text on dark surfaces.
         brand: {
           50:  '#eef2ff',
           100: '#e0e7ff',
+          200: '#c7d2fe',
+          300: '#a5b4fc',
+          400: '#818cf8',
           500: '#6366f1',
           600: '#4f46e5',
           700: '#4338ca',
+          800: '#3730a3',
           900: '#312e81',
+          950: '#1e1b4b',
         },
         // Surface tokens
         surface: {
