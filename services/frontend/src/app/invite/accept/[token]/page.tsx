@@ -9,6 +9,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { HomeLink } from '@/components/HomeLink';
 
 const ROLE_LABELS: Record<string, string> = {
   owner: 'בעלים', admin: 'מנהל', operator: 'מפעיל', viewer: 'צופה',
@@ -100,7 +101,10 @@ export default function InviteAcceptPage() {
   const EntityIcon = meta?.entity_type === 'corporation' ? Building2 : HardHat;
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 px-4 py-6">
+      <div className="w-full max-w-md mb-3 flex justify-end">
+        <HomeLink />
+      </div>
       <div className="w-full max-w-md">
         <div className="h-2 rounded-t-xl bg-gradient-to-e from-brand-600 to-brand-400" />
         <Card className="rounded-t-none shadow-md">

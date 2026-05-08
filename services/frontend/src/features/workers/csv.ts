@@ -11,8 +11,12 @@ export const EXCEL_COLUMNS = [
   'מדינת מוצא (קוד)', 'ויזה תוקף עד', 'מספר עובד',
 ];
 
+// Wave 4: example row uses real profession + origin codes from the DB
+// (001_initial_schema.sql seed). The previous example used "carpenter"
+// which isn't a valid profession code, so importers who left the
+// example row in their file got a "מקצוע לא תקין" error on row 1.
 export const EXCEL_EXAMPLE = [
-  'יוחנן', 'כהן', 'carpenter', '12-24', 'RO', '2026-12-31', 'W-0042',
+  'יוחנן', 'כהן', 'plastering', '12-24', 'RO', '2026-12-31', 'W-0042',
 ];
 
 const VALID_EXPERIENCE_RANGES = new Set(['0-6', '6-12', '12-24', '24-36', '36+']);
@@ -62,7 +66,13 @@ export function parseCSV(text: string): string[][] {
 /** Validate parsed rows. Wave 2: only first_name / last_name / profession
  * are required. experience_range / origin_country / visa_valid_until
  * accept blank ("לא צויין"); we only flag a value that's PRESENT but
- * malformed (e.g. an unknown code). */
+ * malformed (e.g. an unknown code).
+ *
+ * Wave 4 (2026-05-07): also accept the Hebrew name (e.g. "טיח") in
+ * addition to the code (e.g. "plastering"); we silently translate to
+ * the code so old corp Excel sheets that wrote Hebrew don't break.
+ * Error messages now list the valid codes so the user can self-correct
+ * without leaving the page. */
 export function validateRows(
   raw: string[][],
   professions: Profession[],
@@ -71,18 +81,41 @@ export function validateRows(
   const profCodes = new Set(professions.map(p => p.code));
   const originCodes = new Set(origins.map(o => o.code));
 
+  // Hebrew name → code lookup (so "טיח" maps to "plastering" etc.).
+  const profByHe   = new Map(professions.map(p => [p.name_he.trim(), p.code]));
+  const originByHe = new Map(origins.map(o => [o.name_he.trim(), o.code]));
+
+  function resolveProfession(input: string): string {
+    if (profCodes.has(input))      return input;
+    if (profByHe.has(input.trim())) return profByHe.get(input.trim()) || input;
+    return input;
+  }
+  function resolveOrigin(input: string): string {
+    if (originCodes.has(input))       return input;
+    if (originByHe.has(input.trim())) return originByHe.get(input.trim()) || input;
+    return input;
+  }
+
   return raw.map((cells) => {
-    const [first_name = '', last_name = '', profession_type = '', experience_range = '',
+    let [first_name = '', last_name = '', profession_type = '', experience_range = '',
       origin_country = '', visa_valid_until = '', employee_number = ''] = cells;
+
+    profession_type = resolveProfession(profession_type);
+    origin_country  = resolveOrigin(origin_country);
+
     const errors: string[] = [];
     if (!first_name) errors.push('שם פרטי חסר');
     if (!last_name) errors.push('שם משפחה חסר');
-    if (!profCodes.has(profession_type)) errors.push(`מקצוע לא תקין: ${profession_type}`);
+    if (!profCodes.has(profession_type)) {
+      const validList = professions.map(p => `${p.code} (${p.name_he})`).join(', ');
+      errors.push(`מקצוע לא תקין: "${profession_type}". מקצועות חוקיים: ${validList}`);
+    }
     if (experience_range && !VALID_EXPERIENCE_RANGES.has(experience_range)) {
-      errors.push(`טווח ניסיון לא תקין: ${experience_range}`);
+      errors.push(`טווח ניסיון לא תקין: ${experience_range}. ערכים חוקיים: 0-6, 6-12, 12-24, 24-36, 36+`);
     }
     if (origin_country && !originCodes.has(origin_country)) {
-      errors.push(`מדינת מוצא לא תקינה: ${origin_country}`);
+      const validList = origins.map(o => `${o.code} (${o.name_he})`).join(', ');
+      errors.push(`מדינת מוצא לא תקינה: "${origin_country}". מדינות חוקיות: ${validList}`);
     }
     return {
       first_name, last_name, profession_type, experience_range, origin_country,
