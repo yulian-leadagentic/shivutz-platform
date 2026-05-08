@@ -6,6 +6,7 @@
 // + status badge + date. Click anywhere on the tile → deal detail page.
 
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import {
   AlertCircle, Handshake, MessageSquare, Calendar, MapPin, Users as UsersIcon,
@@ -63,11 +64,21 @@ function DealTileSkeleton() {
   );
 }
 
+const VALID_FILTERS: Filter[] = ['all', 'proposed', 'active', 'completed'];
+
 export default function ContractorDealsPage() {
+  const searchParams = useSearchParams();
+  // Allow `?filter=active` (etc.) so other pages — e.g. the manage
+  // dashboard's KPI tiles — can deep-link straight into a filtered
+  // view instead of bouncing through the "all" tab first.
+  const initialFilter = (() => {
+    const f = searchParams?.get('filter');
+    return f && (VALID_FILTERS as string[]).includes(f) ? (f as Filter) : 'all';
+  })();
   const [deals, setDeals]     = useState<EnrichedDeal[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState(false);
-  const [filter, setFilter]   = useState<Filter>('all');
+  const [filter, setFilter]   = useState<Filter>(initialFilter);
 
   function reload() {
     setLoading(true); setError(false);

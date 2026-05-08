@@ -20,14 +20,15 @@ const ACTIVE_DEAL_STATUSES = new Set([
   'accepted', 'active', 'reporting',
 ]);
 
-function StatCard({ icon, label, value, loading }: {
+function StatCard({ icon, label, value, loading, href }: {
   icon: React.ReactNode;
   label: string;
   value: number | string;
   loading: boolean;
+  href?: string;
 }) {
-  return (
-    <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+  const body = (
+    <>
       <div className="flex items-center justify-between">
         <div className="text-xs font-medium text-slate-500">{label}</div>
         <div className="text-slate-400">{icon}</div>
@@ -37,6 +38,23 @@ function StatCard({ icon, label, value, loading }: {
       ) : (
         <div className="text-2xl font-bold text-slate-900 mt-1">{value}</div>
       )}
+    </>
+  );
+  if (href) {
+    return (
+      <Link
+        href={href}
+        className="block bg-white border border-slate-200 rounded-2xl p-4 shadow-sm
+                   hover:border-brand-500 hover:bg-brand-50/30 hover:shadow-md
+                   active:scale-[0.99] transition"
+      >
+        {body}
+      </Link>
+    );
+  }
+  return (
+    <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+      {body}
     </div>
   );
 }
@@ -103,31 +121,35 @@ export default function ContractorManagePage() {
         <p className="text-sm text-slate-600">נתוני בקרה, צוות ומסמכים</p>
       </div>
 
-      {/* KPI strip */}
+      {/* KPI strip — every tile is a deep-link into the relevant list */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <StatCard
           icon={<FolderOpen className="h-5 w-5" />}
           label="חיפושים פתוחים"
           value={openSearches}
           loading={loading}
+          href="/contractor/searches"
         />
         <StatCard
           icon={<Handshake className="h-5 w-5" />}
           label="עסקאות פעילות"
           value={activeDeals}
           loading={loading}
+          href="/contractor/deals?filter=active"
         />
         <StatCard
           icon={<Activity className="h-5 w-5" />}
           label="עסקאות 7 ימים אחרונים"
           value={last7Days}
           loading={loading}
+          href="/contractor/deals"
         />
         <StatCard
           icon={<Handshake className="h-5 w-5" />}
           label="סה״כ עסקאות"
           value={totalDeals}
           loading={loading}
+          href="/contractor/deals"
         />
       </div>
 
