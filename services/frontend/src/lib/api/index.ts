@@ -8,7 +8,7 @@ export type { Membership, InviteMetadata } from './auth';
 
 export { enumApi } from './enums';
 export { orgApi } from './organizations';
-export { jobApi } from './jobs';
+export { jobApi, searchApi } from './jobs';
 export { workerApi } from './workers';
 export { dealApi } from './deals';
 

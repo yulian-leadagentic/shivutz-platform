@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { LayoutDashboard, Users, Handshake, LogOut, UserCog, CreditCard, Store } from 'lucide-react';
+import { Home, LayoutDashboard, Users, Handshake, LogOut, UserCog, CreditCard, Store } from 'lucide-react';
 import { clearTokens } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 
@@ -50,10 +50,10 @@ export default function CorporationSidebar() {
 
   return (
     <aside className="flex flex-col w-64 min-h-screen bg-white border-s border-slate-200 shadow-sm shrink-0">
-      {/* Logo */}
-      <div className="flex items-center justify-center h-16 border-b border-slate-200 px-4">
+      {/* Logo — clickable, returns to public landing */}
+      <Link href="/" className="flex items-center justify-center h-16 border-b border-slate-200 px-4 hover:bg-slate-50 transition-colors">
         <span className="text-2xl font-bold text-brand-600 tracking-tight">שיבוץ</span>
-      </div>
+      </Link>
 
       {/* Role label */}
       <div className="px-4 py-2 border-b border-slate-100">
@@ -63,6 +63,16 @@ export default function CorporationSidebar() {
       {/* Nav */}
       <nav className="flex-1 py-4 overflow-y-auto">
         <ul className="space-y-1 px-3">
+          {/* Home link to public landing */}
+          <li>
+            <Link
+              href="/"
+              className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors"
+            >
+              <Home className="h-5 w-5 shrink-0" />
+              <span>דף הבית</span>
+            </Link>
+          </li>
           {navItems.map((item) => {
             const isActive =
               pathname === item.href || pathname.startsWith(item.href + '/');

@@ -8,9 +8,10 @@ import MobileNavDrawer from './MobileNavDrawer';
 
 const pageTitles: Record<string, string> = {
   '/contractor/dashboard':     'לוח בקרה',
-  '/contractor/requests':      'איתור עובדים',
-  '/contractor/requests/new':  'איתור עובדים חדש',
+  '/contractor/searches':      'סטטוס בקשות',
+  '/contractor/find':          'חיפוש חדש',
   '/contractor/deals':         'עסקאות',
+  '/contractor/manage':        'ניהול',
   '/contractor/users':         'ניהול צוות',
   '/contractor/documents':     'מסמכים',
   '/corporation/dashboard':    'לוח בקרה',
@@ -23,10 +24,9 @@ const pageTitles: Record<string, string> = {
 
 function getPageTitle(pathname: string): string {
   if (pageTitles[pathname]) return pageTitles[pathname];
-  if (pathname.includes('/match'))        return 'חיפוש התאמת עובדים';
-  if (pathname.includes('/edit'))         return 'עריכת איתור';
+  if (pathname.includes('/find/'))        return 'איתור עובדים';
+  if (pathname.includes('/searches/'))    return 'פרטי חיפוש';
   if (pathname.includes('/deals/'))       return 'פרטי עסקה';
-  if (pathname.includes('/requests/'))    return 'איתור עובדים';
   return 'שיבוץ';
 }
 

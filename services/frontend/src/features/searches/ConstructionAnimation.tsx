@@ -1,6 +1,14 @@
+// 5-second construction animation for the matcher waiting state.
+//
+// Restored from the deprecated /features/match/ tree (was deleted in
+// Wave 3) — Wave 4 reinstates it because the simple skeleton-shimmer
+// version felt flat next to the heavier "AI engine" copy. The SVG
+// builds a 4-floor tower bottom-up, a swinging crane, and two bobbing
+// workers, all keyframed via inline <style>.
+
 export function ConstructionAnimation() {
   return (
-    <div className="flex flex-col items-center gap-5">
+    <div className="flex flex-col items-center gap-5 py-6">
       <svg viewBox="0 0 200 180" className="w-52 h-48" fill="none" xmlns="http://www.w3.org/2000/svg">
         <style>{`
           @keyframes rise { from { transform: scaleY(0); opacity:0; } to { transform: scaleY(1); opacity:1; } }
@@ -40,17 +48,11 @@ export function ConstructionAnimation() {
 
         {/* Crane group */}
         <g className="crane">
-          {/* Tower */}
           <rect x="161" y="40" width="7" height="121" rx="1.5" fill="#fbbf24"/>
-          {/* Horizontal arm */}
           <rect x="100" y="37" width="71" height="7" rx="1.5" fill="#fbbf24"/>
-          {/* Counterweight */}
           <rect x="161" y="37" width="14" height="7" rx="1" fill="#f59e0b"/>
-          {/* Cable */}
           <line x1="118" y1="44" x2="118" y2="77" stroke="#f59e0b" strokeWidth="1.5" strokeDasharray="3 2"/>
-          {/* Hook */}
           <path d="M115 75 Q118 80 121 75" stroke="#f59e0b" strokeWidth="2" fill="none" strokeLinecap="round"/>
-          {/* Spark on hook */}
           <circle cx="118" cy="81" r="2.5" fill="#fef08a" className="spark"/>
         </g>
 
@@ -58,10 +60,8 @@ export function ConstructionAnimation() {
         <g className="w1">
           <circle cx="36" cy="149" r="5.5" fill="#64748b"/>
           <rect x="33" y="154" width="7" height="10" rx="1.5" fill="#475569"/>
-          {/* Hard hat */}
           <path d="M30.5 148.5 Q36 142 41.5 148.5" fill="#f97316"/>
           <rect x="30.5" y="148" width="11" height="2.5" rx="1" fill="#f97316"/>
-          {/* Tool */}
           <line x1="43" y1="156" x2="50" y2="148" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round"/>
         </g>
 
@@ -69,10 +69,8 @@ export function ConstructionAnimation() {
         <g className="w2">
           <circle cx="164" cy="149" r="5.5" fill="#64748b"/>
           <rect x="161" y="154" width="7" height="10" rx="1.5" fill="#475569"/>
-          {/* Hard hat */}
           <path d="M158.5 148.5 Q164 142 169.5 148.5" fill="#f97316"/>
           <rect x="158.5" y="148" width="11" height="2.5" rx="1" fill="#f97316"/>
-          {/* Tool */}
           <line x1="157" y1="156" x2="150" y2="148" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round"/>
         </g>
       </svg>
@@ -84,7 +82,6 @@ export function ConstructionAnimation() {
         </p>
       </div>
 
-      {/* Bouncing dots */}
       <div className="flex gap-2">
         {[0, 150, 300].map((delay) => (
           <div

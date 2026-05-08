@@ -9,7 +9,6 @@ import (
 	"os"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/shivutz/job-match/internal/models"
@@ -22,102 +21,99 @@ var workerServiceURL = func() string {
 	return "http://worker:3003"
 }()
 
-// scoreThresholds define match tiers based on total score.
 const (
 	scorePerfect = 80
 	scoreGood    = 50
-	maxBundles   = 20
+	maxCorps     = 20
 )
 
-// Run executes the matching algorithm and returns ranked bundles.
-// Uses two-phase fetching: strict (with visa filter) + relaxed (without visa filter)
-// to maximise the number of matches returned.
+// Run executes the matching algorithm for a single search and returns
+// ranked CorpMatch entries (one per corporation with matching workers).
+//
 // SLA target: < 5 seconds end-to-end.
-func Run(ctx context.Context, request models.JobRequest, lineItems []models.LineItem) ([]models.Bundle, error) {
-	type result struct {
-		lineItem models.LineItem
-		workers  []models.Worker
-		err      error
+func Run(ctx context.Context, search models.WorkerSearch) ([]models.CorpMatch, error) {
+	workers, err := fetchCandidatesWithFallback(ctx, search)
+	if err != nil {
+		return nil, err
 	}
 
-	ch := make(chan result, len(lineItems))
+	scored := scoreWorkers(workers, search)
 
-	// Phase 1: parallel candidate fetch — one goroutine per line item
-	// Uses two-pass: strict fetch (visa filter) merged with relaxed fetch (no visa filter)
-	var wg sync.WaitGroup
-	for _, li := range lineItems {
-		wg.Add(1)
-		go func(li models.LineItem) {
-			defer wg.Done()
-			workers, err := fetchCandidatesWithFallback(ctx, li, request.Region)
-			ch <- result{lineItem: li, workers: workers, err: err}
-		}(li)
+	// Group by corporation — top N per corp where N=quantity.
+	corpWorkers := map[string][]models.WorkerMatch{}
+	for _, wm := range scored {
+		corp := wm.Worker.CorporationID
+		corpWorkers[corp] = append(corpWorkers[corp], wm)
 	}
 
-	go func() {
-		wg.Wait()
-		close(ch)
-	}()
-
-	// Collect results
-	liWorkers := map[string][]models.WorkerMatch{}
-	for r := range ch {
-		if r.err != nil {
-			fmt.Printf("[matcher] fetch error for %s: %v\n", r.lineItem.ProfessionType, r.err)
-			liWorkers[r.lineItem.ID] = []models.WorkerMatch{}
-			continue
+	results := make([]models.CorpMatch, 0, len(corpWorkers))
+	for corpID, ws := range corpWorkers {
+		take := ws
+		if len(take) > search.Quantity {
+			take = take[:search.Quantity]
 		}
-		scored := scoreWorkers(r.workers, r.lineItem, request.Region)
-		liWorkers[r.lineItem.ID] = scored
+		filled := len(take)
+		totalScore := 0
+		for _, w := range take {
+			totalScore += w.Score
+		}
+		fillPct := 0.0
+		if search.Quantity > 0 {
+			fillPct = float64(filled) / float64(search.Quantity) * 100
+		}
+		results = append(results, models.CorpMatch{
+			SearchID:       search.ID,
+			CorporationID:  corpID,
+			Profession:     search.ProfessionType,
+			Needed:         search.Quantity,
+			Workers:        take,
+			FilledWorkers:  filled,
+			IsComplete:     filled >= search.Quantity,
+			FillPercentage: fillPct,
+			TotalScore:     totalScore,
+		})
 	}
 
-	// Phase 2: assemble bundles per corporation
-	bundles := assembleBundles(lineItems, liWorkers)
-
-	// Sort: complete bundles first, then by fill percentage, then by total score
-	sort.Slice(bundles, func(i, j int) bool {
-		if bundles[i].IsComplete != bundles[j].IsComplete {
-			return bundles[i].IsComplete
+	// Sort: complete first, then by fill%, then by total score.
+	sort.Slice(results, func(i, j int) bool {
+		if results[i].IsComplete != results[j].IsComplete {
+			return results[i].IsComplete
 		}
-		if bundles[i].FillPercentage != bundles[j].FillPercentage {
-			return bundles[i].FillPercentage > bundles[j].FillPercentage
+		if results[i].FillPercentage != results[j].FillPercentage {
+			return results[i].FillPercentage > results[j].FillPercentage
 		}
-		return bundles[i].TotalScore > bundles[j].TotalScore
+		return results[i].TotalScore > results[j].TotalScore
 	})
 
-	if len(bundles) > maxBundles {
-		bundles = bundles[:maxBundles]
+	if len(results) > maxCorps {
+		results = results[:maxCorps]
 	}
-	return bundles, nil
+	return results, nil
 }
 
-// fetchCandidatesWithFallback runs two fetches and merges the results:
-//  1. Strict: with visa date filter (workers whose visa covers the job period)
-//  2. Relaxed: without visa filter (catch workers with shorter visas — still useful)
-//
-// Workers are de-duplicated by ID; strict results are preferred.
-func fetchCandidatesWithFallback(ctx context.Context, li models.LineItem, region string) ([]models.Worker, error) {
+// fetchCandidatesWithFallback merges strict (with visa filter) +
+// relaxed (without visa filter) results, de-duped by worker ID.
+func fetchCandidatesWithFallback(ctx context.Context, s models.WorkerSearch) ([]models.Worker, error) {
 	type fetchResult struct {
 		workers []models.Worker
 		err     error
 	}
 
-	strictCh  := make(chan fetchResult, 1)
+	strictCh := make(chan fetchResult, 1)
 	relaxedCh := make(chan fetchResult, 1)
 
 	go func() {
-		w, err := fetchCandidates(ctx, li, region, true)
+		w, err := fetchCandidates(ctx, s, true)
 		strictCh <- fetchResult{w, err}
 	}()
 	go func() {
-		w, err := fetchCandidates(ctx, li, region, false)
+		w, err := fetchCandidates(ctx, s, false)
 		relaxedCh <- fetchResult{w, err}
 	}()
 
-	strict  := <-strictCh
+	strict := <-strictCh
 	relaxed := <-relaxedCh
 
-	// Merge: strict workers first, then add any additional workers from relaxed pass
 	seen := map[string]bool{}
 	var merged []models.Worker
 
@@ -127,7 +123,6 @@ func fetchCandidatesWithFallback(ctx context.Context, li models.LineItem, region
 			merged = append(merged, w)
 		}
 	}
-
 	if relaxed.err == nil {
 		for _, w := range relaxed.workers {
 			if !seen[w.ID] {
@@ -137,20 +132,17 @@ func fetchCandidatesWithFallback(ctx context.Context, li models.LineItem, region
 		}
 	}
 
-	// If both failed, return the strict error
 	if strict.err != nil && relaxed.err != nil {
 		return nil, strict.err
 	}
-
 	return merged, nil
 }
 
-func fetchCandidates(ctx context.Context, li models.LineItem, region string, withVisaFilter bool) ([]models.Worker, error) {
-	url := fmt.Sprintf("%s/workers?profession=%s&status=available&limit=200", workerServiceURL, li.ProfessionType)
+func fetchCandidates(ctx context.Context, s models.WorkerSearch, withVisaFilter bool) ([]models.Worker, error) {
+	url := fmt.Sprintf("%s/workers?profession=%s&status=available&limit=200", workerServiceURL, s.ProfessionType)
 
-	// Visa filter: only in strict pass, and only if job has an end date
-	if withVisaFilter && !li.EndDate.IsZero() {
-		minVisa := li.EndDate.AddDate(0, 0, 30).Format("2006-01-02")
+	if withVisaFilter && !s.EndDate.IsZero() {
+		minVisa := s.EndDate.AddDate(0, 0, 30).Format("2006-01-02")
 		url += "&visa_until_min=" + minVisa
 	}
 
@@ -174,38 +166,22 @@ func fetchCandidates(ctx context.Context, li models.LineItem, region string, wit
 	return workers, nil
 }
 
-// scoreWorkers scores each worker against a line item and returns WorkerMatch entries
-// with full match tier and matched/missing criteria details.
-//
-// Scoring model (max 110):
-//   - Profession match:  30 (guaranteed — filtered by query)
-//   - Region match:      20 (exact OR job has no region requirement), 5 (worker has no region)
-//   - Experience:        20 (meets req OR no req), 12 (within 50%), 6 (some experience)
-//   - Origin preference: 15 (in list OR no preference)
-//   - Languages:         10 (all OR no requirement), 5 (partial ≥50%)
-//   - Visa validity:     15 (>90d buffer OR job has no end date), 8 (meets minimum), 0 (short/missing)
-//
-// Principle: when the job doesn't specify a requirement for a criterion, every
-// worker vacuously satisfies it → full weight. This keeps MAX_SCORE = 110
-// always reachable, so a worker who meets every stated requirement scores 100%.
-func scoreWorkers(workers []models.Worker, li models.LineItem, requestRegion string) []models.WorkerMatch {
+// scoreWorkers — same scoring rubric as before, just keyed off
+// WorkerSearch instead of LineItem + JobRequest.
+func scoreWorkers(workers []models.Worker, s models.WorkerSearch) []models.WorkerMatch {
 	var matches []models.WorkerMatch
 
 	for _, w := range workers {
 		score := 30 // profession match guaranteed by query
 		var matched []string
-		var missing  []string
+		var missing []string
 
 		matched = append(matched, "profession")
 
 		// ── Region ─────────────────────────────────────────────
 		workerRegion := strings.ToLower(strings.TrimSpace(w.AvailableRegion))
-		jobRegion    := strings.ToLower(strings.TrimSpace(requestRegion))
+		jobRegion := strings.ToLower(strings.TrimSpace(s.Region))
 		if jobRegion == "" || workerRegion == "" || workerRegion == jobRegion {
-			// Full credit when:
-			//   (a) job has no region requirement,
-			//   (b) worker has no region restriction (flexible — available anywhere), OR
-			//   (c) they match exactly.
 			score += 20
 			matched = append(matched, "region")
 		} else {
@@ -213,32 +189,27 @@ func scoreWorkers(workers []models.Worker, li models.LineItem, requestRegion str
 		}
 
 		// ── Experience ─────────────────────────────────────────
-		// MinExperience stored in months; worker.ExperienceYears in years
 		workerMonths := w.ExperienceYears * 12
-		if li.MinExperience == 0 {
-			// No requirement → full credit (vacuously satisfied)
+		if s.MinExperience == 0 {
 			score += 20
 			matched = append(matched, "experience")
-		} else if workerMonths >= li.MinExperience {
+		} else if workerMonths >= s.MinExperience {
 			score += 20
 			matched = append(matched, "experience")
-		} else if li.MinExperience > 0 && workerMonths >= li.MinExperience/2 {
-			// Within 50% of requirement
+		} else if s.MinExperience > 0 && workerMonths >= s.MinExperience/2 {
 			score += 12
 			matched = append(matched, "experience_partial")
 		} else if workerMonths > 0 {
-			// Has some experience
 			score += 6
 		} else {
 			missing = append(missing, "experience")
 		}
 
 		// ── Origin preference ───────────────────────────────────
-		if len(li.OriginPreference) == 0 {
-			// No origin preference — vacuously satisfied
+		if len(s.OriginPreference) == 0 {
 			score += 15
 			matched = append(matched, "origin")
-		} else if contains(li.OriginPreference, w.OriginCountry) {
+		} else if contains(s.OriginPreference, w.OriginCountry) {
 			score += 15
 			matched = append(matched, "origin")
 		} else {
@@ -246,16 +217,15 @@ func scoreWorkers(workers []models.Worker, li models.LineItem, requestRegion str
 		}
 
 		// ── Languages ──────────────────────────────────────────
-		if len(li.RequiredLanguages) == 0 {
-			// No language requirement — vacuously satisfied
+		if len(s.RequiredLanguages) == 0 {
 			score += 10
 			matched = append(matched, "languages")
 		} else {
-			presentCount := countPresent(li.RequiredLanguages, w.Languages)
-			if presentCount == len(li.RequiredLanguages) {
+			presentCount := countPresent(s.RequiredLanguages, w.Languages)
+			if presentCount == len(s.RequiredLanguages) {
 				score += 10
 				matched = append(matched, "languages")
-			} else if presentCount > 0 && float64(presentCount)/float64(len(li.RequiredLanguages)) >= 0.5 {
+			} else if presentCount > 0 && float64(presentCount)/float64(len(s.RequiredLanguages)) >= 0.5 {
 				score += 5
 				matched = append(matched, "languages_partial")
 			} else {
@@ -264,12 +234,11 @@ func scoreWorkers(workers []models.Worker, li models.LineItem, requestRegion str
 		}
 
 		// ── Visa validity ───────────────────────────────────────
-		if li.EndDate.IsZero() {
-			// No job end date — no visa window to check against; vacuously satisfied
+		if s.EndDate.IsZero() {
 			score += 15
 			matched = append(matched, "visa")
 		} else if w.VisaValidUntil != nil && !w.VisaValidUntil.IsZero() {
-			buffer := w.VisaValidUntil.Time.Sub(li.EndDate)
+			buffer := w.VisaValidUntil.Time.Sub(s.EndDate)
 			bufferDays := int(buffer.Hours() / 24)
 			if bufferDays >= 90 {
 				score += 15
@@ -281,7 +250,6 @@ func scoreWorkers(workers []models.Worker, li models.LineItem, requestRegion str
 				missing = append(missing, "visa")
 			}
 		} else {
-			// Job has end date but worker has no visa on record — required
 			missing = append(missing, "visa")
 		}
 
@@ -296,7 +264,7 @@ func scoreWorkers(workers []models.Worker, li models.LineItem, requestRegion str
 		matches = append(matches, models.WorkerMatch{
 			Worker:          w,
 			Score:           score,
-			LineItemID:      li.ID,
+			SearchID:        s.ID,
 			MatchTier:       tier,
 			MatchedCriteria: matched,
 			MissingCriteria: missing,
@@ -309,71 +277,6 @@ func scoreWorkers(workers []models.Worker, li models.LineItem, requestRegion str
 	return matches
 }
 
-func assembleBundles(lineItems []models.LineItem, liWorkers map[string][]models.WorkerMatch) []models.Bundle {
-	// Group workers by corporation
-	corpLineItems := map[string]map[string][]models.WorkerMatch{} // corp -> liID -> workers
-
-	for liID, workers := range liWorkers {
-		for _, wm := range workers {
-			corp := wm.Worker.CorporationID
-			if corpLineItems[corp] == nil {
-				corpLineItems[corp] = map[string][]models.WorkerMatch{}
-			}
-			corpLineItems[corp][liID] = append(corpLineItems[corp][liID], wm)
-		}
-	}
-
-	// Calculate total needed workers across all line items
-	totalNeeded := 0
-	for _, li := range lineItems {
-		totalNeeded += li.Quantity
-	}
-
-	var bundles []models.Bundle
-	for corpID, liMap := range corpLineItems {
-		bundle := models.Bundle{
-			CorporationID: corpID,
-			NeededWorkers: totalNeeded,
-		}
-		totalScore   := 0
-		filledItems  := 0
-		filledWorkers := 0
-
-		for _, li := range lineItems {
-			workers := liMap[li.ID]
-			needed  := li.Quantity
-			if len(workers) > needed {
-				workers = workers[:needed]
-			}
-			isFilled := len(workers) >= needed
-			fill := models.LineItemFill{
-				LineItemID: li.ID,
-				Profession: li.ProfessionType,
-				Needed:     li.Quantity,
-				Workers:    workers,
-				IsFilled:   isFilled,
-			}
-			bundle.LineItems = append(bundle.LineItems, fill)
-			if isFilled {
-				filledItems++
-			}
-			filledWorkers += len(workers)
-			for _, w := range workers {
-				totalScore += w.Score
-			}
-		}
-
-		bundle.IsComplete    = filledItems == len(lineItems)
-		bundle.TotalScore    = totalScore
-		bundle.FilledWorkers = filledWorkers
-		if totalNeeded > 0 {
-			bundle.FillPercentage = float64(filledWorkers) / float64(totalNeeded) * 100
-		}
-		bundles = append(bundles, bundle)
-	}
-	return bundles
-}
-
 func contains(slice []string, item string) bool {
 	for _, s := range slice {
 		if strings.EqualFold(s, item) {
@@ -383,7 +286,6 @@ func contains(slice []string, item string) bool {
 	return false
 }
 
-// countPresent returns how many of the required items are present in available.
 func countPresent(required, available []string) int {
 	avSet := map[string]bool{}
 	for _, a := range available {
@@ -396,8 +298,4 @@ func countPresent(required, available []string) int {
 		}
 	}
 	return count
-}
-
-func allPresent(required, available []string) bool {
-	return countPresent(required, available) == len(required)
 }

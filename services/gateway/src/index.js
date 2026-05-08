@@ -41,8 +41,7 @@ const services = {
   '/api/documents':     process.env.USER_ORG_SERVICE_URL      || 'http://user-org:3002',
   '/api/workers':       process.env.WORKER_SERVICE_URL        || 'http://worker:3003',
   '/api/enums':         process.env.WORKER_SERVICE_URL        || 'http://worker:3003',
-  '/api/job-requests':  process.env.JOB_MATCH_SERVICE_URL     || 'http://job-match:3004',
-  '/api/contractors':   process.env.JOB_MATCH_SERVICE_URL     || 'http://job-match:3004',
+  '/api/searches':      process.env.JOB_MATCH_SERVICE_URL     || 'http://job-match:3004',
   '/api/deals':         process.env.DEAL_SERVICE_URL          || 'http://deal:3005',
   '/api/commissions':   process.env.DEAL_SERVICE_URL          || 'http://deal:3005',
   '/api/notifications': process.env.NOTIFICATION_SERVICE_URL  || 'http://notification:3006',
@@ -170,3 +169,4 @@ for (const [prefix, target] of Object.entries(services)) {
 
 const PORT = process.env.GATEWAY_PORT || 3000;
 app.listen(PORT, () => console.log(`API Gateway listening on ${PORT}`));
+// Wave 4 deploy probe — 2026-05-07T09:12:51Z

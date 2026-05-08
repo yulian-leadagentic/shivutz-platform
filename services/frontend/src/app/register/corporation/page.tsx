@@ -9,14 +9,20 @@ import { saveTokens } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { HomeLink } from '@/components/HomeLink';
 import type { CorporationLookupResult } from '@/types';
 
 const TOTAL_STEPS = 3;
+// TODO: switch to fetching /api/enums/origins so this stays in sync
+// with the DB. For now we mirror the DB seed (001_initial_schema.sql)
+// + a couple of extras (NP, VN) the corp form already had.
 const ORIGIN_COUNTRIES = [
   { value: 'PH', label: 'פיליפינים' },
   { value: 'TH', label: 'תאילנד' },
+  { value: 'CN', label: 'סין' },
   { value: 'MD', label: 'מולדובה' },
   { value: 'RO', label: 'רומניה' },
+  { value: 'UA', label: 'אוקראינה' },
   { value: 'IN', label: 'הודו' },
   { value: 'NP', label: 'נפאל' },
   { value: 'LK', label: 'סרי לנקה' },
@@ -218,7 +224,10 @@ export default function RegisterCorporationPage() {
   const namePrefilledFromRegistry = !!(lookup?.ok && lookup.prefill?.company_name_he);
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4 py-8">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 px-4 py-8">
+      <div className="w-full max-w-lg mb-3 flex justify-end">
+        <HomeLink />
+      </div>
       <div className="w-full max-w-lg">
         <div className="h-2 rounded-t-xl bg-gradient-to-e from-brand-600 to-brand-400" />
         <Card className="rounded-t-none shadow-md">

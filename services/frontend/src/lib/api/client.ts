@@ -1,4 +1,7 @@
-export const BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3000/api';
+// `||` (not `??`) so that an empty-string build arg also falls back —
+// docker-compose used to leak NEXT_PUBLIC_API_URL='' into the bundle,
+// which produced relative `/auth/...` fetches that 404'd on port 3008.
+export const BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api';
 
 export function getToken(): string | undefined {
   if (typeof document === 'undefined') return undefined;

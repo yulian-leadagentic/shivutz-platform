@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { LayoutDashboard, ClipboardCheck, Handshake, Building2, LogOut, Percent, PhoneCall, Users, Inbox, Store } from 'lucide-react';
+import { Home, LayoutDashboard, ClipboardCheck, Handshake, Building2, LogOut, Percent, PhoneCall, Users, Inbox, Store } from 'lucide-react';
 import { clearTokens } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 import MobileNavDrawer from '@/components/layout/MobileNavDrawer';
@@ -27,12 +27,19 @@ const NAV = [
 function AdminSidebarBody({ pathname, onLogout }: { pathname: string; onLogout: () => void }) {
   return (
     <div className="w-64 max-w-full bg-slate-900 text-white flex flex-col h-full">
-      <div className="px-6 py-5 border-b border-slate-700">
+      <Link href="/" className="block px-6 py-5 border-b border-slate-700 hover:bg-slate-800/40 transition-colors">
         <span className="text-2xl font-bold text-brand-400">שיבוץ</span>
         <span className="block text-xs text-slate-400 mt-0.5">פאנל ניהול</span>
-      </div>
+      </Link>
 
       <nav className="flex-1 py-4 space-y-1 px-3 overflow-y-auto">
+        <Link
+          href="/"
+          className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
+        >
+          <Home className="h-4 w-4 shrink-0" />
+          דף הבית
+        </Link>
         {NAV.map(({ href, label, icon: Icon }) => (
           <Link
             key={href}

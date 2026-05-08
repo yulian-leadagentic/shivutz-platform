@@ -224,7 +224,15 @@ services:
   # Frontend
   # ─────────────────────────────────────────────────────────
   frontend:
-    build: ./services/frontend
+    build:
+      context: ./services/frontend
+      args:
+        # NEXT_PUBLIC_* are inlined into the JS bundle at build time —
+        # the Dockerfile declares the matching ARG. Passing it only as
+        # a runtime `environment` is too late: by then `next build`
+        # has already baked the empty string into the bundle and the
+        # browser fetches relative URLs that 404 on the FE host.
+        NEXT_PUBLIC_API_URL: http://localhost:3000/api
     restart: unless-stopped
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:3000/api

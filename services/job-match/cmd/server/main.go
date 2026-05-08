@@ -52,19 +52,18 @@ func main() {
 		}
 		fmt.Fprintln(w, `{"status":"ready","service":"job-match"}`)
 	})
-	mux.HandleFunc("GET /job-requests", h.ListJobRequests)
-	mux.HandleFunc("POST /job-requests", h.CreateJobRequest)
-	mux.HandleFunc("GET /job-requests/{id}", h.GetJobRequest)
-	mux.HandleFunc("PATCH /job-requests/{id}", h.UpdateJobRequest)
-	mux.HandleFunc("POST /job-requests/{id}/line-items", h.AddLineItem)
-	mux.HandleFunc("PUT /job-requests/{id}/line-items", h.ReplaceLineItems)
-	mux.HandleFunc("POST /job-requests/{id}/match", h.RunMatch)
-	mux.HandleFunc("GET /job-requests/{id}/match-results", h.GetMatchResults)
-	mux.HandleFunc("GET /contractors/{id}/job-requests", h.ListByContractor)
+	// Wave 3 (2026-05-06) — projects collapsed into standalone searches.
+	mux.HandleFunc("GET /searches", h.ListSearches)
+	mux.HandleFunc("POST /searches", h.CreateSearch)
+	mux.HandleFunc("GET /searches/{id}", h.GetSearch)
+	mux.HandleFunc("PATCH /searches/{id}", h.UpdateSearch)
+	mux.HandleFunc("DELETE /searches/{id}", h.DeleteSearch)
+	mux.HandleFunc("POST /searches/{id}/match", h.RunMatch)
+	mux.HandleFunc("GET /searches/{id}/match-results", h.GetMatchResults)
 	// Internal-only endpoints — driven by the notification service in
 	// response to AMQP change events. Must NOT be exposed via the public
 	// gateway; only reachable on the Railway private network.
-	mux.HandleFunc("POST /internal/rematch-for-request", h.RematchForRequest)
+	mux.HandleFunc("POST /internal/rematch-for-search", h.RematchForSearch)
 	mux.HandleFunc("POST /internal/rematch-for-corp", h.RematchForCorp)
 
 	port := getEnv("PORT", "3004")
@@ -78,3 +77,4 @@ func getEnv(key, fallback string) string {
 	}
 	return fallback
 }
+// Wave 4 deploy probe — 2026-05-07T09:12:51Z

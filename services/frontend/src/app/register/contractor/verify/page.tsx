@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { CheckCircle2, Loader2, AlertCircle } from 'lucide-react';
 import { orgApi } from '@/lib/api';
 import { Card, CardContent } from '@/components/ui/card';
+import { HomeLink } from '@/components/HomeLink';
 
 type State =
   | { kind: 'loading' }
@@ -49,7 +50,10 @@ function VerifyEmailLink() {
   }, [contractorId, token, router]);
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 px-4 py-6">
+      <div className="w-full max-w-md mb-3 flex justify-end">
+        <HomeLink />
+      </div>
       <Card className="w-full max-w-md shadow-md">
         <CardContent className="pt-8 pb-8 flex flex-col items-center gap-4 text-center">
           {state.kind === 'loading' && (
