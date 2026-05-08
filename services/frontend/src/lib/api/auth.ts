@@ -66,6 +66,16 @@ export const otpApi = {
       method: 'POST',
       body: JSON.stringify({ entity_id: entityId, entity_type: entityType }),
     }),
+
+  /**
+   * List the *current* user's active memberships. Used by the
+   * landing-page tile click handler to switch entity context
+   * cross-role (e.g. logged-in contractor clicks the corporation
+   * tile and we hot-swap their JWT to the corporation membership
+   * without re-authenticating).
+   */
+  myMemberships: () =>
+    apiFetch<{ memberships: Membership[] }>('/auth/memberships'),
 };
 
 export const inviteApi = {
