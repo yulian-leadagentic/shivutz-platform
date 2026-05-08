@@ -46,20 +46,19 @@ export default function SelectEntityPage() {
     }
 
     // If the user came from a role-specific landing CTA we already
-    // know which entity_type they want — filter the picker so they
-    // only see the relevant memberships. With exactly one match we
-    // pre-select silently and never render the picker at all.
+    // know which entity_type they want — auto-pick the first
+    // matching membership and never render the picker. With multiple
+    // memberships of the same role, picking the first is good enough
+    // for now; an in-app entity-switcher can handle multi-org users
+    // later if that case actually shows up in the wild.
     const intent = sessionStorage.getItem('pending_intent');
     if (intent === 'contractor' || intent === 'corporation') {
       const matching = list.filter((m) => m.entity_type === intent);
-      if (matching.length === 1) {
-        // Auto-resolve. The button onClick handler does exactly this,
-        // so we'll just call it.
+      if (matching.length >= 1) {
         sessionStorage.removeItem('pending_intent');
         select(matching[0]);
         return;
       }
-      if (matching.length > 1) list = matching;
       // matching.length === 0 — fall back to showing all memberships;
       // the user does have other valid roles, so the picker is the
       // honest UI here.
