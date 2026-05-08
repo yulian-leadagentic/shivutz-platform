@@ -1,0 +1,35 @@
+# Local-dev overrides — auto-loaded by `docker compose up`.
+#
+# Replaces the production frontend image with a hot-reload `next dev` setup:
+#   • bind-mount of services/frontend into the container so file edits are seen
+#   • named volume for node_modules (host doesn't have linux-compatible binaries)
+#   • named volume for .next cache (avoids Windows bind-mount perf hit)
+#   • file-watcher polling — required for Windows + Docker bind-mount events
+#
+# To run the production-build frontend instead, ignore this file:
+#   docker compose -f docker-compose.yml up
+#
+# Backend services keep their production-style build — they don't have HMR
+# wired up in this codebase yet. (Add similar overrides if you need to
+# iterate on backend code without rebuilding.)
+
+services:
+  frontend:
+    build: !reset null
+    image: node:20-alpine
+    working_dir: /app
+    command: sh -c "npm install --no-audit --no-fund && npm run dev"
+    volumes:
+      - ./services/frontend:/app
+      - frontend_node_modules:/app/node_modules
+      - frontend_next_cache:/app/.next
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:3000/api
+      # Polling is required because Docker on Windows/macOS doesn't proxy
+      # native fs events through bind-mounts. With these on, save → HMR.
+      WATCHPACK_POLLING: "true"
+      CHOKIDAR_USEPOLLING: "true"
+
+volumes:
+  frontend_node_modules:
+  frontend_next_cache:
