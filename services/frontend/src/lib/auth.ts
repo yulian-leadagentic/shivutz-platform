@@ -28,7 +28,12 @@ export function decodeJwtPayload(token: string): Record<string, unknown> | null 
     const payload = parts[1];
     // Pad base64 if needed
     const padded = payload + '='.repeat((4 - (payload.length % 4)) % 4);
-    const decoded = atob(padded.replace(/-/g, '+').replace(/_/g, '/'));
+    // atob returns a binary string (one char per byte). Hebrew names are
+    // multi-byte UTF-8, so we have to round-trip through Uint8Array +
+    // TextDecoder to get the proper unicode string back.
+    const binary = atob(padded.replace(/-/g, '+').replace(/_/g, '/'));
+    const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+    const decoded = new TextDecoder('utf-8').decode(bytes);
     return JSON.parse(decoded) as Record<string, unknown>;
   } catch {
     return null;
