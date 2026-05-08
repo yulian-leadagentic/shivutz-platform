@@ -129,14 +129,18 @@ export default function HeroSection({ onLeadCapture }: HeroSectionProps) {
               href={contractorCtaHref}
               className="group flex flex-col items-center justify-center text-center bg-slate-800/50 hover:bg-slate-800 border border-slate-700/60 hover:border-amber-400/50 rounded-3xl p-7 md:p-9 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-2xl hover:shadow-amber-500/10"
             >
+              {/* Audience label — biggest, brightest thing on the tile so
+                  the user immediately knows which side this is. */}
+              <div className="text-3xl md:text-4xl font-black text-amber-300 tracking-tight mb-4">
+                קבלן
+              </div>
               <div className="h-12 w-12 rounded-2xl bg-amber-500/20 flex items-center justify-center mb-4">
                 <Users className="h-6 w-6 text-amber-300" />
               </div>
               <div className="text-4xl md:text-5xl font-extrabold text-white mb-1 group-hover:text-amber-300 transition-colors">
                 {HERO_STAT.value}
               </div>
-              <div className="text-sm text-slate-400 mb-3">{HERO_STAT.label}</div>
-              <div className="text-sm text-amber-300 font-semibold mb-1">קבלן</div>
+              <div className="text-sm text-slate-400 mb-4">{HERO_STAT.label}</div>
               <div className="inline-flex items-center gap-1.5 text-sm font-semibold text-amber-300 group-hover:text-amber-200">
                 לחץ כאן לאיתור עובדים
                 <ArrowLeft className="h-4 w-4 group-hover:-translate-x-1 transition-transform" />
@@ -148,13 +152,20 @@ export default function HeroSection({ onLeadCapture }: HeroSectionProps) {
               href={corporationCtaHref}
               className="group flex flex-col items-center justify-center text-center bg-slate-800/50 hover:bg-slate-800 border border-slate-700/60 hover:border-sky-400/60 rounded-3xl p-7 md:p-9 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-2xl hover:shadow-sky-500/10"
             >
+              {/* Audience label — same visual weight as the contractor
+                  side so both sides read at a glance. */}
+              <div className="text-3xl md:text-4xl font-black text-sky-300 tracking-tight mb-4">
+                תאגיד
+              </div>
               <div className="h-12 w-12 rounded-2xl bg-sky-500/20 flex items-center justify-center mb-4">
                 <Building2 className="h-6 w-6 text-sky-300" />
               </div>
-              <div className="text-base md:text-xl text-white font-bold leading-snug mb-2 max-w-xs">
-                עשרות קבלנים כבר מנויים וחפשים עובדים
+              <div className="text-base md:text-lg text-white font-semibold leading-snug mb-3 max-w-sm">
+                עשרות קבלנים כבר מנויים לשירותים שלנו ומחפשים עובדים
               </div>
-              <div className="text-sm text-slate-300 mb-4">
+              {/* Pop-out subhead in the CTA color — per user feedback,
+                  this needs to feel like an active call, not a footnote. */}
+              <div className="text-lg md:text-xl text-sky-300 font-bold leading-snug mb-3">
                 מנהל תאגיד — אל תישאר בחוץ
               </div>
               <div className="inline-flex items-center gap-1.5 text-sm font-semibold text-sky-300 group-hover:text-sky-200">
