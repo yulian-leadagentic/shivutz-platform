@@ -139,16 +139,51 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-slate-900">לוח בקרה</h2>
-        <Button asChild>
-          <Link href="/contractor/requests/new">
-            <Plus className="h-4 w-4" />
-            בקשה חדשה
-          </Link>
-        </Button>
-      </div>
+      {/* Hero — recruitment CTA */}
+      <section className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-6 sm:p-10">
+        {/* Amber glow */}
+        <div
+          className="pointer-events-none absolute -top-24 end-0 h-72 w-72 rounded-full opacity-30"
+          style={{ background: 'radial-gradient(circle, #f59e0b 0%, transparent 70%)' }}
+        />
+        {/* Subtle dot texture */}
+        <div
+          className="pointer-events-none absolute inset-0 opacity-[0.04]"
+          style={{
+            backgroundImage: 'radial-gradient(circle, #fff 1px, transparent 1px)',
+            backgroundSize: '24px 24px',
+          }}
+        />
+
+        <div className="relative grid gap-6 lg:grid-cols-[1fr_auto] lg:items-center">
+          <div className="space-y-4">
+            <div className="inline-flex items-center gap-2 rounded-full border border-amber-300/30 bg-amber-400/10 px-3 py-1 text-xs font-medium text-amber-200">
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-300 animate-pulse" />
+              הפסיקו לרדוף אחרי טלפונים ותיאומים
+            </div>
+            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-white leading-[1.15] tracking-tight">
+              גיוס עובדים לבנייה — <span className="text-amber-300">פשוט ומהיר</span>
+            </h1>
+            <p className="text-sm sm:text-base text-slate-300 leading-relaxed max-w-2xl">
+              מאות עובדים זמינים לפי מקצוע, ניסיון וזמינות לעבודה.{' '}
+              <span className="text-white font-medium">מנוע AI לחיפוש התאמות.</span>
+            </p>
+          </div>
+
+          <div className="lg:shrink-0">
+            <Button
+              asChild
+              size="lg"
+              className="bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-slate-900 font-bold shadow-lg shadow-amber-500/20 px-7"
+            >
+              <Link href="/contractor/requests/new">
+                <Zap className="h-5 w-5" />
+                התחל גיוס
+              </Link>
+            </Button>
+          </div>
+        </div>
+      </section>
 
       {/* KPI cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
