@@ -94,128 +94,72 @@ export default function HeroSection({ onLeadCapture }: HeroSectionProps) {
       />
 
       {/* ── Main hero content ── */}
-      <div className="relative flex items-center">
-        <div className="max-w-7xl mx-auto px-6 w-full pt-28 pb-10">
-          <div className="grid lg:grid-cols-2 gap-16 items-center">
-
-            {/* Text */}
-            <div className="space-y-7">
-              {/* Brand wordmark — sits above the headline as the product name */}
-              <div className="inline-flex items-center gap-2 text-amber-400 text-3xl md:text-4xl font-black tracking-tight" dir="ltr">
-                BuildUp
-              </div>
-
-              {/* Headline */}
-              <h1 className="text-4xl md:text-5xl font-extrabold leading-[1.12] tracking-tight text-white">
-                הדרך החכמה לגייס עובדים
-                <br />
-                <span className="text-amber-400">לענף הבנייה</span>
-              </h1>
-
-              {/* Subtitle */}
-              <p className="text-lg text-slate-400 leading-relaxed max-w-xl">
-                מערכת מבוססת AI להתאמת עובדים, שיבוץ וניהול תהליך הגיוס — במהירות, בפשטות ובזמן אמת.
-              </p>
-
-              {/* CTAs */}
-              <div className="flex flex-wrap gap-3 pt-1">
-                <Link
-                  href="/register/contractor"
-                  className="inline-flex items-center gap-2 bg-brand-600 hover:bg-brand-500 text-white font-semibold text-sm px-6 py-3 rounded-xl shadow-lg shadow-brand-600/30 transition-all hover:-translate-y-0.5"
-                >
-                  אני קבלן — הצטרף בחינם
-                  <ArrowLeft className="h-4 w-4" />
-                </Link>
-                <Link
-                  href="/register/corporation"
-                  className="inline-flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-white font-semibold text-sm px-6 py-3 rounded-xl border border-slate-700 transition-all hover:-translate-y-0.5"
-                >
-                  אני תאגיד — פרסם עובדים
-                </Link>
-                <button
-                  onClick={onLeadCapture}
-                  className="text-sm text-slate-500 hover:text-slate-300 underline underline-offset-4 transition-colors self-center px-2"
-                >
-                  השאר פרטים לחזרה
-                </button>
-              </div>
+      <div className="relative">
+        <div className="max-w-6xl mx-auto px-6 w-full pt-28 pb-12">
+          {/* Top: brand + headline + subtitle, centered */}
+          <div className="text-center space-y-6 mb-12">
+            {/* Brand wordmark */}
+            <div className="inline-flex items-center gap-2 text-amber-400 text-4xl md:text-5xl font-black tracking-tight" dir="ltr">
+              BuildUp
             </div>
 
-            {/* Two CTA tiles — contractor (find workers) + corporation (publish workers) */}
-            <div className="hidden lg:flex flex-col gap-4">
-              {/* Contractor tile — anchored on the active-workers stat */}
-              <Link
-                href={contractorCtaHref}
-                className="group flex flex-col items-center justify-center bg-slate-800/50 hover:bg-slate-800 border border-slate-700/60 hover:border-amber-400/50 rounded-3xl p-8 w-full max-w-md transition-all duration-200 hover:-translate-y-0.5 hover:shadow-2xl hover:shadow-amber-500/10"
-              >
-                <div className="h-12 w-12 rounded-2xl bg-amber-500/20 flex items-center justify-center mb-4">
-                  <Users className="h-6 w-6 text-amber-300" />
-                </div>
-                <div className="text-5xl font-extrabold text-white mb-1 group-hover:text-amber-300 transition-colors">
-                  {HERO_STAT.value}
-                </div>
-                <div className="text-sm text-slate-400 mb-3">{HERO_STAT.label}</div>
-                <div className="text-sm text-amber-300 font-semibold mb-1">קבלן</div>
-                <div className="inline-flex items-center gap-1.5 text-sm font-semibold text-amber-300 group-hover:text-amber-200">
-                  לחץ כאן לאיתור עובדים
-                  <ArrowLeft className="h-4 w-4 group-hover:-translate-x-1 transition-transform" />
-                </div>
-              </Link>
+            <h1 className="text-3xl md:text-5xl font-extrabold leading-[1.15] tracking-tight text-white max-w-4xl mx-auto">
+              הדרך החכמה לגייס עובדים
+              <br className="hidden sm:block" />
+              <span className="text-amber-400"> לענף הבנייה</span>
+            </h1>
 
-              {/* Corporation tile — invite manpower corporations to publish */}
-              <Link
-                href={corporationCtaHref}
-                className="group flex flex-col items-center justify-center bg-slate-800/50 hover:bg-slate-800 border border-slate-700/60 hover:border-brand-400/50 rounded-3xl p-7 w-full max-w-md transition-all duration-200 hover:-translate-y-0.5 hover:shadow-2xl hover:shadow-brand-500/10"
-              >
-                <div className="h-11 w-11 rounded-2xl bg-brand-500/20 flex items-center justify-center mb-3">
-                  <Building2 className="h-5 w-5 text-brand-300" />
-                </div>
-                <div className="text-base text-slate-200 font-semibold text-center leading-snug mb-1">
-                  עשרות קבלנים כבר מנויים וחפשים עובדים
-                </div>
-                <div className="text-xs text-slate-400 text-center mb-3">
-                  מנהל תאגיד — אל תישאר בחוץ
-                </div>
-                <div className="inline-flex items-center gap-1.5 text-sm font-semibold text-brand-300 group-hover:text-brand-200">
-                  לחץ כאן ותתחיל לפרסם
-                  <ArrowLeft className="h-4 w-4 group-hover:-translate-x-1 transition-transform" />
-                </div>
-              </Link>
-            </div>
+            <p className="text-base md:text-lg text-slate-400 leading-relaxed max-w-2xl mx-auto">
+              מערכת מבוססת AI להתאמת עובדים, שיבוץ וניהול תהליך הגיוס — במהירות, בפשטות ובזמן אמת.
+            </p>
+
+            <button
+              onClick={onLeadCapture}
+              className="text-sm text-slate-500 hover:text-slate-300 underline underline-offset-4 transition-colors"
+            >
+              השאר פרטים לחזרה
+            </button>
           </div>
 
-          {/* Mobile — same two tiles, more compact */}
-          <div className="lg:hidden mt-10 grid grid-cols-1 gap-3">
+          {/* Two tiles SIDE-BY-SIDE — contractor (find workers) + corporation (publish workers) */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 max-w-5xl mx-auto">
+            {/* Contractor tile — anchored on the active-workers stat */}
             <Link
               href={contractorCtaHref}
-              className="flex flex-col items-center justify-center bg-slate-800/60 border border-slate-700/60 rounded-2xl p-6 hover:border-amber-400/50 transition-colors"
+              className="group flex flex-col items-center justify-center text-center bg-slate-800/50 hover:bg-slate-800 border border-slate-700/60 hover:border-amber-400/50 rounded-3xl p-7 md:p-9 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-2xl hover:shadow-amber-500/10"
             >
-              <div className="h-10 w-10 rounded-xl bg-amber-500/20 flex items-center justify-center mb-2">
-                <Users className="h-5 w-5 text-amber-300" />
+              <div className="h-12 w-12 rounded-2xl bg-amber-500/20 flex items-center justify-center mb-4">
+                <Users className="h-6 w-6 text-amber-300" />
               </div>
-              <div className="text-3xl font-extrabold text-white">{HERO_STAT.value}</div>
-              <div className="text-xs text-slate-400 mt-0.5 mb-2">{HERO_STAT.label}</div>
-              <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-amber-300">
-                קבלן — לחץ כאן לאיתור עובדים
-                <ArrowLeft className="h-4 w-4" />
-              </span>
+              <div className="text-4xl md:text-5xl font-extrabold text-white mb-1 group-hover:text-amber-300 transition-colors">
+                {HERO_STAT.value}
+              </div>
+              <div className="text-sm text-slate-400 mb-3">{HERO_STAT.label}</div>
+              <div className="text-sm text-amber-300 font-semibold mb-1">קבלן</div>
+              <div className="inline-flex items-center gap-1.5 text-sm font-semibold text-amber-300 group-hover:text-amber-200">
+                לחץ כאן לאיתור עובדים
+                <ArrowLeft className="h-4 w-4 group-hover:-translate-x-1 transition-transform" />
+              </div>
             </Link>
 
+            {/* Corporation tile — invite manpower corporations to publish */}
             <Link
               href={corporationCtaHref}
-              className="flex flex-col items-center justify-center bg-slate-800/60 border border-slate-700/60 rounded-2xl p-5 hover:border-brand-400/50 transition-colors"
+              className="group flex flex-col items-center justify-center text-center bg-slate-800/50 hover:bg-slate-800 border border-slate-700/60 hover:border-brand-400/50 rounded-3xl p-7 md:p-9 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-2xl hover:shadow-brand-500/10"
             >
-              <div className="h-9 w-9 rounded-xl bg-brand-500/20 flex items-center justify-center mb-2">
-                <Building2 className="h-4 w-4 text-brand-300" />
+              <div className="h-12 w-12 rounded-2xl bg-brand-500/20 flex items-center justify-center mb-4">
+                <Building2 className="h-6 w-6 text-brand-300" />
               </div>
-              <div className="text-sm text-slate-200 font-semibold text-center leading-snug">
+              <div className="text-base md:text-lg text-slate-200 font-semibold leading-snug mb-2 max-w-xs">
                 עשרות קבלנים כבר מנויים וחפשים עובדים
               </div>
-              <div className="text-xs text-slate-400 mt-0.5 mb-2">מנהל תאגיד — אל תישאר בחוץ</div>
-              <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-brand-300">
+              <div className="text-xs text-slate-400 mb-3">
+                מנהל תאגיד — אל תישאר בחוץ
+              </div>
+              <div className="inline-flex items-center gap-1.5 text-sm font-semibold text-brand-300 group-hover:text-brand-200">
                 לחץ כאן ותתחיל לפרסם
-                <ArrowLeft className="h-4 w-4" />
-              </span>
+                <ArrowLeft className="h-4 w-4 group-hover:-translate-x-1 transition-transform" />
+              </div>
             </Link>
           </div>
         </div>

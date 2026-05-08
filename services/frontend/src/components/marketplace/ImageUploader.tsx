@@ -71,8 +71,11 @@ export default function ImageUploader({ value, onChange, disabled }: ImageUpload
 
     const res = await fetch(sig.upload_url, { method: 'POST', body: fd });
     if (!res.ok) {
+      // User-facing message in Hebrew. Status logged to console for
+      // debugging.
       const txt = await res.text().catch(() => '');
-      throw new Error(`Cloudinary ${res.status}: ${txt.slice(0, 200)}`);
+      console.error('Cloudinary upload failed', res.status, txt.slice(0, 200));
+      throw new Error('שגיאה בהעלאת התמונה. נסה שוב או בחר תמונה אחרת.');
     }
     const result = await res.json() as CloudinaryUploadResult;
     return result.secure_url;
@@ -90,7 +93,7 @@ export default function ImageUploader({ value, onChange, disabled }: ImageUpload
         const url = await uploadOne(f);
         accepted.push(url);
       } catch (e) {
-        setError(e instanceof Error ? e.message : 'upload_failed');
+        setError(e instanceof Error ? e.message : 'שגיאה בהעלאת התמונה');
         // Stop on first failure — partial uploads still get committed
         // via the surrounding setState below.
         break;

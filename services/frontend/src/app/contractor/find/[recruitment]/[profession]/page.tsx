@@ -225,7 +225,7 @@ export default function FindFormPage() {
             </label>
             <input
               id="field-quantity"
-              type="number" min={1} max={50}
+              type="number" min={1}
               value={quantity}
               onChange={(e) => {
                 setQuantity(parseInt(e.target.value || '1', 10));

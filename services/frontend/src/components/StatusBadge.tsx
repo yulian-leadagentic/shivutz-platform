@@ -9,25 +9,30 @@ interface StatusConfig {
 
 const STATUS_MAP: Record<string, StatusConfig> = {
   // Job request statuses
-  open:           { label: 'פתוח',          variant: 'default' },
-  draft:          { label: 'טיוטה',         variant: 'secondary' },
-  matched:        { label: 'מותאם',         variant: 'purple' },
-  in_negotiation: { label: 'במשא ומתן',     variant: 'warning' },
-  fulfilled:      { label: 'הושלם',         variant: 'success' },
-  cancelled:      { label: 'בוטל',          variant: 'destructive' },
+  open:               { label: 'פתוח',           variant: 'default' },
+  draft:              { label: 'טיוטה',          variant: 'secondary' },
+  matched:            { label: 'מותאם',          variant: 'purple' },
+  in_negotiation:     { label: 'במשא ומתן',      variant: 'warning' },
+  fulfilled:          { label: 'הושלם',          variant: 'success' },
+  cancelled:          { label: 'בוטל',           variant: 'destructive' },
 
   // Deal / proposal statuses
-  proposed:       { label: 'הוצע',          variant: 'default' },
-  accepted:       { label: 'אושר',          variant: 'success' },
-  active:         { label: 'פעיל',          variant: 'success' },
-  reporting:      { label: 'בדיווח',        variant: 'warning' },
-  completed:      { label: 'הסתיים',        variant: 'success' },
-  disputed:       { label: 'במחלוקת',       variant: 'destructive' },
-  rejected:       { label: 'נדחה',          variant: 'destructive' },
+  proposed:           { label: 'הוצע',           variant: 'default' },
+  corp_committed:     { label: 'תאגיד הגיב',     variant: 'warning' },
+  counter_proposed:   { label: 'הצעה נגדית',     variant: 'warning' },
+  accepted:           { label: 'אושר',           variant: 'success' },
+  active:             { label: 'פעיל',           variant: 'success' },
+  reporting:          { label: 'בדיווח',         variant: 'warning' },
+  completed:          { label: 'הסתיים',         variant: 'success' },
+  closed:             { label: 'סגור',           variant: 'success' },
+  disputed:           { label: 'במחלוקת',        variant: 'destructive' },
+  rejected:           { label: 'נדחה',           variant: 'destructive' },
+  cancelled_by_corp:  { label: 'בוטל ע״י תאגיד', variant: 'destructive' },
+  expired:            { label: 'פג תוקף',        variant: 'destructive' },
 
   // Org approval statuses
-  pending:        { label: 'ממתין לאישור',  variant: 'warning' },
-  approved:       { label: 'מאושר',         variant: 'success' },
+  pending:            { label: 'ממתין לאישור',   variant: 'warning' },
+  approved:           { label: 'מאושר',          variant: 'success' },
 };
 
 interface StatusBadgeProps {
