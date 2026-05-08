@@ -89,6 +89,9 @@ export default function FindFormPage() {
   const [searchId, setSearchId]       = useState<string | null>(null);
   const [corps, setCorps]             = useState<CorpMatch[] | null>(null);
   const [error, setError]             = useState<string>('');
+  // `errorField` is the form field that triggered the current error, if
+  // any. Used to highlight the offending input + scroll it into view.
+  const [errorField, setErrorField]   = useState<'quantity' | 'startDate' | null>(null);
   const [sentInquiry, setSentInquiry] = useState<Record<string, boolean>>({});
 
   function toggleOrigin(code: string) {
@@ -106,8 +109,21 @@ export default function FindFormPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError('');
-    if (quantity < 1) { setError('כמות חייבת להיות לפחות 1'); return; }
-    if (!startDate)   { setError('יש לבחור תאריך התחלה'); return; }
+    setErrorField(null);
+    if (quantity < 1) {
+      setError('יש להזין כמות עובדים של לפחות 1');
+      setErrorField('quantity');
+      document.getElementById('field-quantity')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+    if (!startDate) {
+      setError('יש לבחור תאריך תחילת עבודה לפני המשך');
+      setErrorField('startDate');
+      const el = document.getElementById('field-startDate');
+      el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el?.focus();
+      return;
+    }
 
     const months = parseInt(durationCode, 10) || 3;
     const endDate = addMonths(startDate, months);
@@ -191,6 +207,7 @@ export default function FindFormPage() {
       {!corps && !matching && (
         <form
           onSubmit={handleSubmit}
+          noValidate
           className="space-y-5 bg-white border border-slate-200 rounded-2xl p-5 shadow-sm"
         >
           {/* AI hint banner */}
@@ -207,12 +224,19 @@ export default function FindFormPage() {
               כמות עובדים <span className="text-red-500">*</span>
             </label>
             <input
+              id="field-quantity"
               type="number" min={1} max={50}
               value={quantity}
-              onChange={(e) => setQuantity(parseInt(e.target.value || '1', 10))}
-              className="w-32 border border-slate-300 rounded-lg px-3 py-2 text-sm
-                         focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none"
-              required
+              onChange={(e) => {
+                setQuantity(parseInt(e.target.value || '1', 10));
+                if (errorField === 'quantity') { setError(''); setErrorField(null); }
+              }}
+              className={`w-32 border rounded-lg px-3 py-2 text-sm outline-none
+                         focus:ring-1 ${
+                           errorField === 'quantity'
+                             ? 'border-red-500 focus:border-red-500 focus:ring-red-500'
+                             : 'border-slate-300 focus:border-brand-500 focus:ring-brand-500'
+                         }`}
             />
           </div>
 
@@ -284,13 +308,23 @@ export default function FindFormPage() {
                 תאריך תחילת עבודה <span className="text-red-500">*</span>
               </label>
               <input
+                id="field-startDate"
                 type="date"
                 value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm
-                           focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none"
-                required
+                onChange={(e) => {
+                  setStartDate(e.target.value);
+                  if (errorField === 'startDate') { setError(''); setErrorField(null); }
+                }}
+                className={`w-full border rounded-lg px-3 py-2 text-sm outline-none
+                           focus:ring-1 ${
+                             errorField === 'startDate'
+                               ? 'border-red-500 focus:border-red-500 focus:ring-red-500 bg-red-50/40'
+                               : 'border-slate-300 focus:border-brand-500 focus:ring-brand-500'
+                           }`}
               />
+              {errorField === 'startDate' && (
+                <p className="text-xs text-red-600 mt-1.5">{error}</p>
+              )}
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1.5">זמן תעסוקה</label>
@@ -328,7 +362,14 @@ export default function FindFormPage() {
             </select>
           </div>
 
-          {error && <div className="text-sm text-red-600">{error}</div>}
+          {/* Global error block — for API errors and the quantity field
+              (date errors render inline next to the date field). */}
+          {error && errorField !== 'startDate' && (
+            <div className="flex items-start gap-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+              <span aria-hidden>⚠️</span>
+              <span>{error}</span>
+            </div>
+          )}
 
           <button
             type="submit"

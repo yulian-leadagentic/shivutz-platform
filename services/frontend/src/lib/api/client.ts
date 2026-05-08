@@ -19,24 +19,42 @@ export function getRefreshToken(): string | undefined {
     ?.split('=')[1];
 }
 
+// In-flight refresh promise — shared across parallel apiFetch calls.
+// The refresh token is single-use (the auth service revokes it on first
+// use), so without serialization, parallel 401s would each try to
+// refresh, only one would succeed, and the others would fail with a
+// "token revoked" 401 and bounce the user to /login. By caching the
+// promise we ensure only one network call to /auth/refresh, and every
+// caller sees the same result.
+let refreshInFlight: Promise<string | null> | null = null;
+
 /** Attempt a silent token refresh. Returns new access token on success, null on failure. */
 async function tryRefresh(): Promise<string | null> {
+  if (refreshInFlight) return refreshInFlight;
   const refresh = getRefreshToken();
   if (!refresh) return null;
-  try {
-    const res = await fetch(`${BASE}/auth/refresh`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refresh_token: refresh }),
-    });
-    if (!res.ok) return null;
-    const data = await res.json() as { access_token: string; refresh_token?: string };
-    const { saveTokens } = await import('../auth');
-    saveTokens(data.access_token, data.refresh_token ?? refresh);
-    return data.access_token;
-  } catch {
-    return null;
-  }
+  refreshInFlight = (async () => {
+    try {
+      const res = await fetch(`${BASE}/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: refresh }),
+      });
+      if (!res.ok) return null;
+      const data = await res.json() as { access_token: string; refresh_token?: string };
+      const { saveTokens } = await import('../auth');
+      saveTokens(data.access_token, data.refresh_token ?? refresh);
+      return data.access_token;
+    } catch {
+      return null;
+    } finally {
+      // Clear after a short delay so a retry-after-401 in the same tick
+      // can still piggy-back on the result, but a brand-new refresh need
+      // doesn't get stuck on a stale promise.
+      setTimeout(() => { refreshInFlight = null; }, 0);
+    }
+  })();
+  return refreshInFlight;
 }
 
 /**
