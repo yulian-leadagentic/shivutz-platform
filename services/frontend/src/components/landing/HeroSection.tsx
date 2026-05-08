@@ -1,8 +1,12 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
-import { ChevronDown, ArrowLeft, Home, Wrench, Briefcase, Store, Users, Building2 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { ChevronDown, ArrowLeft, Home, Wrench, Briefcase, Store, Users, Building2, Loader2 } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
+import { otpApi } from '@/lib/api';
+import { saveTokens } from '@/lib/auth';
 
 // Lead-capture button removed from the hero per user feedback —
 // the two role-specific tiles are clearer entry points and the
@@ -67,22 +71,71 @@ const MARKET_CATS = [
 ];
 
 export default function HeroSection(_: HeroSectionProps) {
-  const { isLoggedIn, entityType } = useAuth();
-  // Contractor CTA — logged-in visitors land on their role dashboard;
-  // everyone else funnels to /login with intent=contractor so the login
-  // page shows contractor-specific copy and skips the entity-select
-  // screen after auth.
+  const router = useRouter();
+  const { isLoggedIn, entityType, refreshAuth } = useAuth();
+  // Tracks which tile is currently hot-swapping its entity context.
+  // Used to disable both buttons and show a spinner on the active one.
+  const [switching, setSwitching] = useState<'contractor' | 'corporation' | null>(null);
+
+  const dashboardOf = (role: 'contractor' | 'corporation') =>
+    role === 'corporation' ? '/corporation/dashboard' : '/contractor/dashboard';
+  const registerOf = (role: 'contractor' | 'corporation') =>
+    role === 'corporation' ? '/register/corporation' : '/register/contractor';
+
+  /**
+   * Decide what should happen when the user clicks a role tile.
+   *
+   *   - Not logged in → kick to /login?intent=<role> (login auto-skips
+   *     the entity-picker after auth).
+   *   - Logged in *as that role* already → just route to its dashboard.
+   *   - Logged in *as the other role* → fetch the user's memberships;
+   *     if a matching one exists, hot-swap their JWT via select-entity
+   *     so they land in the requested role without re-auth. If no
+   *     matching membership exists, send them to the registration
+   *     flow for that role.
+   *   - Anything fails along the way → fall back to /login with intent
+   *     so the user always has *some* path forward.
+   */
+  async function enterRole(role: 'contractor' | 'corporation') {
+    if (!isLoggedIn) {
+      router.push(`/login?intent=${role}`);
+      return;
+    }
+    if (entityType === role) {
+      router.push(dashboardOf(role));
+      return;
+    }
+    // Cross-role click — try to hot-swap entity context.
+    setSwitching(role);
+    try {
+      const { memberships } = await otpApi.myMemberships();
+      const matching = memberships.find((m) => m.entity_type === role);
+      if (!matching) {
+        // Logged-in user clicked a role they don't have a membership
+        // for — registration is the right next step, not /login.
+        router.push(registerOf(role));
+        return;
+      }
+      const tokens = await otpApi.selectEntity(matching.entity_id, matching.entity_type);
+      saveTokens(tokens.access_token, tokens.refresh_token);
+      refreshAuth();
+      router.push(dashboardOf(role));
+    } catch {
+      router.push(`/login?intent=${role}`);
+    } finally {
+      setSwitching(null);
+    }
+  }
+
+  // Hrefs are still set for SEO + right-click "open in new tab"
+  // behavior, but the click handler intercepts to do the right thing
+  // at runtime.
   const contractorCtaHref = !isLoggedIn
     ? '/login?intent=contractor'
-    : entityType === 'corporation' ? '/corporation/dashboard'
-    : entityType === 'contractor'  ? '/contractor/dashboard'
-    : '/login?intent=contractor';
-  // Corporation CTA — same shape, intent=corporation.
+    : dashboardOf('contractor');
   const corporationCtaHref = !isLoggedIn
     ? '/login?intent=corporation'
-    : entityType === 'corporation' ? '/corporation/dashboard'
-    : entityType === 'contractor'  ? '/contractor/dashboard'
-    : '/login?intent=corporation';
+    : dashboardOf('corporation');
 
   return (
     <section
@@ -126,7 +179,9 @@ export default function HeroSection(_: HeroSectionProps) {
             {/* Contractor tile — anchored on the active-workers stat */}
             <Link
               href={contractorCtaHref}
-              className="group flex flex-col items-center justify-center text-center bg-slate-800/50 hover:bg-slate-800 border border-slate-700/60 hover:border-amber-400/50 rounded-3xl p-7 md:p-9 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-2xl hover:shadow-amber-500/10"
+              onClick={(e) => { e.preventDefault(); enterRole('contractor'); }}
+              aria-disabled={switching !== null}
+              className={`group flex flex-col items-center justify-center text-center bg-slate-800/50 hover:bg-slate-800 border border-slate-700/60 hover:border-amber-400/50 rounded-3xl p-7 md:p-9 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-2xl hover:shadow-amber-500/10 ${switching === 'contractor' ? 'opacity-80' : ''} ${switching && switching !== 'contractor' ? 'pointer-events-none opacity-50' : ''}`}
             >
               {/* Audience label — biggest, brightest thing on the tile so
                   the user immediately knows which side this is. */}
@@ -141,15 +196,18 @@ export default function HeroSection(_: HeroSectionProps) {
               </div>
               <div className="text-sm text-slate-400 mb-4">{HERO_STAT.label}</div>
               <div className="inline-flex items-center gap-1.5 text-sm font-semibold text-amber-300 group-hover:text-amber-200">
-                לחץ כאן לאיתור עובדים
-                <ArrowLeft className="h-4 w-4 group-hover:-translate-x-1 transition-transform" />
+                {switching === 'contractor'
+                  ? <><Loader2 className="h-4 w-4 animate-spin" /> מעביר...</>
+                  : <>לחץ כאן לאיתור עובדים<ArrowLeft className="h-4 w-4 group-hover:-translate-x-1 transition-transform" /></>}
               </div>
             </Link>
 
             {/* Corporation tile — invite manpower corporations to publish */}
             <Link
               href={corporationCtaHref}
-              className="group flex flex-col items-center justify-center text-center bg-slate-800/50 hover:bg-slate-800 border border-slate-700/60 hover:border-sky-400/60 rounded-3xl p-7 md:p-9 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-2xl hover:shadow-sky-500/10"
+              onClick={(e) => { e.preventDefault(); enterRole('corporation'); }}
+              aria-disabled={switching !== null}
+              className={`group flex flex-col items-center justify-center text-center bg-slate-800/50 hover:bg-slate-800 border border-slate-700/60 hover:border-sky-400/60 rounded-3xl p-7 md:p-9 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-2xl hover:shadow-sky-500/10 ${switching === 'corporation' ? 'opacity-80' : ''} ${switching && switching !== 'corporation' ? 'pointer-events-none opacity-50' : ''}`}
             >
               {/* Audience label — same visual weight as the contractor
                   side so both sides read at a glance. */}
@@ -168,8 +226,9 @@ export default function HeroSection(_: HeroSectionProps) {
                 מנהל תאגיד — אל תישאר בחוץ
               </div>
               <div className="inline-flex items-center gap-1.5 text-sm font-semibold text-sky-300 group-hover:text-sky-200">
-                לחץ כאן ותתחיל לפרסם
-                <ArrowLeft className="h-4 w-4 group-hover:-translate-x-1 transition-transform" />
+                {switching === 'corporation'
+                  ? <><Loader2 className="h-4 w-4 animate-spin" /> מעביר...</>
+                  : <>לחץ כאן ותתחיל לפרסם<ArrowLeft className="h-4 w-4 group-hover:-translate-x-1 transition-transform" /></>}
               </div>
             </Link>
           </div>

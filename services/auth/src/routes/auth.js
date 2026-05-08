@@ -519,6 +519,35 @@ router.get('/auth/me', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// GET /auth/memberships  — list the current user's active memberships
+// Used by the frontend to switch between contractor/corporation roles
+// without re-authenticating, by feeding the chosen membership into
+// /auth/select-entity.
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/auth/memberships', async (req, res) => {
+  const authHeader = req.headers.authorization || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  if (!token) return res.status(401).json({ error: 'no token' });
+
+  let decoded;
+  try {
+    decoded = jwt.verify(token, ACCESS_SECRET);
+  } catch {
+    return res.status(401).json({ error: 'invalid token' });
+  }
+
+  const memberships = await getMemberships(getPool(), decoded.sub);
+  res.json({
+    memberships: memberships.map((m) => ({
+      membership_id: m.id,
+      entity_id:     m.entity_id,
+      entity_type:   m.entity_type,
+      role:          m.role,
+    })),
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // POST /auth/register — internal (called by user-org after entity creation)
 // Supports both legacy email+password and new phone-first paths.
 // ─────────────────────────────────────────────────────────────────────────────
