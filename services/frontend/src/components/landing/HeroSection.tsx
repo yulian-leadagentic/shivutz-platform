@@ -145,18 +145,18 @@ export default function HeroSection({ onLeadCapture }: HeroSectionProps) {
             {/* Corporation tile — invite manpower corporations to publish */}
             <Link
               href={corporationCtaHref}
-              className="group flex flex-col items-center justify-center text-center bg-slate-800/50 hover:bg-slate-800 border border-slate-700/60 hover:border-brand-400/50 rounded-3xl p-7 md:p-9 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-2xl hover:shadow-brand-500/10"
+              className="group flex flex-col items-center justify-center text-center bg-slate-800/50 hover:bg-slate-800 border border-slate-700/60 hover:border-sky-400/60 rounded-3xl p-7 md:p-9 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-2xl hover:shadow-sky-500/10"
             >
-              <div className="h-12 w-12 rounded-2xl bg-brand-500/20 flex items-center justify-center mb-4">
-                <Building2 className="h-6 w-6 text-brand-300" />
+              <div className="h-12 w-12 rounded-2xl bg-sky-500/20 flex items-center justify-center mb-4">
+                <Building2 className="h-6 w-6 text-sky-300" />
               </div>
-              <div className="text-base md:text-lg text-slate-200 font-semibold leading-snug mb-2 max-w-xs">
+              <div className="text-base md:text-xl text-white font-bold leading-snug mb-2 max-w-xs">
                 עשרות קבלנים כבר מנויים וחפשים עובדים
               </div>
-              <div className="text-xs text-slate-400 mb-3">
+              <div className="text-sm text-slate-300 mb-4">
                 מנהל תאגיד — אל תישאר בחוץ
               </div>
-              <div className="inline-flex items-center gap-1.5 text-sm font-semibold text-brand-300 group-hover:text-brand-200">
+              <div className="inline-flex items-center gap-1.5 text-sm font-semibold text-sky-300 group-hover:text-sky-200">
                 לחץ כאן ותתחיל לפרסם
                 <ArrowLeft className="h-4 w-4 group-hover:-translate-x-1 transition-transform" />
               </div>
