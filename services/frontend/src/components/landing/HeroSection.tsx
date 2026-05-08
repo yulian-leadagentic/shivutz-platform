@@ -4,8 +4,14 @@ import Link from 'next/link';
 import { ChevronDown, ArrowLeft, Home, Wrench, Briefcase, Store, Users, Building2 } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
 
+// Lead-capture button removed from the hero per user feedback —
+// the two role-specific tiles are clearer entry points and the
+// callback CTA was diluting that. Prop kept for now since the
+// landing page wrapper still passes it (LeadCaptureModal lives
+// outside the hero); marking it optional + ignoring it here is
+// the lowest-friction option.
 interface HeroSectionProps {
-  onLeadCapture: () => void;
+  onLeadCapture?: () => void;
 }
 
 // Per key-user feedback (2026-05): the "active workers" tile is the one
@@ -60,7 +66,7 @@ const MARKET_CATS = [
   },
 ];
 
-export default function HeroSection({ onLeadCapture }: HeroSectionProps) {
+export default function HeroSection(_: HeroSectionProps) {
   const { isLoggedIn, entityType } = useAuth();
   // Contractor CTA — logged-in visitors land on their role dashboard;
   // everyone else funnels to /login with intent=contractor so the login
@@ -113,13 +119,6 @@ export default function HeroSection({ onLeadCapture }: HeroSectionProps) {
             <p className="text-base md:text-lg text-slate-400 leading-relaxed max-w-2xl mx-auto">
               מערכת מבוססת AI להתאמת עובדים, שיבוץ וניהול תהליך הגיוס — במהירות, בפשטות ובזמן אמת.
             </p>
-
-            <button
-              onClick={onLeadCapture}
-              className="text-sm text-slate-500 hover:text-slate-300 underline underline-offset-4 transition-colors"
-            >
-              השאר פרטים לחזרה
-            </button>
           </div>
 
           {/* Two tiles SIDE-BY-SIDE — contractor (find workers) + corporation (publish workers) */}

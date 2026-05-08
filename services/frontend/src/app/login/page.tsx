@@ -120,18 +120,7 @@ function LoginPageInner() {
     // With an intent filter, try to auto-resolve.
     if (intent) {
       const matching = memberships.filter((m) => m.entity_type === intent);
-      if (matching.length === 1) {
-        try {
-          const tokens = await otpApi.selectEntity(matching[0].entity_id, matching[0].entity_type);
-          saveTokens(tokens.access_token, tokens.refresh_token);
-          refreshAuth();
-          router.push(intent === 'corporation' ? '/corporation/dashboard' : '/contractor/dashboard');
-          return;
-        } catch {
-          // Fall through to the picker if select-entity fails for any
-          // reason (server hiccup, race, etc.) — that's the safe path.
-        }
-      } else if (matching.length === 0) {
+      if (matching.length === 0) {
         // The user has an account but not for this role. Tell them
         // exactly that, with a link to register instead of bouncing
         // them through a picker that won't help.
@@ -139,8 +128,22 @@ function LoginPageInner() {
         setLoading(false);
         return;
       }
-      // matching.length > 1 — fall through; the picker will at least
-      // be pre-filtered by the user's intent on the next screen.
+      // 1+ matching memberships — auto-pick the first one. The user
+      // came in via a role-specific CTA so they want to enter as
+      // that role; choosing which specific entity within the role is
+      // a separate concern that an in-app entity-switcher can handle
+      // later if/when users actually have multiple orgs of the same
+      // role.
+      try {
+        const tokens = await otpApi.selectEntity(matching[0].entity_id, matching[0].entity_type);
+        saveTokens(tokens.access_token, tokens.refresh_token);
+        refreshAuth();
+        router.push(intent === 'corporation' ? '/corporation/dashboard' : '/contractor/dashboard');
+        return;
+      } catch {
+        // Fall through to the picker if select-entity fails for any
+        // reason (server hiccup, race, etc.) — that's the safe path.
+      }
     }
 
     sessionStorage.setItem('pending_memberships', JSON.stringify(memberships));
