@@ -96,6 +96,14 @@ Local Docker mounts `db/migrations/` into the MySQL container's `docker-entrypoi
 
 (This differs from Railway, where the runner script is idempotent and applies new migrations on every boot.)
 
+### Windows-specific notes
+
+The HMR override uses bind-mounts for `services/frontend/`. On Windows, Docker Desktop translates Windows host paths through WSL2; native fs events do **not** propagate through that translation. Without the polling env vars (`WATCHPACK_POLLING=true`, `CHOKIDAR_USEPOLLING=true`) the HMR watcher will appear hung — files save on the host but the container never sees the event. The override sets both; don't remove them.
+
+Performance trade-off: polling rescans the project tree at the watcher's interval, costing a few % CPU. That's why the override puts `node_modules` and `.next/` on **named Docker volumes** instead of bind-mounting them — those directories have tens of thousands of files, and every poll over them across the WSL2 boundary causes noticeable lag.
+
+If `npm install` runs every boot instead of being cached, the named volume wasn't created. Run `docker volume ls | grep shivutz` to verify `shivutz-platform_frontend_node_modules` exists. Recreate the stack if missing.
+
 ---
 
 ## Staging on Railway
