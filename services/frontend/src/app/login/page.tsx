@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, FormEvent, useRef } from 'react';
+import { useState, FormEvent, useRef, Suspense } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { Loader2 } from 'lucide-react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Loader2, ArrowLeft, UserPlus } from 'lucide-react';
 import { authApi, otpApi, type Membership } from '@/lib/api';
 import { saveTokens, getRoleFromToken } from '@/lib/auth';
 import { useAuth } from '@/lib/AuthContext';
@@ -14,6 +14,7 @@ import { HomeLink } from '@/components/HomeLink';
 
 type Mode = 'sms' | 'email';
 type OtpPhase = 'phone' | 'code';
+type Intent = 'contractor' | 'corporation' | null;
 
 function otpError(msg: string): string {
   if (msg === 'rate_limited')               return 'יותר מדי ניסיונות. נסה שוב מאוחר יותר';
@@ -32,9 +33,46 @@ function redirectByRole(router: ReturnType<typeof useRouter>, role: string | nul
   router.push('/contractor/dashboard');
 }
 
-export default function LoginPage() {
-  const router = useRouter();
+// Role-aware copy keyed by intent (the role the user clicked into).
+const COPY = {
+  contractor: {
+    title:           'כניסה כקבלן',
+    description:    'מצא עובדים לפרויקטים שלך — בכמה לחיצות',
+    existingLabel:  'קבלן קיים — הכנס',
+    newLabel:       'קבלן חדש — הירשם כאן',
+    registerHref:   '/register/contractor',
+    noAccountHint:  'מספר זה אינו רשום כקבלן. רוצה להירשם?',
+  },
+  corporation: {
+    title:           'כניסה כתאגיד',
+    description:    'פרסם עובדים זמינים והגיע ישירות לקבלנים',
+    existingLabel:  'תאגיד קיים — הכנס',
+    newLabel:       'תאגיד חדש — הירשמו כאן',
+    registerHref:   '/register/corporation',
+    noAccountHint:  'מספר זה אינו רשום כתאגיד. רוצה להירשם?',
+  },
+  generic: {
+    title:           'כניסה למערכת',
+    description:    'נשלח קוד אימות ל-SMS',
+    existingLabel:  'שלח קוד',
+    newLabel:       null,
+    registerHref:   null,
+    noAccountHint:  null,
+  },
+} as const;
+
+function LoginPageInner() {
+  const router        = useRouter();
+  const searchParams  = useSearchParams();
   const { refreshAuth } = useAuth();
+
+  // The `intent` param tells us which CTA the user clicked on the
+  // landing page. We use it to (1) show role-specific copy on this
+  // page and (2) auto-resolve membership selection after auth so the
+  // intermediate /select-entity screen is skipped.
+  const rawIntent = searchParams?.get('intent');
+  const intent: Intent = rawIntent === 'contractor' || rawIntent === 'corporation' ? rawIntent : null;
+  const copy = intent ? COPY[intent] : COPY.generic;
 
   const [mode, setMode]       = useState<Mode>('sms');
   const [loading, setLoading] = useState(false);
@@ -49,7 +87,20 @@ export default function LoginPage() {
   const [email, setEmail]       = useState('');
   const [password, setPassword] = useState('');
 
-  function handlePostLogin(
+  /**
+   * Resolve which entity the freshly-authed user should land in.
+   *
+   * - With `intent` set, we filter memberships to the requested role.
+   *   If exactly one matches, call /auth/select-entity automatically
+   *   and skip the picker entirely.
+   * - Without `intent` (or when the user has multiple matching
+   *   memberships of the same role), fall back to the legacy
+   *   /select-entity flow.
+   * - With `intent` set but no matching membership, show an inline
+   *   "register instead?" prompt — that's almost always the actual
+   *   user error here, not an auth bug.
+   */
+  async function handlePostLogin(
     accessToken: string,
     refreshToken: string,
     role: string,
@@ -58,12 +109,43 @@ export default function LoginPage() {
   ) {
     saveTokens(accessToken, refreshToken);
     refreshAuth();
-    if (needsEntitySelection && memberships) {
-      sessionStorage.setItem('pending_memberships', JSON.stringify(memberships));
-      router.push('/select-entity');
-    } else {
+
+    // No entity selection needed (single membership embedded in the
+    // initial JWT, or admin role) — straight to the role's dashboard.
+    if (!needsEntitySelection || !memberships) {
       redirectByRole(router, role);
+      return;
     }
+
+    // With an intent filter, try to auto-resolve.
+    if (intent) {
+      const matching = memberships.filter((m) => m.entity_type === intent);
+      if (matching.length === 1) {
+        try {
+          const tokens = await otpApi.selectEntity(matching[0].entity_id, matching[0].entity_type);
+          saveTokens(tokens.access_token, tokens.refresh_token);
+          refreshAuth();
+          router.push(intent === 'corporation' ? '/corporation/dashboard' : '/contractor/dashboard');
+          return;
+        } catch {
+          // Fall through to the picker if select-entity fails for any
+          // reason (server hiccup, race, etc.) — that's the safe path.
+        }
+      } else if (matching.length === 0) {
+        // The user has an account but not for this role. Tell them
+        // exactly that, with a link to register instead of bouncing
+        // them through a picker that won't help.
+        setError(copy.noAccountHint ?? 'מספר זה אינו רשום עבור התפקיד שבחרת.');
+        setLoading(false);
+        return;
+      }
+      // matching.length > 1 — fall through; the picker will at least
+      // be pre-filtered by the user's intent on the next screen.
+    }
+
+    sessionStorage.setItem('pending_memberships', JSON.stringify(memberships));
+    if (intent) sessionStorage.setItem('pending_intent', intent);
+    router.push('/select-entity');
   }
 
   async function handleSendOtp(e: FormEvent) {
@@ -87,7 +169,7 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const res = await otpApi.loginOtp(normPhone, code);
-      handlePostLogin(
+      await handlePostLogin(
         res.access_token, res.refresh_token, res.role,
         res.needs_entity_selection, res.memberships,
       );
@@ -130,9 +212,9 @@ export default function LoginPage() {
         <Card className="rounded-t-none shadow-md">
           <CardHeader className="text-center pb-2">
             <div className="text-3xl font-bold text-brand-600 mb-1">שיבוץ</div>
-            <CardTitle className="text-xl">כניסה למערכת</CardTitle>
+            <CardTitle className="text-xl">{copy.title}</CardTitle>
             <CardDescription>
-              {mode === 'sms' ? 'נשלח קוד אימות ל-SMS' : 'כניסה עם אימייל וסיסמה'}
+              {mode === 'sms' ? copy.description : 'כניסה עם אימייל וסיסמה'}
             </CardDescription>
           </CardHeader>
 
@@ -157,7 +239,7 @@ export default function LoginPage() {
                 <Button type="submit" size="lg" disabled={loading} className="w-full">
                   {loading
                     ? <><Loader2 className="h-4 w-4 animate-spin" /><span>שולח...</span></>
-                    : 'שלח קוד'}
+                    : copy.existingLabel}
                 </Button>
               </form>
             )}
@@ -256,24 +338,53 @@ export default function LoginPage() {
               )}
             </div>
 
-            {/* Registration links */}
-            <div className="mt-6 pt-4 border-t border-slate-100 flex flex-col gap-2 text-sm text-center text-slate-600">
-              <p>
-                קבלן?{' '}
-                <Link href="/register/contractor" className="text-brand-600 font-medium hover:underline">
-                  הירשם כאן
-                </Link>
-              </p>
-              <p>
-                תאגיד?{' '}
-                <Link href="/register/corporation" className="text-brand-600 font-medium hover:underline">
-                  הירשמו כאן
-                </Link>
-              </p>
+            {/* "Don't have an account yet?" CTA — when intent is set,
+                this is a single prominent button matching the chosen
+                role. Without intent, fall back to the older two-link
+                pattern so non-CTA visitors (direct /login navs) still
+                see both registration paths. */}
+            <div className="mt-6 pt-5 border-t border-slate-100">
+              {intent ? (
+                <div className="flex flex-col gap-2 text-center">
+                  <p className="text-sm text-slate-600">אין לך עדיין חשבון?</p>
+                  <Button asChild variant="outline" size="lg" className="w-full">
+                    <Link href={copy.registerHref!}>
+                      <UserPlus className="h-4 w-4" />
+                      {copy.newLabel}
+                      <ArrowLeft className="h-4 w-4" />
+                    </Link>
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-2 text-sm text-center text-slate-600">
+                  <p>
+                    קבלן?{' '}
+                    <Link href="/register/contractor" className="text-brand-600 font-medium hover:underline">
+                      הירשם כאן
+                    </Link>
+                  </p>
+                  <p>
+                    תאגיד?{' '}
+                    <Link href="/register/corporation" className="text-brand-600 font-medium hover:underline">
+                      הירשמו כאן
+                    </Link>
+                  </p>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  // useSearchParams must be wrapped in Suspense for static
+  // optimization to work in Next 16 App Router.
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
+      <LoginPageInner />
+    </Suspense>
   );
 }

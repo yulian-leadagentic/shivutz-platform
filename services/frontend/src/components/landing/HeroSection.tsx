@@ -63,19 +63,20 @@ const MARKET_CATS = [
 export default function HeroSection({ onLeadCapture }: HeroSectionProps) {
   const { isLoggedIn, entityType } = useAuth();
   // Contractor CTA — logged-in visitors land on their role dashboard;
-  // everyone else funnels to /login (which has the "register here" link).
+  // everyone else funnels to /login with intent=contractor so the login
+  // page shows contractor-specific copy and skips the entity-select
+  // screen after auth.
   const contractorCtaHref = !isLoggedIn
-    ? '/login'
+    ? '/login?intent=contractor'
     : entityType === 'corporation' ? '/corporation/dashboard'
     : entityType === 'contractor'  ? '/contractor/dashboard'
-    : '/login';
-  // Corporation CTA — same logic but lands on the corp dashboard /
-  // sends not-yet-registered visitors to the corp registration page.
+    : '/login?intent=contractor';
+  // Corporation CTA — same shape, intent=corporation.
   const corporationCtaHref = !isLoggedIn
-    ? '/register/corporation'
+    ? '/login?intent=corporation'
     : entityType === 'corporation' ? '/corporation/dashboard'
     : entityType === 'contractor'  ? '/contractor/dashboard'
-    : '/register/corporation';
+    : '/login?intent=corporation';
 
   return (
     <section
@@ -104,9 +105,9 @@ export default function HeroSection({ onLeadCapture }: HeroSectionProps) {
             </div>
 
             <h1 className="text-3xl md:text-5xl font-extrabold leading-[1.15] tracking-tight text-white max-w-4xl mx-auto">
-              הדרך החכמה לגייס עובדים
+              הדרך החכמה לגייס
               <br className="hidden sm:block" />
-              <span className="text-amber-400"> לענף הבנייה</span>
+              <span className="text-amber-400"> עובדים זרים</span>
             </h1>
 
             <p className="text-base md:text-lg text-slate-400 leading-relaxed max-w-2xl mx-auto">
