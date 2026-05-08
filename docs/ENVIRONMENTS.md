@@ -37,11 +37,33 @@ The Railway hostnames `*.railway.internal` are identical strings across envs —
 ### Quick start
 
 ```
-docker-compose up -d            # starts all 9 backends + mysql + redis + rabbitmq + frontend
-docker-compose logs -f auth     # follow logs for one service
-docker-compose down             # stop everything (volumes persist)
-docker-compose down -v          # stop AND wipe volumes (fresh DB)
+docker compose up -d            # starts all 9 backends + mysql + redis + rabbitmq + frontend
+docker compose logs -f auth     # follow logs for one service
+docker compose down             # stop everything (volumes persist)
+docker compose down -v          # stop AND wipe volumes (fresh DB)
 ```
+
+### Frontend dev mode — HMR (default)
+
+`docker-compose.override.yml` is auto-loaded by `docker compose up`. It replaces the frontend service with a `next dev` container that bind-mounts `services/frontend/` into `/app`. Save a file → HMR pushes it to `http://localhost:3008/` in <1s. No image rebuild needed for code changes.
+
+First `docker compose up` after a clean checkout is slow because the override runs `npm install` inside the container into a named volume. Subsequent boots reuse that volume and start in seconds.
+
+Forcing the production-build frontend locally (debugging the Dockerfile, replicating a Railway issue):
+
+```
+docker compose -f docker-compose.yml up frontend       # ignores the override
+```
+
+When you change `package.json` (deps), recreate the volume so `npm install` runs fresh:
+
+```
+docker compose down
+docker volume rm shivutz-platform_frontend_node_modules
+docker compose up -d
+```
+
+(Backend services don't have HMR yet — they still build on `docker compose up`. If you need fast backend iteration, add a similar override block per service.)
 
 ### Per-service ports (host)
 
