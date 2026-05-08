@@ -37,11 +37,37 @@ export default function SelectEntityPage() {
       router.replace('/login');
       return;
     }
+    let list: Membership[];
     try {
-      setMemberships(JSON.parse(raw) as Membership[]);
+      list = JSON.parse(raw) as Membership[];
     } catch {
       router.replace('/login');
+      return;
     }
+
+    // If the user came from a role-specific landing CTA we already
+    // know which entity_type they want — filter the picker so they
+    // only see the relevant memberships. With exactly one match we
+    // pre-select silently and never render the picker at all.
+    const intent = sessionStorage.getItem('pending_intent');
+    if (intent === 'contractor' || intent === 'corporation') {
+      const matching = list.filter((m) => m.entity_type === intent);
+      if (matching.length === 1) {
+        // Auto-resolve. The button onClick handler does exactly this,
+        // so we'll just call it.
+        sessionStorage.removeItem('pending_intent');
+        select(matching[0]);
+        return;
+      }
+      if (matching.length > 1) list = matching;
+      // matching.length === 0 — fall back to showing all memberships;
+      // the user does have other valid roles, so the picker is the
+      // honest UI here.
+    }
+    setMemberships(list);
+    // Eslint disable — `select` and `router` are stable for this page
+    // and re-running this effect would re-trigger the auto-select.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
 
   async function select(m: Membership) {
@@ -52,6 +78,7 @@ export default function SelectEntityPage() {
       saveTokens(res.access_token, res.refresh_token);
       refreshAuth();
       sessionStorage.removeItem('pending_memberships');
+      sessionStorage.removeItem('pending_intent');
 
       if (m.entity_type === 'corporation') {
         router.push('/corporation/dashboard');
