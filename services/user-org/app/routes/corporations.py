@@ -245,6 +245,57 @@ async def register_corporation(data: CorporationCreate):
         conn.close()
 
 
+@router.get("")
+def list_corporations(
+    tier: Optional[str] = None,
+    recruitment_type: Optional[str] = None,
+):
+    """Internal-use directory query — returns the lightweight subset
+    of corporation rows needed by the notification service to fan
+    out SMS for the search.no_match event.
+
+    Filters (both optional):
+      - tier:             'tier_2' restricts to admin-approved corps
+      - recruitment_type: 'foreign'|'domestic' — corp must list at
+                          least one matching country in
+                          countries_of_origin (foreign) or have
+                          domestic-recruit enabled.
+
+    Note: this endpoint is reachable only via internal Docker
+    networking (user-org:3002 isn't published to host). The gateway
+    doesn't proxy GET on this path; if you need to expose it
+    externally later, add an admin-only guard.
+    """
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        filters = ["deleted_at IS NULL", "approval_status = 'approved'"]
+        params: list = []
+        if tier:
+            filters.append("verification_tier = %s")
+            params.append(tier)
+        # countries_of_origin is a JSON array column. "foreign" means
+        # any non-IL country; "domestic" means the corp explicitly
+        # listed Israel. We treat unset recruitment_type as no filter.
+        if recruitment_type == 'foreign':
+            filters.append("JSON_LENGTH(countries_of_origin) > 0")
+            filters.append("NOT JSON_CONTAINS(countries_of_origin, '\"IL\"')")
+        elif recruitment_type == 'domestic':
+            filters.append("JSON_CONTAINS(countries_of_origin, '\"IL\"')")
+        where = " AND ".join(filters)
+        cur.execute(
+            f"""SELECT id, company_name, company_name_he, contact_name,
+                       contact_phone, contact_email, verification_tier,
+                       countries_of_origin
+                  FROM corporations
+                 WHERE {where}""",
+            tuple(params),
+        )
+        return cur.fetchall()
+    finally:
+        conn.close()
+
+
 @router.get("/{org_id}")
 def get_corporation(org_id: str):
     conn = get_db()
