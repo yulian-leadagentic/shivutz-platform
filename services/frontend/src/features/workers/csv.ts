@@ -147,18 +147,26 @@ export function validateRows(
   const profCodes = new Set(professions.map(p => p.code));
   const profCodesLower = new Map(professions.map(p => [p.code.toLowerCase(), p.code]));
   const originCodes = new Set(origins.map(o => o.code));
+  const originCodesLower = new Map(origins.map(o => [o.code.toLowerCase(), o.code]));
 
-  // Hebrew name → code lookup (so "טיח" maps to "plastering" etc.).
+  // Hebrew + English name → code lookup. Both languages map back to
+  // the canonical 2-letter origin code so importers can write either
+  // "רומניה" or "Romania" or "RO" interchangeably. Same for
+  // professions (English name like "Flooring" was previously rejected
+  // even though we already had the column in the DB).
   const profByHe   = new Map(professions.map(p => [p.name_he.trim(), p.code]));
+  const profByEn   = new Map(professions.map(p => [p.name_en.trim().toLowerCase(), p.code]));
   const originByHe = new Map(origins.map(o => [o.name_he.trim(), o.code]));
+  const originByEn = new Map(origins.map(o => [o.name_en.trim().toLowerCase(), o.code]));
 
   function resolveOnePiece(piece: string): string | null {
     const t = piece.trim();
     if (!t) return null;
-    if (profCodes.has(t))                return t;
-    if (profCodesLower.has(t.toLowerCase())) return profCodesLower.get(t.toLowerCase()) ?? null;
-    if (profByHe.has(t))                 return profByHe.get(t) ?? null;
-    if (PROFESSION_ALIASES[t])           return PROFESSION_ALIASES[t];
+    if (profCodes.has(t))                       return t;
+    if (profCodesLower.has(t.toLowerCase()))    return profCodesLower.get(t.toLowerCase()) ?? null;
+    if (profByHe.has(t))                        return profByHe.get(t) ?? null;
+    if (profByEn.has(t.toLowerCase()))          return profByEn.get(t.toLowerCase()) ?? null;
+    if (PROFESSION_ALIASES[t])                  return PROFESSION_ALIASES[t];
     return null;
   }
 
@@ -176,17 +184,50 @@ export function validateRows(
   }
 
   function resolveOrigin(input: string): string {
-    if (originCodes.has(input))       return input;
-    if (originByHe.has(input.trim())) return originByHe.get(input.trim()) || input;
-    return input;
+    const t = input.trim();
+    if (!t) return t;
+    if (originCodes.has(t))                  return t;
+    if (originCodesLower.has(t.toLowerCase())) return originCodesLower.get(t.toLowerCase()) ?? t;
+    if (originByHe.has(t))                   return originByHe.get(t) ?? t;
+    if (originByEn.has(t.toLowerCase()))     return originByEn.get(t.toLowerCase()) ?? t;
+    return t;
+  }
+
+  /**
+   * Resolve the experience-range column. Accepts:
+   *   - the canonical bucket codes ("0-6", "6-12", "12-24", "24-36", "36+")
+   *   - a plain integer or decimal interpreted as YEARS (1, 2, 2.5, 4)
+   *   - a phrase like "2 שנים", "1 שנה", "2 years" — extract the number
+   *
+   * Year → bucket mapping is upper-bound-inclusive: 1y → 6-12,
+   * 2y → 12-24, 3y → 24-36, anything above 3y → 36+. 0-0.5y → 0-6.
+   */
+  function resolveExperienceRange(input: string): string {
+    const t = input.trim();
+    if (!t) return '';
+    if (VALID_EXPERIENCE_RANGES.has(t)) return t;
+
+    // Pull out the first numeric token — covers "2", "2.5", "2 שנים",
+    // "2 years", "כ-2 שנים", "~3y" etc.
+    const numMatch = /(\d+(?:[.,]\d+)?)/.exec(t);
+    if (!numMatch) return t;
+    const years = parseFloat(numMatch[1].replace(',', '.'));
+    if (isNaN(years) || years < 0) return t;
+
+    if (years <= 0.5) return '0-6';
+    if (years <= 1)   return '6-12';
+    if (years <= 2)   return '12-24';
+    if (years <= 3)   return '24-36';
+    return '36+';
   }
 
   return raw.map((cells) => {
     let [first_name = '', last_name = '', profession_type = '', experience_range = '',
       origin_country = '', visa_valid_until = '', employee_number = ''] = cells;
 
-    profession_type = resolveProfession(profession_type);
-    origin_country  = resolveOrigin(origin_country);
+    profession_type   = resolveProfession(profession_type);
+    origin_country    = resolveOrigin(origin_country);
+    experience_range  = resolveExperienceRange(experience_range);
 
     const errors: string[] = [];
     if (!first_name) errors.push('שם פרטי חסר');
@@ -196,7 +237,7 @@ export function validateRows(
       errors.push(`מקצוע לא תקין: "${profession_type}". מקצועות חוקיים: ${validList}`);
     }
     if (experience_range && !VALID_EXPERIENCE_RANGES.has(experience_range)) {
-      errors.push(`טווח ניסיון לא תקין: ${experience_range}. ערכים חוקיים: 0-6, 6-12, 12-24, 24-36, 36+`);
+      errors.push(`טווח ניסיון לא תקין: ${experience_range}. ניתן לכתוב מספר שנים (1, 2, 2.5) או טווח חודשים: 0-6, 6-12, 12-24, 24-36, 36+`);
     }
     if (origin_country && !originCodes.has(origin_country)) {
       const validList = origins.map(o => `${o.code} (${o.name_he})`).join(', ');
