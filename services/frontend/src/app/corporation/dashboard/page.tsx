@@ -153,13 +153,13 @@ export default function CorporationDashboard() {
           <div className="space-y-4">
             <div className="inline-flex items-center gap-2 rounded-full border border-sky-300/30 bg-sky-400/10 px-3 py-1 text-xs font-medium text-sky-200">
               <span className="h-1.5 w-1.5 rounded-full bg-sky-300 animate-pulse" />
-              חבר ישירות לקבלנים פעילים
+              התחבר ישירות לקבלנים פעילים
             </div>
             <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-white leading-[1.15] tracking-tight">
-              פרסם עובדים זמינים — <span className="text-sky-300">קבלנים מחפשים</span>
+              פרסם עובדים זמינים — <span className="text-sky-300">עשרות קבלנים כבר מחפשים עובדים</span>
             </h1>
             <p className="text-sm sm:text-base text-slate-300 leading-relaxed max-w-2xl">
-              נהל את רשימת העובדים שלך, קבל פניות מקבלנים ועסקאות מאושרות במקום אחד.{' '}
+              נהל את רשימת העובדים שלך, קבל פניות מקבלנים ואשר עסקאות בקליק במקום אחד.{' '}
               <span className="text-white font-medium">מנוע AI מתאים את העובדים לפרויקטים הנכונים.</span>
             </p>
           </div>
