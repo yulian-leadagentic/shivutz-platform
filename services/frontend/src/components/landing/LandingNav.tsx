@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
 import { Menu, X, LayoutDashboard } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
@@ -37,10 +38,16 @@ export default function LandingNav({ onLeadCapture }: LandingNavProps) {
       <div className="max-w-7xl mx-auto px-6 h-16 flex items-center gap-6">
 
         {/* Logo */}
-        <Link href="/" className="flex items-center shrink-0 me-auto" dir="ltr">
-          <span className={`text-2xl font-black tracking-tight leading-none transition-colors ${scrolled ? 'text-brand-600' : 'text-amber-400'}`}>
-            BuildUp
-          </span>
+        <Link href="/" className="flex items-center shrink-0 me-auto" aria-label="BuildUp — Home">
+          <Image
+            src="/brand/buildup-logo.png"
+            alt="BuildUp"
+            width={140}
+            height={48}
+            className="h-12 w-auto object-contain"
+            priority
+            unoptimized
+          />
         </Link>
 
         {/* Desktop nav */}

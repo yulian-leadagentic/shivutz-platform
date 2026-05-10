@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
@@ -64,8 +65,16 @@ export default function Sidebar() {
     <aside className="flex flex-col w-60 min-h-screen bg-slate-900 shrink-0">
 
       {/* Logo — clickable, returns to public landing */}
-      <Link href="/" className="flex items-center h-14 px-5 border-b border-slate-800 hover:bg-slate-800/40 transition-colors">
-        <span dir="ltr" className="text-amber-400 text-2xl font-black tracking-tight leading-none">BuildUp</span>
+      <Link href="/" className="flex items-center justify-center h-16 px-4 border-b border-slate-800 hover:bg-slate-800/40 transition-colors bg-white/5">
+        <Image
+          src="/brand/buildup-logo.png"
+          alt="BuildUp"
+          width={140}
+          height={48}
+          className="h-12 w-auto object-contain"
+          unoptimized
+          priority
+        />
       </Link>
 
       {/* Nav */}
