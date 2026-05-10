@@ -278,7 +278,20 @@ export default function RegisterContractorPage() {
       <div className="w-full max-w-lg mb-3 flex justify-end">
         <HomeLink />
       </div>
-      <div className="w-full max-w-lg">
+      <div className="w-full max-w-lg relative">
+        {/* Full-card loading overlay during the final registration
+            submit. Same pattern as the corporation register page —
+            users were double-clicking submit because the small button
+            spinner wasn't obvious enough. */}
+        {loading && step === 3 && (
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center
+                          bg-white/85 backdrop-blur-sm rounded-xl"
+               aria-live="polite" aria-busy="true">
+            <Loader2 className="h-12 w-12 animate-spin text-brand-600 mb-4" />
+            <p className="text-base font-semibold text-slate-800">מבצע רישום...</p>
+            <p className="text-sm text-slate-500 mt-1">אל תסגור את הדף</p>
+          </div>
+        )}
         <div className="h-2 rounded-t-xl bg-gradient-to-e from-brand-600 to-brand-400" />
         <Card className="rounded-t-none shadow-md">
           <CardHeader className="pb-2">
