@@ -473,8 +473,71 @@ async function handle(routingKey, payload, sendEmail) {
       break;
     }
 
+    case 'search.no_match':
+      // Contractor's search returned 0 results. SMS every approved corp
+      // ("תאגיד מאושר" — verification_tier='tier_2') with the same
+      // recruitment_type so they know there's a contractor waiting.
+      // Best-effort: failures on individual sends don't bubble out.
+      await broadcastNoMatch(payload);
+      break;
+
     default:
       console.warn(`[handlers] No handler for: ${routingKey}`);
+  }
+}
+
+/**
+ * Fan-out SMS for the search.no_match event. Pulls every active
+ * tier_2 corporation that registered for the same recruitment_type
+ * (foreign vs domestic) and sends each one a Hebrew SMS pointing at
+ * the workers-upload screen. The user-org service exposes the corp
+ * directory; we accept its 200/[] result as the source of truth.
+ */
+async function broadcastNoMatch(payload) {
+  const profHe = await translateProfession(payload.profession_type);
+  const region = payload.region ? ` באזור ${payload.region}` : '';
+  const qty = payload.quantity || 1;
+  const recruitment = payload.recruitment_type === 'foreign' ? 'מחו״ל' : 'מהארץ';
+  // Resolve the corp directory. user-org exposes
+  // GET /organizations/corporations?tier=tier_2&recruitment_type=...
+  // (added in Wave 5 specifically for this broadcast).
+  let corps = [];
+  try {
+    const url = `${USER_ORG_URL}/organizations/corporations?tier=tier_2&recruitment_type=${encodeURIComponent(payload.recruitment_type || '')}`;
+    const resp = await fetch(url);
+    if (resp.ok) corps = await resp.json();
+  } catch (err) {
+    console.error('[no_match] corp directory unreachable:', err.message);
+    return;
+  }
+  if (!Array.isArray(corps) || corps.length === 0) return;
+
+  const uploadLink = `${FRONTEND_URL}/corporation/workers/new`;
+  const message =
+    `BuildUp — קבלן מחפש ${qty} עובדי ${profHe} ${recruitment}${region}, ולא נמצאו התאמות פעילות.\n` +
+    `אם יש לכם עובדים זמינים — זה הזמן להעלות אותם למערכת:\n${uploadLink}`;
+
+  for (const c of corps) {
+    if (!c?.contact_phone) continue;
+    await sendSmsInternal(c.contact_phone, message);
+  }
+}
+
+/**
+ * profession_type → Hebrew display label, via worker service's enum
+ * endpoint. Falls back to the raw code if the lookup fails — the SMS
+ * is still useful, just less polished.
+ */
+async function translateProfession(code) {
+  if (!code) return 'עובדים';
+  try {
+    const resp = await fetch(`${process.env.WORKER_SERVICE_URL || 'http://worker:3003'}/enums/professions`);
+    if (!resp.ok) return code;
+    const list = await resp.json();
+    const hit = Array.isArray(list) && list.find((p) => p.code === code);
+    return hit?.name_he || code;
+  } catch {
+    return code;
   }
 }
 

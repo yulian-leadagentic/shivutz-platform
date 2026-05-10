@@ -270,6 +270,21 @@ func (h *Handler) RunMatch(w http.ResponseWriter, r *http.Request) {
 		id, string(corpsJSON), bestFillPct, bestIsComplete, uiState,
 	)
 
+	// Zero-match broadcast: tell every relevant corp to come upload
+	// workers in this profession. The notification service listens on
+	// search.no_match and resolves which corps to SMS based on
+	// recruitment_type + profession + their tier_2 status.
+	if len(corps) == 0 && h.pub != nil {
+		h.pub.Publish("search.no_match", map[string]any{
+			"search_id":         s.ID,
+			"contractor_id":     s.ContractorID,
+			"profession_type":   s.ProfessionType,
+			"recruitment_type":  s.RecruitmentType,
+			"region":            s.Region,
+			"quantity":          s.Quantity,
+		})
+	}
+
 	writeJSON(w, 200, map[string]any{"search_id": id, "corps": corps})
 }
 

@@ -36,6 +36,11 @@ async function startConsumer() {
     // and sends SMS+email only when fill_state transitions to 'complete'.
     'worker.changed',
     'worker_search.changed',
+    // Wave 5: contractor's search returned 0 corps with workers in the
+    // requested profession. We SMS every approved corp telling them
+    // there's a contractor actively looking — turns dead-ends into
+    // recruiting moments.
+    'search.no_match',
   ];
   for (const key of keys) {
     await channel.bindQueue(queue, EXCHANGE_NAME, key);

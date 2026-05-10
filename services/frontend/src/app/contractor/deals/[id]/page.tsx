@@ -369,34 +369,39 @@ export default function DealDetailPage() {
               </div>
             )}
 
-            {/* Workers list (with disclosure-rule fields applied by backend) */}
+            {/* Workers list — pre-approval (this screen, status =
+                corp_committed) hides names + internal IDs. Contractor
+                gets to evaluate profession / experience / origin /
+                languages without identifying info, which keeps a
+                level playing field across deals and avoids "I'll
+                pick them by name" shortcuts. Names + internal IDs
+                are unlocked AFTER the contractor approves the list
+                — that block lives further down in this page (search
+                for "post-disclosure"). */}
             {workers.length > 0 && (
               <div className="bg-white rounded-xl border border-emerald-100 p-4">
                 <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
                   רשימת עובדים שהוצעה ({workers.length})
                 </p>
+                <p className="text-[11px] text-slate-400 mb-3 leading-relaxed">
+                  פרטי הזיהוי של העובדים יוצגו לאחר אישור הרשימה. כעת מוצגים מקצוע, ניסיון וארץ מוצא בלבד.
+                </p>
                 <div className="space-y-2">
-                  {workers.map((w) => {
-                    const wAny = w as unknown as { full_name?: string; internal_id?: string; years_in_israel?: number };
-                    const name = wAny.full_name || `${w.first_name ?? ''} ${w.last_name ?? ''}`.trim() || '—';
-                    const initials = name.split(/\s+/).filter(Boolean).map((p) => p[0]).slice(0, 2).join('');
+                  {workers.map((w, idx) => {
+                    const wAny = w as unknown as { years_in_israel?: number; experience_range?: string };
                     return (
                       <div key={w.id} className="flex items-center gap-3 py-1.5 border-b border-slate-50 last:border-0">
                         <div className="h-8 w-8 rounded-full bg-brand-100 flex items-center justify-center shrink-0 text-xs font-bold text-brand-700">
-                          {initials || '?'}
+                          {idx + 1}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <p className="text-sm font-medium text-slate-900">{name}</p>
-                            {wAny.internal_id && (
-                              <span className="text-[10px] font-mono text-slate-400" dir="ltr">{wAny.internal_id}</span>
-                            )}
-                          </div>
+                          <p className="text-sm font-medium text-slate-900">עובד #{idx + 1}</p>
                           <p className="text-xs text-slate-500">
                             {w.profession_type}
+                            {wAny.experience_range && <> · ניסיון {wAny.experience_range}</>}
+                            {!wAny.experience_range && w.experience_years != null && <> · {w.experience_years} שנים ניסיון</>}
                             {w.origin_country && <> · {w.origin_country}</>}
                             {wAny.years_in_israel != null && <> · {wAny.years_in_israel} שנים בישראל</>}
-                            {Array.isArray(w.languages) && w.languages.length > 0 && <> · {w.languages.join(', ')}</>}
                           </p>
                         </div>
                       </div>
