@@ -123,11 +123,11 @@ export default function TopBar({ mobileNav }: TopBarProps = {}) {
             className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-slate-100 transition-colors"
             aria-label="תפריט משתמש"
           >
-            <span className="text-xs text-slate-600 font-medium hidden sm:block max-w-[160px] truncate">{name}</span>
-            <div className="h-7 w-7 rounded-full bg-primary-600 flex items-center justify-center shrink-0">
-              <span className="text-white text-xs font-semibold">{getInitials(name)}</span>
+            <span className="text-base text-slate-800 font-semibold hidden sm:block max-w-[220px] truncate">{name}</span>
+            <div className="h-9 w-9 rounded-full bg-primary-600 flex items-center justify-center shrink-0">
+              <span className="text-white text-sm font-bold">{getInitials(name)}</span>
             </div>
-            <ChevronDown className={`h-3.5 w-3.5 text-slate-400 transition-transform ${menuOpen ? 'rotate-180' : ''}`} />
+            <ChevronDown className={`h-4 w-4 text-slate-500 transition-transform ${menuOpen ? 'rotate-180' : ''}`} />
           </button>
 
           {menuOpen && (

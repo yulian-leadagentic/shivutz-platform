@@ -15,7 +15,6 @@ import {
 import { dealApi, orgApi } from '@/lib/api';
 import { getAccessToken, decodeJwtPayload } from '@/lib/auth';
 import type { Deal } from '@/types';
-import { Button } from '@/components/ui/button';
 
 const ACTIVE_DEAL_STATUSES = new Set([
   'proposed', 'corp_committed', 'counter_proposed',
@@ -147,16 +146,22 @@ export default function ContractorDashboardPage() {
           </div>
 
           <div className="lg:shrink-0">
-            <Button
-              asChild
-              size="lg"
-              className="bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-slate-900 font-bold shadow-lg shadow-amber-500/20 px-7"
+            {/* Oversize CTA — per user feedback this is the primary
+                action on the page, so it should dwarf everything around
+                it. h-16 + text-xl + px-10 + animate-pulse-shadow ring. */}
+            <Link
+              href="/contractor/find"
+              className="group inline-flex items-center justify-center gap-3
+                         h-16 px-10 rounded-2xl
+                         bg-amber-500 hover:bg-amber-400 active:bg-amber-600
+                         text-slate-900 font-extrabold text-xl tracking-tight
+                         shadow-2xl shadow-amber-500/40
+                         ring-4 ring-amber-300/30 hover:ring-amber-300/60
+                         transition-all duration-200 hover:-translate-y-0.5"
             >
-              <Link href="/contractor/find">
-                <Zap className="h-5 w-5" />
-                התחל גיוס
-              </Link>
-            </Button>
+              <Zap className="h-7 w-7 group-hover:rotate-12 transition-transform" />
+              התחל גיוס
+            </Link>
           </div>
         </div>
       </section>
@@ -165,7 +170,7 @@ export default function ContractorDashboardPage() {
         <Tile
           href="/contractor/deals"
           icon={<Handshake className="h-9 w-9" />}
-          title="בדיקת מצב עובדים"
+          title="סטטוס בקשות פעילות"
           subtitle="כל ההצעות, העסקאות הפעילות והדיווחים שלך"
           badge={activeDeals}
           accent="amber"
