@@ -151,29 +151,21 @@ def _generate_employee_number(conn, corp_id: str) -> str:
 
 # ── Routes ────────────────────────────────────────────────────────────────
 
-def _require_corp_tier_2(corp_id: str) -> None:
-    """Block worker publishing for corporations that haven't been admin-
-    approved as 'תאגיד מאושר'. Tier_0 / tier_1 corporations can use the
-    rest of the platform; only publishing/offering workers is gated."""
+def _require_corp_exists(corp_id: str) -> None:
+    """Just verify the corporation row exists. Worker creation is no
+    longer tier-gated — unapproved corporations can build their roster
+    in advance, and matching filters out their workers until admin
+    approval flips them to 'תאגיד מאושר' (tier_2). See
+    list_workers() below for where the tier filter lives now."""
     conn = get_db()
     try:
         cur = conn.cursor()
         cur.execute(
-            "SELECT verification_tier FROM org_db.corporations WHERE id = %s AND deleted_at IS NULL",
+            "SELECT 1 FROM org_db.corporations WHERE id = %s AND deleted_at IS NULL",
             (corp_id,),
         )
-        row = cur.fetchone()
-        if not row:
+        if not cur.fetchone():
             raise HTTPException(status_code=404, detail="corporation_not_found")
-        if row["verification_tier"] != "tier_2":
-            raise HTTPException(
-                status_code=403,
-                detail={
-                    "code": "corporation_not_approved",
-                    "message": "פרסום עובדים מותר רק לתאגידים מאושרים. אישור התאגיד מבוצע על ידי מנהל המערכת.",
-                    "current_tier": row["verification_tier"],
-                },
-            )
     finally:
         conn.close()
 
@@ -186,7 +178,7 @@ async def create_worker(
     corp_id = data.corporation_id or x_org_id
     if not corp_id:
         raise HTTPException(status_code=400, detail="corporation_id required")
-    _require_corp_tier_2(corp_id)
+    _require_corp_exists(corp_id)
 
     exp_years = _resolve_exp(data.experience_years, data.experience_range)
     worker_id = str(uuid.uuid4())
@@ -248,7 +240,7 @@ async def bulk_create_workers(
     corp_id = data.corporation_id or x_org_id
     if not corp_id:
         raise HTTPException(status_code=400, detail="corporation_id required")
-    _require_corp_tier_2(corp_id)
+    _require_corp_exists(corp_id)
     if not 1 <= data.quantity <= 50:
         raise HTTPException(status_code=400, detail="quantity must be 1-50")
 
@@ -311,25 +303,49 @@ def list_workers(
     limit: int = 200,
     x_org_id: Optional[str] = Header(default=None),
 ):
+    """List workers with two visibility modes, distinguished by whether
+    a `corporation_id` (or x-org-id) is specified:
+
+      - With corp scope: corp viewing its OWN roster — return all
+        workers regardless of corp approval state. The corp needs to
+        see their pending workers so they can edit and prepare while
+        waiting for admin approval.
+
+      - Without corp scope: a global query, e.g. the matching engine
+        searching for candidates. We JOIN to org_db.corporations and
+        require verification_tier = 'tier_2' so workers belonging to
+        unapproved corporations are silently excluded from search
+        results until admin approval.
+    """
     corp_id = corporation_id or x_org_id
     conn = get_db()
     try:
         cur = conn.cursor()
-        filters = ["deleted_at IS NULL"]
+        filters = ["w.deleted_at IS NULL"]
         params: list = []
+        join_clause = ""
 
         if corp_id:
-            filters.append("corporation_id = %s"); params.append(corp_id)
+            filters.append("w.corporation_id = %s"); params.append(corp_id)
+        else:
+            # Global query — gate by corp approval. INNER JOIN so workers
+            # whose corp row was deleted are also excluded.
+            join_clause = (
+                " INNER JOIN org_db.corporations c "
+                " ON c.id = w.corporation_id "
+                " AND c.deleted_at IS NULL "
+                " AND c.verification_tier = 'tier_2' "
+            )
         if profession:
-            filters.append("profession_type = %s"); params.append(profession)
+            filters.append("w.profession_type = %s"); params.append(profession)
         if status:
-            filters.append("status = %s"); params.append(status)
+            filters.append("w.status = %s"); params.append(status)
         if visa_until_min:
-            filters.append("visa_valid_until >= %s"); params.append(visa_until_min)
+            filters.append("w.visa_valid_until >= %s"); params.append(visa_until_min)
 
         where = " AND ".join(filters)
         cur.execute(
-            f"SELECT * FROM workers WHERE {where} ORDER BY created_at DESC LIMIT %s",
+            f"SELECT w.* FROM workers w{join_clause} WHERE {where} ORDER BY w.created_at DESC LIMIT %s",
             params + [limit]
         )
         rows = cur.fetchall()
