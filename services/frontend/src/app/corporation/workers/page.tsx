@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useState, useRef } from 'react';
 import Link from 'next/link';
-import { Loader2, Search, Plus, AlertTriangle, Check, X, Pencil } from 'lucide-react';
-import { workerApi } from '@/lib/api';
+import { Loader2, Search, Plus, AlertTriangle, Check, X, Pencil, Clock } from 'lucide-react';
+import { workerApi, orgApi } from '@/lib/api';
+import { getAccessToken, decodeJwtPayload } from '@/lib/auth';
 import type { Worker } from '@/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -304,6 +305,12 @@ export default function WorkersPage() {
   const [loading, setLoading]             = useState(true);
   const [search, setSearch]               = useState('');
   const [statusFilter, setStatusFilter]   = useState<'all' | 'available' | 'assigned' | 'deactivated'>('all');
+  // Surface "תאגיד עדיין לא אושר — העובדים שלך לא יופיעו לקבלנים" so
+  // the corp knows uploads are saved but invisible until admin
+  // approval. We pull the verification_tier and approval_status off
+  // the corporation row; only tier_2 + approved exposes workers in
+  // matching (see services/worker/app/routes/workers.py list_workers).
+  const [pendingApproval, setPendingApproval] = useState(false);
 
   const { professions, origins, regions, professionMap, originMap, regionMap } = useEnums();
 
@@ -322,6 +329,23 @@ export default function WorkersPage() {
 
   useEffect(() => {
     workerApi.list().then(setWorkers).catch(console.error).finally(() => setLoading(false));
+
+    // Detect pending-approval state for the banner.
+    const token = getAccessToken();
+    if (!token) return;
+    const payload = decodeJwtPayload(token);
+    const entityId = (payload?.entity_id || payload?.org_id) as string | undefined;
+    const entType  = (payload?.entity_type || payload?.org_type) as string | undefined;
+    if (entityId && entType === 'corporation') {
+      orgApi.getCorporation(entityId)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .then((c: any) => {
+          // Pending iff not yet tier_2. tier_2 is the only setting that
+          // exposes workers to matching. Same gate the backend enforces.
+          setPendingApproval(c.verification_tier !== 'tier_2');
+        })
+        .catch(() => {});
+    }
   }, []);
 
   // Update employee_number in local state after inline save
@@ -386,6 +410,22 @@ export default function WorkersPage() {
           </Link>
         </Button>
       </div>
+
+      {/* Pending-approval banner — corp can upload but workers are
+          hidden from matching until admin approves the corporation. */}
+      {pendingApproval && (
+        <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-2xl p-4">
+          <div className="shrink-0 w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
+            <Clock className="h-5 w-5 text-amber-600" />
+          </div>
+          <div className="flex-1">
+            <h3 className="font-semibold text-amber-900 text-sm">התאגיד עדיין ממתין לאישור</h3>
+            <p className="text-sm text-amber-700 mt-0.5 leading-relaxed">
+              ניתן להוסיף עובדים ולהכין את הרשימה כבר עכשיו, אך הם לא יופיעו לקבלנים בחיפוש עד שמנהל המערכת יאשר את התאגיד. בדרך כלל אישור עד 48 שעות.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Expiring visa warning */}
       {expiringSoon.length > 0 && (
