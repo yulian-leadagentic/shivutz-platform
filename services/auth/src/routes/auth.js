@@ -64,12 +64,35 @@ async function issueRefreshToken(pool, userId) {
 }
 
 /**
- * Fetch entity memberships for a user.
+ * Fetch entity memberships for a user, enriched with the Hebrew
+ * company name pulled cross-database from org_db.contractors /
+ * org_db.corporations. The membership picker has nothing else to
+ * disambiguate two contractor memberships with the same role —
+ * showing the company name keeps it actionable.
+ *
+ * `entity_name` falls back gracefully: company_name_he → company_name
+ * → null. The frontend handles null by hiding the line.
  */
 async function getMemberships(pool, userId) {
+  const orgDb = process.env.ORG_DB_NAME || 'org_db';
   const [rows] = await pool.query(
-    `SELECT * FROM entity_memberships
-     WHERE user_id = ? AND is_active = TRUE AND invitation_accepted_at IS NOT NULL`,
+    `SELECT em.*,
+            COALESCE(
+              CASE em.entity_type
+                WHEN 'contractor'  THEN c.company_name_he
+                WHEN 'corporation' THEN co.company_name_he
+              END,
+              CASE em.entity_type
+                WHEN 'contractor'  THEN c.company_name
+                WHEN 'corporation' THEN co.company_name
+              END
+            ) AS entity_name
+       FROM entity_memberships em
+       LEFT JOIN \`${orgDb}\`.contractors  c  ON em.entity_type = 'contractor'  AND c.id  = em.entity_id
+       LEFT JOIN \`${orgDb}\`.corporations co ON em.entity_type = 'corporation' AND co.id = em.entity_id
+      WHERE em.user_id = ?
+        AND em.is_active = TRUE
+        AND em.invitation_accepted_at IS NOT NULL`,
     [userId]
   );
   return rows;
@@ -227,6 +250,7 @@ router.post('/auth/login/otp', async (req, res) => {
         membership_id: m.membership_id,
         entity_id:     m.entity_id,
         entity_type:   m.entity_type,
+        entity_name:   m.entity_name,
         role:          m.role,
       })) : undefined,
     });
@@ -539,9 +563,10 @@ router.get('/auth/memberships', async (req, res) => {
   const memberships = await getMemberships(getPool(), decoded.sub);
   res.json({
     memberships: memberships.map((m) => ({
-      membership_id: m.id,
+      membership_id: m.membership_id,
       entity_id:     m.entity_id,
       entity_type:   m.entity_type,
+      entity_name:   m.entity_name,
       role:          m.role,
     })),
   });

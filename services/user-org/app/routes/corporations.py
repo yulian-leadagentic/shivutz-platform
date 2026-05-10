@@ -101,6 +101,30 @@ async def register_corporation(data: CorporationCreate):
     if not is_valid_israeli_id(data.business_number):
         raise HTTPException(status_code=400, detail="invalid_business_number")
 
+    # Block duplicate corporation registration for the same phone.
+    # Same reasoning as the contractor route — without this the same
+    # phone accumulates extra corporation memberships in the picker.
+    conn = get_db()
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT 1
+               FROM auth_db.entity_memberships em
+               JOIN auth_db.users u ON u.id = em.user_id
+               WHERE u.phone = %s
+                 AND em.entity_type = 'corporation'
+                 AND em.is_active = TRUE
+               LIMIT 1""",
+            (data.contact_phone,),
+        )
+        if cur.fetchone():
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "phone_already_corporation",
+                    "message": "מספר טלפון זה כבר רשום כתאגיד. אנא היכנס במקום להירשם, או פנה לתמיכה.",
+                },
+            )
+
     # Cross-check רשם החברות. Corporations don't have an email/sms self-
     # verification path; tier_2 ("תאגיד מאושר") is admin-only.
     registry = await data_gov_il.lookup(data.business_number)

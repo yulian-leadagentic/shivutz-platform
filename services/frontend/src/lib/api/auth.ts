@@ -5,6 +5,11 @@ export interface Membership {
   membership_id: string;
   entity_id: string;
   entity_type: 'contractor' | 'corporation';
+  /** Hebrew company name (or fallback to non-Hebrew name). May be null
+   *  for legacy memberships where the org row was deleted but the
+   *  membership row lingered — display logic should fall back to the
+   *  entity_type label in that case. */
+  entity_name: string | null;
   role: string;
 }
 
