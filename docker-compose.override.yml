@@ -30,6 +30,19 @@ services:
       WATCHPACK_POLLING: "true"
       CHOKIDAR_USEPOLLING: "true"
 
+  # Force stub SMS locally so OTPs don't drain the Vonage quota or fail
+  # silently when the account is rate-limited / out of credits. The
+  # generated 6-digit code is printed to the auth service logs:
+  #   docker compose logs -f auth | grep "OTP for"
+  # MASTER_OTP=999999 (already in .env) also works as an unconditional
+  # bypass for local development.
+  auth:
+    environment:
+      SMS_PROVIDER: stub
+  notification:
+    environment:
+      SMS_PROVIDER: stub
+
 volumes:
   frontend_node_modules:
   frontend_next_cache:

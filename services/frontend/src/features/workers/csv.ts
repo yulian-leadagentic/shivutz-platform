@@ -63,6 +63,35 @@ export function parseCSV(text: string): string[][] {
   });
 }
 
+/** Hand-curated aliases for the common Hebrew variations users type
+ * into the Excel "מקצוע" column. The DB seed uses one canonical form
+ * (e.g. "ריצוף" — the activity), but importers naturally write the
+ * worker form (רצף / רצפים) or alternate spellings. Mapping these to
+ * the canonical code unblocks the import without forcing the user to
+ * memorize the exact DB value. Add new entries here when feedback
+ * surfaces them — cheaper than chasing alias support into the schema. */
+const PROFESSION_ALIASES: Record<string, string> = {
+  // flooring
+  'רצף': 'flooring', 'רצפים': 'flooring', 'רצפן': 'flooring', 'רצפנים': 'flooring',
+  'ריצוף ופרקט': 'flooring', 'פרקט': 'flooring',
+  // plastering
+  'טייח': 'plastering', 'טייחים': 'plastering', 'טיחים': 'plastering',
+  // scaffolding
+  'פיגומאי': 'scaffolding', 'פיגומאים': 'scaffolding', 'פיגום': 'scaffolding',
+  // formwork
+  'תפסן': 'formwork', 'תפסנים': 'formwork', 'נגרי תפסנות': 'formwork',
+  // skeleton
+  'שלדים': 'skeleton', 'בנאי שלד': 'skeleton', 'בנאים': 'skeleton',
+  // painting
+  'צבעי': 'painting', 'צבעים': 'painting', 'צבעות': 'painting',
+  // electricity
+  'חשמלאי': 'electricity', 'חשמלאים': 'electricity',
+  // plumbing
+  'אינסטלטור': 'plumbing', 'אינסטלטורים': 'plumbing', 'שרברב': 'plumbing', 'שרברבים': 'plumbing',
+  // general
+  'כללית': 'general', 'עובד כללי': 'general', 'פועל': 'general', 'פועלים': 'general',
+};
+
 /** Validate parsed rows. Wave 2: only first_name / last_name / profession
  * are required. experience_range / origin_country / visa_valid_until
  * accept blank ("לא צויין"); we only flag a value that's PRESENT but
@@ -72,24 +101,51 @@ export function parseCSV(text: string): string[][] {
  * addition to the code (e.g. "plastering"); we silently translate to
  * the code so old corp Excel sheets that wrote Hebrew don't break.
  * Error messages now list the valid codes so the user can self-correct
- * without leaving the page. */
+ * without leaving the page.
+ *
+ * Wave 5 (2026-05-10): forgiving profession matching:
+ *   - try each comma- or slash-separated piece independently
+ *     (so "ריצוף, פרקט" picks the first valid match)
+ *   - case-insensitive code match
+ *   - hand-curated alias map for common worker-form / plural Hebrew
+ *     names (רצפים, טייחים, חשמלאי, ...) that the seed only knows by
+ *     activity-form (ריצוף, טיח, חשמל). */
 export function validateRows(
   raw: string[][],
   professions: Profession[],
   origins: Origin[],
 ): ExcelRow[] {
   const profCodes = new Set(professions.map(p => p.code));
+  const profCodesLower = new Map(professions.map(p => [p.code.toLowerCase(), p.code]));
   const originCodes = new Set(origins.map(o => o.code));
 
   // Hebrew name → code lookup (so "טיח" maps to "plastering" etc.).
   const profByHe   = new Map(professions.map(p => [p.name_he.trim(), p.code]));
   const originByHe = new Map(origins.map(o => [o.name_he.trim(), o.code]));
 
+  function resolveOnePiece(piece: string): string | null {
+    const t = piece.trim();
+    if (!t) return null;
+    if (profCodes.has(t))                return t;
+    if (profCodesLower.has(t.toLowerCase())) return profCodesLower.get(t.toLowerCase()) ?? null;
+    if (profByHe.has(t))                 return profByHe.get(t) ?? null;
+    if (PROFESSION_ALIASES[t])           return PROFESSION_ALIASES[t];
+    return null;
+  }
+
   function resolveProfession(input: string): string {
-    if (profCodes.has(input))      return input;
-    if (profByHe.has(input.trim())) return profByHe.get(input.trim()) || input;
+    // Try the whole string first.
+    const direct = resolveOnePiece(input);
+    if (direct) return direct;
+    // Then try each comma/slash-separated piece — picks first match so
+    // "ריצוף, פרקט" or "טיח/טייחים" still maps cleanly.
+    for (const piece of input.split(/[,/]/)) {
+      const m = resolveOnePiece(piece);
+      if (m) return m;
+    }
     return input;
   }
+
   function resolveOrigin(input: string): string {
     if (originCodes.has(input))       return input;
     if (originByHe.has(input.trim())) return originByHe.get(input.trim()) || input;
