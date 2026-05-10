@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { Home, LayoutDashboard, ClipboardCheck, Handshake, Building2, LogOut, Percent, PhoneCall, Users, Inbox, Store } from 'lucide-react';
@@ -27,9 +28,17 @@ const NAV = [
 function AdminSidebarBody({ pathname, onLogout }: { pathname: string; onLogout: () => void }) {
   return (
     <div className="w-64 max-w-full bg-slate-900 text-white flex flex-col h-full">
-      <Link href="/" className="block px-6 py-5 border-b border-slate-700 hover:bg-slate-800/40 transition-colors">
-        <span dir="ltr" className="text-2xl font-black text-amber-400 tracking-tight leading-none">BuildUp</span>
-        <span className="block text-xs text-slate-400 mt-1">פאנל ניהול</span>
+      <Link href="/" className="block px-6 py-4 border-b border-slate-700 hover:bg-slate-800/40 transition-colors">
+        <Image
+          src="/brand/buildup-logo-light.png"
+          alt="BuildUp"
+          width={140}
+          height={48}
+          className="h-11 w-auto object-contain"
+          unoptimized
+          priority
+        />
+        <span className="block text-xs text-slate-400 mt-1.5">פאנל ניהול</span>
       </Link>
 
       <nav className="flex-1 py-4 space-y-1 px-3 overflow-y-auto">

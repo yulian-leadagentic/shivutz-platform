@@ -37,10 +37,14 @@ export default function LandingNav({ onLeadCapture }: LandingNavProps) {
     }`}>
       <div className="max-w-7xl mx-auto px-6 h-16 flex items-center gap-6">
 
-        {/* Logo */}
+        {/* Logo — swaps the asset based on the nav background.
+            Un-scrolled the nav sits over the dark hero (transparent
+            bg), so we use the white-on-transparent variant. After
+            scroll the nav gets a white bg and we want the navy/orange
+            lockup for contrast. */}
         <Link href="/" className="flex items-center shrink-0 me-auto" aria-label="BuildUp — Home">
           <Image
-            src="/brand/buildup-logo.png"
+            src={scrolled ? '/brand/buildup-logo.png' : '/brand/buildup-logo-light.png'}
             alt="BuildUp"
             width={140}
             height={48}

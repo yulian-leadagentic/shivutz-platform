@@ -6,6 +6,7 @@ const { startConsumer } = require('./consumers');
 const { runVisaExpiryCron } = require('./cron/visaExpiry');
 const { runContractorRevalidationCron } = require('./cron/contractorRevalidation');
 const { runDealLifecycleCron } = require('./cron/dealLifecycle');
+const { runContractorApprovalReminderCron } = require('./cron/contractorApprovalReminder');
 const notifRoutes = require('./routes/notifications');
 
 const app = express();
@@ -54,6 +55,14 @@ const PORT = process.env.NOTIF_PORT || 3006;
   // Hourly — deal lifecycle (expire / capture / admin-nudge)
   cron.schedule('0 * * * *', () => {
     runDealLifecycleCron().catch(console.error);
+  });
+
+  // Daily at 09:00 — SMS contractors with stuck corp_committed deals
+  // (pending their approval > 24h). One summary text per contractor
+  // with a deep link to the /contractor/deals queue.
+  cron.schedule('0 9 * * *', () => {
+    console.log('[cron] Running contractor approval reminder');
+    runContractorApprovalReminderCron().catch(console.error);
   });
 
   app.listen(PORT, () => console.log(`Notification service listening on ${PORT}`));
