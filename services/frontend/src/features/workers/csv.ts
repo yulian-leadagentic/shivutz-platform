@@ -21,6 +21,35 @@ export const EXCEL_EXAMPLE = [
 
 const VALID_EXPERIENCE_RANGES = new Set(['0-6', '6-12', '12-24', '24-36', '36+']);
 
+/**
+ * Parse a visa-validity date in any of the formats Israeli importers
+ * actually type: DD/MM/YYYY, DD-MM-YYYY, DD.MM.YYYY, or already-ISO
+ * YYYY-MM-DD. Returns the ISO form on success or null when the input
+ * doesn't look like a valid date — the backend's Pydantic validator
+ * only accepts ISO, so anything we can't normalize here would round-
+ * trip back as a useless English error.
+ */
+function normalizeVisaDate(input: string): string | null {
+  const t = input.trim();
+  if (!t) return '';
+  // ISO: YYYY-MM-DD
+  let m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(t);
+  if (m) {
+    const [, y, mo, d] = m;
+    return `${y}-${mo.padStart(2,'0')}-${d.padStart(2,'0')}`;
+  }
+  // DD/MM/YYYY (or with - or .)
+  m = /^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})$/.exec(t);
+  if (m) {
+    const [, d, mo, y] = m;
+    const iso = `${y}-${mo.padStart(2,'0')}-${d.padStart(2,'0')}`;
+    // Sanity check via Date parser — rejects 31/02/2026 etc.
+    const dt = new Date(iso);
+    if (!isNaN(dt.getTime()) && dt.toISOString().slice(0, 10) === iso) return iso;
+  }
+  return null;
+}
+
 export interface ExcelRow {
   first_name: string;
   last_name: string;
@@ -172,6 +201,17 @@ export function validateRows(
     if (origin_country && !originCodes.has(origin_country)) {
       const validList = origins.map(o => `${o.code} (${o.name_he})`).join(', ');
       errors.push(`מדינת מוצא לא תקינה: "${origin_country}". מדינות חוקיות: ${validList}`);
+    }
+    // Normalize visa date — accept DD/MM/YYYY, DD-MM-YYYY, ISO. Empty
+    // is fine (visa is optional). Anything else gets a Hebrew error
+    // BEFORE the backend rejects with a raw Pydantic English message.
+    if (visa_valid_until) {
+      const normalized = normalizeVisaDate(visa_valid_until);
+      if (normalized === null) {
+        errors.push(`תאריך ויזה לא תקין: "${visa_valid_until}". פורמט מקובל: DD/MM/YYYY (לדוגמה 31/12/2027) או YYYY-MM-DD.`);
+      } else {
+        visa_valid_until = normalized;
+      }
     }
     return {
       first_name, last_name, profession_type, experience_range, origin_country,

@@ -57,6 +57,67 @@ async function tryRefresh(): Promise<string | null> {
   return refreshInFlight;
 }
 
+// Field-name → Hebrew label for the most-touched API payloads.
+// Surfaced when a Pydantic / FastAPI validation error names a field
+// the user shouldn't have to read in English.
+const DEFAULT_FIELD_HE: Record<string, string> = {
+  visa_valid_until:        'תאריך תוקף ויזה',
+  visa_expiry_date:        'תאריך תוקף ויזה',
+  start_date:              'תאריך התחלה',
+  end_date:                'תאריך סיום',
+  project_start_date:      'תאריך תחילת פרויקט',
+  full_name:               'שם מלא',
+  first_name:              'שם פרטי',
+  last_name:               'שם משפחה',
+  phone:                   'טלפון',
+  email:                   'אימייל',
+  profession_type:         'מקצוע',
+  origin_country:          'מדינת מוצא',
+  region:                  'אזור',
+  experience_range:        'טווח ניסיון',
+  quantity:                'כמות',
+  business_number:         'מספר ע.מ / ח.פ',
+  company_name_he:         'שם חברה',
+};
+
+/**
+ * Best-effort translation of common Pydantic / FastAPI validation
+ * error patterns into Hebrew. Default English messages
+ * ("Input should be a valid date or datetime, invalid character in
+ * year") leak through to end users on a Hebrew-only UI; this maps
+ * the most common ones we hit to a clean Hebrew sentence + the
+ * field name when we can pull it out of the `loc` array. Anything
+ * we don't recognize falls back to the original — still English,
+ * but at least not silently dropped.
+ */
+function translatePydanticMessage(msg: string, loc?: unknown): string {
+  const fieldKey = Array.isArray(loc) && loc.length > 0
+    ? String(loc[loc.length - 1])
+    : '';
+  const fieldHe = DEFAULT_FIELD_HE[fieldKey] ?? fieldKey;
+  const lower = msg.toLowerCase();
+
+  if (lower.includes('valid date') || lower.includes('valid datetime') || lower.includes('invalid character in year')) {
+    return fieldHe ? `תאריך לא תקין בשדה "${fieldHe}". יש להשתמש בפורמט YYYY-MM-DD או DD/MM/YYYY.` : 'תאריך לא תקין. יש להשתמש בפורמט YYYY-MM-DD או DD/MM/YYYY.';
+  }
+  if (lower.includes('field required') || lower.includes('missing')) {
+    return fieldHe ? `שדה חובה חסר: ${fieldHe}` : 'שדה חובה חסר';
+  }
+  if (lower.includes('valid email')) {
+    return 'כתובת אימייל לא תקינה';
+  }
+  if (lower.includes('valid integer') || lower.includes('valid number')) {
+    return fieldHe ? `ערך מספרי לא תקין בשדה "${fieldHe}"` : 'ערך מספרי לא תקין';
+  }
+  if (lower.includes('string should have at least')) {
+    return fieldHe ? `הערך בשדה "${fieldHe}" קצר מדי` : 'הערך קצר מדי';
+  }
+  if (lower.includes('string should have at most')) {
+    return fieldHe ? `הערך בשדה "${fieldHe}" ארוך מדי` : 'הערך ארוך מדי';
+  }
+  return msg;
+}
+
 /**
  * Extract a human-readable error message from an API response body.
  *
@@ -86,7 +147,9 @@ async function extractErrorMessage(res: Response): Promise<string> {
     }
     if (Array.isArray(b.detail) && b.detail.length > 0) {
       const first = b.detail[0] as Record<string, unknown>;
-      if (typeof first?.msg === 'string') return first.msg;
+      if (typeof first?.msg === 'string') {
+        return translatePydanticMessage(first.msg, first.loc);
+      }
     }
   }
   return res.statusText;
