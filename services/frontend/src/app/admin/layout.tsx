@@ -28,8 +28,8 @@ function AdminSidebarBody({ pathname, onLogout }: { pathname: string; onLogout: 
   return (
     <div className="w-64 max-w-full bg-slate-900 text-white flex flex-col h-full">
       <Link href="/" className="block px-6 py-5 border-b border-slate-700 hover:bg-slate-800/40 transition-colors">
-        <span className="text-2xl font-bold text-brand-400">שיבוץ</span>
-        <span className="block text-xs text-slate-400 mt-0.5">פאנל ניהול</span>
+        <span dir="ltr" className="text-2xl font-black text-amber-400 tracking-tight leading-none">BuildUp</span>
+        <span className="block text-xs text-slate-400 mt-1">פאנל ניהול</span>
       </Link>
 
       <nav className="flex-1 py-4 space-y-1 px-3 overflow-y-auto">

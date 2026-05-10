@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { HomeLink } from '@/components/HomeLink';
+import Logo from '@/components/Logo';
 import type { CorporationLookupResult } from '@/types';
 
 const TOTAL_STEPS = 3;
@@ -64,7 +65,7 @@ interface Step3 {
 
 const TC_VERSION = '2026-04-27.v1';
 const TC_TEXT = `
-תנאי שימוש ופלטפורמת שיבוץ — גרסה ${TC_VERSION}
+תנאי שימוש ופלטפורמת BuildUp — גרסה ${TC_VERSION}
 
 1. אישור והפעלה
 המערכת פתוחה לתאגיד מיד עם הרישום. פרסום עובדים והגשת הצעות מחייבים אישור ידני של מנהל המערכת ("תאגיד מאושר").
@@ -247,7 +248,7 @@ export default function RegisterCorporationPage() {
         <div className="h-2 rounded-t-xl bg-gradient-to-e from-brand-600 to-brand-400" />
         <Card className="rounded-t-none shadow-md">
           <CardHeader className="pb-2">
-            <div className="text-2xl font-bold text-brand-600 mb-1 text-center">שיבוץ</div>
+            <div className="flex justify-center mb-2"><Logo size={48} /></div>
             <CardTitle className="text-center">הרשמת תאגיד</CardTitle>
             <CardDescription className="text-center">שלב {step} מתוך {TOTAL_STEPS}</CardDescription>
             <div className="mt-3 flex gap-1.5">

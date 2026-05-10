@@ -1,5 +1,4 @@
 import Link from 'next/link';
-import { Building2 } from 'lucide-react';
 
 export default function LandingFooter() {
   return (
@@ -8,11 +7,8 @@ export default function LandingFooter() {
         <div className="grid sm:grid-cols-2 md:grid-cols-4 gap-8 mb-10">
           {/* Brand */}
           <div className="md:col-span-2">
-            <div className="flex items-center gap-2 mb-3">
-              <div className="h-8 w-8 rounded-lg bg-brand-600 flex items-center justify-center">
-                <Building2 className="h-4 w-4 text-white" />
-              </div>
-              <span className="text-white text-xl font-bold">שיבוץ</span>
+            <div className="mb-3" dir="ltr">
+              <span className="text-amber-400 text-2xl font-black tracking-tight leading-none">BuildUp</span>
             </div>
             <p className="text-sm leading-relaxed max-w-xs">
               הפלטפורמה המובילה בישראל לשיבוץ עובדים זרים בענף הבנייה — מאמתת, מתאימה ומקלה.
@@ -43,7 +39,7 @@ export default function LandingFooter() {
         </div>
 
         <div className="border-t border-slate-800 pt-6 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-600">
-          <span>© {new Date().getFullYear()} שיבוץ פלטפורמה בע"מ — כל הזכויות שמורות</span>
+          <span>© {new Date().getFullYear()} BuildUp פלטפורמה בע"מ — כל הזכויות שמורות</span>
           <span>מורשה ופועל לפי חוקי הגנת העובד הזר בישראל</span>
         </div>
       </div>

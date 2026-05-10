@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Building2, Menu, X, LayoutDashboard } from 'lucide-react';
+import { Menu, X, LayoutDashboard } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
 
 interface LandingNavProps {
@@ -37,12 +37,9 @@ export default function LandingNav({ onLeadCapture }: LandingNavProps) {
       <div className="max-w-7xl mx-auto px-6 h-16 flex items-center gap-6">
 
         {/* Logo */}
-        <Link href="/" className="flex items-center gap-2 shrink-0 me-auto">
-          <div className="h-8 w-8 rounded-lg bg-brand-600 flex items-center justify-center">
-            <Building2 className="h-4 w-4 text-white" />
-          </div>
-          <span className={`text-lg font-bold transition-colors ${scrolled ? 'text-slate-900' : 'text-white'}`}>
-            שיבוץ
+        <Link href="/" className="flex items-center shrink-0 me-auto" dir="ltr">
+          <span className={`text-2xl font-black tracking-tight leading-none transition-colors ${scrolled ? 'text-brand-600' : 'text-amber-400'}`}>
+            BuildUp
           </span>
         </Link>
 

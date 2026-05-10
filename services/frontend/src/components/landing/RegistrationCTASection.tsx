@@ -28,7 +28,7 @@ export default function RegistrationCTASection({ onLeadCapture }: RegistrationCT
         <div className="text-center mb-12">
           <p className="text-xs font-semibold uppercase tracking-widest text-brand-600 mb-3">מוכנים להתחיל?</p>
           <h2 className="text-3xl md:text-4xl font-extrabold text-slate-900 mb-3">הצטרפו לפלטפורמה המובילה</h2>
-          <p className="text-slate-500">אלפי קבלנים ותאגידים כבר פועלים בשיבוץ</p>
+          <p className="text-slate-500">אלפי קבלנים ותאגידים כבר פועלים ב-BuildUp</p>
         </div>
 
         <div className="grid md:grid-cols-2 gap-6">

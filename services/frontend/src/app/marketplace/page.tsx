@@ -81,7 +81,7 @@ export default function MarketplacePage() {
       {/* Top nav bar */}
       <nav className="bg-white border-b border-slate-200 sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
-          <Link href="/" className="text-2xl font-bold text-brand-600 shrink-0">שיבוץ</Link>
+          <Link href="/" dir="ltr" className="shrink-0 text-2xl font-black text-brand-600 tracking-tight leading-none">BuildUp</Link>
           <form onSubmit={handleSearch} className="flex-1 max-w-md flex gap-2">
             <div className="relative flex-1">
               <Search className="absolute start-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />

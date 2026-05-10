@@ -65,12 +65,7 @@ export default function Sidebar() {
 
       {/* Logo — clickable, returns to public landing */}
       <Link href="/" className="flex items-center h-14 px-5 border-b border-slate-800 hover:bg-slate-800/40 transition-colors">
-        <div className="flex items-center gap-2.5">
-          <div className="w-7 h-7 rounded-lg bg-primary-600 flex items-center justify-center shrink-0">
-            <span className="text-white text-xs font-bold">ש</span>
-          </div>
-          <span className="text-white text-base font-semibold tracking-tight">שיבוץ</span>
-        </div>
+        <span dir="ltr" className="text-amber-400 text-2xl font-black tracking-tight leading-none">BuildUp</span>
       </Link>
 
       {/* Nav */}

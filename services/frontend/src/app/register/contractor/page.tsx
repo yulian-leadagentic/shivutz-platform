@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { HomeLink } from '@/components/HomeLink';
+import Logo from '@/components/Logo';
 import type { RegistryChannel, RegistryLookupResult } from '@/types';
 
 const TOTAL_STEPS = 3;
@@ -295,7 +296,7 @@ export default function RegisterContractorPage() {
         <div className="h-2 rounded-t-xl bg-gradient-to-e from-brand-600 to-brand-400" />
         <Card className="rounded-t-none shadow-md">
           <CardHeader className="pb-2">
-            <div className="text-2xl font-bold text-brand-600 mb-1 text-center">שיבוץ</div>
+            <div className="flex justify-center mb-2"><Logo size={48} /></div>
             <CardTitle className="text-center">הרשמת קבלן</CardTitle>
             <CardDescription className="text-center">
               {step === 'verify' ? 'אימות בעלות' : `שלב ${step} מתוך ${TOTAL_STEPS}`}
