@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import { Loader2, FileSpreadsheet, Download, Upload } from 'lucide-react';
+import { Loader2, FileSpreadsheet, Download, Upload, RotateCcw } from 'lucide-react';
 import { workerApi } from '@/lib/api';
 import type { Profession } from '@/types';
 import { Button } from '@/components/ui/button';
@@ -31,6 +31,20 @@ export function ExcelUploadSection({
 
   const validRows   = rows.filter(r => r._valid);
   const invalidRows = rows.filter(r => !r._valid);
+
+  /**
+   * Reset to a clean upload state — clears the parsed rows, the
+   * remembered filename, any error message, AND the underlying
+   * <input type="file"> value so the user can re-pick the same file
+   * if they want to. Called by the "טעינה חדשה" button below the
+   * preview table.
+   */
+  function resetUpload() {
+    setRows([]);
+    setFileName('');
+    setError('');
+    if (fileRef.current) fileRef.current.value = '';
+  }
 
   function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -160,18 +174,34 @@ export function ExcelUploadSection({
 
       {error && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">{error}</p>}
 
-      <div className="flex gap-3">
+      <div className="flex flex-wrap gap-3">
         <Button
           type="button"
           disabled={uploading || validRows.length === 0}
           onClick={handleImport}
-          className="flex-1"
+          className="flex-1 min-w-[180px]"
         >
           {uploading
             ? <><Loader2 className="h-4 w-4 animate-spin" /> מייבא...</>
             : <><FileSpreadsheet className="h-4 w-4" /> ייבא {validRows.length > 0 ? validRows.length : ''} עובדים</>}
         </Button>
-        <Button type="button" variant="outline" onClick={onDone}>ביטול</Button>
+        {/* Reset — clears the loaded rows + the file picker so the
+            user can switch to a different file (e.g. after fixing
+            errors in their spreadsheet) without first cancelling out
+            and reopening the import flow. */}
+        {rows.length > 0 && (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={resetUpload}
+            disabled={uploading}
+            title="נקה את הקובץ הנוכחי וטען קובץ חדש"
+          >
+            <RotateCcw className="h-4 w-4" />
+            טעינה חדשה
+          </Button>
+        )}
+        <Button type="button" variant="outline" onClick={onDone} disabled={uploading}>ביטול</Button>
       </div>
     </div>
   );
