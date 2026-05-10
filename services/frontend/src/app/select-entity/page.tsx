@@ -125,11 +125,11 @@ export default function SelectEntityPage() {
                   : <Building2 className="h-8 w-8 text-brand-600 shrink-0" />
                 }
                 <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-slate-900">
-                    {ENTITY_LABELS[m.entity_type] ?? m.entity_type}
+                  <p className="font-semibold text-slate-900 truncate">
+                    {m.entity_name || (ENTITY_LABELS[m.entity_type] ?? m.entity_type)}
                   </p>
-                  <p className="text-sm text-slate-500">
-                    תפקיד: {ROLE_LABELS[m.role] ?? m.role}
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {ENTITY_LABELS[m.entity_type] ?? m.entity_type} • {ROLE_LABELS[m.role] ?? m.role}
                   </p>
                 </div>
                 {loading === m.membership_id && (

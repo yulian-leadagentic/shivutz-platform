@@ -91,6 +91,32 @@ async def register_contractor(data: ContractorCreate):
     if not is_valid_israeli_id(data.business_number):
         raise HTTPException(status_code=400, detail="invalid_business_number")
 
+    # Block duplicate contractor registration for the same phone. The
+    # unique constraint on entity_memberships only catches re-using the
+    # same entity_id — without this guard, the same phone can sign up
+    # again and again, each time creating a fresh contractor entity and
+    # accumulating extra memberships in the picker.
+    conn = get_db()
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT 1
+               FROM auth_db.entity_memberships em
+               JOIN auth_db.users u ON u.id = em.user_id
+               WHERE u.phone = %s
+                 AND em.entity_type = 'contractor'
+                 AND em.is_active = TRUE
+               LIMIT 1""",
+            (data.contact_phone,),
+        )
+        if cur.fetchone():
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "phone_already_contractor",
+                    "message": "מספר טלפון זה כבר רשום כקבלן. אנא היכנס במקום להירשם, או פנה לתמיכה.",
+                },
+            )
+
     lookup = await verification.quick_lookup(data.business_number)
 
     if lookup.get("blocked"):
