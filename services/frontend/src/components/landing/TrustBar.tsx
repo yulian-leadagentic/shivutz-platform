@@ -42,7 +42,7 @@ export default function TrustBar() {
         {/* Label */}
         <div className="text-center mb-10">
           <p className="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-2">
-            למה בוחרים בשיבוץ
+            למה בוחרים ב-BuildUp
           </p>
           <h2 className="text-2xl font-bold text-slate-900">
             הפלטפורמה שתאגידים וקבלנים סומכים עליה

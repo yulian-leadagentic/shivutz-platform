@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { HomeLink } from '@/components/HomeLink';
+import Logo from '@/components/Logo';
 
 const ROLE_LABELS: Record<string, string> = {
   owner: 'בעלים', admin: 'מנהל', operator: 'מפעיל', viewer: 'צופה',
@@ -109,7 +110,9 @@ export default function InviteAcceptPage() {
         <div className="h-2 rounded-t-xl bg-gradient-to-e from-brand-600 to-brand-400" />
         <Card className="rounded-t-none shadow-md">
           <CardHeader className="text-center pb-2">
-            <div className="text-3xl font-bold text-brand-600 mb-1">שיבוץ</div>
+            <div className="flex justify-center mb-2">
+              <Logo size={56} />
+            </div>
             <CardTitle className="text-xl">אישור הזמנה</CardTitle>
           </CardHeader>
 

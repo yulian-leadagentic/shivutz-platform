@@ -9,6 +9,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { HomeLink } from '@/components/HomeLink';
+import Logo from '@/components/Logo';
 
 const ENTITY_LABELS: Record<string, string> = {
   contractor:  'קבלן',
@@ -107,7 +108,9 @@ export default function SelectEntityPage() {
         <div className="h-2 rounded-t-xl bg-gradient-to-e from-brand-600 to-brand-400" />
         <Card className="rounded-t-none shadow-md">
           <CardHeader className="text-center pb-2">
-            <div className="text-3xl font-bold text-brand-600 mb-1">שיבוץ</div>
+            <div className="flex justify-center mb-2">
+              <Logo size={56} />
+            </div>
             <CardTitle className="text-xl">בחר חשבון</CardTitle>
             <CardDescription>הנך משויך למספר ישויות. אנא בחר בה תרצה להמשיך</CardDescription>
           </CardHeader>

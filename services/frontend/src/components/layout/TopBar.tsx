@@ -27,7 +27,7 @@ function getPageTitle(pathname: string): string {
   if (pathname.includes('/find/'))        return 'איתור עובדים';
   if (pathname.includes('/searches/'))    return 'פרטי חיפוש';
   if (pathname.includes('/deals/'))       return 'פרטי עסקה';
-  return 'שיבוץ';
+  return 'BuildUp';
 }
 
 function getInitials(label: string): string {

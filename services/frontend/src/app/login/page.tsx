@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { HomeLink } from '@/components/HomeLink';
+import Logo from '@/components/Logo';
 
 type Mode = 'sms' | 'email';
 type OtpPhase = 'phone' | 'code';
@@ -214,7 +215,9 @@ function LoginPageInner() {
 
         <Card className="rounded-t-none shadow-md">
           <CardHeader className="text-center pb-2">
-            <div className="text-3xl font-bold text-brand-600 mb-1">שיבוץ</div>
+            <div className="flex justify-center mb-2">
+              <Logo size={56} />
+            </div>
             <CardTitle className="text-xl">{copy.title}</CardTitle>
             <CardDescription>
               {mode === 'sms' ? copy.description : 'כניסה עם אימייל וסיסמה'}

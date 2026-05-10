@@ -7,8 +7,12 @@ import './globals.css';
 const heebo = Heebo({ subsets: ['hebrew', 'latin'], variable: '--font-heebo' });
 
 export const metadata: Metadata = {
-  title: 'שיבוץ פלטפורמה',
-  description: 'פלטפורמה לשיבוץ עובדים זרים בענף הבנייה',
+  title: 'BuildUp — גיוס עובדים זרים לבנייה',
+  description: 'BuildUp — מערכת מבוססת AI להתאמת עובדים זרים, שיבוץ וניהול תהליך הגיוס בענף הבנייה.',
+  icons: {
+    icon: '/brand/buildup-logo.png',
+    apple: '/brand/buildup-logo.png',
+  },
 };
 
 export const viewport: Viewport = {

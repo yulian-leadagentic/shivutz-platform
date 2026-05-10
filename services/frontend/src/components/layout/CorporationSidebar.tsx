@@ -52,7 +52,7 @@ export default function CorporationSidebar() {
     <aside className="flex flex-col w-64 min-h-screen bg-white border-s border-slate-200 shadow-sm shrink-0">
       {/* Logo — clickable, returns to public landing */}
       <Link href="/" className="flex items-center justify-center h-16 border-b border-slate-200 px-4 hover:bg-slate-50 transition-colors">
-        <span className="text-2xl font-bold text-brand-600 tracking-tight">שיבוץ</span>
+        <span dir="ltr" className="text-2xl font-black text-brand-600 tracking-tight leading-none">BuildUp</span>
       </Link>
 
       {/* Role label */}
