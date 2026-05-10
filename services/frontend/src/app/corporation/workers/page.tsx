@@ -6,7 +6,7 @@ import { Loader2, Search, Plus, AlertTriangle, Check, X, Pencil, Clock } from 'l
 import { workerApi, orgApi } from '@/lib/api';
 import { getAccessToken, decodeJwtPayload } from '@/lib/auth';
 import type { Worker } from '@/types';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useEnums } from '@/features/enums/EnumsContext';
 import { EXPERIENCE_LABEL } from '@/i18n/he';
@@ -459,127 +459,127 @@ export default function WorkersPage() {
           className="w-full ps-9 pe-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
       </div>
 
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-medium text-slate-500">
-            {loading ? '...' : `${filtered.length} עובדים`}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
-          {loading ? (
-            <div className="flex justify-center py-12">
-              <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
-            </div>
-          ) : filtered.length === 0 ? (
-            <p className="text-center text-slate-400 py-8">לא נמצאו עובדים</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-100 text-slate-500">
-                    <th className="px-3 py-3 text-start font-medium">מס׳ פנימי</th>
-                    <th className="px-3 py-3 text-start font-medium">מס׳ עובד</th>
-                    <th className="px-3 py-3 text-start font-medium">שם</th>
-                    <th className="px-3 py-3 text-start font-medium">מקצוע</th>
-                    <th className="px-3 py-3 text-start font-medium">ניסיון</th>
-                    <th className="px-3 py-3 text-start font-medium">מדינה</th>
-                    <th className="px-3 py-3 text-start font-medium">אזור זמינות</th>
-                    <th className="px-3 py-3 text-start font-medium">זמין מ-</th>
-                    <th className="px-3 py-3 text-start font-medium">ויזה</th>
-                    <th className="px-3 py-3 text-start font-medium">סטטוס</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map((w) => {
-                    const vr = visaStatus(w.visa_valid_until);
-                    const sr = STATUS_LABELS[w.status] ?? { label: w.status, color: 'bg-slate-100 text-slate-600' };
-                    const extra = w.extra_fields as Record<string, string> | undefined;
-                    const availRegion = extra?.available_region;
-                    const availFrom   = extra?.available_from;
-                    const empNum      = extra?.employee_number ?? '';
-                    const expCode     = w.experience_range ?? '';
-                    const expLabel    = EXP_LABELS[expCode] ?? (expCode || '—');
-                    const profLabel   = professionMap[w.profession_type] ?? w.profession_type;
-                    const originLabel = originMap[w.origin_country] ?? w.origin_country;
-                    const regionLabel = availRegion ? (regionMap[availRegion] ?? availRegion) : '—';
-                    return (
-                      <tr key={w.id} className={`border-b border-slate-50 last:border-0 hover:brightness-95 transition-colors ${ROW_BG[w.status] ?? ''}`}>
-                        <td className="px-3 py-3 font-mono text-xs text-slate-600">
-                          {(w as unknown as { internal_id?: string }).internal_id || '—'}
-                        </td>
-                        <td className="px-3 py-3">
-                          <EmpNumCell
-                            workerId={w.id}
-                            value={empNum}
-                            onSaved={(v) => handleEmpNumSaved(w.id, v)}
-                          />
-                        </td>
-                        <td className="px-3 py-3 font-medium text-slate-900 whitespace-nowrap">
-                          {w.first_name} {w.last_name}
-                        </td>
-                        {/* Profession — select */}
-                        <td className="px-3 py-3">
-                          <SelectCell workerId={w.id} value={w.profession_type}
-                            displayValue={profLabel} options={professionOptions}
-                            updateKey="profession_type"
-                            onSaved={(v) => handleFieldSaved(w.id, 'profession_type', v)} />
-                        </td>
-                        {/* Experience range */}
-                        <td className="px-3 py-3">
-                          <ExperienceCell workerId={w.id} value={expCode}
-                            onSaved={(v) => handleExpSaved(w.id, v)} />
-                        </td>
-                        {/* Origin country — select */}
-                        <td className="px-3 py-3">
-                          <SelectCell workerId={w.id} value={w.origin_country}
-                            displayValue={originLabel} options={originOptions}
-                            updateKey="origin_country"
-                            onSaved={(v) => handleFieldSaved(w.id, 'origin_country', v)} />
-                        </td>
-                        {/* Available region — select */}
-                        <td className="px-3 py-3">
-                          <SelectCell workerId={w.id} value={availRegion ?? ''}
-                            displayValue={regionLabel} options={regionOptions}
-                            updateKey="available_region"
-                            onSaved={(v) => handleExtraSaved(w.id, 'available_region', v)} />
-                        </td>
-                        {/* Available from — date */}
-                        <td className="px-3 py-3">
-                          <DateCell workerId={w.id} value={availFrom ?? ''}
-                            updateKey="available_from"
-                            onSaved={(v) => handleExtraSaved(w.id, 'available_from', v)} />
-                        </td>
-                        {/* Visa — date with urgency indicator */}
-                        <td className={`px-3 py-3 ${vr.urgent ? 'text-red-600' : ''}`}>
-                          <div className="flex items-center gap-1">
-                            {vr.urgent && <AlertTriangle className="h-3 w-3 shrink-0" />}
-                            <DateCell workerId={w.id} value={w.visa_valid_until ?? ''}
-                              updateKey="visa_valid_until"
-                              onSaved={(v) => handleFieldSaved(w.id, 'visa_valid_until', v)} />
-                          </div>
-                        </td>
-                        {/* Status — select */}
-                        <td className="px-3 py-3">
-                          <SelectCell workerId={w.id} value={w.status}
-                            displayValue={sr.label}
-                            options={[
-                              { value: 'available',   label: 'זמין' },
-                              { value: 'assigned',    label: 'משובץ' },
-                              { value: 'on_leave',    label: 'בחופשה' },
-                              { value: 'deactivated', label: 'לא פעיל' },
-                            ]}
-                            updateKey="status"
-                            onSaved={(v) => handleFieldSaved(w.id, 'status', v)} />
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      {/* Result count strip */}
+      <div className="text-sm font-medium text-slate-500">
+        {loading ? '...' : `${filtered.length} עובדים`}
+      </div>
+
+      {/* Worker tiles — each card is one worker. The inline-edit cells
+          (SelectCell, ExperienceCell, DateCell, EmpNumCell) work the
+          same as in the old table; they just live inside a card layout
+          now. Three columns on desktop, two on tablet, one on mobile. */}
+      {loading ? (
+        <div className="flex justify-center py-12">
+          <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
+        </div>
+      ) : filtered.length === 0 ? (
+        <Card><CardContent className="p-8 text-center text-slate-400">לא נמצאו עובדים</CardContent></Card>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filtered.map((w) => {
+            const vr = visaStatus(w.visa_valid_until);
+            const sr = STATUS_LABELS[w.status] ?? { label: w.status, color: 'bg-slate-100 text-slate-600' };
+            const extra = w.extra_fields as Record<string, string> | undefined;
+            const availRegion = extra?.available_region;
+            const availFrom   = extra?.available_from;
+            const empNum      = extra?.employee_number ?? '';
+            const expCode     = w.experience_range ?? '';
+            const profLabel   = professionMap[w.profession_type] ?? w.profession_type;
+            const originLabel = originMap[w.origin_country] ?? w.origin_country;
+            const regionLabel = availRegion ? (regionMap[availRegion] ?? availRegion) : '—';
+            const internalId  = (w as unknown as { internal_id?: string }).internal_id || '';
+            return (
+              <div
+                key={w.id}
+                className={`flex flex-col rounded-2xl border border-slate-200 bg-white shadow-sm p-4 ${ROW_BG[w.status] ?? ''}`}
+              >
+                {/* Header — name + status */}
+                <div className="flex items-start justify-between gap-3 mb-3">
+                  <div className="min-w-0">
+                    <div className="font-bold text-slate-900 text-base truncate">
+                      {w.first_name} {w.last_name}
+                    </div>
+                    <div className="text-[11px] font-mono text-slate-400 mt-0.5">
+                      {internalId || '—'}
+                    </div>
+                  </div>
+                  <span className={`shrink-0 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${sr.color}`}>
+                    {sr.label}
+                  </span>
+                </div>
+
+                {/* Two-column field grid — label on top, edit-cell below */}
+                <div className="grid grid-cols-2 gap-x-3 gap-y-3 text-sm">
+                  <div>
+                    <p className="text-[10px] font-medium text-slate-500 mb-0.5">מקצוע</p>
+                    <SelectCell workerId={w.id} value={w.profession_type}
+                      displayValue={profLabel} options={professionOptions}
+                      updateKey="profession_type"
+                      onSaved={(v) => handleFieldSaved(w.id, 'profession_type', v)} />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-medium text-slate-500 mb-0.5">ניסיון</p>
+                    <ExperienceCell workerId={w.id} value={expCode}
+                      onSaved={(v) => handleExpSaved(w.id, v)} />
+                  </div>
+
+                  <div>
+                    <p className="text-[10px] font-medium text-slate-500 mb-0.5">מדינה</p>
+                    <SelectCell workerId={w.id} value={w.origin_country}
+                      displayValue={originLabel} options={originOptions}
+                      updateKey="origin_country"
+                      onSaved={(v) => handleFieldSaved(w.id, 'origin_country', v)} />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-medium text-slate-500 mb-0.5">אזור זמינות</p>
+                    <SelectCell workerId={w.id} value={availRegion ?? ''}
+                      displayValue={regionLabel} options={regionOptions}
+                      updateKey="available_region"
+                      onSaved={(v) => handleExtraSaved(w.id, 'available_region', v)} />
+                  </div>
+
+                  <div>
+                    <p className="text-[10px] font-medium text-slate-500 mb-0.5">זמין מ-</p>
+                    <DateCell workerId={w.id} value={availFrom ?? ''}
+                      updateKey="available_from"
+                      onSaved={(v) => handleExtraSaved(w.id, 'available_from', v)} />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-medium text-slate-500 mb-0.5">
+                      <span className={vr.urgent ? 'text-red-600 font-semibold' : ''}>ויזה</span>
+                    </p>
+                    <div className={`flex items-center gap-1 ${vr.urgent ? 'text-red-600' : ''}`}>
+                      {vr.urgent && <AlertTriangle className="h-3 w-3 shrink-0" />}
+                      <DateCell workerId={w.id} value={w.visa_valid_until ?? ''}
+                        updateKey="visa_valid_until"
+                        onSaved={(v) => handleFieldSaved(w.id, 'visa_valid_until', v)} />
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="text-[10px] font-medium text-slate-500 mb-0.5">סטטוס</p>
+                    <SelectCell workerId={w.id} value={w.status}
+                      displayValue={sr.label}
+                      options={[
+                        { value: 'available',   label: 'זמין' },
+                        { value: 'assigned',    label: 'משובץ' },
+                        { value: 'on_leave',    label: 'בחופשה' },
+                        { value: 'deactivated', label: 'לא פעיל' },
+                      ]}
+                      updateKey="status"
+                      onSaved={(v) => handleFieldSaved(w.id, 'status', v)} />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-medium text-slate-500 mb-0.5">מס׳ עובד</p>
+                    <EmpNumCell workerId={w.id} value={empNum}
+                      onSaved={(v) => handleEmpNumSaved(w.id, v)} />
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
