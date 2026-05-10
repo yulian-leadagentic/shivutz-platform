@@ -74,6 +74,15 @@ export default function FindFormPage() {
   }, []);
 
   const profDef = useMemo(() => profs.find((p) => p.code === profession), [profs, profession]);
+  // code → Hebrew name lookup for the origin breakdown shown on each
+  // match card. Origins are also available via EnumsContext but the
+  // local `origins` state is already populated here, so we just memo
+  // it into a map.
+  const originMap = useMemo(() => {
+    const m: Record<string, string> = {};
+    for (const o of origins) m[o.code] = o.name_he;
+    return m;
+  }, [origins]);
 
   // ── Form state ────────────────────────────────────────────────────
   const [quantity, setQuantity]       = useState<number>(1);
@@ -420,14 +429,35 @@ export default function FindFormPage() {
             </div>
           </div>
 
-          <ul className="space-y-2.5">
+          <ul className="space-y-3">
             {corps.map((c, idx) => {
               const isTop = idx === 0;
+              // Anonymize: show "תאגיד 1" / "תאגיד 2" etc. The real
+              // company name is only revealed AFTER the contractor
+              // sends an inquiry and the corp accepts. This keeps a
+              // level playing field across corps and protects names
+              // from being scraped.
+              const anonymousLabel = `תאגיד ${idx + 1}`;
+              // Origin distribution for this corp's matched workers —
+              // a quick "PH×3, RO×1" breakdown keeps the contractor
+              // from having to drill in to see where the workers come
+              // from.
+              const originCounts = c.workers.reduce<Record<string, number>>(
+                (acc, w) => {
+                  const code = w.worker.origin_country || '?';
+                  acc[code] = (acc[code] ?? 0) + 1;
+                  return acc;
+                },
+                {},
+              );
+              const originSummary = Object.entries(originCounts)
+                .sort((a, b) => b[1] - a[1])
+                .map(([code, n]) => `${originMap[code] ?? code} ×${n}`)
+                .join(' · ');
               return (
                 <li
                   key={c.corporation_id}
-                  className={`relative bg-white rounded-2xl p-4 sm:p-5 shadow-sm
-                              flex flex-col sm:flex-row sm:items-center justify-between gap-3
+                  className={`relative bg-white rounded-2xl p-5 sm:p-6 shadow-sm
                               ${isTop
                                 ? 'border-2 border-emerald-400 ring-4 ring-emerald-100'
                                 : 'border border-slate-200'}`}
@@ -440,37 +470,52 @@ export default function FindFormPage() {
                       ⭐ ההתאמה הטובה ביותר
                     </div>
                   )}
-                  <div className="min-w-0 flex-1">
-                    <div className="font-bold text-slate-900 text-base sm:text-lg truncate">
-                      {c.corporation_name ?? 'תאגיד'}
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div className="min-w-0 flex-1 space-y-3">
+                      {/* Anonymized corp label */}
+                      <div className="font-bold text-slate-900 text-base">
+                        {anonymousLabel}
+                      </div>
+                      {/* Big number row — workers found + match% */}
+                      <div className="flex items-end gap-6">
+                        <div>
+                          <div className="text-3xl sm:text-4xl font-extrabold text-slate-900 leading-none">
+                            {c.filled_workers}
+                            <span className="text-lg sm:text-xl text-slate-400 font-bold mx-1">/</span>
+                            <span className="text-xl sm:text-2xl text-slate-500 font-bold">{c.needed}</span>
+                          </div>
+                          <div className="text-xs text-slate-500 mt-1.5">עובדים נמצאו</div>
+                        </div>
+                        <div>
+                          <div className={`text-3xl sm:text-4xl font-extrabold leading-none ${c.is_complete ? 'text-emerald-600' : 'text-amber-600'}`}>
+                            {Math.round(c.fill_percentage)}%
+                          </div>
+                          <div className="text-xs text-slate-500 mt-1.5">התאמה</div>
+                        </div>
+                      </div>
+                      {/* Worker origin breakdown — "פיליפינים ×3 · רומניה ×1" */}
+                      {originSummary && (
+                        <div className="text-sm text-slate-700 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">
+                          <span className="text-[10px] uppercase tracking-widest text-slate-400 me-2">מוצא העובדים</span>
+                          <span className="font-medium">{originSummary}</span>
+                        </div>
+                      )}
                     </div>
-                    <div className="text-xs text-slate-500 mt-1 flex flex-wrap gap-x-3 gap-y-1">
-                      <span className="inline-flex items-center gap-1">
-                        <span className="font-semibold text-slate-700">{c.filled_workers}/{c.needed}</span>
-                        עובדים זמינים
-                      </span>
-                      <span className="inline-flex items-center gap-1">
-                        <span className={`font-semibold ${c.is_complete ? 'text-emerald-600' : 'text-amber-600'}`}>
-                          {Math.round(c.fill_percentage)}%
-                        </span>
-                        מילוי
-                      </span>
-                    </div>
+                    <button
+                      onClick={() => handleSendInquiry(c.corporation_id)}
+                      disabled={!!sentInquiry[c.corporation_id]}
+                      className={`px-5 py-3 rounded-lg whitespace-nowrap font-bold text-sm
+                                  transition shrink-0 ${
+                        sentInquiry[c.corporation_id]
+                          ? 'bg-emerald-100 text-emerald-700 cursor-default'
+                          : isTop
+                            ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-md hover:shadow-lg animate-pulse'
+                            : 'bg-brand-600 hover:bg-brand-500 text-white'
+                      }`}
+                    >
+                      {sentInquiry[c.corporation_id] ? '✓ נשלח לתאגיד' : 'צור קשר עם התאגיד'}
+                    </button>
                   </div>
-                  <button
-                    onClick={() => handleSendInquiry(c.corporation_id)}
-                    disabled={!!sentInquiry[c.corporation_id]}
-                    className={`px-4 py-2.5 rounded-lg whitespace-nowrap font-semibold text-sm
-                                transition shrink-0 ${
-                      sentInquiry[c.corporation_id]
-                        ? 'bg-emerald-100 text-emerald-700 cursor-default'
-                        : isTop
-                          ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-md hover:shadow-lg animate-pulse'
-                          : 'bg-brand-600 hover:bg-brand-500 text-white'
-                    }`}
-                  >
-                    {sentInquiry[c.corporation_id] ? '✓ נשלח לתאגיד' : 'צור קשר עם התאגיד'}
-                  </button>
                 </li>
               );
             })}

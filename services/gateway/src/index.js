@@ -119,7 +119,17 @@ for (const [prefix, target] of Object.entries(services)) {
       );
     function attachUserHeaders(user) {
       req.headers['x-user-id']   = user.sub;
-      req.headers['x-user-role'] = user.role;
+      // Effective role for this request. Multi-membership users
+      // (e.g. yulian@ — owns a corp AND a contractor entity) have a
+      // legacy `role` from users.role that reflects their FIRST
+      // signup, while their CURRENT working context is decided by
+      // the entity they picked at /select-entity. Downstream services
+      // gate on the role they're acting as right now, so we project
+      // entity_type into x-user-role when present and only fall back
+      // to the legacy role for admins (who have no entity context).
+      // This fixed the "contractor_only" 403 a corp-rooted contractor
+      // got when approving a deal.
+      req.headers['x-user-role'] = user.entity_type || user.role;
       if (user.org_id)          req.headers['x-org-id']          = user.org_id;
       else                      delete req.headers['x-org-id'];
       if (user.phone)           req.headers['x-phone']           = user.phone;

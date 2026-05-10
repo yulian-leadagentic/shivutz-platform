@@ -9,11 +9,11 @@ const { generateOtp, verifyOtp, hasRecentVerifiedOtp, normalisePhone } = require
 
 const ACCESS_SECRET  = process.env.JWT_SECRET;
 const REFRESH_SECRET = process.env.JWT_SECRET + '_refresh';
-// Wave 2 feedback: "אל תבקש סיסמה כל פעם" — keep users signed in for
-// at least 3 hours of active use. The FE already silent-refreshes on
-// 401, but a longer access TTL means fewer refresh round-trips and a
-// smoother feel.
-const ACCESS_TTL     = process.env.JWT_ACCESS_EXPIRES_IN  || '3h';
+// Wave 5 feedback: "המערכת מעיפה אותי כל כמה דקות" — keep users
+// signed in for a full 6h workday so they don't bounce to /login
+// mid-task. Frontend cookie TTL was bumped to match in
+// services/frontend/src/lib/auth.ts.
+const ACCESS_TTL     = process.env.JWT_ACCESS_EXPIRES_IN  || '6h';
 const REFRESH_TTL    = process.env.JWT_REFRESH_EXPIRES_IN || '7d';
 const NOTIF_URL      = process.env.NOTIF_SERVICE_URL || 'http://notification:3006';
 
@@ -49,10 +49,20 @@ function buildPayload(user, membership = null) {
 }
 
 /**
- * Store refresh token and update last_login_at.
+ * Store refresh token and update last_login_at. The refresh token
+ * carries the entity context (entity_id + entity_type) it was
+ * issued under, so /auth/refresh can rebuild an access token that
+ * stays in the user's chosen role — important for multi-membership
+ * users where re-fetching memberships and arbitrarily picking the
+ * "first one" loses the role they're actively working in.
  */
-async function issueRefreshToken(pool, userId) {
-  const refreshToken = signRefresh({ sub: userId });
+async function issueRefreshToken(pool, userId, entityCtx = {}) {
+  const payload = {
+    sub: userId,
+    ...(entityCtx.entity_id   ? { entity_id:   entityCtx.entity_id }   : {}),
+    ...(entityCtx.entity_type ? { entity_type: entityCtx.entity_type } : {}),
+  };
+  const refreshToken = signRefresh(payload);
   const tokenHash    = crypto.createHash('sha256').update(refreshToken).digest('hex');
   const expiresAt    = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
   await pool.query(
@@ -239,7 +249,10 @@ router.post('/auth/login/otp', async (req, res) => {
     }
 
     const accessToken  = signAccess(payload);
-    const refreshToken = await issueRefreshToken(pool, user.id);
+    const refreshToken = await issueRefreshToken(pool, user.id, {
+      entity_id:   payload.entity_id,
+      entity_type: payload.entity_type,
+    });
 
     res.json({
       access_token:            accessToken,
@@ -305,7 +318,10 @@ router.post('/auth/select-entity', async (req, res) => {
 
   const payload    = buildPayload(user, membership);
   const accessToken = signAccess(payload);
-  const refreshToken = await issueRefreshToken(pool, user.id);
+  const refreshToken = await issueRefreshToken(pool, user.id, {
+    entity_id:   payload.entity_id,
+    entity_type: payload.entity_type,
+  });
 
   res.json({ access_token: accessToken, refresh_token: refreshToken });
 });
@@ -456,7 +472,10 @@ router.post('/auth/login', async (req, res) => {
 
   const payload = buildPayload(user, membership);
   const accessToken  = signAccess(payload);
-  const refreshToken = await issueRefreshToken(pool, user.id);
+  const refreshToken = await issueRefreshToken(pool, user.id, {
+    entity_id:   payload.entity_id,
+    entity_type: payload.entity_type,
+  });
 
   res.json({
     access_token:           accessToken,
@@ -495,12 +514,29 @@ router.post('/auth/refresh', async (req, res) => {
   const user = users[0];
   if (!user) return res.status(401).json({ error: 'user not found' });
 
+  // Restore the entity context the refresh token was minted with so
+  // refreshing doesn't drop the user out of contractor mode and back
+  // to their legacy users.role role. Falls back to the
+  // single-membership shortcut for legacy refresh tokens that don't
+  // carry entity context yet.
   const memberships = await getMemberships(pool, user.id);
-  const membership  = memberships.length === 1 ? memberships[0] : null;
-  const payload     = buildPayload(user, membership);
+  let membership = null;
+  if (decoded.entity_id && decoded.entity_type) {
+    membership = memberships.find(
+      (m) => m.entity_id === decoded.entity_id && m.entity_type === decoded.entity_type
+    ) || null;
+  }
+  if (!membership && memberships.length === 1) {
+    membership = memberships[0];
+  }
+  const payload = buildPayload(user, membership);
 
   const newAccess  = signAccess(payload);
-  const newRefresh = signRefresh({ sub: user.id });
+  const newRefresh = signRefresh({
+    sub: user.id,
+    ...(payload.entity_id   ? { entity_id:   payload.entity_id }   : {}),
+    ...(payload.entity_type ? { entity_type: payload.entity_type } : {}),
+  });
   const newHash    = crypto.createHash('sha256').update(newRefresh).digest('hex');
   const expiresAt  = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
   await pool.query(
@@ -615,7 +651,7 @@ router.post('/auth/register', async (req, res) => {
           const u = { id: existing[0].id, phone: normPhone, email: undefined, full_name: refreshed[0]?.full_name || full_name || undefined, role, org_id: org_id || null, org_type: org_type || null };
           const membership = { entity_id: org_id, entity_type: org_type, role: 'owner' };
           const at = signAccess(buildPayload(u, membership));
-          const rt = await issueRefreshToken(pool, existing[0].id);
+          const rt = await issueRefreshToken(pool, existing[0].id, { entity_id: org_id, entity_type: org_type });
           return res.status(200).json({ id: existing[0].id, phone: normPhone, role, access_token: at, refresh_token: rt });
         }
         return res.status(200).json({ id: existing[0].id, phone: normPhone, role });
@@ -630,7 +666,7 @@ router.post('/auth/register', async (req, res) => {
         const u = { id, phone: normPhone, email: undefined, full_name: full_name || undefined, role, org_id: org_id || null, org_type: org_type || null };
         const membership = { entity_id: org_id, entity_type: org_type, role: 'owner' };
         const at = signAccess(buildPayload(u, membership));
-        const rt = await issueRefreshToken(pool, id);
+        const rt = await issueRefreshToken(pool, id, { entity_id: org_id, entity_type: org_type });
         return res.status(201).json({ id, phone: normPhone, role, access_token: at, refresh_token: rt });
       }
       return res.status(201).json({ id, phone: normPhone, role });
