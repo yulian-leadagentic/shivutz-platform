@@ -403,8 +403,37 @@ export default function FindFormPage() {
       )}
 
       {corps && corps.length === 0 && (
-        <div className="text-sm text-slate-700 bg-sky-50 border border-sky-200 rounded-lg p-4">
-          לא נמצאו התאמות זמינות. המערכת תמשיך לחפש התאמות ותעדכן אותך בהקדם.
+        <div className="space-y-4">
+          <div className="text-sm text-slate-700 bg-sky-50 border border-sky-200 rounded-lg p-4">
+            לא נמצאו התאמות זמינות. המערכת תמשיך לחפש התאמות ותעדכן אותך בהקדם — בנוסף שלחנו עכשיו הודעה לתאגידים רלוונטיים כדי שיעלו עובדים מתאימים.
+          </div>
+          {/* CTAs so the user doesn't dead-end on the no-match screen */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Link
+              href="/contractor/find"
+              className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 hover:border-brand-500 hover:bg-brand-50/30 transition shadow-sm"
+            >
+              <div className="w-10 h-10 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center shrink-0">
+                <Plus className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="text-sm font-bold text-slate-900">התחל חיפוש חדש</div>
+                <div className="text-xs text-slate-500">בחר מקצוע אחר או שנה את הפרמטרים</div>
+              </div>
+            </Link>
+            <Link
+              href="/contractor/deals"
+              className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 hover:border-brand-500 hover:bg-brand-50/30 transition shadow-sm"
+            >
+              <div className="w-10 h-10 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
+                <LayoutDashboard className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="text-sm font-bold text-slate-900">צפייה בהצעות שלי</div>
+                <div className="text-xs text-slate-500">כל הבקשות והעסקאות הפעילות</div>
+              </div>
+            </Link>
+          </div>
         </div>
       )}
 

@@ -31,10 +31,11 @@ const CONTRACTOR_NAV: NavItem[] = [
   // Wave 4 polish — חיפוש חדש standalone (no parent), goes straight
   // to the recruitment-category page.
   { label: 'חיפוש חדש',   href: '/contractor/find',      icon: Plus },
-  // Renamed from "איתור עובדים" — now this entry is purely the
-  // status-tracking list of past searches.
-  { label: 'סטטוס בקשות', href: '/contractor/searches',  icon: ClipboardList },
-  { label: 'עסקאות',      href: '/contractor/deals',     icon: Handshake },
+  // Wave 5: /contractor/searches dropped — /contractor/deals is now
+  // the unified view that includes both past requests (empty groups)
+  // and the proposals/deals on each. Sidebar label renamed to "בקשות
+  // ועסקאות" so the merge is obvious.
+  { label: 'בקשות ועסקאות', href: '/contractor/deals',     icon: Handshake },
   { label: 'ניהול',       href: '/contractor/manage',    icon: Users,
     sub: [
       { label: 'צוות',     href: '/contractor/users' },

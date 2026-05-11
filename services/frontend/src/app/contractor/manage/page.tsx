@@ -128,7 +128,7 @@ export default function ContractorManagePage() {
           label="חיפושים פתוחים"
           value={openSearches}
           loading={loading}
-          href="/contractor/searches"
+          href="/contractor/deals"
         />
         <StatCard
           icon={<Handshake className="h-5 w-5" />}
