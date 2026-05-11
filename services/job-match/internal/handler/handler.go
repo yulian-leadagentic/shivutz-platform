@@ -91,6 +91,7 @@ func (h *Handler) ListSearches(w http.ResponseWriter, r *http.Request) {
 		        ws.profession_type, ws.quantity,
 		        DATE_FORMAT(ws.start_date,'%Y-%m-%d') AS start_date,
 		        COALESCE(DATE_FORMAT(ws.end_date,'%Y-%m-%d'),'') AS end_date,
+		        COALESCE(ws.origin_preference,'[]') AS origin_preference,
 		        ws.status, ws.created_at,
 		        COALESCE(mc.best_fill_pct, -1) AS best_fill_pct,
 		        COALESCE(mc.best_is_complete, 0) AS best_is_complete
@@ -108,27 +109,35 @@ func (h *Handler) ListSearches(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 
 	type row struct {
-		ID              string    `json:"id"`
-		ContractorID    string    `json:"contractor_id"`
-		RecruitmentType string    `json:"recruitment_type"`
-		Region          string    `json:"region"`
-		ProfessionType  string    `json:"profession_type"`
-		Quantity        int       `json:"quantity"`
-		StartDate       string    `json:"start_date"`
-		EndDate         string    `json:"end_date"`
-		Status          string    `json:"status"`
-		CreatedAt       time.Time `json:"created_at"`
-		BestFillPct     float64   `json:"best_fill_pct"` // -1 = no match run yet
-		BestIsComplete  bool      `json:"best_is_complete"`
+		ID               string    `json:"id"`
+		ContractorID     string    `json:"contractor_id"`
+		RecruitmentType  string    `json:"recruitment_type"`
+		Region           string    `json:"region"`
+		ProfessionType   string    `json:"profession_type"`
+		Quantity         int       `json:"quantity"`
+		StartDate        string    `json:"start_date"`
+		EndDate          string    `json:"end_date"`
+		OriginPreference []string  `json:"origin_preference"`
+		Status           string    `json:"status"`
+		CreatedAt        time.Time `json:"created_at"`
+		BestFillPct      float64   `json:"best_fill_pct"` // -1 = no match run yet
+		BestIsComplete   bool      `json:"best_is_complete"`
 	}
 	result := []row{}
 	for rows.Next() {
 		var x row
+		var originsJSON string
 		if err := rows.Scan(&x.ID, &x.ContractorID, &x.RecruitmentType,
 			&x.Region, &x.ProfessionType, &x.Quantity,
-			&x.StartDate, &x.EndDate, &x.Status, &x.CreatedAt,
+			&x.StartDate, &x.EndDate, &originsJSON, &x.Status, &x.CreatedAt,
 			&x.BestFillPct, &x.BestIsComplete); err != nil {
 			continue
+		}
+		if originsJSON != "" {
+			_ = json.Unmarshal([]byte(originsJSON), &x.OriginPreference)
+		}
+		if x.OriginPreference == nil {
+			x.OriginPreference = []string{}
 		}
 		result = append(result, x)
 	}

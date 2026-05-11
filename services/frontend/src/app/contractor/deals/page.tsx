@@ -11,6 +11,7 @@ import Link from 'next/link';
 import {
   AlertCircle, Handshake, MessageSquare, Calendar, MapPin, Globe2,
   Plus, ChevronDown, Loader2, CheckCircle2, XCircle, Bell,
+  Search, ArrowLeft, Hammer,
 } from 'lucide-react';
 import { dealApi, searchApi } from '@/lib/api';
 import { enumApi } from '@/lib/api/enums';
@@ -19,8 +20,7 @@ import type { Deal, Worker, WorkerSearch, Profession } from '@/types';
 import { Button } from '@/components/ui/button';
 import StatusBadge from '@/components/StatusBadge';
 import {
-  DEAL_FILTER_LABEL as FILTER_LABELS,
-  dealMatchesFilter,
+  DEAL_FILTER_LABEL,
   type DealFilter as Filter,
 } from '@/i18n/he';
 
@@ -66,7 +66,26 @@ function DealTileSkeleton() {
   );
 }
 
-const VALID_FILTERS: Filter[] = ['all', 'proposed', 'active', 'completed'];
+// Contractor-side filter pills the user can choose between. Order
+// matters — pills render in this order.
+const CONTRACTOR_FILTERS: Filter[] = ['all', 'awaiting_approval', 'proposed', 'completed', 'cancelled'];
+
+// Local matcher: contractor side rolls accepted/active/reporting
+// into the "נסגרו" bucket because once the contractor has approved,
+// the request is no longer something they need to track on this
+// screen. The shared `dealMatchesFilter` keeps "active" distinct for
+// corp-side use; contractor needs a slightly different grouping.
+const CONTRACTOR_STATUS_GROUP: Record<Exclude<Filter, 'all' | 'active'>, string[]> = {
+  awaiting_approval: ['corp_committed'],
+  proposed:          ['proposed', 'counter_proposed'],
+  completed:         ['accepted', 'active', 'reporting', 'completed', 'closed'],
+  cancelled:         ['cancelled', 'cancelled_by_corp', 'cancelled_by_contractor', 'rejected', 'expired', 'disputed'],
+};
+
+function contractorMatchesFilter(status: string, filter: Filter): boolean {
+  if (filter === 'all' || filter === 'active') return filter === 'all';
+  return CONTRACTOR_STATUS_GROUP[filter].includes(status);
+}
 
 export default function ContractorDealsPage() {
   const searchParams = useSearchParams();
@@ -75,7 +94,7 @@ export default function ContractorDealsPage() {
   // view instead of bouncing through the "all" tab first.
   const initialFilter = (() => {
     const f = searchParams?.get('filter');
-    return f && (VALID_FILTERS as string[]).includes(f) ? (f as Filter) : 'all';
+    return f && (CONTRACTOR_FILTERS as string[]).includes(f) ? (f as Filter) : 'all';
   })();
   const [deals, setDeals]       = useState<EnrichedDeal[]>([]);
   // Wave 5: the unified screen also shows searches with no
@@ -184,8 +203,8 @@ export default function ContractorDealsPage() {
     }
   }
 
-  const filtered = deals.filter((d) => dealMatchesFilter(d.status, filter));
-  const proposedCount = deals.filter((d) => dealMatchesFilter(d.status, 'proposed')).length;
+  const filtered = deals.filter((d) => contractorMatchesFilter(d.status, filter));
+  const awaitingCount = deals.filter((d) => contractorMatchesFilter(d.status, 'awaiting_approval')).length;
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 space-y-5">
@@ -206,26 +225,39 @@ export default function ContractorDealsPage() {
         </Button>
       </header>
 
-      {/* Filter pills */}
+      {/* Filter pills. The "ממתינות לאישורך" pill is the one that
+          should pull attention — that's the only bucket where the
+          contractor must act, so it gets a red dot + count when
+          non-zero. Other pills stay neutral. */}
       <div className="flex gap-2 flex-wrap">
-        {(Object.keys(FILTER_LABELS) as Filter[]).map((f) => (
-          <button
-            key={f}
-            onClick={() => setFilter(f)}
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-              filter === f
-                ? 'bg-brand-600 text-white'
-                : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-50'
-            }`}
-          >
-            {FILTER_LABELS[f]}
-            {f === 'proposed' && proposedCount > 0 && (
-              <span className="bg-amber-100 text-amber-700 text-xs px-1.5 py-0.5 rounded-full leading-none">
-                {proposedCount}
-              </span>
-            )}
-          </button>
-        ))}
+        {CONTRACTOR_FILTERS.map((f) => {
+          const isAwaiting = f === 'awaiting_approval';
+          const showBadge  = isAwaiting && awaitingCount > 0;
+          return (
+            <button
+              key={f}
+              onClick={() => setFilter(f)}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                filter === f
+                  ? isAwaiting
+                    ? 'bg-amber-500 text-white'
+                    : 'bg-brand-600 text-white'
+                  : showBadge
+                    ? 'bg-amber-50 border border-amber-300 text-amber-900 hover:bg-amber-100'
+                    : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              {DEAL_FILTER_LABEL[f]}
+              {showBadge && (
+                <span className={`text-xs px-1.5 py-0.5 rounded-full leading-none font-bold ${
+                  filter === f ? 'bg-white/30 text-white' : 'bg-amber-200 text-amber-900'
+                }`}>
+                  {awaitingCount}
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
 
       {/* Error */}
@@ -304,18 +336,31 @@ export default function ContractorDealsPage() {
                   deals:    ds,
                 }));
 
-            // Per-card "tier" classification → visual + sort priority
+            // Per-card "tier" — determines section, banner content, and
+            // visual prominence. Six buckets matching the contractor-side
+            // status taxonomy (no separate "active" tier — that's rolled
+            // into "in-work" for sectioning but doesn't get its own pill).
+            type Tier = 0 | 1 | 2 | 3 | 4 | 5;
+            // 0 = awaiting contractor approval (corp_committed)
+            // 1 = proposed, awaiting corp response
+            // 2 = no proposals yet
+            // 3 = in-flight (accepted/active/reporting)
+            // 4 = closed cleanly
+            // 5 = cancelled / rejected / expired
             const ACTION_REQUIRED = new Set(['corp_committed']);
-            const IN_PROGRESS     = new Set(['proposed', 'counter_proposed', 'approved', 'active', 'reporting']);
-            const COMPLETED       = new Set(['closed', 'completed', 'cancelled_by_corp', 'cancelled_by_contractor', 'rejected', 'expired']);
+            const PROPOSED        = new Set(['proposed', 'counter_proposed']);
+            const IN_FLIGHT       = new Set(['accepted', 'active', 'reporting']);
+            const CLOSED          = new Set(['completed', 'closed']);
+            const CANCELLED       = new Set(['cancelled', 'cancelled_by_corp', 'cancelled_by_contractor', 'rejected', 'expired', 'disputed']);
 
-            function tierOf(c: Card): 0 | 1 | 2 | 3 {
+            function tierOf(c: Card): Tier {
               if (c.deals.some((d) => ACTION_REQUIRED.has(d.status))) return 0;
-              if (c.deals.some((d) => IN_PROGRESS.has(d.status))) return 1;
-              if (c.deals.length === 0) return 2;
-              // If all deals are terminal — completed tier
-              if (c.deals.every((d) => COMPLETED.has(d.status))) return 3;
-              return 1; // safe default
+              if (c.deals.some((d) => PROPOSED.has(d.status)))        return 1;
+              if (c.deals.length === 0)                                return 2;
+              if (c.deals.some((d) => IN_FLIGHT.has(d.status)))        return 3;
+              if (c.deals.every((d) => CLOSED.has(d.status)))          return 4;
+              if (c.deals.every((d) => CANCELLED.has(d.status)))       return 5;
+              return 1; // mixed / fallback
             }
             function activityTime(c: Card): number {
               const fromDeals = c.deals.length > 0
@@ -325,31 +370,95 @@ export default function ContractorDealsPage() {
               return Math.max(fromDeals, fromSearch);
             }
 
-            const grouped: Record<0|1|2|3, Card[]> = { 0: [], 1: [], 2: [], 3: [] };
+            const grouped: Record<Tier, Card[]> = { 0: [], 1: [], 2: [], 3: [], 4: [], 5: [] };
             for (const c of cards) grouped[tierOf(c)].push(c);
-            for (const t of [0,1,2,3] as const) {
+            for (const t of [0, 1, 2, 3, 4, 5] as Tier[]) {
               grouped[t].sort((a, b) => activityTime(b) - activityTime(a));
             }
 
-            const TIER_META: Array<{ tier: 0|1|2|3; label: string; tone: 'amber'|'slate'|'mute'|'dim' }> = [
-              { tier: 0, label: 'דורש פעולה', tone: 'amber' },
-              { tier: 1, label: 'בעבודה',      tone: 'slate' },
-              { tier: 2, label: 'ממתינות להצעות', tone: 'mute' },
-              { tier: 3, label: 'הושלמו / בוטלו', tone: 'dim' },
+            const TIER_META: Array<{ tier: Tier; label: string; headerTone: string }> = [
+              { tier: 0, label: 'דורש פעולה',        headerTone: 'text-amber-700' },
+              { tier: 1, label: 'ממתינות לתאגיד',     headerTone: 'text-slate-700' },
+              { tier: 2, label: 'מחפשים תאגידים',     headerTone: 'text-slate-500' },
+              { tier: 3, label: 'בעבודה',             headerTone: 'text-emerald-700' },
+              { tier: 4, label: 'נסגרו',              headerTone: 'text-emerald-600' },
+              { tier: 5, label: 'בוטל',               headerTone: 'text-slate-400' },
             ];
 
-            return TIER_META.filter((t) => grouped[t.tier].length > 0).map(({ tier, label, tone }) => (
+            // Banner = the single most prominent visual element per
+            // card. Tells the contractor exactly what state the
+            // request is in and what (if anything) they should do.
+            type BannerSpec = {
+              cls:   string;       // wrapper colors (bg + text + border)
+              Icon:  React.ComponentType<{ className?: string }>;
+              text:  string;       // primary copy
+              cta?:  string;       // optional inline CTA (rendered with arrow)
+              pulse?: boolean;     // animate icon for awaiting tier
+            };
+            function bannerFor(t: Tier, group: EnrichedDeal[]): BannerSpec {
+              switch (t) {
+                case 0: {
+                  const n = group.filter((d) => d.status === 'corp_committed').length;
+                  return {
+                    cls:   'bg-amber-100 text-amber-900 border-amber-300',
+                    Icon:  Bell,
+                    text:  n === 1
+                      ? 'ממתינה לאישורך · הצעת תאגיד אחת'
+                      : `ממתינות לאישורך · ${n} הצעות מתאגידים`,
+                    cta:   'בדוק ואשר',
+                    pulse: true,
+                  };
+                }
+                case 1: {
+                  const n = group.filter((d) => PROPOSED.has(d.status)).length;
+                  return {
+                    cls:  'bg-sky-50 text-sky-800 border-sky-200',
+                    Icon: MessageSquare,
+                    text: n === 1
+                      ? 'נשלחה לתאגיד · ממתין לתגובה'
+                      : `${n} הצעות נשלחו לתאגידים · ממתין לתגובה`,
+                  };
+                }
+                case 2:
+                  return {
+                    cls:  'bg-slate-50 text-slate-700 border-slate-200',
+                    Icon: Search,
+                    text: 'מחפשים תאגידים עם עובדים מתאימים',
+                  };
+                case 3: {
+                  const n = group
+                    .filter((d) => IN_FLIGHT.has(d.status))
+                    .reduce((s, d) => s + (d.worker_count ?? 0), 0);
+                  return {
+                    cls:  'bg-emerald-50 text-emerald-800 border-emerald-200',
+                    Icon: Hammer,
+                    text: n > 0 ? `${n} עובדים בשטח` : 'העסקה אושרה · עובדים בשטח',
+                  };
+                }
+                case 4:
+                  return {
+                    cls:  'bg-emerald-50 text-emerald-700 border-emerald-100',
+                    Icon: CheckCircle2,
+                    text: 'העסקה נסגרה',
+                  };
+                case 5:
+                  return {
+                    cls:  'bg-rose-50 text-rose-700 border-rose-200',
+                    Icon: XCircle,
+                    text: 'בוטלה',
+                  };
+              }
+            }
+
+            return TIER_META.filter((t) => grouped[t.tier].length > 0).map(({ tier, label, headerTone }) => (
               <section key={tier} className="space-y-2">
                 <div className="flex items-center gap-2">
-                  {tier === 0 && <Bell className="h-3.5 w-3.5 text-amber-600" />}
-                  <h2 className={`text-[11px] font-bold uppercase tracking-widest ${
-                    tone === 'amber' ? 'text-amber-700' :
-                    tone === 'slate' ? 'text-slate-700' :
-                    tone === 'mute'  ? 'text-slate-500' :
-                                       'text-slate-400'
-                  }`}>{label} ({grouped[tier].length})</h2>
+                  {tier === 0 && <Bell className="h-4 w-4 text-amber-600" />}
+                  <h2 className={`text-xs font-bold uppercase tracking-widest ${headerTone}`}>
+                    {label} <span className="text-slate-400 font-semibold">({grouped[tier].length})</span>
+                  </h2>
                 </div>
-                <div className="space-y-2">
+                <div className="space-y-3">
                   {grouped[tier].map(({ searchId, search, deals: group }) => {
               const head = group[0];
               // Prefer info from the deal row (enriched by backend);
@@ -362,140 +471,102 @@ export default function ContractorDealsPage() {
               const requested = head?.requested_count
                 ?? search?.quantity
                 ?? (group.length > 0 ? group.reduce((s, d) => s + (d.worker_count ?? 0), 0) : 0);
-              // Filled = sum of worker_count across proposals where the
-              // corp committed to that count (proposed/corp_committed/
-              // accepted/active are all "this many workers in flight").
-              const COMMITTED_STATUSES = new Set([
-                'proposed', 'corp_committed', 'counter_proposed',
-                'accepted', 'active', 'reporting',
-              ]);
-              const filled = group
-                .filter((d) => COMMITTED_STATUSES.has(d.status))
-                .reduce((s, d) => s + (d.worker_count ?? 0), 0);
-              const fillPct = requested > 0 ? Math.min(100, Math.round((filled / requested) * 100)) : 0;
-              const isFull = filled >= requested && requested > 0;
-              // Earliest activity timestamp — for empty searches use
-              // the search row's created_at directly.
-              const oldestDate = group.length > 0
-                ? group.reduce((min, d) =>
-                    new Date(d.created_at) < new Date(min.created_at) ? d : min, group[0]).created_at
-                : search?.created_at;
               // Region label: deal row carries region_he; bare search
               // row carries `region` code that we resolve via regionMap.
               const regionLabel = head?.region_he
                 ?? (search?.region ? (regionMap[search.region] ?? search.region) : '');
 
-              // Search-derived meta for the secondary line
+              // Search-derived meta for the secondary line.
+              // origin_preference is now returned by /searches so an
+              // empty array means "any" (contractor said no preference),
+              // a populated one is the explicit list.
               const startDate = search?.start_date;
               const endDate   = search?.end_date;
               const originCodes = search?.origin_preference ?? [];
               const originLabel = originCodes.length === 0
-                ? 'כל מוצא'
+                ? 'ללא העדפת מוצא'
                 : originCodes.map((c) => originMap[c] ?? c).join(', ');
 
               const isOpen = expandedSearches.has(searchId);
-              const proposalCount = group.length;
-              // Show inline "X proposals" affordance text on the
-              // collapsed row so the contractor knows what they'd see
-              // by expanding.
-              const proposalsLine = proposalCount === 0
-                ? null
-                : proposalCount === 1
-                  ? 'הצעת תאגיד אחת'
-                  : `${proposalCount} הצעות מתאגידים`;
-
-              // Tier-driven left-edge accent — only the
-              // action-required tier gets a colored strip.
-              const accentClass = tier === 0
-                ? 'border-amber-300 ring-1 ring-amber-200/50'
-                : tier === 3
-                  ? 'border-slate-100 bg-slate-50/40'
+              const banner = bannerFor(tier, group);
+              // Cards in tier 0 also get a left-edge accent so even
+              // the cards above the fold scream "act on me".
+              const cardBorderClass = tier === 0
+                ? 'border-amber-300 ring-2 ring-amber-200/40'
+                : tier === 5
+                  ? 'border-slate-200 opacity-90'
                   : 'border-slate-200';
 
               return (
                 <div key={searchId}
-                     className={`rounded-xl border ${accentClass} bg-white shadow-sm overflow-hidden`}>
-                  {/* Compact summary row — single full-width button.
-                      Click anywhere to toggle the proposal sub-list. */}
+                     className={`rounded-xl border ${cardBorderClass} bg-white shadow-sm overflow-hidden`}>
                   <button
                     type="button"
                     onClick={() => toggleSearch(searchId)}
                     aria-expanded={isOpen}
-                    className="w-full text-start flex items-center gap-3 px-3.5 py-3 hover:bg-slate-50 transition-colors"
+                    className="w-full text-start hover:bg-slate-50/60 transition-colors"
                   >
-                    {/* Tier dot — at-a-glance accent before the icon */}
-                    {tier === 0 && (
-                      <span className="inline-block h-2.5 w-2.5 rounded-full bg-amber-500 shrink-0" aria-hidden />
-                    )}
-                    {profCode && (
-                      <ProfessionIcon code={profCode} size={44} alt={profLabel}
-                                      className="shrink-0 object-contain" />
-                    )}
-
-                    <div className="flex-1 min-w-0">
-                      {/* Line 1 — profession + qty + filled/requested */}
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="min-w-0 flex items-baseline gap-2 flex-wrap">
+                    {/* Meta strip — profession, qty, dates, origin,
+                        region. Quieter than the banner below. */}
+                    <div className="flex items-center gap-3 px-4 pt-3 pb-2.5">
+                      {profCode && (
+                        <ProfessionIcon code={profCode} size={44} alt={profLabel}
+                                        className="shrink-0 object-contain" />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-baseline gap-2 flex-wrap">
                           <span className="font-bold text-slate-900 text-base truncate">
                             {profLabel}
                           </span>
-                          <span className="text-xs text-slate-500">· {requested} עובדים</span>
-                          {tier === 0 && (
-                            <span className="text-[10px] font-bold text-amber-700 bg-amber-100 rounded-full px-2 py-0.5 leading-none whitespace-nowrap">
-                              בדוק עכשיו
+                          <span className="text-sm text-slate-400">·</span>
+                          <span className="text-sm font-semibold text-slate-700">
+                            {requested} עובדים
+                          </span>
+                        </div>
+                        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-slate-600">
+                          {(startDate || endDate) && (
+                            <span className="inline-flex items-center gap-1 whitespace-nowrap">
+                              <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                              {startDate ? fmt(startDate) : '—'}
+                              {endDate && <> ← {fmt(endDate)}</>}
+                            </span>
+                          )}
+                          <span className="inline-flex items-center gap-1 whitespace-nowrap">
+                            <Globe2 className="w-3.5 h-3.5 text-slate-400" />
+                            {originLabel}
+                          </span>
+                          {regionLabel && (
+                            <span className="inline-flex items-center gap-1 whitespace-nowrap">
+                              <MapPin className="w-3.5 h-3.5 text-slate-400" />
+                              {regionLabel}
                             </span>
                           )}
                         </div>
-                        <div className="text-end shrink-0">
-                          <div className={`text-base font-extrabold leading-none ${isFull ? 'text-emerald-600' : tier === 0 ? 'text-amber-600' : 'text-slate-700'}`}>
-                            {filled}<span className="text-xs text-slate-400 mx-0.5">/</span><span className="text-sm text-slate-500">{requested}</span>
-                          </div>
-                        </div>
                       </div>
-                      {/* Line 2 — secondary meta: dates · origin · region · proposals */}
-                      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-slate-500">
-                        {(startDate || endDate) && (
-                          <span className="inline-flex items-center gap-1 whitespace-nowrap">
-                            <Calendar className="w-3 h-3" />
-                            {startDate ? fmt(startDate) : '—'}
-                            {endDate && <> ← {fmt(endDate)}</>}
-                          </span>
-                        )}
-                        <span className="inline-flex items-center gap-1 whitespace-nowrap">
-                          <Globe2 className="w-3 h-3" />
-                          {originLabel}
-                        </span>
-                        {regionLabel && (
-                          <span className="inline-flex items-center gap-1 whitespace-nowrap">
-                            <MapPin className="w-3 h-3" />
-                            {regionLabel}
-                          </span>
-                        )}
-                        {proposalsLine && (
-                          <span className={`inline-flex items-center gap-1 whitespace-nowrap font-medium ${tier === 0 ? 'text-amber-700' : 'text-slate-700'}`}>
-                            <MessageSquare className="w-3 h-3" />
-                            {proposalsLine}
-                          </span>
-                        )}
-                        {fillPct > 0 && fillPct < 100 && (
-                          <span className="inline-flex items-center gap-1 whitespace-nowrap text-slate-500">
-                            {fillPct}% התאמה
-                          </span>
-                        )}
-                      </div>
+                      <ChevronDown className={`h-4 w-4 text-slate-400 shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
                     </div>
 
-                    <ChevronDown className={`h-4 w-4 text-slate-400 shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                    {/* ACTION BANNER — the dominant visual element.
+                        Tells the contractor exactly what state this
+                        request is in + what to do (when relevant). */}
+                    <div className={`flex items-center gap-2.5 px-4 py-2.5 border-t ${banner.cls}`}>
+                      <banner.Icon className={`h-4 w-4 shrink-0 ${banner.pulse ? 'animate-pulse' : ''}`} aria-hidden />
+                      <div className="flex-1 min-w-0 text-sm font-bold leading-tight">
+                        {banner.text}
+                      </div>
+                      {banner.cta && (
+                        <div className="inline-flex items-center gap-1 text-sm font-extrabold whitespace-nowrap">
+                          {banner.cta}
+                          <ArrowLeft className="h-4 w-4" />
+                        </div>
+                      )}
+                    </div>
                   </button>
 
-                  {/* Empty state — inline + compact, only when card
-                      is expanded (avoids per-card vertical bloat). */}
+                  {/* Empty-state hint — only when card is expanded. */}
                   {isOpen && group.length === 0 && (
-                    <div className="px-4 pb-3 pt-2 border-t border-slate-100 text-xs text-slate-500">
-                      מחפשים תאגידים עם עובדים מתאימים — נעדכן אותך ברגע שתתקבל הצעה.
-                      <span className="block text-slate-400 mt-0.5">
-                        בנוסף נשלחה הודעה לתאגידים רלוונטיים.
-                      </span>
+                    <div className="px-4 pb-3 pt-3 border-t border-slate-100 text-xs text-slate-500">
+                      נשלחה הודעה לתאגידים רלוונטיים — נעדכן אותך ברגע שתתקבל הצעה.
                     </div>
                   )}
 
