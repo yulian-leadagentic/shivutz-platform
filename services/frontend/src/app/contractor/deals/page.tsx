@@ -10,10 +10,11 @@ import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import {
   AlertCircle, Handshake, MessageSquare, Calendar, MapPin,
+  Plus, ChevronDown, Loader2, CheckCircle2, XCircle,
 } from 'lucide-react';
 import { dealApi } from '@/lib/api';
 import { ProfessionIcon } from '@/features/searches/ProfessionIcon';
-import type { Deal } from '@/types';
+import type { Deal, Worker } from '@/types';
 import { Button } from '@/components/ui/button';
 import StatusBadge from '@/components/StatusBadge';
 import {
@@ -79,6 +80,14 @@ export default function ContractorDealsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState(false);
   const [filter, setFilter]   = useState<Filter>(initialFilter);
+  // Inline expansion — proposal rows open in-place instead of routing
+  // to /contractor/deals/[id]. Workers are lazy-fetched on first
+  // expand, cached per deal_id so re-toggling doesn't re-hit the API.
+  const [expandedId, setExpandedId]     = useState<string | null>(null);
+  const [workersById, setWorkersById]   = useState<Record<string, Worker[]>>({});
+  const [loadingWorkers, setLoadingWorkers] = useState<Record<string, boolean>>({});
+  const [actingId, setActingId]         = useState<string | null>(null);
+  const [actionError, setActionError]   = useState<Record<string, string>>({});
 
   function reload() {
     setLoading(true); setError(false);
@@ -90,16 +99,69 @@ export default function ContractorDealsPage() {
 
   useEffect(() => { reload(); }, []);
 
+  async function toggleExpand(dealId: string) {
+    if (expandedId === dealId) {
+      setExpandedId(null);
+      return;
+    }
+    setExpandedId(dealId);
+    if (workersById[dealId]) return; // already fetched
+    setLoadingWorkers((s) => ({ ...s, [dealId]: true }));
+    try {
+      const ws = await dealApi.workers(dealId);
+      setWorkersById((s) => ({ ...s, [dealId]: ws }));
+    } catch {
+      setWorkersById((s) => ({ ...s, [dealId]: [] }));
+    } finally {
+      setLoadingWorkers((s) => ({ ...s, [dealId]: false }));
+    }
+  }
+
+  async function handleApprove(dealId: string) {
+    setActingId(dealId);
+    setActionError((s) => ({ ...s, [dealId]: '' }));
+    try {
+      await dealApi.approve(dealId);
+      reload();
+    } catch (e) {
+      setActionError((s) => ({ ...s, [dealId]: (e as Error).message || 'שגיאה באישור' }));
+    } finally {
+      setActingId(null);
+    }
+  }
+  async function handleReject(dealId: string) {
+    setActingId(dealId);
+    setActionError((s) => ({ ...s, [dealId]: '' }));
+    try {
+      await dealApi.reject(dealId);
+      reload();
+    } catch (e) {
+      setActionError((s) => ({ ...s, [dealId]: (e as Error).message || 'שגיאה בדחייה' }));
+    } finally {
+      setActingId(null);
+    }
+  }
+
   const filtered = deals.filter((d) => dealMatchesFilter(d.status, filter));
   const proposedCount = deals.filter((d) => dealMatchesFilter(d.status, 'proposed')).length;
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 space-y-5">
-      <header>
-        <h1 className="text-2xl font-bold text-slate-900">עסקאות</h1>
-        <p className="text-sm text-slate-600 mt-0.5">
-          כל הפניות שלך לתאגידים — לחץ כדי לראות פרטים ולנהל את העסקה
-        </p>
+      <header className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">עסקאות</h1>
+          <p className="text-sm text-slate-600 mt-0.5">
+            כל הפניות שלך לתאגידים — לחץ על קוביה כדי לראות פרטים ולנהל את העסקה
+          </p>
+        </div>
+        {/* Primary CTA — quick path back to opening a new request
+            without having to leave the deals screen first. */}
+        <Button asChild size="lg" className="bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-slate-900 font-bold shadow-lg shadow-amber-500/20">
+          <Link href="/contractor/find">
+            <Plus className="h-5 w-5" />
+            פתח בקשת עובדים חדשה
+          </Link>
+        </Button>
       </header>
 
       {/* Filter pills */}
@@ -254,11 +316,12 @@ export default function ContractorDealsPage() {
                     </div>
                   </div>
 
-                  {/* Per-corp proposal rows. Anonymous label until the
-                      contractor acts on the proposal — same convention
-                      as the find/match screen. Each row links into the
-                      single-deal page where the workers list + chat
-                      live. */}
+                  {/* Per-corp proposal rows. Click → expand in-place
+                      (no navigation). The expanded panel shows the
+                      workers list (anonymized pre-approval) + the
+                      approve/reject actions inline. A small link at
+                      the bottom of the panel routes to the full deal
+                      page for the chat. */}
                   <ul className="divide-y divide-slate-100">
                     {group
                       // most-recent first so latest activity bubbles up
@@ -266,13 +329,19 @@ export default function ContractorDealsPage() {
                       .map((d, idx) => {
                         const REVEALED = ['accepted', 'active', 'reporting', 'completed', 'closed'];
                         const corpLabel = REVEALED.includes(d.status) && d.corporation_id
-                          ? `תאגיד ${d.corporation_id.slice(0, 6)}` // real id-tagged label until backend exposes corp_name on this row
+                          ? `תאגיד ${d.corporation_id.slice(0, 6)}`
                           : `תאגיד ${idx + 1}`;
+                        const isOpen = expandedId === d.id;
+                        const workers = workersById[d.id] || [];
+                        const isLoadingW = !!loadingWorkers[d.id];
+                        const canApprove = d.status === 'corp_committed';
                         return (
                           <li key={d.id}>
-                            <Link
-                              href={`/contractor/deals/${d.id}`}
-                              className="group flex items-center gap-3 px-5 py-3 hover:bg-slate-50 transition-colors"
+                            <button
+                              type="button"
+                              onClick={() => toggleExpand(d.id)}
+                              aria-expanded={isOpen}
+                              className="w-full flex items-center gap-3 px-5 py-3 hover:bg-slate-50 transition-colors text-start"
                             >
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2 flex-wrap">
@@ -289,11 +358,102 @@ export default function ContractorDealsPage() {
                                 </div>
                                 <div className="text-[10px] text-slate-500">עובדים</div>
                               </div>
-                              <span className="inline-flex items-center gap-1 text-xs font-semibold text-brand-600 group-hover:text-brand-700 shrink-0">
-                                <MessageSquare className="w-3.5 h-3.5" />
-                                פרטים
-                              </span>
-                            </Link>
+                              <ChevronDown className={`w-4 h-4 text-slate-400 shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                            </button>
+
+                            {/* Inline expansion panel */}
+                            {isOpen && (
+                              <div className="px-5 pb-4 pt-1 bg-slate-50 border-t border-slate-100">
+                                {/* Workers list — anonymized pre-approval */}
+                                {isLoadingW ? (
+                                  <div className="flex items-center gap-2 py-4 text-sm text-slate-500">
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                    טוען רשימת עובדים...
+                                  </div>
+                                ) : workers.length === 0 ? (
+                                  <p className="py-3 text-sm text-slate-500">אין עובדים זמינים להצגה.</p>
+                                ) : (
+                                  <div className="bg-white rounded-lg border border-slate-200 mt-3">
+                                    <p className="text-[10px] uppercase tracking-widest text-slate-400 px-3 pt-2.5">
+                                      רשימת עובדים שהוצעה ({workers.length})
+                                    </p>
+                                    <p className="text-[11px] text-slate-500 px-3 pb-2">
+                                      {canApprove
+                                        ? 'פרטי הזיהוי יוצגו לאחר אישור הרשימה. כעת מוצגים מקצוע, ניסיון וארץ מוצא בלבד.'
+                                        : 'רשימת העובדים בעסקה.'}
+                                    </p>
+                                    <div className="divide-y divide-slate-50">
+                                      {workers.map((w, wIdx) => {
+                                        const wAny = w as unknown as { full_name?: string; experience_range?: string; years_in_israel?: number };
+                                        const shouldHideName = canApprove; // pre-approval: hide identifying info
+                                        const displayName = shouldHideName
+                                          ? `עובד #${wIdx + 1}`
+                                          : (wAny.full_name || `${w.first_name ?? ''} ${w.last_name ?? ''}`.trim() || `עובד #${wIdx + 1}`);
+                                        return (
+                                          <div key={w.id || wIdx} className="flex items-center gap-3 px-3 py-2">
+                                            <div className="h-7 w-7 rounded-full bg-brand-100 flex items-center justify-center text-[10px] font-bold text-brand-700 shrink-0">
+                                              {wIdx + 1}
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                              <p className="text-sm font-medium text-slate-900 truncate">{displayName}</p>
+                                              <p className="text-[11px] text-slate-500 truncate">
+                                                {w.profession_type}
+                                                {wAny.experience_range && <> · ניסיון {wAny.experience_range}</>}
+                                                {!wAny.experience_range && w.experience_years != null && <> · {w.experience_years} שנים</>}
+                                                {w.origin_country && <> · {w.origin_country}</>}
+                                                {wAny.years_in_israel != null && <> · {wAny.years_in_israel} שנים בארץ</>}
+                                              </p>
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* Inline error */}
+                                {actionError[d.id] && (
+                                  <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2 mt-3">
+                                    {actionError[d.id]}
+                                  </p>
+                                )}
+
+                                {/* Action row */}
+                                <div className="flex items-center justify-between gap-2 mt-3 flex-wrap">
+                                  <Link
+                                    href={`/contractor/deals/${d.id}`}
+                                    className="text-xs font-semibold text-brand-600 hover:text-brand-700 inline-flex items-center gap-1"
+                                  >
+                                    <MessageSquare className="w-3.5 h-3.5" />
+                                    צ׳אט מלא עם התאגיד
+                                  </Link>
+                                  {canApprove && (
+                                    <div className="flex gap-2">
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => handleReject(d.id)}
+                                        disabled={actingId === d.id}
+                                      >
+                                        {actingId === d.id
+                                          ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                          : <><XCircle className="h-3.5 w-3.5" /> דחה</>}
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        onClick={() => handleApprove(d.id)}
+                                        disabled={actingId === d.id || workers.length === 0}
+                                        className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                                      >
+                                        {actingId === d.id
+                                          ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                          : <><CheckCircle2 className="h-3.5 w-3.5" /> אשר רשימה ({workers.length})</>}
+                                      </Button>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
                           </li>
                         );
                       })}
