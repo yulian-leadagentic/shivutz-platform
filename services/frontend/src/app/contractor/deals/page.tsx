@@ -9,7 +9,7 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import {
-  AlertCircle, Handshake, MessageSquare, Calendar, MapPin, Users as UsersIcon,
+  AlertCircle, Handshake, MessageSquare, Calendar, MapPin,
 } from 'lucide-react';
 import { dealApi } from '@/lib/api';
 import { ProfessionIcon } from '@/features/searches/ProfessionIcon';
@@ -161,79 +161,146 @@ export default function ContractorDealsPage() {
         </div>
       )}
 
-      {/* Tile grid */}
+      {/* Aggregated request groups — one card per original search.
+          A single 8-worker request can be filled by multiple corp
+          proposals (e.g. 3 from corp A + 5 from corp B). The card
+          shows the total ask, a fill bar across all proposals, and
+          each proposal as a sub-row the contractor can act on. */}
       {!loading && !error && filtered.length > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filtered.map((d) => {
-            const profCode = d.profession_type ?? '';
-            const profLabel = d.profession_he ?? d.profession_type ?? '—';
-            return (
-              <Link
-                key={d.id}
-                href={`/contractor/deals/${d.id}`}
-                className="group flex flex-col rounded-2xl border border-slate-200 bg-white
-                           p-4 sm:p-5 shadow-sm hover:border-brand-400 hover:shadow-md
-                           active:scale-[0.99] transition"
-              >
-                {/* Header — icon + profession + status */}
-                <div className="flex items-start gap-3 mb-3">
-                  {profCode && (
-                    <ProfessionIcon
-                      code={profCode}
-                      size={56}
-                      alt={profLabel}
-                      className="shrink-0 object-contain"
-                    />
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <div className="font-bold text-slate-900 text-base truncate">
-                      {profLabel}
+        <div className="space-y-4">
+          {Object.values(
+            filtered.reduce<Record<string, EnrichedDeal[]>>((acc, d) => {
+              const key = d.search_id || d.id;
+              (acc[key] = acc[key] || []).push(d);
+              return acc;
+            }, {}),
+          )
+            // Sort groups by most recent proposal in each group, newest first
+            .sort((a, b) => {
+              const ta = Math.max(...a.map((d) => new Date(d.created_at).getTime()));
+              const tb = Math.max(...b.map((d) => new Date(d.created_at).getTime()));
+              return tb - ta;
+            })
+            .map((group) => {
+              const head = group[0];
+              const profCode = head.profession_type ?? '';
+              const profLabel = head.profession_he ?? head.profession_type ?? '—';
+              const requested = head.requested_count ?? group.reduce((s, d) => s + (d.worker_count ?? 0), 0);
+              // Filled = sum of worker_count across proposals where the
+              // corp committed to that count (proposed/corp_committed/
+              // accepted/active are all "this many workers in flight").
+              const COMMITTED_STATUSES = new Set([
+                'proposed', 'corp_committed', 'counter_proposed',
+                'accepted', 'active', 'reporting',
+              ]);
+              const filled = group
+                .filter((d) => COMMITTED_STATUSES.has(d.status))
+                .reduce((s, d) => s + (d.worker_count ?? 0), 0);
+              const fillPct = requested > 0 ? Math.min(100, Math.round((filled / requested) * 100)) : 0;
+              const isFull = filled >= requested && requested > 0;
+              const oldest = group.reduce((min, d) =>
+                new Date(d.created_at) < new Date(min.created_at) ? d : min, head);
+
+              return (
+                <div key={head.search_id || head.id}
+                     className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+                  {/* Group header — original ask + composite fill bar */}
+                  <div className="p-5 border-b border-slate-100">
+                    <div className="flex items-start gap-3">
+                      {profCode && (
+                        <ProfessionIcon code={profCode} size={56} alt={profLabel}
+                                        className="shrink-0 object-contain" />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <div className="min-w-0">
+                            <div className="font-bold text-slate-900 text-lg truncate">
+                              {profLabel}
+                            </div>
+                            <div className="text-xs text-slate-500 mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5">
+                              {head.region_he && (
+                                <span className="inline-flex items-center gap-1">
+                                  <MapPin className="w-3 h-3" />
+                                  {head.region_he}
+                                </span>
+                              )}
+                              <span className="inline-flex items-center gap-1">
+                                <Calendar className="w-3 h-3" />
+                                בקשה משובצה {fmt(oldest.created_at)}
+                              </span>
+                            </div>
+                          </div>
+                          {/* Big composite fill — workers committed / requested */}
+                          <div className="text-end">
+                            <div className={`text-2xl font-extrabold leading-none ${isFull ? 'text-emerald-600' : 'text-amber-600'}`}>
+                              {filled}<span className="text-base text-slate-400 mx-0.5">/</span><span className="text-lg text-slate-500">{requested}</span>
+                            </div>
+                            <div className="text-[10px] text-slate-500 mt-1">עובדים שהוקצו</div>
+                          </div>
+                        </div>
+                        {/* Fill bar */}
+                        <div className="mt-3 h-2 rounded-full bg-slate-100 overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all ${isFull ? 'bg-emerald-500' : 'bg-amber-500'}`}
+                            style={{ width: `${fillPct}%` }}
+                          />
+                        </div>
+                        {group.length > 1 && (
+                          <p className="text-[11px] text-slate-500 mt-2">
+                            הבקשה מורכבת מ-{group.length} הצעות תאגיד שונות.
+                          </p>
+                        )}
+                      </div>
                     </div>
-                    <div className="mt-1.5">
-                      <StatusBadge status={d.status} />
-                    </div>
                   </div>
-                </div>
 
-                {/* Status context line */}
-                <p className="text-xs text-slate-600 mb-3 leading-relaxed line-clamp-2">
-                  {STATUS_CONTEXT[d.status] ?? d.status}
-                </p>
-
-                {/* Meta — workers / region / date */}
-                <div className="grid grid-cols-3 gap-2 text-[11px] text-slate-500 mb-3 pt-2 border-t border-slate-100">
-                  <div className="flex flex-col items-center text-center">
-                    <UsersIcon className="w-3.5 h-3.5 mb-0.5 text-slate-400" />
-                    <span className="font-semibold text-slate-700">
-                      {d.worker_count ?? d.requested_count ?? '—'}
-                    </span>
-                    <span className="text-[10px]">עובדים</span>
-                  </div>
-                  <div className="flex flex-col items-center text-center">
-                    <MapPin className="w-3.5 h-3.5 mb-0.5 text-slate-400" />
-                    <span className="font-semibold text-slate-700 truncate w-full">
-                      {d.region_he ?? '—'}
-                    </span>
-                    <span className="text-[10px]">אזור</span>
-                  </div>
-                  <div className="flex flex-col items-center text-center">
-                    <Calendar className="w-3.5 h-3.5 mb-0.5 text-slate-400" />
-                    <span className="font-semibold text-slate-700">{fmt(d.created_at)}</span>
-                    <span className="text-[10px]">נשלחה</span>
-                  </div>
+                  {/* Per-corp proposal rows. Anonymous label until the
+                      contractor acts on the proposal — same convention
+                      as the find/match screen. Each row links into the
+                      single-deal page where the workers list + chat
+                      live. */}
+                  <ul className="divide-y divide-slate-100">
+                    {group
+                      // most-recent first so latest activity bubbles up
+                      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+                      .map((d, idx) => {
+                        const REVEALED = ['accepted', 'active', 'reporting', 'completed', 'closed'];
+                        const corpLabel = REVEALED.includes(d.status) && d.corporation_id
+                          ? `תאגיד ${d.corporation_id.slice(0, 6)}` // real id-tagged label until backend exposes corp_name on this row
+                          : `תאגיד ${idx + 1}`;
+                        return (
+                          <li key={d.id}>
+                            <Link
+                              href={`/contractor/deals/${d.id}`}
+                              className="group flex items-center gap-3 px-5 py-3 hover:bg-slate-50 transition-colors"
+                            >
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-semibold text-slate-900 text-sm">{corpLabel}</span>
+                                  <StatusBadge status={d.status} />
+                                </div>
+                                <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-1">
+                                  {STATUS_CONTEXT[d.status] ?? d.status}
+                                </p>
+                              </div>
+                              <div className="text-end shrink-0">
+                                <div className="text-base font-bold text-slate-900">
+                                  {d.worker_count ?? '—'}
+                                </div>
+                                <div className="text-[10px] text-slate-500">עובדים</div>
+                              </div>
+                              <span className="inline-flex items-center gap-1 text-xs font-semibold text-brand-600 group-hover:text-brand-700 shrink-0">
+                                <MessageSquare className="w-3.5 h-3.5" />
+                                פרטים
+                              </span>
+                            </Link>
+                          </li>
+                        );
+                      })}
+                  </ul>
                 </div>
-
-                {/* Footer CTA */}
-                <div className="mt-auto flex items-center justify-between pt-1">
-                  <span className="font-mono text-[10px] text-slate-400">#{d.id.slice(0, 8)}</span>
-                  <span className="inline-flex items-center gap-1 text-xs font-semibold text-brand-600 group-hover:text-brand-700">
-                    <MessageSquare className="w-3.5 h-3.5" />
-                    פרטים וצ׳אט
-                  </span>
-                </div>
-              </Link>
-            );
-          })}
+              );
+            })}
         </div>
       )}
     </div>

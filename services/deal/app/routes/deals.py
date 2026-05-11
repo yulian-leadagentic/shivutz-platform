@@ -854,6 +854,43 @@ async def cron_capture_due():
     return {"captured": captured, "failed": failed}
 
 
+@router.get("/internal/contractor-approval-reminder-targets")
+async def cron_contractor_reminder_targets():
+    """Return one row per contractor that has corp_committed deals
+    older than 24h waiting for their approval. Called daily by the
+    notification service to fan out SMS reminders.
+
+    Cross-DB join to org_db.contractors so we get the contact phone
+    in a single query (mysql user is root locally; on Railway both
+    DBs live on the same plugin so the join is cheap).
+    """
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT
+              c.id              AS contractor_id,
+              c.contact_phone   AS contact_phone,
+              c.contact_name    AS contact_name,
+              c.company_name_he AS company_name_he,
+              COUNT(DISTINCT d.id)        AS pending_count,
+              COUNT(DISTINCT d.search_id) AS request_count
+            FROM deal_db.deals d
+            JOIN org_db.contractors c ON c.id = d.contractor_id
+            WHERE d.status = 'corp_committed'
+              AND d.deleted_at IS NULL
+              AND TIMESTAMPDIFF(HOUR, d.corp_committed_at, NOW()) >= 24
+              AND c.contact_phone IS NOT NULL
+              AND c.deleted_at IS NULL
+            GROUP BY c.id, c.contact_phone, c.contact_name, c.company_name_he
+            """
+        )
+        return {"targets": cur.fetchall()}
+    finally:
+        conn.close()
+
+
 @router.post("/internal/admin-nudge")
 async def cron_admin_nudge():
     """Find corp_committed deals pending > admin_nudge_after_hours hours and

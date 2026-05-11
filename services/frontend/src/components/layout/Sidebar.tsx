@@ -64,10 +64,12 @@ export default function Sidebar() {
   return (
     <aside className="flex flex-col w-60 min-h-screen bg-slate-900 shrink-0">
 
-      {/* Logo — clickable, returns to public landing */}
-      <Link href="/" className="flex items-center justify-center h-16 px-4 border-b border-slate-800 hover:bg-slate-800/40 transition-colors bg-white/5">
+      {/* Logo — clickable, returns to public landing. Sidebar bg is
+          slate-900, so we use the white-on-transparent variant
+          (-light suffix) instead of the dark navy default. */}
+      <Link href="/" className="flex items-center justify-center h-16 px-4 border-b border-slate-800 hover:bg-slate-800/40 transition-colors">
         <Image
-          src="/brand/buildup-logo.png"
+          src="/brand/buildup-logo-light.png"
           alt="BuildUp"
           width={140}
           height={48}
