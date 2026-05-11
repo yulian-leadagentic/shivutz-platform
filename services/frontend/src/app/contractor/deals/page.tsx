@@ -9,8 +9,8 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import {
-  AlertCircle, Handshake, MessageSquare, Calendar, MapPin,
-  Plus, ChevronDown, Loader2, CheckCircle2, XCircle,
+  AlertCircle, Handshake, MessageSquare, Calendar, MapPin, Globe2,
+  Plus, ChevronDown, Loader2, CheckCircle2, XCircle, Bell,
 } from 'lucide-react';
 import { dealApi, searchApi } from '@/lib/api';
 import { enumApi } from '@/lib/api/enums';
@@ -92,6 +92,18 @@ export default function ContractorDealsPage() {
   // to /contractor/deals/[id]. Workers are lazy-fetched on first
   // expand, cached per deal_id so re-toggling doesn't re-hit the API.
   const [expandedId, setExpandedId]     = useState<string | null>(null);
+  // Card-level expand: which search-card has its proposal sub-rows
+  // visible. Multi-open is allowed (Set) so the contractor can
+  // compare proposals across two requests side by side.
+  const [expandedSearches, setExpandedSearches] = useState<Set<string>>(new Set());
+  function toggleSearch(id: string) {
+    setExpandedSearches((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
   const [workersById, setWorkersById]   = useState<Record<string, Worker[]>>({});
   const [loadingWorkers, setLoadingWorkers] = useState<Record<string, boolean>>({});
   const [actingId, setActingId]         = useState<string | null>(null);
@@ -109,6 +121,7 @@ export default function ContractorDealsPage() {
 
   useEffect(() => { reload(); }, []);
 
+  const [originMap, setOriginMap] = useState<Record<string, string>>({});
   // Reference data so the request card can show Hebrew labels even
   // when a search has no proposals yet (the deal-enriched rows carry
   // profession_he/region_he, but bare WorkerSearch rows don't).
@@ -116,12 +129,15 @@ export default function ContractorDealsPage() {
     Promise.all([
       enumApi.professions().catch(() => [] as Profession[]),
       enumApi.regions().catch(() => [] as { code: string; name_he: string }[]),
-    ]).then(([profs, regions]) => {
+      enumApi.origins().catch(() => [] as { code: string; name_he: string }[]),
+    ]).then(([profs, regions, origins]) => {
       const pm: Record<string, string> = {};
       for (const p of profs) pm[p.code] = p.name_he;
       const rm: Record<string, string> = {};
       for (const r of regions) rm[r.code] = r.name_he;
-      setProfMap(pm); setRegionMap(rm);
+      const om: Record<string, string> = {};
+      for (const o of origins) om[o.code] = o.name_he;
+      setProfMap(pm); setRegionMap(rm); setOriginMap(om);
     });
   }, []);
 
@@ -251,17 +267,19 @@ export default function ContractorDealsPage() {
         </div>
       )}
 
-      {/* Aggregated request groups — one card per original search.
-          A single 8-worker request can be filled by multiple corp
-          proposals (e.g. 3 from corp A + 5 from corp B). The card
-          shows the total ask, a fill bar across all proposals, and
-          each proposal as a sub-row the contractor can act on.
-          Searches with zero proposals also appear (with the
-          "מחפשים תאגידים זמינים" empty state) when filter='all'. */}
+      {/* Tiered list — one card per original search.
+          Sort tiers:
+            1. דורש פעולה (corp_committed)         — amber accent
+            2. בעבודה (proposed/approved/active)  — neutral
+            3. ממתינות להצעות (no deals yet)       — slate
+            4. הושלמו / בוטלו                        — neutral, default expanded
+          Within a tier: most-recent activity first.
+          Cards are compact (~90px collapsed); whole card clickable
+          to expand and reveal the proposal sub-rows + actions. */}
       {!loading && !error && (
         (filter === 'all' ? searches.length > 0 : filtered.length > 0)
       ) && (
-        <div className="space-y-4">
+        <div className="space-y-6">
           {(() => {
             // Group filtered deals by search_id
             const dealsBySearch = filtered.reduce<Record<string, EnrichedDeal[]>>((acc, d) => {
@@ -286,20 +304,53 @@ export default function ContractorDealsPage() {
                   deals:    ds,
                 }));
 
-            // Sort by most-recent activity (proposal or search creation)
-            return cards
-              .sort((a, b) => {
-                const ta = Math.max(
-                  ...a.deals.map((d) => new Date(d.created_at).getTime()),
-                  a.search?.created_at ? new Date(a.search.created_at).getTime() : 0,
-                );
-                const tb = Math.max(
-                  ...b.deals.map((d) => new Date(d.created_at).getTime()),
-                  b.search?.created_at ? new Date(b.search.created_at).getTime() : 0,
-                );
-                return tb - ta;
-              })
-              .map(({ searchId, search, deals: group }) => {
+            // Per-card "tier" classification → visual + sort priority
+            const ACTION_REQUIRED = new Set(['corp_committed']);
+            const IN_PROGRESS     = new Set(['proposed', 'counter_proposed', 'approved', 'active', 'reporting']);
+            const COMPLETED       = new Set(['closed', 'completed', 'cancelled_by_corp', 'cancelled_by_contractor', 'rejected', 'expired']);
+
+            function tierOf(c: Card): 0 | 1 | 2 | 3 {
+              if (c.deals.some((d) => ACTION_REQUIRED.has(d.status))) return 0;
+              if (c.deals.some((d) => IN_PROGRESS.has(d.status))) return 1;
+              if (c.deals.length === 0) return 2;
+              // If all deals are terminal — completed tier
+              if (c.deals.every((d) => COMPLETED.has(d.status))) return 3;
+              return 1; // safe default
+            }
+            function activityTime(c: Card): number {
+              const fromDeals = c.deals.length > 0
+                ? Math.max(...c.deals.map((d) => new Date(d.created_at).getTime()))
+                : 0;
+              const fromSearch = c.search?.created_at ? new Date(c.search.created_at).getTime() : 0;
+              return Math.max(fromDeals, fromSearch);
+            }
+
+            const grouped: Record<0|1|2|3, Card[]> = { 0: [], 1: [], 2: [], 3: [] };
+            for (const c of cards) grouped[tierOf(c)].push(c);
+            for (const t of [0,1,2,3] as const) {
+              grouped[t].sort((a, b) => activityTime(b) - activityTime(a));
+            }
+
+            const TIER_META: Array<{ tier: 0|1|2|3; label: string; tone: 'amber'|'slate'|'mute'|'dim' }> = [
+              { tier: 0, label: 'דורש פעולה', tone: 'amber' },
+              { tier: 1, label: 'בעבודה',      tone: 'slate' },
+              { tier: 2, label: 'ממתינות להצעות', tone: 'mute' },
+              { tier: 3, label: 'הושלמו / בוטלו', tone: 'dim' },
+            ];
+
+            return TIER_META.filter((t) => grouped[t.tier].length > 0).map(({ tier, label, tone }) => (
+              <section key={tier} className="space-y-2">
+                <div className="flex items-center gap-2">
+                  {tier === 0 && <Bell className="h-3.5 w-3.5 text-amber-600" />}
+                  <h2 className={`text-[11px] font-bold uppercase tracking-widest ${
+                    tone === 'amber' ? 'text-amber-700' :
+                    tone === 'slate' ? 'text-slate-700' :
+                    tone === 'mute'  ? 'text-slate-500' :
+                                       'text-slate-400'
+                  }`}>{label} ({grouped[tier].length})</h2>
+                </div>
+                <div className="space-y-2">
+                  {grouped[tier].map(({ searchId, search, deals: group }) => {
               const head = group[0];
               // Prefer info from the deal row (enriched by backend);
               // fall back to the underlying search row for empty groups.
@@ -334,80 +385,126 @@ export default function ContractorDealsPage() {
               const regionLabel = head?.region_he
                 ?? (search?.region ? (regionMap[search.region] ?? search.region) : '');
 
+              // Search-derived meta for the secondary line
+              const startDate = search?.start_date;
+              const endDate   = search?.end_date;
+              const originCodes = search?.origin_preference ?? [];
+              const originLabel = originCodes.length === 0
+                ? 'כל מוצא'
+                : originCodes.map((c) => originMap[c] ?? c).join(', ');
+
+              const isOpen = expandedSearches.has(searchId);
+              const proposalCount = group.length;
+              // Show inline "X proposals" affordance text on the
+              // collapsed row so the contractor knows what they'd see
+              // by expanding.
+              const proposalsLine = proposalCount === 0
+                ? null
+                : proposalCount === 1
+                  ? 'הצעת תאגיד אחת'
+                  : `${proposalCount} הצעות מתאגידים`;
+
+              // Tier-driven left-edge accent — only the
+              // action-required tier gets a colored strip.
+              const accentClass = tier === 0
+                ? 'border-amber-300 ring-1 ring-amber-200/50'
+                : tier === 3
+                  ? 'border-slate-100 bg-slate-50/40'
+                  : 'border-slate-200';
+
               return (
                 <div key={searchId}
-                     className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-                  {/* Group header — original ask + composite fill bar */}
-                  <div className="p-5 border-b border-slate-100">
-                    <div className="flex items-start gap-3">
-                      {profCode && (
-                        <ProfessionIcon code={profCode} size={56} alt={profLabel}
-                                        className="shrink-0 object-contain" />
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between gap-2 flex-wrap">
-                          <div className="min-w-0">
-                            <div className="font-bold text-slate-900 text-lg truncate">
-                              {profLabel}
-                            </div>
-                            <div className="text-xs text-slate-500 mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5">
-                              {regionLabel && (
-                                <span className="inline-flex items-center gap-1">
-                                  <MapPin className="w-3 h-3" />
-                                  {regionLabel}
-                                </span>
-                              )}
-                              <span className="inline-flex items-center gap-1">
-                                <Calendar className="w-3 h-3" />
-                                {oldestDate ? `בקשה משובצה ${fmt(oldestDate)}` : 'בקשה חדשה'}
-                              </span>
-                            </div>
-                          </div>
-                          {/* Big composite fill — workers committed / requested */}
-                          <div className="text-end">
-                            <div className={`text-2xl font-extrabold leading-none ${isFull ? 'text-emerald-600' : 'text-amber-600'}`}>
-                              {filled}<span className="text-base text-slate-400 mx-0.5">/</span><span className="text-lg text-slate-500">{requested}</span>
-                            </div>
-                            <div className="text-[10px] text-slate-500 mt-1">עובדים שהוקצו</div>
+                     className={`rounded-xl border ${accentClass} bg-white shadow-sm overflow-hidden`}>
+                  {/* Compact summary row — single full-width button.
+                      Click anywhere to toggle the proposal sub-list. */}
+                  <button
+                    type="button"
+                    onClick={() => toggleSearch(searchId)}
+                    aria-expanded={isOpen}
+                    className="w-full text-start flex items-center gap-3 px-3.5 py-3 hover:bg-slate-50 transition-colors"
+                  >
+                    {/* Tier dot — at-a-glance accent before the icon */}
+                    {tier === 0 && (
+                      <span className="inline-block h-2.5 w-2.5 rounded-full bg-amber-500 shrink-0" aria-hidden />
+                    )}
+                    {profCode && (
+                      <ProfessionIcon code={profCode} size={44} alt={profLabel}
+                                      className="shrink-0 object-contain" />
+                    )}
+
+                    <div className="flex-1 min-w-0">
+                      {/* Line 1 — profession + qty + filled/requested */}
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0 flex items-baseline gap-2 flex-wrap">
+                          <span className="font-bold text-slate-900 text-base truncate">
+                            {profLabel}
+                          </span>
+                          <span className="text-xs text-slate-500">· {requested} עובדים</span>
+                          {tier === 0 && (
+                            <span className="text-[10px] font-bold text-amber-700 bg-amber-100 rounded-full px-2 py-0.5 leading-none whitespace-nowrap">
+                              בדוק עכשיו
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-end shrink-0">
+                          <div className={`text-base font-extrabold leading-none ${isFull ? 'text-emerald-600' : tier === 0 ? 'text-amber-600' : 'text-slate-700'}`}>
+                            {filled}<span className="text-xs text-slate-400 mx-0.5">/</span><span className="text-sm text-slate-500">{requested}</span>
                           </div>
                         </div>
-                        {/* Fill bar */}
-                        <div className="mt-3 h-2 rounded-full bg-slate-100 overflow-hidden">
-                          <div
-                            className={`h-full rounded-full transition-all ${isFull ? 'bg-emerald-500' : 'bg-amber-500'}`}
-                            style={{ width: `${fillPct}%` }}
-                          />
-                        </div>
-                        {group.length > 1 && (
-                          <p className="text-[11px] text-slate-500 mt-2">
-                            הבקשה מורכבת מ-{group.length} הצעות תאגיד שונות.
-                          </p>
+                      </div>
+                      {/* Line 2 — secondary meta: dates · origin · region · proposals */}
+                      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-slate-500">
+                        {(startDate || endDate) && (
+                          <span className="inline-flex items-center gap-1 whitespace-nowrap">
+                            <Calendar className="w-3 h-3" />
+                            {startDate ? fmt(startDate) : '—'}
+                            {endDate && <> ← {fmt(endDate)}</>}
+                          </span>
+                        )}
+                        <span className="inline-flex items-center gap-1 whitespace-nowrap">
+                          <Globe2 className="w-3 h-3" />
+                          {originLabel}
+                        </span>
+                        {regionLabel && (
+                          <span className="inline-flex items-center gap-1 whitespace-nowrap">
+                            <MapPin className="w-3 h-3" />
+                            {regionLabel}
+                          </span>
+                        )}
+                        {proposalsLine && (
+                          <span className={`inline-flex items-center gap-1 whitespace-nowrap font-medium ${tier === 0 ? 'text-amber-700' : 'text-slate-700'}`}>
+                            <MessageSquare className="w-3 h-3" />
+                            {proposalsLine}
+                          </span>
+                        )}
+                        {fillPct > 0 && fillPct < 100 && (
+                          <span className="inline-flex items-center gap-1 whitespace-nowrap text-slate-500">
+                            {fillPct}% התאמה
+                          </span>
                         )}
                       </div>
                     </div>
-                  </div>
 
-                  {/* Empty state — search exists but no corp has
-                      proposed yet. Shown when the group has zero
-                      deals. */}
-                  {group.length === 0 && (
-                    <div className="px-5 py-6 text-center">
-                      <p className="text-sm text-slate-600">
-                        מחפשים תאגידים עם עובדים מתאימים — נעדכן אותך ברגע שתתקבל הצעה.
-                      </p>
-                      <p className="text-xs text-slate-400 mt-1">
-                        בנוסף נשלחה הודעה לתאגידים רלוונטיים כדי שיעלו עובדים זמינים.
-                      </p>
+                    <ChevronDown className={`h-4 w-4 text-slate-400 shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                  </button>
+
+                  {/* Empty state — inline + compact, only when card
+                      is expanded (avoids per-card vertical bloat). */}
+                  {isOpen && group.length === 0 && (
+                    <div className="px-4 pb-3 pt-2 border-t border-slate-100 text-xs text-slate-500">
+                      מחפשים תאגידים עם עובדים מתאימים — נעדכן אותך ברגע שתתקבל הצעה.
+                      <span className="block text-slate-400 mt-0.5">
+                        בנוסף נשלחה הודעה לתאגידים רלוונטיים.
+                      </span>
                     </div>
                   )}
 
-                  {/* Per-corp proposal rows. Click → expand in-place
-                      (no navigation). The expanded panel shows the
-                      workers list (anonymized pre-approval) + the
-                      approve/reject actions inline. A small link at
-                      the bottom of the panel routes to the full deal
-                      page for the chat. */}
-                  <ul className="divide-y divide-slate-100">
+                  {/* Per-corp proposal rows — visible only when the
+                      outer card is expanded. Click any proposal row
+                      to drill into its workers list + inline action
+                      buttons (approve/reject when corp_committed). */}
+                  {isOpen && group.length > 0 && (
+                  <ul className="divide-y divide-slate-100 border-t border-slate-100">
                     {group
                       // most-recent first so latest activity bubbles up
                       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
@@ -416,7 +513,7 @@ export default function ContractorDealsPage() {
                         const corpLabel = REVEALED.includes(d.status) && d.corporation_id
                           ? `תאגיד ${d.corporation_id.slice(0, 6)}`
                           : `תאגיד ${idx + 1}`;
-                        const isOpen = expandedId === d.id;
+                        const proposalOpen = expandedId === d.id;
                         const workers = workersById[d.id] || [];
                         const isLoadingW = !!loadingWorkers[d.id];
                         const canApprove = d.status === 'corp_committed';
@@ -425,7 +522,7 @@ export default function ContractorDealsPage() {
                             <button
                               type="button"
                               onClick={() => toggleExpand(d.id)}
-                              aria-expanded={isOpen}
+                              aria-expanded={proposalOpen}
                               className="w-full flex items-center gap-3 px-5 py-3 hover:bg-slate-50 transition-colors text-start"
                             >
                               <div className="flex-1 min-w-0">
@@ -443,11 +540,11 @@ export default function ContractorDealsPage() {
                                 </div>
                                 <div className="text-[10px] text-slate-500">עובדים</div>
                               </div>
-                              <ChevronDown className={`w-4 h-4 text-slate-400 shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                              <ChevronDown className={`w-4 h-4 text-slate-400 shrink-0 transition-transform ${proposalOpen ? 'rotate-180' : ''}`} />
                             </button>
 
                             {/* Inline expansion panel */}
-                            {isOpen && (
+                            {proposalOpen && (
                               <div className="px-5 pb-4 pt-1 bg-slate-50 border-t border-slate-100">
                                 {/* Workers list — anonymized pre-approval */}
                                 {isLoadingW ? (
@@ -543,10 +640,14 @@ export default function ContractorDealsPage() {
                         );
                       })}
                   </ul>
+                  )}
                 </div>
               );
-            });
-          })()}
+            })}
+            </div>
+          </section>
+        ));
+      })()}
         </div>
       )}
     </div>
