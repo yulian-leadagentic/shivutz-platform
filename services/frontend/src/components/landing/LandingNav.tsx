@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import Image from 'next/image';
 import Link from 'next/link';
 import { Menu, X, LayoutDashboard } from 'lucide-react';
+import Logo from '@/components/Logo';
 import { useAuth } from '@/lib/AuthContext';
 
 interface LandingNavProps {
@@ -37,21 +37,13 @@ export default function LandingNav({ onLeadCapture }: LandingNavProps) {
     }`}>
       <div className="max-w-7xl mx-auto px-6 h-16 flex items-center gap-6">
 
-        {/* Logo — swaps the asset based on the nav background.
-            Un-scrolled the nav sits over the dark hero (transparent
-            bg), so we use the white-on-transparent variant. After
-            scroll the nav gets a white bg and we want the navy/orange
-            lockup for contrast. */}
+        {/* Logo — sits over the dark hero pre-scroll (no panel needed,
+            transparent logo is fine on dark). Post-scroll the nav has
+            a white bg, so the Logo component wraps in a navy panel. */}
         <Link href="/" className="flex items-center shrink-0 me-auto" aria-label="BuildUp — Home">
-          <Image
-            src={scrolled ? '/brand/buildup-logo.png' : '/brand/buildup-logo-light.png'}
-            alt="BuildUp"
-            width={140}
-            height={48}
-            className="h-12 w-auto object-contain"
-            priority
-            unoptimized
-          />
+          {scrolled
+            ? <Logo size={36} />
+            : <Logo size={44} bare />}
         </Link>
 
         {/* Desktop nav */}

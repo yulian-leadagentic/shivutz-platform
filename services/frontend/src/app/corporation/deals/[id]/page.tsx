@@ -8,6 +8,7 @@ import {
   BadgeCheck, CircleAlert, UserCheck, CreditCard, ShieldCheck,
 } from 'lucide-react';
 import { dealApi, workerApi, paymentApi } from '@/lib/api';
+import { dealRef } from '@/lib/utils';
 import { useEnums } from '@/features/enums/EnumsContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -615,7 +616,7 @@ function CorporationDealPageInner() {
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
           <div className="flex items-center gap-2 flex-wrap">
-            <h1 className="text-2xl font-bold text-slate-900">עסקה #{id.slice(0, 8)}</h1>
+            <h1 className="text-2xl font-bold text-slate-900">עסקה #{dealRef(id)}</h1>
             <StatusBadge status={deal.status} />
           </div>
           <p className="text-sm text-slate-500 mt-0.5">נוצרה: {fmtDate(deal.created_at)}</p>

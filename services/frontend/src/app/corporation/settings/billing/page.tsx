@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { paymentApi, dealApi } from '@/lib/api';
 import { apiFetch } from '@/lib/api/client';
+import { dealRef } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type { PaymentMethod, Deal } from '@/types';
@@ -473,7 +474,7 @@ function DealsCard() {
                     return (
                       <li key={d.id} className="py-2.5 flex items-center justify-between gap-3 flex-wrap">
                         <Link href={`/corporation/deals/${d.id}`} className="flex-1 min-w-0 hover:underline">
-                          <span className="font-mono text-xs text-slate-400">#{d.id.slice(0, 8)}</span>
+                          <span className="font-mono text-xs text-slate-400">#{dealRef(d.id)}</span>
                           <span className="ms-2 text-sm font-medium text-slate-800">{DEAL_STATUS_LABEL[d.status] || d.status}</span>
                           <span className="ms-2 text-xs text-slate-500">{(d.worker_count ?? d.workers_count ?? 0)} עובדים</span>
                           {d.commission_amount != null && (
@@ -504,7 +505,7 @@ function DealsCard() {
                   {closed.map((d) => (
                     <li key={d.id} className="py-2.5 flex items-center justify-between gap-3 flex-wrap">
                       <Link href={`/corporation/deals/${d.id}`} className="flex-1 min-w-0 hover:underline">
-                        <span className="font-mono text-xs text-slate-400">#{d.id.slice(0, 8)}</span>
+                        <span className="font-mono text-xs text-slate-400">#{dealRef(d.id)}</span>
                         <span className="ms-2 text-xs text-slate-500">{(d.worker_count ?? d.workers_count ?? 0)} עובדים</span>
                         {d.commission_amount != null && (
                           <span className="ms-2 text-xs font-medium text-slate-700">₪{d.commission_amount.toLocaleString('he-IL')}</span>
@@ -533,7 +534,7 @@ function DealsCard() {
                 הבקשה תישלח למנהל המערכת לטיפול. אין החזר אוטומטי — מנהל יחזור אליך לבירור.
               </p>
               <p className="text-xs text-slate-500 bg-slate-50 rounded p-2">
-                עסקה: <span className="font-mono" dir="ltr">#{refundForm.id.slice(0, 8)}</span>
+                עסקה: <span className="font-mono" dir="ltr">#{dealRef(refundForm.id)}</span>
               </p>
               <div>
                 <label className="text-xs text-slate-500 block mb-1">סיבת הבקשה</label>

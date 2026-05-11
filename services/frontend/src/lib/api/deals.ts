@@ -70,6 +70,19 @@ export const dealApi = {
     apiFetch<{ id: string; status: string }>(
       `/deals/${id}/reject`, { method: 'POST' }
     ),
+  /** Contractor close-the-loop: yes, the deal actually closed. */
+  contractorConfirmClosed: (id: string) =>
+    apiFetch<{ id: string; status: string }>(
+      `/deals/${id}/contractor-confirm-closed`, { method: 'POST' }
+    ),
+  /** Contractor close-the-loop: no, the deal did NOT close + reason. */
+  contractorDeclineClosed: (id: string, reason: string) =>
+    apiFetch<{ id: string; status: string }>(
+      `/deals/${id}/contractor-decline-closed`, {
+        method: 'POST',
+        body: JSON.stringify({ reason }),
+      }
+    ),
   cancel: (id: string, reason?: string) =>
     apiFetch<{ id: string; status: string }>(
       `/deals/${id}/cancel`, { method: 'POST', body: JSON.stringify({ reason: reason || null }) }

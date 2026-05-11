@@ -1,8 +1,8 @@
 'use client';
 
 import React from 'react';
-import Image from 'next/image';
 import Link from 'next/link';
+import Logo from '@/components/Logo';
 import { usePathname, useRouter } from 'next/navigation';
 import {
   Home, LayoutDashboard, ClipboardList, Handshake,
@@ -64,19 +64,10 @@ export default function Sidebar() {
   return (
     <aside className="flex flex-col w-60 min-h-screen bg-slate-900 shrink-0">
 
-      {/* Logo — clickable, returns to public landing. Sidebar bg is
-          slate-900, so we use the white-on-transparent variant
-          (-light suffix) instead of the dark navy default. */}
+      {/* Logo — sidebar bg is slate-900, so the transparent lockup
+          sits bare (no extra panel). */}
       <Link href="/" className="flex items-center justify-center h-16 px-4 border-b border-slate-800 hover:bg-slate-800/40 transition-colors">
-        <Image
-          src="/brand/buildup-logo-light.png"
-          alt="BuildUp"
-          width={140}
-          height={48}
-          className="h-12 w-auto object-contain"
-          unoptimized
-          priority
-        />
+        <Logo size={40} bare />
       </Link>
 
       {/* Nav */}

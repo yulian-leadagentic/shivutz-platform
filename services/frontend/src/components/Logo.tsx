@@ -1,61 +1,58 @@
 // BuildUp brand logo — single source of truth for the wordmark.
 //
-// Two variants:
-//   - "image" (default): full PNG logo (globe + 3 hard-hat workers + the
-//     "BuildUp" wordmark). Use for landing/login/register cards and any
-//     surface where the full lockup fits.
-//   - "wordmark": text-only "BuildUp" — for tight spaces (sidebars,
-//     compact nav rows) where the full image lockup is too dense.
+// We render the transparent-bg PNG (white + orange on transparent).
+// On its own it only reads well over dark surfaces — on white the
+// white parts vanish — so we always wrap the lockup in a dark navy
+// panel. That keeps the logo visually consistent regardless of the
+// surrounding page background.
 //
-// `size` controls the rendered height in px. Width auto-scales for
-// the image variant; text size scales for the wordmark variant.
+// The optional `bare` prop skips the navy panel for cases where the
+// surrounding container is already dark (sidebars, hero, landing
+// nav over the dark hero) and a wrapper would just add visual
+// noise.
+//
+// `size` controls the rendered height in px. Width auto-scales.
 
 import Image from 'next/image';
 
 interface LogoProps {
-  variant?: 'image' | 'wordmark';
-  /** Height in pixels for the image variant; pseudo-height for wordmark. */
+  /** Height in pixels for the logo image. */
   size?: number;
+  /** Skip the dark wrapper panel — use when the surrounding
+   *  container is already dark and a panel would be redundant. */
+  bare?: boolean;
   className?: string;
-  /** Override of the dark-on-light wordmark color. Ignored for image variant. */
-  wordmarkClassName?: string;
 }
 
-export default function Logo({
-  variant = 'image',
-  size = 40,
-  className = '',
-  wordmarkClassName = 'text-brand-600',
-}: LogoProps) {
-  if (variant === 'wordmark') {
-    // Pure-text fallback. Sized roughly proportional to the image
-    // height the caller asked for so swapping variants doesn't shift
-    // the surrounding layout.
-    const fontPx = Math.round(size * 0.62);
-    return (
-      <span
-        dir="ltr"
-        className={`font-black tracking-tight ${wordmarkClassName} ${className}`}
-        style={{ fontSize: `${fontPx}px`, lineHeight: 1 }}
-      >
-        BuildUp
-      </span>
-    );
-  }
-  // Image variant — keep the original aspect ratio (~1.27:1, the PNG
-  // is wider than tall). next/image needs explicit width+height; we
-  // derive width from height using that ratio so the asset doesn't
-  // get smushed at any size.
+export default function Logo({ size = 48, bare = false, className = '' }: LogoProps) {
+  // ~1.27 aspect from the lockup PNG. Width auto-derives so the asset
+  // doesn't squash at any size.
   const width = Math.round(size * 1.27);
-  return (
+  const img = (
     <Image
-      src="/brand/buildup-logo.png"
+      src="/brand/buildup-logo-light.png"
       alt="BuildUp"
       width={width}
       height={size}
-      className={className}
+      className="object-contain"
+      style={{ height: size, width: 'auto' }}
       priority
       unoptimized
     />
+  );
+  if (bare) {
+    return <span className={className}>{img}</span>;
+  }
+  // Padding scales with size so the panel always looks intentional,
+  // not cramped or balloon-y. Rounded-2xl matches the rest of the
+  // card / panel aesthetic.
+  const pad = Math.max(8, Math.round(size * 0.18));
+  return (
+    <span
+      className={`inline-flex items-center justify-center bg-slate-900 rounded-2xl ${className}`}
+      style={{ padding: `${pad}px ${pad * 1.5}px` }}
+    >
+      {img}
+    </span>
   );
 }

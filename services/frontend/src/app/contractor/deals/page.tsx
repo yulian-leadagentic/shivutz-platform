@@ -447,7 +447,7 @@ export default function ContractorDealsPage() {
                                       >
                                         {actingId === d.id
                                           ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                          : <><CheckCircle2 className="h-3.5 w-3.5" /> אשר רשימה ({workers.length})</>}
+                                          : <><CheckCircle2 className="h-3.5 w-3.5" /> הצג פרטי תאגיד ({workers.length})</>}
                                       </Button>
                                     </div>
                                   )}
