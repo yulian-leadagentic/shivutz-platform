@@ -1,8 +1,8 @@
 'use client';
 
-import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
+import Logo from '@/components/Logo';
 import { Home, LayoutDashboard, Users, Handshake, LogOut, UserCog, CreditCard, Store } from 'lucide-react';
 import { clearTokens } from '@/lib/auth';
 import { cn } from '@/lib/utils';
@@ -51,17 +51,11 @@ export default function CorporationSidebar() {
 
   return (
     <aside className="flex flex-col w-64 min-h-screen bg-white border-s border-slate-200 shadow-sm shrink-0">
-      {/* Logo — clickable, returns to public landing */}
+      {/* Logo — clickable, returns to public landing. Wraps in the
+          Logo component which puts the transparent lockup on a navy
+          panel — looks correct against the white sidebar. */}
       <Link href="/" className="flex items-center justify-center h-20 border-b border-slate-200 px-4 hover:bg-slate-50 transition-colors">
-        <Image
-          src="/brand/buildup-logo.png"
-          alt="BuildUp"
-          width={160}
-          height={56}
-          className="h-14 w-auto object-contain"
-          unoptimized
-          priority
-        />
+        <Logo size={36} />
       </Link>
 
       {/* Role label */}

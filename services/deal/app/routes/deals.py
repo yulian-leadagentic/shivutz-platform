@@ -651,6 +651,125 @@ async def cancel_deal(
         conn.close()
 
 
+# ─────────────────────────────────────────────────────────────────────
+# Contractor-side close-the-loop endpoints
+# After the contractor "approves" (= reveals corp details), they
+# coordinate with the corp off-platform. Once that's done, they come
+# back and tell us whether the deal actually closed — those two
+# outcomes go through these two endpoints.
+# ─────────────────────────────────────────────────────────────────────
+
+@router.post("/{deal_id}/contractor-confirm-closed")
+async def contractor_confirm_closed(
+    deal_id: str,
+    x_org_id: Optional[str] = Header(default=None),
+    x_user_id: Optional[str] = Header(default=None),
+    x_user_role: Optional[str] = Header(default=None),
+):
+    """Contractor confirms: yes, the deal actually closed. Status
+    advances to 'closed' (commission stays scheduled / captured per
+    the existing capture cron)."""
+    if x_user_role not in ("contractor", "admin"):
+        raise HTTPException(status_code=403, detail="contractor_only")
+
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM deals WHERE id=%s AND deleted_at IS NULL", (deal_id,))
+        deal = cur.fetchone()
+        if not deal:
+            raise HTTPException(status_code=404, detail="deal_not_found")
+        if x_user_role != "admin" and deal["contractor_id"] != x_org_id:
+            raise HTTPException(status_code=403, detail="not_your_deal")
+        if deal["status"] != "approved":
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "wrong_state", "current": deal["status"],
+                        "message": "ניתן לאשר סגירת עסקה רק במצב 'אושר'"},
+            )
+        now = datetime.utcnow()
+        cur.execute(
+            "UPDATE deals SET status='closed', closed_at=%s WHERE id=%s",
+            (now, deal_id),
+        )
+        conn.commit()
+        audit.log("deal", deal_id, "contractor_confirmed_closed", x_user_id or "unknown")
+        payload = _enrich_event_payload(
+            deal_id, deal["contractor_id"], deal["corporation_id"],
+            search_id=deal.get("search_id"),
+        )
+        await publish_event("deal.contractor_confirmed_closed", payload)
+        return {"id": deal_id, "status": "closed"}
+    except HTTPException:
+        raise
+    finally:
+        conn.close()
+
+
+class ContractorDeclineCloseRequest(BaseModel):
+    reason: Optional[str] = None
+
+
+@router.post("/{deal_id}/contractor-decline-closed")
+async def contractor_decline_closed(
+    deal_id: str,
+    body: ContractorDeclineCloseRequest,
+    x_org_id: Optional[str] = Header(default=None),
+    x_user_id: Optional[str] = Header(default=None),
+    x_user_role: Optional[str] = Header(default=None),
+):
+    """Contractor declines: the deal did NOT close. Reason text is
+    captured to the audit log and the cancellation_reason column.
+    Status advances to 'cancelled_by_contractor' and the J5 hold is
+    voided (no commission charged)."""
+    if x_user_role not in ("contractor", "admin"):
+        raise HTTPException(status_code=403, detail="contractor_only")
+
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM deals WHERE id=%s AND deleted_at IS NULL", (deal_id,))
+        deal = cur.fetchone()
+        if not deal:
+            raise HTTPException(status_code=404, detail="deal_not_found")
+        if x_user_role != "admin" and deal["contractor_id"] != x_org_id:
+            raise HTTPException(status_code=403, detail="not_your_deal")
+        if deal["status"] != "approved":
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "wrong_state", "current": deal["status"],
+                        "message": "ניתן לציין שעסקה לא נסגרה רק במצב 'אושר'"},
+            )
+        now = datetime.utcnow()
+        reason = (body.reason or '').strip() or None
+        _unlock_workers(cur, deal_id)
+        cur.execute(
+            """UPDATE deals
+               SET status='cancelled_by_contractor',
+                   cancelled_at=%s,
+                   cancelled_by='contractor',
+                   cancellation_reason=%s,
+                   scheduled_capture_at=NULL
+               WHERE id=%s""",
+            (now, reason, deal_id),
+        )
+        conn.commit()
+        audit.log("deal", deal_id, "contractor_declined_closed", x_user_id or "unknown",
+                  new_value={"reason": reason or ""})
+        await _void_payment_hold(deal_id)
+        payload = _enrich_event_payload(
+            deal_id, deal["contractor_id"], deal["corporation_id"],
+            search_id=deal.get("search_id"),
+        )
+        payload.update({"cancellation_reason": reason or ""})
+        await publish_event("deal.contractor_declined_closed", payload)
+        return {"id": deal_id, "status": "cancelled_by_contractor"}
+    except HTTPException:
+        raise
+    finally:
+        conn.close()
+
+
 @router.post("/{deal_id}/replace_worker")
 async def replace_worker(
     deal_id: str,

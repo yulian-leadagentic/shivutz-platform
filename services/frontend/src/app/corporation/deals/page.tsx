@@ -14,6 +14,7 @@ import {
   AlertCircle, Handshake, MessageSquare,
 } from 'lucide-react';
 import { dealApi } from '@/lib/api';
+import { dealRef } from '@/lib/utils';
 import { ProfessionIcon } from '@/features/searches/ProfessionIcon';
 import type { Deal } from '@/types';
 import StatusBadge from '@/components/StatusBadge';
@@ -229,7 +230,7 @@ function CorporationDealsPageContent() {
 
                 {/* Footer CTA */}
                 <div className="mt-auto flex items-center justify-between pt-1">
-                  <span className="font-mono text-[10px] text-slate-400">#{d.id.slice(0, 8)}</span>
+                  <span className="font-mono text-[10px] text-slate-400">#{dealRef(d.id)}</span>
                   <span className={`inline-flex items-center gap-1 text-xs font-semibold ${
                     isPending ? 'text-amber-600 group-hover:text-amber-700' : 'text-brand-600 group-hover:text-brand-700'
                   }`}>

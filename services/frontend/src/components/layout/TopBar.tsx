@@ -107,10 +107,10 @@ export default function TopBar({ mobileNav }: TopBarProps = {}) {
   }
 
   return (
-    <header className="h-14 bg-white border-b border-slate-200/80 flex items-center justify-between gap-2 px-3 sm:px-4 lg:px-6 shrink-0">
+    <header className="h-16 bg-white border-b border-slate-200/80 flex items-center justify-between gap-2 px-3 sm:px-4 lg:px-6 shrink-0">
       <div className="flex items-center gap-2 min-w-0">
         {mobileNav && <MobileNavDrawer nav={mobileNav} />}
-        <h1 className="text-sm font-semibold text-slate-800 text-start tracking-tight truncate">
+        <h1 className="text-base sm:text-lg font-bold text-slate-900 text-start tracking-tight truncate">
           {getPageTitle(pathname)}
         </h1>
       </div>
@@ -123,11 +123,11 @@ export default function TopBar({ mobileNav }: TopBarProps = {}) {
             className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-slate-100 transition-colors"
             aria-label="תפריט משתמש"
           >
-            <span className="text-base text-slate-800 font-semibold hidden sm:block max-w-[220px] truncate">{name}</span>
-            <div className="h-9 w-9 rounded-full bg-primary-600 flex items-center justify-center shrink-0">
-              <span className="text-white text-sm font-bold">{getInitials(name)}</span>
+            <span className="text-lg sm:text-xl text-slate-900 font-bold hidden sm:block max-w-[260px] truncate">{name}</span>
+            <div className="h-11 w-11 rounded-full bg-primary-600 flex items-center justify-center shrink-0">
+              <span className="text-white text-base font-bold">{getInitials(name)}</span>
             </div>
-            <ChevronDown className={`h-4 w-4 text-slate-500 transition-transform ${menuOpen ? 'rotate-180' : ''}`} />
+            <ChevronDown className={`h-5 w-5 text-slate-500 transition-transform ${menuOpen ? 'rotate-180' : ''}`} />
           </button>
 
           {menuOpen && (

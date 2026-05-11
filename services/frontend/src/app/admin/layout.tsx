@@ -1,8 +1,8 @@
 'use client';
 
-import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
+import Logo from '@/components/Logo';
 import { Home, LayoutDashboard, ClipboardCheck, Handshake, Building2, LogOut, Percent, PhoneCall, Users, Inbox, Store } from 'lucide-react';
 import { clearTokens } from '@/lib/auth';
 import { cn } from '@/lib/utils';
@@ -29,15 +29,7 @@ function AdminSidebarBody({ pathname, onLogout }: { pathname: string; onLogout: 
   return (
     <div className="w-64 max-w-full bg-slate-900 text-white flex flex-col h-full">
       <Link href="/" className="block px-6 py-4 border-b border-slate-700 hover:bg-slate-800/40 transition-colors">
-        <Image
-          src="/brand/buildup-logo-light.png"
-          alt="BuildUp"
-          width={140}
-          height={48}
-          className="h-11 w-auto object-contain"
-          unoptimized
-          priority
-        />
+        <Logo size={40} bare />
         <span className="block text-xs text-slate-400 mt-1.5">פאנל ניהול</span>
       </Link>
 

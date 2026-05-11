@@ -28,6 +28,7 @@ const STATUS_MAP: Record<string, StatusConfig> = {
   disputed:           { label: 'במחלוקת',        variant: 'destructive' },
   rejected:           { label: 'נדחה',           variant: 'destructive' },
   cancelled_by_corp:  { label: 'בוטל ע״י תאגיד', variant: 'destructive' },
+  cancelled_by_contractor: { label: 'לא נסגרה',  variant: 'secondary' },
   expired:            { label: 'פג תוקף',        variant: 'destructive' },
 
   // Org approval statuses
