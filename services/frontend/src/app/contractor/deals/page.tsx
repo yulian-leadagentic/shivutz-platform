@@ -12,9 +12,10 @@ import {
   AlertCircle, Handshake, MessageSquare, Calendar, MapPin,
   Plus, ChevronDown, Loader2, CheckCircle2, XCircle,
 } from 'lucide-react';
-import { dealApi } from '@/lib/api';
+import { dealApi, searchApi } from '@/lib/api';
+import { enumApi } from '@/lib/api/enums';
 import { ProfessionIcon } from '@/features/searches/ProfessionIcon';
-import type { Deal, Worker } from '@/types';
+import type { Deal, Worker, WorkerSearch, Profession } from '@/types';
 import { Button } from '@/components/ui/button';
 import StatusBadge from '@/components/StatusBadge';
 import {
@@ -76,10 +77,17 @@ export default function ContractorDealsPage() {
     const f = searchParams?.get('filter');
     return f && (VALID_FILTERS as string[]).includes(f) ? (f as Filter) : 'all';
   })();
-  const [deals, setDeals]     = useState<EnrichedDeal[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError]     = useState(false);
-  const [filter, setFilter]   = useState<Filter>(initialFilter);
+  const [deals, setDeals]       = useState<EnrichedDeal[]>([]);
+  // Wave 5: the unified screen also shows searches with no
+  // proposals yet — previously they only lived on /contractor/
+  // searches, which doubled as a parallel index of the same data.
+  // Fetching both means /contractor/searches can go away entirely.
+  const [searches, setSearches] = useState<WorkerSearch[]>([]);
+  const [profMap, setProfMap]   = useState<Record<string, string>>({});
+  const [regionMap, setRegionMap] = useState<Record<string, string>>({});
+  const [loading, setLoading]   = useState(true);
+  const [error, setError]       = useState(false);
+  const [filter, setFilter]     = useState<Filter>(initialFilter);
   // Inline expansion — proposal rows open in-place instead of routing
   // to /contractor/deals/[id]. Workers are lazy-fetched on first
   // expand, cached per deal_id so re-toggling doesn't re-hit the API.
@@ -91,13 +99,31 @@ export default function ContractorDealsPage() {
 
   function reload() {
     setLoading(true); setError(false);
-    dealApi.list({ page_size: 200 })
-      .then((res) => setDeals(res.items as EnrichedDeal[]))
+    Promise.all([
+      dealApi.list({ page_size: 200 }).then((res) => setDeals(res.items as EnrichedDeal[])),
+      searchApi.list().then(setSearches),
+    ])
       .catch(() => setError(true))
       .finally(() => setLoading(false));
   }
 
   useEffect(() => { reload(); }, []);
+
+  // Reference data so the request card can show Hebrew labels even
+  // when a search has no proposals yet (the deal-enriched rows carry
+  // profession_he/region_he, but bare WorkerSearch rows don't).
+  useEffect(() => {
+    Promise.all([
+      enumApi.professions().catch(() => [] as Profession[]),
+      enumApi.regions().catch(() => [] as { code: string; name_he: string }[]),
+    ]).then(([profs, regions]) => {
+      const pm: Record<string, string> = {};
+      for (const p of profs) pm[p.code] = p.name_he;
+      const rm: Record<string, string> = {};
+      for (const r of regions) rm[r.code] = r.name_he;
+      setProfMap(pm); setRegionMap(rm);
+    });
+  }, []);
 
   async function toggleExpand(dealId: string) {
     if (expandedId === dealId) {
@@ -204,19 +230,21 @@ export default function ContractorDealsPage() {
       )}
 
       {/* Empty */}
-      {!loading && !error && filtered.length === 0 && (
+      {!loading && !error && (
+        (filter === 'all' ? searches.length === 0 : filtered.length === 0)
+      ) && (
         <div className="bg-white border border-slate-200 rounded-2xl flex flex-col items-center gap-3 py-12 text-center px-4">
           <Handshake className="h-10 w-10 text-slate-200" />
           <p className="text-slate-600 font-medium">
-            {filter === 'all' ? 'עדיין אין עסקאות' : 'אין עסקאות בקטגוריה זו'}
+            {filter === 'all' ? 'עדיין אין בקשות' : 'אין עסקאות בקטגוריה זו'}
           </p>
           {filter === 'all' && (
             <>
               <p className="text-slate-400 text-sm">
-                צור חיפוש עובדים וחפש התאמות כדי לשלוח פנייה לתאגיד
+                פתח בקשת עובדים חדשה כדי להתחיל
               </p>
               <Button asChild variant="outline" size="sm">
-                <Link href="/contractor/find">+ חיפוש עובדים</Link>
+                <Link href="/contractor/find">+ פתח בקשת עובדים חדשה</Link>
               </Button>
             </>
           )}
@@ -227,27 +255,62 @@ export default function ContractorDealsPage() {
           A single 8-worker request can be filled by multiple corp
           proposals (e.g. 3 from corp A + 5 from corp B). The card
           shows the total ask, a fill bar across all proposals, and
-          each proposal as a sub-row the contractor can act on. */}
-      {!loading && !error && filtered.length > 0 && (
+          each proposal as a sub-row the contractor can act on.
+          Searches with zero proposals also appear (with the
+          "מחפשים תאגידים זמינים" empty state) when filter='all'. */}
+      {!loading && !error && (
+        (filter === 'all' ? searches.length > 0 : filtered.length > 0)
+      ) && (
         <div className="space-y-4">
-          {Object.values(
-            filtered.reduce<Record<string, EnrichedDeal[]>>((acc, d) => {
-              const key = d.search_id || d.id;
-              (acc[key] = acc[key] || []).push(d);
+          {(() => {
+            // Group filtered deals by search_id
+            const dealsBySearch = filtered.reduce<Record<string, EnrichedDeal[]>>((acc, d) => {
+              const k = d.search_id || d.id;
+              (acc[k] = acc[k] || []).push(d);
               return acc;
-            }, {}),
-          )
-            // Sort groups by most recent proposal in each group, newest first
-            .sort((a, b) => {
-              const ta = Math.max(...a.map((d) => new Date(d.created_at).getTime()));
-              const tb = Math.max(...b.map((d) => new Date(d.created_at).getTime()));
-              return tb - ta;
-            })
-            .map((group) => {
+            }, {});
+
+            // Compose final card list: when filter='all' we walk
+            // `searches` so empty searches are included; otherwise
+            // we only iterate the filtered deals' groups.
+            type Card = { searchId: string; search?: WorkerSearch; deals: EnrichedDeal[] };
+            const cards: Card[] = filter === 'all'
+              ? searches.map((s) => ({
+                  searchId: s.id,
+                  search:   s,
+                  deals:    dealsBySearch[s.id] || [],
+                }))
+              : Object.entries(dealsBySearch).map(([sid, ds]) => ({
+                  searchId: sid,
+                  search:   searches.find((s) => s.id === sid),
+                  deals:    ds,
+                }));
+
+            // Sort by most-recent activity (proposal or search creation)
+            return cards
+              .sort((a, b) => {
+                const ta = Math.max(
+                  ...a.deals.map((d) => new Date(d.created_at).getTime()),
+                  a.search?.created_at ? new Date(a.search.created_at).getTime() : 0,
+                );
+                const tb = Math.max(
+                  ...b.deals.map((d) => new Date(d.created_at).getTime()),
+                  b.search?.created_at ? new Date(b.search.created_at).getTime() : 0,
+                );
+                return tb - ta;
+              })
+              .map(({ searchId, search, deals: group }) => {
               const head = group[0];
-              const profCode = head.profession_type ?? '';
-              const profLabel = head.profession_he ?? head.profession_type ?? '—';
-              const requested = head.requested_count ?? group.reduce((s, d) => s + (d.worker_count ?? 0), 0);
+              // Prefer info from the deal row (enriched by backend);
+              // fall back to the underlying search row for empty groups.
+              const profCode = head?.profession_type ?? search?.profession_type ?? '';
+              const profLabel = head?.profession_he
+                ?? profMap[profCode]
+                ?? profCode
+                ?? '—';
+              const requested = head?.requested_count
+                ?? search?.quantity
+                ?? (group.length > 0 ? group.reduce((s, d) => s + (d.worker_count ?? 0), 0) : 0);
               // Filled = sum of worker_count across proposals where the
               // corp committed to that count (proposed/corp_committed/
               // accepted/active are all "this many workers in flight").
@@ -260,11 +323,19 @@ export default function ContractorDealsPage() {
                 .reduce((s, d) => s + (d.worker_count ?? 0), 0);
               const fillPct = requested > 0 ? Math.min(100, Math.round((filled / requested) * 100)) : 0;
               const isFull = filled >= requested && requested > 0;
-              const oldest = group.reduce((min, d) =>
-                new Date(d.created_at) < new Date(min.created_at) ? d : min, head);
+              // Earliest activity timestamp — for empty searches use
+              // the search row's created_at directly.
+              const oldestDate = group.length > 0
+                ? group.reduce((min, d) =>
+                    new Date(d.created_at) < new Date(min.created_at) ? d : min, group[0]).created_at
+                : search?.created_at;
+              // Region label: deal row carries region_he; bare search
+              // row carries `region` code that we resolve via regionMap.
+              const regionLabel = head?.region_he
+                ?? (search?.region ? (regionMap[search.region] ?? search.region) : '');
 
               return (
-                <div key={head.search_id || head.id}
+                <div key={searchId}
                      className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
                   {/* Group header — original ask + composite fill bar */}
                   <div className="p-5 border-b border-slate-100">
@@ -280,15 +351,15 @@ export default function ContractorDealsPage() {
                               {profLabel}
                             </div>
                             <div className="text-xs text-slate-500 mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5">
-                              {head.region_he && (
+                              {regionLabel && (
                                 <span className="inline-flex items-center gap-1">
                                   <MapPin className="w-3 h-3" />
-                                  {head.region_he}
+                                  {regionLabel}
                                 </span>
                               )}
                               <span className="inline-flex items-center gap-1">
                                 <Calendar className="w-3 h-3" />
-                                בקשה משובצה {fmt(oldest.created_at)}
+                                {oldestDate ? `בקשה משובצה ${fmt(oldestDate)}` : 'בקשה חדשה'}
                               </span>
                             </div>
                           </div>
@@ -315,6 +386,20 @@ export default function ContractorDealsPage() {
                       </div>
                     </div>
                   </div>
+
+                  {/* Empty state — search exists but no corp has
+                      proposed yet. Shown when the group has zero
+                      deals. */}
+                  {group.length === 0 && (
+                    <div className="px-5 py-6 text-center">
+                      <p className="text-sm text-slate-600">
+                        מחפשים תאגידים עם עובדים מתאימים — נעדכן אותך ברגע שתתקבל הצעה.
+                      </p>
+                      <p className="text-xs text-slate-400 mt-1">
+                        בנוסף נשלחה הודעה לתאגידים רלוונטיים כדי שיעלו עובדים זמינים.
+                      </p>
+                    </div>
+                  )}
 
                   {/* Per-corp proposal rows. Click → expand in-place
                       (no navigation). The expanded panel shows the
@@ -460,7 +545,8 @@ export default function ContractorDealsPage() {
                   </ul>
                 </div>
               );
-            })}
+            });
+          })()}
         </div>
       )}
     </div>
