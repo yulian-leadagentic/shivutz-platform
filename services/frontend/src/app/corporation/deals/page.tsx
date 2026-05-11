@@ -19,7 +19,12 @@ import { ProfessionIcon } from '@/features/searches/ProfessionIcon';
 import type { Deal } from '@/types';
 import StatusBadge from '@/components/StatusBadge';
 import { Button } from '@/components/ui/button';
-import { DEAL_STATUS_GROUP, type DealFilter as Filter } from '@/i18n/he';
+import { DEAL_STATUS_GROUP, type DealFilter } from '@/i18n/he';
+
+// Corp side uses a tighter, locally-owned filter set. The shared
+// DealFilter is a superset that also covers contractor-side
+// awaiting/cancelled buckets — corp doesn't surface those as pills.
+type Filter = Extract<DealFilter, 'all' | 'proposed' | 'active' | 'completed'>;
 
 // Corp-side wording differs from the central DEAL_FILTER_LABEL
 // (e.g. "ממתינות לאישור" vs "ממתינות לתאגיד") — kept local on purpose.
@@ -94,7 +99,8 @@ function CorporationDealsPageContent() {
   const filtered = deals.filter((d) => {
     if (filter === 'all')      return true;
     if (filter === 'proposed') return d.status === 'proposed';
-    return (DEAL_STATUS_GROUP[filter] as string[]).includes(d.status);
+    const group = DEAL_STATUS_GROUP[filter as Exclude<DealFilter, 'all'>];
+    return group ? group.includes(d.status) : false;
   });
   const pendingCount = deals.filter((d) => d.status === 'proposed').length;
 
