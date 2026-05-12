@@ -13,7 +13,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import StatusBadge from '@/components/StatusBadge';
 import type { Deal, Message, Worker, Corporation } from '@/types';
-import { EXPERIENCE_LABEL as EXP_LABELS } from '@/i18n/he';
+import { EXPERIENCE_LABEL as EXP_LABELS, heOrigin } from '@/i18n/he';
 
 interface ReportForm {
   actual_workers: string;
@@ -583,39 +583,38 @@ export default function DealDetailPage() {
             <CardContent>
               {!showWorkers ? (
                 <p className="text-slate-400 text-sm text-center py-4">
-                  שמות העובדים יוצגו ברגע שהתאגיד יציג רשימה
+                  רשימת העובדים תוצג ברגע שהתאגיד יציג הצעה
                 </p>
               ) : workers.length === 0 ? (
                 <p className="text-slate-400 text-sm text-center py-4">אין עובדים משובצים</p>
               ) : (
-                <div className="-mx-4 sm:mx-0 overflow-x-auto">
-                  <table className="w-full text-sm min-w-[560px] sm:min-w-0">
-                    <thead>
-                      <tr className="text-slate-500 border-b border-slate-100">
-                        <th className="px-4 sm:px-0 pb-2 font-medium text-start">שם</th>
-                        <th className="px-4 sm:px-0 pb-2 font-medium text-start">מס׳ פנימי</th>
-                        <th className="px-4 sm:px-0 pb-2 font-medium text-start">מקצוע</th>
-                        <th className="px-4 sm:px-0 pb-2 font-medium text-start">מדינה</th>
-                        <th className="px-4 sm:px-0 pb-2 font-medium text-start">שנים בארץ</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {workers.map((w) => {
-                        const wAny = w as unknown as { full_name?: string; internal_id?: string; years_in_israel?: number };
-                        const name = wAny.full_name || `${w.first_name ?? ''} ${w.last_name ?? ''}`.trim() || '—';
-                        return (
-                          <tr key={w.id} className="border-b border-slate-50 last:border-0">
-                            <td className="px-4 sm:px-0 py-2 font-medium">{name}</td>
-                            <td className="px-4 sm:px-0 py-2 text-slate-500 text-xs font-mono" dir="ltr">{wAny.internal_id ?? '—'}</td>
-                            <td className="px-4 sm:px-0 py-2 text-slate-600">{w.profession_type}</td>
-                            <td className="px-4 sm:px-0 py-2 text-slate-600">{w.origin_country || '—'}</td>
-                            <td className="px-4 sm:px-0 py-2 text-slate-500 text-xs">{wAny.years_in_israel ?? '—'}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                <>
+                  <p className="text-[11px] text-slate-500 pb-2">
+                    מוצגים מוצא וותק בלבד — שמות אינם נדרשים להחלטה.
+                  </p>
+                  <ul className="divide-y divide-slate-100">
+                    {workers.map((w, wIdx) => {
+                      const wAny = w as unknown as { experience_range?: string };
+                      const origin = w.origin_country ? heOrigin(w.origin_country) : null;
+                      const experience = wAny.experience_range
+                        ? `ניסיון ${wAny.experience_range}`
+                        : (w.experience_years != null ? `${w.experience_years} שנות ניסיון` : null);
+                      return (
+                        <li key={w.id || wIdx} className="flex items-center gap-3 py-2.5">
+                          <div className="h-7 w-7 rounded-full bg-brand-100 flex items-center justify-center text-[10px] font-bold text-brand-700 shrink-0">
+                            {wIdx + 1}
+                          </div>
+                          <div className="flex-1 min-w-0 text-sm text-slate-700 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                            {origin && <span className="font-medium text-slate-900">{origin}</span>}
+                            {origin && experience && <span className="text-slate-300">·</span>}
+                            {experience && <span>{experience}</span>}
+                            {!origin && !experience && <span className="text-slate-400">—</span>}
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </>
               )}
             </CardContent>
           </Card>

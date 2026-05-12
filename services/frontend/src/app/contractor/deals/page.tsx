@@ -21,6 +21,7 @@ import { Button } from '@/components/ui/button';
 import StatusBadge from '@/components/StatusBadge';
 import {
   DEAL_FILTER_LABEL,
+  heOrigin,
   type DealFilter as Filter,
 } from '@/i18n/he';
 
@@ -631,31 +632,25 @@ export default function ContractorDealsPage() {
                                       רשימת עובדים שהוצעה ({workers.length})
                                     </p>
                                     <p className="text-[11px] text-slate-500 px-3 pb-2">
-                                      {canApprove
-                                        ? 'פרטי הזיהוי יוצגו לאחר אישור הרשימה. כעת מוצגים מקצוע, ניסיון וארץ מוצא בלבד.'
-                                        : 'רשימת העובדים בעסקה.'}
+                                      מוצגים מוצא וותק בלבד — שמות אינם נדרשים להחלטה.
                                     </p>
                                     <div className="divide-y divide-slate-50">
                                       {workers.map((w, wIdx) => {
-                                        const wAny = w as unknown as { full_name?: string; experience_range?: string; years_in_israel?: number };
-                                        const shouldHideName = canApprove; // pre-approval: hide identifying info
-                                        const displayName = shouldHideName
-                                          ? `עובד #${wIdx + 1}`
-                                          : (wAny.full_name || `${w.first_name ?? ''} ${w.last_name ?? ''}`.trim() || `עובד #${wIdx + 1}`);
+                                        const wAny = w as unknown as { experience_range?: string };
+                                        const origin = w.origin_country ? heOrigin(w.origin_country) : null;
+                                        const experience = wAny.experience_range
+                                          ? `ניסיון ${wAny.experience_range}`
+                                          : (w.experience_years != null ? `${w.experience_years} שנות ניסיון` : null);
                                         return (
                                           <div key={w.id || wIdx} className="flex items-center gap-3 px-3 py-2">
                                             <div className="h-7 w-7 rounded-full bg-brand-100 flex items-center justify-center text-[10px] font-bold text-brand-700 shrink-0">
                                               {wIdx + 1}
                                             </div>
-                                            <div className="flex-1 min-w-0">
-                                              <p className="text-sm font-medium text-slate-900 truncate">{displayName}</p>
-                                              <p className="text-[11px] text-slate-500 truncate">
-                                                {w.profession_type}
-                                                {wAny.experience_range && <> · ניסיון {wAny.experience_range}</>}
-                                                {!wAny.experience_range && w.experience_years != null && <> · {w.experience_years} שנים</>}
-                                                {w.origin_country && <> · {w.origin_country}</>}
-                                                {wAny.years_in_israel != null && <> · {wAny.years_in_israel} שנים בארץ</>}
-                                              </p>
+                                            <div className="flex-1 min-w-0 text-sm text-slate-700 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                                              {origin && <span className="font-medium text-slate-900">{origin}</span>}
+                                              {origin && experience && <span className="text-slate-300">·</span>}
+                                              {experience && <span>{experience}</span>}
+                                              {!origin && !experience && <span className="text-slate-400">—</span>}
                                             </div>
                                           </div>
                                         );
