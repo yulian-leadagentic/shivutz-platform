@@ -14,7 +14,7 @@ import Link from 'next/link';
 import {
   AlertCircle, Handshake, MessageSquare, Calendar, MapPin, Globe2,
   Plus, ChevronDown, Loader2, CheckCircle2, XCircle, Bell,
-  Search, ArrowLeft, Hammer, Sparkles, Users,
+  Search, ArrowLeft, Users,
 } from 'lucide-react';
 import { dealApi, searchApi } from '@/lib/api';
 import { enumApi } from '@/lib/api/enums';
@@ -32,6 +32,53 @@ import {
 function fmt(iso?: string) {
   if (!iso) return '—';
   return new Date(iso).toLocaleDateString('he-IL');
+}
+
+// Relative time in Hebrew — used per corp response so the
+// contractor can see "the second corp answered 10 minutes ago"
+// at a glance, especially relevant when multiple corps respond
+// at different times.
+function timeAgo(iso?: string): string {
+  if (!iso) return '';
+  const ms = Date.now() - new Date(iso).getTime();
+  if (ms < 60_000)         return 'הרגע';
+  const mins = Math.floor(ms / 60_000);
+  if (mins < 60)           return `לפני ${mins} דק׳`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24)          return `לפני ${hours} שע׳`;
+  const days = Math.floor(hours / 24);
+  if (days < 7)            return `לפני ${days} ימים`;
+  const weeks = Math.floor(days / 7);
+  if (weeks < 5)           return `לפני ${weeks} שבועות`;
+  return new Date(iso).toLocaleDateString('he-IL');
+}
+
+// True if the deal moved into corp_committed in the last 24h.
+// Drives the "חדש" badge so a contractor can spot fresh responses
+// when multiple corps reply at different times.
+function isRecent(iso?: string): boolean {
+  if (!iso) return false;
+  return Date.now() - new Date(iso).getTime() < 24 * 60 * 60 * 1000;
+}
+
+// Aggregate a worker list by origin country so the inline
+// drill-down reads as "2 אוקראינה, 1 רומניה" instead of three
+// individual rows. Experience ranges are deduped per country.
+type OriginAggregate = { country: string; count: number; experiences: string[] };
+function aggregateByOrigin(workers: Worker[]): OriginAggregate[] {
+  const map = new Map<string, OriginAggregate>();
+  for (const w of workers) {
+    const country = w.origin_country ? heOrigin(w.origin_country) : 'מוצא לא ידוע';
+    const wAny = w as unknown as { experience_range?: string };
+    const exp = wAny.experience_range
+      ? wAny.experience_range
+      : (w.experience_years != null ? `${w.experience_years}ש׳` : null);
+    const entry = map.get(country) ?? { country, count: 0, experiences: [] };
+    entry.count++;
+    if (exp && !entry.experiences.includes(exp)) entry.experiences.push(exp);
+    map.set(country, entry);
+  }
+  return Array.from(map.values()).sort((a, b) => b.count - a.count);
 }
 
 const STATUS_CONTEXT: Record<string, string> = {
@@ -118,18 +165,33 @@ const FILTER_TONE: Record<Filter, {
 };
 
 // ── Per-card state classification + visual meta ────────────────
+//
+// Follows the contractor's real workflow:
+//   searching  → match-cache hasn't run yet
+//   noMatch    → match-cache ran, found 0 workers
+//   proposed   → match found, system pushed it to corps, no
+//                corp has attached workers yet
+//   awaiting   → corp attached workers — contractor needs to
+//                view corp details (clicking the action calls
+//                approve(), which reveals contact info)
+//   toClose    → contractor has viewed corp details, only
+//                step left is "אשר סגירת עסקה"
+//   closed     → done
+//   cancelled  → terminal-negative
 
 type CardState =
-  | 'awaiting'   // any corp_committed — action required
-  | 'proposed'   // proposed/counter_proposed only
-  | 'matching'   // no deals + match_cache positive
-  | 'searching'  // no deals + no match yet
-  | 'inField'    // accepted/active/reporting
-  | 'closed'     // all closed/completed
-  | 'cancelled'; // all cancelled/rejected/expired
+  | 'searching'
+  | 'noMatch'
+  | 'proposed'
+  | 'awaiting'
+  | 'toClose'
+  | 'closed'
+  | 'cancelled';
 
+// Priority drives sort order. Action-required states sit at top:
+// 0 awaiting (view corp), 1 toClose (confirm close).
 const CARD_STATE_PRIORITY: Record<CardState, number> = {
-  awaiting: 0, proposed: 1, matching: 2, searching: 3, inField: 4, closed: 5, cancelled: 6,
+  awaiting: 0, toClose: 1, proposed: 2, searching: 3, noMatch: 4, closed: 5, cancelled: 6,
 };
 
 const ACTION_REQUIRED = new Set(['corp_committed']);
@@ -140,12 +202,17 @@ const CANCELLED_S     = new Set(['cancelled', 'cancelled_by_corp', 'cancelled_by
 
 function classifyCard(deals: EnrichedDeal[], search?: WorkerSearch): CardState {
   if (deals.some((d) => ACTION_REQUIRED.has(d.status))) return 'awaiting';
+  if (deals.some((d) => IN_FIELD.has(d.status)))        return 'toClose';
   if (deals.some((d) => PROPOSED.has(d.status)))        return 'proposed';
   if (deals.length === 0) {
-    return (search?.best_fill_pct ?? -1) > 0 ? 'matching' : 'searching';
+    // best_fill_pct: -1 = match not yet run, 0 = ran but no
+    // matches, >0 = matched (this last case shouldn't sit here
+    // for long because the system pushes to corps and creates
+    // proposed deals automatically — but if it does we treat
+    // it as "still searching").
+    return (search?.best_fill_pct ?? -1) === 0 ? 'noMatch' : 'searching';
   }
-  if (deals.some((d) => IN_FIELD.has(d.status))) return 'inField';
-  if (deals.every((d) => CLOSED.has(d.status))) return 'closed';
+  if (deals.every((d) => CLOSED.has(d.status)))    return 'closed';
   if (deals.every((d) => CANCELLED_S.has(d.status))) return 'cancelled';
   return 'proposed';
 }
@@ -160,53 +227,53 @@ interface StateMeta {
 
 const STATE_META: Record<CardState, StateMeta> = {
   awaiting:  {
-    badge: 'ממתין לאישורך',  badgeCls: 'bg-amber-100 text-amber-800',
+    badge: 'תאגיד אישר זמינות', badgeCls: 'bg-amber-100 text-amber-800',
     illoCls: 'bg-amber-100 text-amber-700', IlloIcon: Bell,
-    cardRing: 'border-amber-200 ring-1 ring-amber-100',
+    cardRing: 'border-amber-300 ring-2 ring-amber-100',
+  },
+  toClose:   {
+    badge: 'ממתין לסגירת עסקה', badgeCls: 'bg-violet-100 text-violet-800',
+    illoCls: 'bg-violet-100 text-violet-700', IlloIcon: Handshake,
+    cardRing: 'border-violet-300 ring-2 ring-violet-100',
   },
   proposed:  {
-    badge: 'ממתין לתאגיד',   badgeCls: 'bg-sky-100 text-sky-800',
+    badge: 'ממתין לאישור התאגיד', badgeCls: 'bg-sky-100 text-sky-800',
     illoCls: 'bg-sky-100 text-sky-700', IlloIcon: MessageSquare,
     cardRing: 'border-slate-200',
   },
-  matching:  {
-    badge: 'בהתאמה',         badgeCls: 'bg-teal-100 text-teal-800',
-    illoCls: 'bg-teal-100 text-teal-700', IlloIcon: Sparkles,
-    cardRing: 'border-slate-200',
-  },
   searching: {
-    badge: 'מחפשים תאגידים', badgeCls: 'bg-slate-100 text-slate-700',
+    badge: 'מחפשים עובדים', badgeCls: 'bg-slate-100 text-slate-700',
     illoCls: 'bg-slate-100 text-slate-600', IlloIcon: Search,
     cardRing: 'border-slate-200',
   },
-  inField:   {
-    badge: 'בעבודה',         badgeCls: 'bg-emerald-100 text-emerald-800',
-    illoCls: 'bg-emerald-100 text-emerald-700', IlloIcon: Hammer,
+  noMatch:   {
+    badge: 'לא נמצאו עובדים', badgeCls: 'bg-slate-100 text-slate-600',
+    illoCls: 'bg-slate-100 text-slate-500', IlloIcon: AlertCircle,
     cardRing: 'border-slate-200',
   },
   closed:    {
-    badge: 'נסגרה',          badgeCls: 'bg-emerald-100 text-emerald-800',
+    badge: 'נסגרה', badgeCls: 'bg-emerald-100 text-emerald-800',
     illoCls: 'bg-emerald-100 text-emerald-700', IlloIcon: CheckCircle2,
     cardRing: 'border-slate-200',
   },
   cancelled: {
-    badge: 'בוטל',           badgeCls: 'bg-rose-100 text-rose-700',
+    badge: 'בוטל', badgeCls: 'bg-rose-100 text-rose-700',
     illoCls: 'bg-rose-50 text-rose-500', IlloIcon: XCircle,
     cardRing: 'border-slate-200 opacity-80',
   },
 };
 
-// Per-deal compact status pill (inside each corp row).
+// Per-deal compact status pill (sits next to each corp's label).
 const DEAL_STATUS_PILL: Record<string, { cls: string; label: string }> = {
-  proposed:                { cls: 'bg-sky-50 text-sky-700 border-sky-200',           label: 'הוצע' },
+  proposed:                { cls: 'bg-sky-50 text-sky-700 border-sky-200',           label: 'ממתין לתאגיד' },
   counter_proposed:        { cls: 'bg-sky-50 text-sky-700 border-sky-200',           label: 'הצעה נגדית' },
-  corp_committed:          { cls: 'bg-amber-100 text-amber-800 border-amber-300',    label: 'דרוש אישור' },
-  accepted:                { cls: 'bg-emerald-50 text-emerald-700 border-emerald-200', label: 'אושר' },
-  active:                  { cls: 'bg-emerald-50 text-emerald-700 border-emerald-200', label: 'פעיל' },
-  reporting:               { cls: 'bg-emerald-50 text-emerald-700 border-emerald-200', label: 'מדווח' },
-  closed:                  { cls: 'bg-slate-100 text-slate-700 border-slate-200',     label: 'נסגר' },
-  completed:               { cls: 'bg-slate-100 text-slate-700 border-slate-200',     label: 'הושלם' },
-  rejected:                { cls: 'bg-rose-50 text-rose-700 border-rose-200',         label: 'נדחה' },
+  corp_committed:          { cls: 'bg-amber-100 text-amber-800 border-amber-300',    label: 'אישר זמינות' },
+  accepted:                { cls: 'bg-violet-50 text-violet-700 border-violet-200',  label: 'התקשרות הוצגה' },
+  active:                  { cls: 'bg-violet-50 text-violet-700 border-violet-200',  label: 'התקשרות הוצגה' },
+  reporting:               { cls: 'bg-violet-50 text-violet-700 border-violet-200',  label: 'התקשרות הוצגה' },
+  closed:                  { cls: 'bg-emerald-50 text-emerald-700 border-emerald-200', label: 'נסגרה' },
+  completed:               { cls: 'bg-emerald-50 text-emerald-700 border-emerald-200', label: 'נסגרה' },
+  rejected:                { cls: 'bg-rose-50 text-rose-700 border-rose-200',         label: 'התאגיד דחה' },
   cancelled_by_corp:       { cls: 'bg-rose-50 text-rose-700 border-rose-200',         label: 'בוטל ע״י תאגיד' },
   cancelled_by_contractor: { cls: 'bg-rose-50 text-rose-700 border-rose-200',         label: 'בוטל על ידך' },
   cancelled:               { cls: 'bg-rose-50 text-rose-700 border-rose-200',         label: 'בוטל' },
@@ -249,13 +316,15 @@ interface DealCardProps {
   actionError:    Record<string, string>;
   onApprove:      (id: string) => void;
   onReject:       (id: string) => void;
+  onConfirmClose: (id: string) => void;
 }
 
 function DealCard({
   card, profMap, regionMap, originMap,
   workersById, loadingWorkers, expandedDealId, onToggleDeal,
-  actingId, actionError, onApprove, onReject,
+  actingId, actionError, onApprove, onReject, onConfirmClose,
 }: DealCardProps) {
+  void onReject; // kept on the API for the deal-detail page; not surfaced here
   const { searchId: _searchId, search, deals: group } = card;
   void _searchId;
 
@@ -359,19 +428,10 @@ function DealCard({
           </div>
           <CentreBlurb
             state={state}
-            matchWorkers={matchWorkers}
-            matchPct={matchPct}
-            filled={filled}
-            requested={requested}
-            fillPct={fillPct}
             awaitingN={group.filter((d) => d.status === 'corp_committed').length}
             proposedN={group.filter((d) => PROPOSED.has(d.status)).length}
+            inFieldN={group.filter((d) => IN_FIELD.has(d.status)).length}
           />
-          {(state === 'matching' || state === 'searching') && (
-            <Button asChild variant="outline" size="sm" className="text-xs">
-              <Link href="/contractor/find">הרחב חיפוש</Link>
-            </Button>
-          )}
         </div>
 
         {/* ── Corp list column (last in DOM → left in RTL) ─────── */}
@@ -397,17 +457,24 @@ function DealCard({
                     label: d.status,
                   };
                   const proposalOpen = expandedDealId === d.id;
-                  const workers   = workersById[d.id] ?? [];
-                  const isLoadingW = !!loadingWorkers[d.id];
-                  const canApprove = d.status === 'corp_committed';
+                  const workers      = workersById[d.id] ?? [];
+                  const isLoadingW   = !!loadingWorkers[d.id];
+                  const canViewCorp     = d.status === 'corp_committed';
+                  const canConfirmClose = IN_FIELD.has(d.status);
+                  const fresh = canViewCorp && isRecent(d.created_at);
+                  const rowRing = canViewCorp
+                    ? 'border-amber-300 bg-amber-50/40'
+                    : canConfirmClose
+                      ? 'border-violet-300 bg-violet-50/40'
+                      : 'border-slate-200';
                   return (
                     <div key={d.id}
-                         className={`rounded-lg border overflow-hidden ${canApprove ? 'border-amber-200 bg-amber-50/40' : 'border-slate-200'}`}>
+                         className={`rounded-lg border overflow-hidden ${rowRing}`}>
                       <button
                         type="button"
                         onClick={() => onToggleDeal(d.id)}
                         aria-expanded={proposalOpen}
-                        className="w-full text-start px-3 py-2.5 hover:bg-slate-50 transition-colors flex items-center justify-between gap-2"
+                        className="w-full text-start px-3 py-2.5 hover:bg-slate-50/50 transition-colors flex items-center justify-between gap-2"
                       >
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2 flex-wrap">
@@ -415,19 +482,23 @@ function DealCard({
                             <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full border ${pill.cls}`}>
                               {pill.label}
                             </span>
+                            {fresh && (
+                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-rose-500 text-white">
+                                חדש
+                              </span>
+                            )}
                           </div>
-                          <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-1">
-                            {STATUS_CONTEXT[d.status] ?? d.status}
+                          <p className="text-[11px] text-slate-500 mt-0.5 inline-flex items-center gap-1.5">
+                            <span>{timeAgo(d.created_at)}</span>
+                            {d.worker_count != null && (
+                              <>
+                                <span className="text-slate-300">·</span>
+                                <span><span className="font-bold text-slate-700">{d.worker_count}</span> עובדים</span>
+                              </>
+                            )}
                           </p>
                         </div>
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          {d.worker_count != null && (
-                            <span className="text-xs text-slate-600 whitespace-nowrap">
-                              <span className="font-bold text-slate-900">{d.worker_count}</span> עובדים
-                            </span>
-                          )}
-                          <ChevronDown className={`h-3.5 w-3.5 text-slate-400 transition-transform ${proposalOpen ? 'rotate-180' : ''}`} />
-                        </div>
+                        <ChevronDown className={`h-3.5 w-3.5 text-slate-400 shrink-0 transition-transform ${proposalOpen ? 'rotate-180' : ''}`} />
                       </button>
 
                       {proposalOpen && (
@@ -439,33 +510,22 @@ function DealCard({
                           ) : workers.length === 0 ? (
                             <p className="py-2 text-xs text-slate-500">אין עובדים זמינים להצגה.</p>
                           ) : (
-                            <div className="bg-white rounded-md border border-slate-200">
-                              <p className="text-[10px] text-slate-500 px-2.5 pt-2">
-                                מוצגים מוצא וותק בלבד — שמות אינם נדרשים להחלטה.
-                              </p>
-                              <ul className="divide-y divide-slate-50">
-                                {workers.map((w, wIdx) => {
-                                  const wAny = w as unknown as { experience_range?: string };
-                                  const origin = w.origin_country ? heOrigin(w.origin_country) : null;
-                                  const exp = wAny.experience_range
-                                    ? `ניסיון ${wAny.experience_range}`
-                                    : (w.experience_years != null ? `${w.experience_years} שנות ניסיון` : null);
-                                  return (
-                                    <li key={w.id || wIdx} className="flex items-center gap-2 px-2.5 py-1.5 text-sm">
-                                      <span className="h-6 w-6 rounded-full bg-brand-100 flex items-center justify-center text-[11px] font-bold text-brand-700 shrink-0">
-                                        {wIdx + 1}
-                                      </span>
-                                      <div className="flex-1 min-w-0 inline-flex items-center gap-1.5 flex-wrap">
-                                        {origin && <span className="font-medium text-slate-900">{origin}</span>}
-                                        {origin && exp && <span className="text-slate-300">·</span>}
-                                        {exp && <span className="text-slate-600">{exp}</span>}
-                                        {!origin && !exp && <span className="text-slate-400">—</span>}
-                                      </div>
-                                    </li>
-                                  );
-                                })}
-                              </ul>
-                            </div>
+                            // Aggregated by origin: one row per country.
+                            <ul className="bg-white rounded-md border border-slate-200 divide-y divide-slate-100">
+                              {aggregateByOrigin(workers).map((agg) => (
+                                <li key={agg.country} className="flex items-baseline justify-between gap-2 px-3 py-2 text-sm">
+                                  <div className="min-w-0 flex items-baseline gap-2">
+                                    <span className="font-bold text-slate-900">{agg.count}</span>
+                                    <span className="text-slate-800">{agg.country}</span>
+                                  </div>
+                                  {agg.experiences.length > 0 && (
+                                    <span className="text-xs text-slate-500 truncate">
+                                      ניסיון {agg.experiences.join(', ')}
+                                    </span>
+                                  )}
+                                </li>
+                              ))}
+                            </ul>
                           )}
 
                           {actionError[d.id] && (
@@ -482,30 +542,29 @@ function DealCard({
                               <MessageSquare className="w-3.5 h-3.5" />
                               צ׳אט מלא
                             </Link>
-                            {canApprove && (
-                              <div className="flex gap-1.5">
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="h-7 text-xs"
-                                  onClick={() => onReject(d.id)}
-                                  disabled={actingId === d.id}
-                                >
-                                  {actingId === d.id
-                                    ? <Loader2 className="h-3 w-3 animate-spin" />
-                                    : <><XCircle className="h-3 w-3" /> דחה</>}
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
-                                  onClick={() => onApprove(d.id)}
-                                  disabled={actingId === d.id || workers.length === 0}
-                                >
-                                  {actingId === d.id
-                                    ? <Loader2 className="h-3 w-3 animate-spin" />
-                                    : <><CheckCircle2 className="h-3 w-3" /> אשר</>}
-                                </Button>
-                              </div>
+                            {canViewCorp && (
+                              <Button
+                                size="sm"
+                                className="h-8 text-xs bg-amber-500 hover:bg-amber-600 text-slate-900 font-bold"
+                                onClick={() => onApprove(d.id)}
+                                disabled={actingId === d.id}
+                              >
+                                {actingId === d.id
+                                  ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                  : <>צפה בפרטי תאגיד <ArrowLeft className="h-3.5 w-3.5" /></>}
+                              </Button>
+                            )}
+                            {canConfirmClose && (
+                              <Button
+                                size="sm"
+                                className="h-8 text-xs bg-violet-600 hover:bg-violet-700 text-white font-bold"
+                                onClick={() => onConfirmClose(d.id)}
+                                disabled={actingId === d.id}
+                              >
+                                {actingId === d.id
+                                  ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                  : <>אשר סגירת עסקה <CheckCircle2 className="h-3.5 w-3.5" /></>}
+                              </Button>
                             )}
                           </div>
                         </div>
@@ -516,11 +575,21 @@ function DealCard({
             </>
           )}
 
-          {state === 'awaiting' && awaitingDealId && (
+          {/* Card-wide primary CTA — points at the corp the
+              contractor should act on next. */}
+          {state === 'awaiting' && (
             <Button asChild className="w-full mt-1 bg-amber-500 hover:bg-amber-600 text-slate-900 font-bold">
-              <Link href={`/contractor/deals/${awaitingDealId}`}>
+              <Link href={`/contractor/deals/${group.find((d) => d.status === 'corp_committed')?.id}`}>
+                צפה בפרטי תאגיד
                 <ArrowLeft className="h-4 w-4" />
-                בדוק ואשר עכשיו
+              </Link>
+            </Button>
+          )}
+          {state === 'toClose' && (
+            <Button asChild className="w-full mt-1 bg-violet-600 hover:bg-violet-700 text-white font-bold">
+              <Link href={`/contractor/deals/${group.find((d) => IN_FIELD.has(d.status))?.id}`}>
+                אשר סגירת עסקה
+                <ArrowLeft className="h-4 w-4" />
               </Link>
             </Button>
           )}
@@ -530,81 +599,59 @@ function DealCard({
   );
 }
 
-function CentreBlurb({ state, matchWorkers, matchPct, filled, requested, fillPct, awaitingN, proposedN }: {
-  state: CardState;
-  matchWorkers: number;
-  matchPct:     number;
-  filled:       number;
-  requested:    number;
-  fillPct:      number;
-  awaitingN:    number;
-  proposedN:    number;
+function CentreBlurb({ state, awaitingN, proposedN, inFieldN }: {
+  state:     CardState;
+  awaitingN: number;
+  proposedN: number;
+  inFieldN:  number;
 }) {
   switch (state) {
     case 'awaiting':
       return (
         <div className="space-y-1">
-          <p className="text-sm font-bold text-slate-900">
-            {awaitingN === 1 ? 'תאגיד הציע עובדים' : `${awaitingN} תאגידים הציעו עובדים`}
+          <p className="text-base font-bold text-slate-900">
+            {awaitingN === 1 ? 'תאגיד אישר זמינות' : `${awaitingN} תאגידים אישרו זמינות`}
           </p>
-          <p className="text-xs text-amber-700 font-semibold">ממתינות לאישורך</p>
+          <p className="text-xs text-amber-700 font-semibold">צפה בפרטי תאגיד</p>
+        </div>
+      );
+    case 'toClose':
+      return (
+        <div className="space-y-1">
+          <p className="text-base font-bold text-slate-900">
+            {inFieldN === 1 ? 'התקשרות הוצגה' : `${inFieldN} התקשרויות הוצגו`}
+          </p>
+          <p className="text-xs text-violet-700 font-semibold">אשר סגירת עסקה</p>
         </div>
       );
     case 'proposed':
       return (
         <div className="space-y-1">
-          <p className="text-sm font-bold text-slate-900">
-            {proposedN === 1 ? 'ההצעה אצל התאגיד' : `${proposedN} הצעות בידי התאגידים`}
+          <p className="text-base font-bold text-slate-900">נמצאו עובדים</p>
+          <p className="text-xs text-slate-500">
+            {proposedN === 1 ? 'ממתין לאישור התאגיד' : `ממתין לאישור ${proposedN} תאגידים`}
           </p>
-          <p className="text-xs text-slate-500">ממתין לתגובה</p>
-        </div>
-      );
-    case 'matching':
-      return (
-        <div className="space-y-1.5 w-full">
-          <p className="text-sm font-bold text-slate-900">
-            נמצאו {matchWorkers} עובדים מתאימים
-          </p>
-          <FillBar pct={matchPct} requested={requested} filled={matchWorkers} tone="teal" />
         </div>
       );
     case 'searching':
       return (
         <div className="space-y-1">
-          <p className="text-sm font-bold text-slate-900">מחפשים תאגידים מתאימים</p>
+          <p className="text-base font-bold text-slate-900">מחפשים עובדים</p>
           <p className="text-xs text-slate-500">נעדכן אותך ברגע שתימצא התאמה</p>
         </div>
       );
-    case 'inField':
+    case 'noMatch':
       return (
-        <div className="space-y-1.5 w-full">
-          <p className="text-sm font-bold text-emerald-700">העובדים בשטח</p>
-          <FillBar pct={fillPct} requested={requested} filled={filled} tone="emerald" />
+        <div className="space-y-1">
+          <p className="text-base font-bold text-slate-700">לא נמצאו עובדים מתאימים</p>
+          <p className="text-xs text-slate-500">נמשיך לחפש — תקבל עדכון כשתימצא התאמה</p>
         </div>
       );
     case 'closed':
-      return <p className="text-sm font-bold text-emerald-700">העסקה נסגרה בהצלחה</p>;
+      return <p className="text-base font-bold text-emerald-700">העסקה נסגרה</p>;
     case 'cancelled':
-      return <p className="text-sm font-bold text-rose-600">העסקה בוטלה</p>;
+      return <p className="text-base font-bold text-rose-600">העסקה בוטלה</p>;
   }
-}
-
-function FillBar({ pct, requested, filled, tone = 'sky' }: {
-  pct: number; requested: number; filled: number; tone?: 'sky' | 'emerald' | 'teal';
-}) {
-  const fg = tone === 'emerald' ? 'bg-emerald-500'
-         : tone === 'teal'     ? 'bg-teal-500'
-                               : 'bg-sky-500';
-  return (
-    <div className="w-full max-w-[180px] mx-auto">
-      <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
-        <div className={`h-full ${fg} transition-all`} style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} />
-      </div>
-      <p className="text-[10px] text-slate-500 mt-1">
-        <span className="font-bold text-slate-700">{filled}</span> / {requested} עובדים
-      </p>
-    </div>
-  );
 }
 
 // ── Page ───────────────────────────────────────────────────────
@@ -690,6 +737,18 @@ export default function ContractorDealsPage() {
       reload();
     } catch (e) {
       setActionError((s) => ({ ...s, [dealId]: (e as Error).message || 'שגיאה בדחייה' }));
+    } finally { setActingId(null); }
+  }
+  // Close-the-loop step: contractor confirms the deal actually
+  // happened (status accepted/active/reporting → closed).
+  async function handleConfirmClose(dealId: string) {
+    setActingId(dealId);
+    setActionError((s) => ({ ...s, [dealId]: '' }));
+    try {
+      await dealApi.contractorConfirmClosed(dealId);
+      reload();
+    } catch (e) {
+      setActionError((s) => ({ ...s, [dealId]: (e as Error).message || 'שגיאה בסגירת העסקה' }));
     } finally { setActingId(null); }
   }
 
@@ -860,6 +919,7 @@ export default function ContractorDealsPage() {
               actionError={actionError}
               onApprove={handleApprove}
               onReject={handleReject}
+              onConfirmClose={handleConfirmClose}
             />
           ))}
         </div>
