@@ -443,8 +443,13 @@ function DealCard({
         {/* ── Corp list column (last in DOM → left in RTL) ─────── */}
         <div className="md:col-span-4 p-4 sm:p-5 space-y-2 bg-white border-t md:border-t-0">
           {group.length === 0 ? (
-            <div className="text-xs text-slate-500 leading-relaxed">
-              נשלחה הודעה לתאגידים רלוונטיים — נעדכן אותך ברגע שתתקבל הצעה.
+            <div className="rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2.5 inline-flex items-start gap-2">
+              <MessageSquare className="h-4 w-4 text-slate-400 shrink-0 mt-0.5" />
+              <p className="text-sm text-slate-700 leading-snug">
+                {state === 'noMatch'
+                  ? 'נשלחה הודעה לכל התאגידים הרשומים'
+                  : 'ההודעה תישלח לתאגידים ברגע שתימצא התאמה'}
+              </p>
             </div>
           ) : (
             <>
@@ -675,9 +680,12 @@ function CentreBlurb({ state, awaitingN, proposedN, inFieldN, corpsTotal }: {
       );
     case 'noMatch':
       return (
-        <div className="space-y-1">
-          <p className="text-base font-bold text-slate-700">לא נמצאו עובדים מתאימים</p>
-          <p className="text-xs text-slate-500">נמשיך לחפש — תקבל עדכון כשתימצא התאמה</p>
+        <div className="space-y-1.5">
+          <p className="text-base font-bold text-slate-800">לא נמצאו התאמות זמינות</p>
+          <p className="text-xs text-slate-600">המערכת ממשיכה לחפש עבורך עובדים</p>
+          <p className="text-[11px] text-slate-500 leading-snug">
+            תקבל עדכון למספר הרשום אצלינו ברגע שתימצא התאמה
+          </p>
         </div>
       );
     case 'closed':
