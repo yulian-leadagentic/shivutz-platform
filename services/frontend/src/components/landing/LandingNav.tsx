@@ -37,13 +37,13 @@ export default function LandingNav({ onLeadCapture }: LandingNavProps) {
     }`}>
       <div className="max-w-7xl mx-auto px-6 h-16 flex items-center gap-6">
 
-        {/* Logo — sits over the dark hero pre-scroll (no panel needed,
-            transparent logo is fine on dark). Post-scroll the nav has
-            a white bg, so the Logo component wraps in a navy panel. */}
+        {/* Logo — colour variant swaps with the nav's surface:
+            unscrolled hero is dark → white-on-transparent lockup;
+            scrolled nav is white → full-colour lockup. No panel. */}
         <Link href="/" className="flex items-center shrink-0 me-auto" aria-label="BuildUp — Home">
           {scrolled
-            ? <Logo size={36} />
-            : <Logo size={44} bare />}
+            ? <Logo size="sm" variant="on-light" decorative />
+            : <Logo size="md" variant="on-dark"  decorative />}
         </Link>
 
         {/* Desktop nav */}

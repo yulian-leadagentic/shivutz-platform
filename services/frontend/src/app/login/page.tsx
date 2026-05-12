@@ -215,8 +215,8 @@ function LoginPageInner() {
 
         <Card className="rounded-t-none shadow-md">
           <CardHeader className="text-center pb-2">
-            <div className="flex justify-center mb-2">
-              <Logo size={56} />
+            <div className="flex justify-center mb-3">
+              <Logo size="lg" variant="on-light" />
             </div>
             <CardTitle className="text-xl">{copy.title}</CardTitle>
             <CardDescription>

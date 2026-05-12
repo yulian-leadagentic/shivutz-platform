@@ -65,10 +65,9 @@ export default function Sidebar() {
   return (
     <aside className="flex flex-col w-60 min-h-screen bg-slate-900 shrink-0">
 
-      {/* Logo — sidebar bg is slate-900, so the transparent lockup
-          sits bare (no extra panel). */}
+      {/* Logo — sidebar is dark, use the on-dark variant. */}
       <Link href="/" className="flex items-center justify-center h-16 px-4 border-b border-slate-800 hover:bg-slate-800/40 transition-colors">
-        <Logo size={40} bare />
+        <Logo size="sm" variant="on-dark" decorative />
       </Link>
 
       {/* Nav */}

@@ -51,11 +51,10 @@ export default function CorporationSidebar() {
 
   return (
     <aside className="flex flex-col w-64 min-h-screen bg-white border-s border-slate-200 shadow-sm shrink-0">
-      {/* Logo — clickable, returns to public landing. Wraps in the
-          Logo component which puts the transparent lockup on a navy
-          panel — looks correct against the white sidebar. */}
+      {/* Logo — corporation sidebar is white, use the full-colour
+          lockup directly (no wrapper). */}
       <Link href="/" className="flex items-center justify-center h-20 border-b border-slate-200 px-4 hover:bg-slate-50 transition-colors">
-        <Logo size={36} />
+        <Logo size="sm" variant="on-light" decorative />
       </Link>
 
       {/* Role label */}
