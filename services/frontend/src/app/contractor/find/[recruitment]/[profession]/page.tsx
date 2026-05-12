@@ -24,6 +24,7 @@ import { searchApi } from '@/lib/api/jobs';
 import { dealApi } from '@/lib/api/deals';
 import { ProfessionIcon } from '@/features/searches/ProfessionIcon';
 import { ConstructionAnimation } from '@/features/searches/ConstructionAnimation';
+import { FireworksOverlay } from '@/features/searches/FireworksOverlay';
 import { EXPERIENCE_RANGES, EXPERIENCE_LOWER_MONTHS } from '@/i18n/he';
 import type {
   CorpMatch,
@@ -426,7 +427,11 @@ export default function FindFormPage() {
           The brand video keeps looping so the screen still feels
           "alive". */}
       {corps !== null && !matching && (
-        <section className="bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 shadow-sm text-center">
+        <section className="relative bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 shadow-sm text-center">
+          {/* Celebration overlay only on a successful match — keep
+              the no-match screen calmer. */}
+          {corps.length > 0 && <FireworksOverlay />}
+
           <video
             src="/brand/buildup-logo-spinning.mp4"
             poster="/brand/buildup-logo.png"
@@ -434,7 +439,7 @@ export default function FindFormPage() {
             loop
             muted
             playsInline
-            className="w-40 h-40 mx-auto object-contain rounded-xl bg-white"
+            className="relative w-40 h-40 mx-auto object-contain rounded-xl bg-white"
             aria-hidden="true"
           />
 
