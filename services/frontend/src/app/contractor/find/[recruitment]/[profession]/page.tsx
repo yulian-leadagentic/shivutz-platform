@@ -169,6 +169,21 @@ export default function FindFormPage() {
         searchApi.match(created.id),
         minDelay,
       ]);
+
+      // New flow: the system auto-broadcasts the request to every
+      // matched corp. The contractor no longer manually selects
+      // which corps to contact — they just wait for an SMS when
+      // a corp commits workers. So fan out dealApi.create to every
+      // returned corp in parallel; failures are non-fatal (a corp
+      // might already have a deal for this search, etc.).
+      if (m.length > 0) {
+        await Promise.allSettled(
+          m.map((c) => dealApi.create({
+            search_id:      created.id,
+            corporation_id: c.corporation_id,
+          })),
+        );
+      }
       setCorps(m);
     } catch (e) {
       setError((e as Error).message ?? 'שגיאה ביצירת החיפוש');
@@ -402,192 +417,83 @@ export default function FindFormPage() {
         </div>
       )}
 
-      {corps && corps.length === 0 && (
-        <div className="space-y-4">
-          <div className="text-sm text-slate-700 bg-sky-50 border border-sky-200 rounded-lg p-4">
-            לא נמצאו התאמות זמינות. המערכת תמשיך לחפש התאמות ותעדכן אותך בהקדם — בנוסף שלחנו עכשיו הודעה לתאגידים רלוונטיים כדי שיעלו עובדים מתאימים.
-          </div>
-          {/* CTAs so the user doesn't dead-end on the no-match screen */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Link
-              href="/contractor/find"
-              className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 hover:border-brand-500 hover:bg-brand-50/30 transition shadow-sm"
-            >
-              <div className="w-10 h-10 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center shrink-0">
-                <Plus className="w-5 h-5" />
-              </div>
-              <div>
-                <div className="text-sm font-bold text-slate-900">התחל חיפוש חדש</div>
-                <div className="text-xs text-slate-500">בחר מקצוע אחר או שנה את הפרמטרים</div>
-              </div>
-            </Link>
-            <Link
-              href="/contractor/deals"
-              className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 hover:border-brand-500 hover:bg-brand-50/30 transition shadow-sm"
-            >
-              <div className="w-10 h-10 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
-                <LayoutDashboard className="w-5 h-5" />
-              </div>
-              <div>
-                <div className="text-sm font-bold text-slate-900">צפייה בהצעות שלי</div>
-                <div className="text-xs text-slate-500">כל הבקשות והעסקאות הפעילות</div>
-              </div>
-            </Link>
-          </div>
-        </div>
-      )}
+      {/* Post-match results.
+          New flow: instead of listing every matched corp and asking
+          the contractor to pick which to contact, the system auto-
+          dispatches inquiries to every matched corp (see
+          handleSubmit). The post-match screen just confirms what
+          the system did and tells the contractor to wait for SMS.
+          The brand video keeps looping so the screen still feels
+          "alive". */}
+      {corps !== null && !matching && (
+        <section className="bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 shadow-sm text-center">
+          <video
+            src="/brand/buildup-logo-spinning.mp4"
+            poster="/brand/buildup-logo.png"
+            autoPlay
+            loop
+            muted
+            playsInline
+            className="w-40 h-40 mx-auto object-contain rounded-xl bg-white"
+            aria-hidden="true"
+          />
 
-      {corps && corps.length > 0 && (
-        <section className="space-y-4">
-          {/* WOW celebratory header — emerald gradient with sparkle + count */}
-          <div className="relative overflow-hidden rounded-2xl
-                          bg-gradient-to-br from-emerald-500 via-emerald-600 to-teal-600
-                          text-white p-5 shadow-lg">
-            <div className="absolute -top-6 -end-6 w-32 h-32 bg-white/10 rounded-full blur-2xl" />
-            <div className="absolute -bottom-8 -start-4 w-24 h-24 bg-white/10 rounded-full blur-2xl" />
-            <div className="relative flex items-center gap-3">
-              <div className="text-3xl drop-shadow-sm" aria-hidden>🎉</div>
+          {corps.length > 0 ? (
+            <div className="mt-5 space-y-4 max-w-md mx-auto">
               <div>
-                <div className="text-lg font-bold leading-tight">
-                  מצאנו {corps.length} {corps.length === 1 ? 'התאמה' : 'התאמות'} עבורך
-                </div>
-                <div className="text-sm text-emerald-50/90 mt-0.5">
-                  לחץ &quot;צור קשר עם התאגיד&quot; ליד התאגיד שמתאים לך
-                </div>
+                <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 leading-tight">
+                  נמצאו {corps.length} {corps.length === 1 ? 'תאגיד שיכול לתת' : 'תאגידים שיכולים לתת'} מענה לדרישה שלך
+                </h2>
+                <p className="text-sm font-semibold text-emerald-700 mt-2">
+                  שלחנו פניה לכולם
+                </p>
+              </div>
+
+              <div className="rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-3 text-sm text-emerald-900 leading-relaxed">
+                <p>ברגע שיאשרו זמינות עובדים נעדכן אותך בהודעת SMS</p>
+                <p className="text-emerald-700/80 mt-0.5">למספר ששמור במערכת</p>
+              </div>
+
+              <p className="text-sm text-slate-600 leading-relaxed">
+                אתה יכול לעקוב אחר התקדמות העסקה בתפריט{' '}
+                <Link href="/contractor/deals" className="font-bold text-brand-600 hover:underline">
+                  בקשות ועסקאות
+                </Link>
+              </p>
+            </div>
+          ) : (
+            <div className="mt-5 space-y-4 max-w-md mx-auto">
+              <div>
+                <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 leading-tight">
+                  לא נמצאו התאמות
+                </h2>
+                <p className="text-sm font-semibold text-slate-700 mt-2">
+                  המערכת ממשיכה לחפש עבורך עובדים באופן אקטיבי
+                </p>
+              </div>
+
+              <div className="rounded-xl bg-sky-50 border border-sky-200 px-4 py-3 text-sm text-sky-900 leading-relaxed">
+                <p>תקבל עדכון ב-SMS למספר ששמור במערכת ברגע שתימצא התאמה</p>
               </div>
             </div>
-          </div>
-
-          <ul className="space-y-3">
-            {corps.map((c, idx) => {
-              const isTop = idx === 0;
-              // Anonymize: show "תאגיד 1" / "תאגיד 2" etc. The real
-              // company name is only revealed AFTER the contractor
-              // sends an inquiry and the corp accepts. This keeps a
-              // level playing field across corps and protects names
-              // from being scraped.
-              const anonymousLabel = `תאגיד ${idx + 1}`;
-              // Origin distribution for this corp's matched workers —
-              // a quick "PH×3, RO×1" breakdown keeps the contractor
-              // from having to drill in to see where the workers come
-              // from.
-              const originCounts = c.workers.reduce<Record<string, number>>(
-                (acc, w) => {
-                  const code = w.worker.origin_country || '?';
-                  acc[code] = (acc[code] ?? 0) + 1;
-                  return acc;
-                },
-                {},
-              );
-              const originSummary = Object.entries(originCounts)
-                .sort((a, b) => b[1] - a[1])
-                .map(([code, n]) => `${originMap[code] ?? code} ×${n}`)
-                .join(' · ');
-              return (
-                <li
-                  key={c.corporation_id}
-                  className={`relative bg-white rounded-2xl p-5 sm:p-6 shadow-sm
-                              ${isTop
-                                ? 'border-2 border-emerald-400 ring-4 ring-emerald-100'
-                                : 'border border-slate-200'}`}
-                >
-                  {isTop && (
-                    <div className="absolute -top-2.5 end-4 inline-flex items-center gap-1
-                                    bg-emerald-500 text-white text-[10px] font-bold
-                                    uppercase tracking-wide px-2.5 py-1 rounded-full
-                                    shadow-md">
-                      ⭐ ההתאמה הטובה ביותר
-                    </div>
-                  )}
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                    <div className="min-w-0 flex-1 space-y-3">
-                      {/* Anonymized corp label */}
-                      <div className="font-bold text-slate-900 text-base">
-                        {anonymousLabel}
-                      </div>
-                      {/* Big number row — workers found + match% */}
-                      <div className="flex items-end gap-6">
-                        <div>
-                          <div className="text-3xl sm:text-4xl font-extrabold text-slate-900 leading-none">
-                            {c.filled_workers}
-                            <span className="text-lg sm:text-xl text-slate-400 font-bold mx-1">/</span>
-                            <span className="text-xl sm:text-2xl text-slate-500 font-bold">{c.needed}</span>
-                          </div>
-                          <div className="text-xs text-slate-500 mt-1.5">עובדים נמצאו</div>
-                        </div>
-                        <div>
-                          <div className={`text-3xl sm:text-4xl font-extrabold leading-none ${c.is_complete ? 'text-emerald-600' : 'text-amber-600'}`}>
-                            {Math.round(c.fill_percentage)}%
-                          </div>
-                          <div className="text-xs text-slate-500 mt-1.5">התאמה</div>
-                        </div>
-                      </div>
-                      {/* Worker origin breakdown — "פיליפינים ×3 · רומניה ×1" */}
-                      {originSummary && (
-                        <div className="text-sm text-slate-700 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">
-                          <span className="text-[10px] uppercase tracking-widest text-slate-400 me-2">מוצא העובדים</span>
-                          <span className="font-medium">{originSummary}</span>
-                        </div>
-                      )}
-                    </div>
-                    <button
-                      onClick={() => handleSendInquiry(c.corporation_id)}
-                      disabled={!!sentInquiry[c.corporation_id]}
-                      className={`px-5 py-3 rounded-lg whitespace-nowrap font-bold text-sm
-                                  transition shrink-0 ${
-                        sentInquiry[c.corporation_id]
-                          ? 'bg-emerald-100 text-emerald-700 cursor-default'
-                          : isTop
-                            ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-md hover:shadow-lg animate-pulse'
-                            : 'bg-brand-600 hover:bg-brand-500 text-white'
-                      }`}
-                    >
-                      {sentInquiry[c.corporation_id] ? '✓ נשלח לתאגיד' : 'צור קשר עם התאגיד'}
-                    </button>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-
-          {/* Post-results "what next" tiles */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-            <Link
-              href={`/contractor/find/${recruitment}`}
-              className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white
-                         p-4 hover:border-brand-500 hover:bg-brand-50/30 transition shadow-sm"
-            >
-              <div className="w-10 h-10 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center shrink-0">
-                <Plus className="w-5 h-5" />
-              </div>
-              <div>
-                <div className="text-sm font-bold text-slate-900">חיפוש נוסף</div>
-                <div className="text-xs text-slate-500">חזרה לבחירת מקצוע</div>
-              </div>
-            </Link>
-            <Link
-              href="/contractor/dashboard"
-              className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white
-                         p-4 hover:border-brand-500 hover:bg-brand-50/30 transition shadow-sm"
-            >
-              <div className="w-10 h-10 rounded-lg bg-slate-100 text-slate-600 flex items-center justify-center shrink-0">
-                <LayoutDashboard className="w-5 h-5" />
-              </div>
-              <div>
-                <div className="text-sm font-bold text-slate-900">לוח בקרה</div>
-                <div className="text-xs text-slate-500">סקירת המצב הכללי</div>
-              </div>
-            </Link>
-          </div>
-
-          {searchId && (
-            <button
-              onClick={() => router.push(`/contractor/searches/${searchId}`)}
-              className="text-xs text-brand-600 hover:text-brand-500 font-medium"
-            >
-              עבור לעמוד החיפוש המלא →
-            </button>
           )}
+
+          <div className="mt-6 flex flex-col sm:flex-row gap-3 justify-center">
+            <Link
+              href="/contractor/deals"
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold px-5 py-2.5 shadow-sm shadow-emerald-200"
+            >
+              <LayoutDashboard className="w-4 h-4" />
+              צפה בבקשות ועסקאות
+            </Link>
+            <Link
+              href="/contractor/find"
+              className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-sm font-semibold px-5 py-2.5"
+            >
+              <Plus className="w-4 h-4" />
+              חיפוש נוסף
+            </Link>
+          </div>
         </section>
       )}
     </div>
