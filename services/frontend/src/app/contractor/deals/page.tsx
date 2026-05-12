@@ -8,7 +8,7 @@
 // the card level) so a contractor can scan "where is each
 // request" in one pass.
 
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -32,16 +32,6 @@ import {
 function fmt(iso?: string) {
   if (!iso) return '—';
   return new Date(iso).toLocaleDateString('he-IL');
-}
-
-// ISO 3166-1 alpha-2 → flag emoji. Works for every uppercase
-// 2-letter code via Unicode regional indicators.
-function flagEmoji(code?: string): string {
-  if (!code || code.length !== 2) return '';
-  const a = code.toUpperCase().charCodeAt(0);
-  const b = code.toUpperCase().charCodeAt(1);
-  if (a < 65 || a > 90 || b < 65 || b > 90) return '';
-  return String.fromCodePoint(0x1F1E6 + a - 65, 0x1F1E6 + b - 65);
 }
 
 const STATUS_CONTEXT: Record<string, string> = {
@@ -323,45 +313,40 @@ function DealCard({
             )}
             <div className="flex-1 min-w-0">
               <h3 className="text-lg font-bold text-slate-900 leading-tight truncate">{profLabel}</h3>
-              <p className="text-xs text-slate-500 mt-0.5 inline-flex items-center gap-1">
-                <Users className="h-3.5 w-3.5" />
-                {requested} עובדים
+              <p className="text-sm font-semibold text-slate-700 mt-1 inline-flex items-center gap-1.5">
+                <Users className="h-4 w-4 text-slate-400" />
+                <span><span className="text-slate-900">{requested}</span> עובדים</span>
               </p>
             </div>
           </div>
 
-          <div className="space-y-1 text-xs text-slate-600">
+          <div className="space-y-1.5 text-sm text-slate-700">
             {(startDate || endDate) && (
-              <div className="inline-flex items-center gap-1.5">
-                <Calendar className="h-3.5 w-3.5 text-slate-400" />
-                <span dir="ltr">
+              <div className="flex items-center gap-2">
+                <Calendar className="h-4 w-4 text-slate-400 shrink-0" />
+                <span dir="ltr" className="text-slate-800">
                   {startDate ? fmt(startDate) : '—'}
                   {endDate && <> – {fmt(endDate)}</>}
                 </span>
               </div>
             )}
             {originCodes.length > 0 ? (
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <Globe2 className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-                {originCodes.map((c, i) => (
-                  <React.Fragment key={c}>
-                    {i > 0 && <span className="text-slate-300">·</span>}
-                    <span className="inline-flex items-center gap-1">
-                      <span aria-hidden>{flagEmoji(c)}</span>
-                      <span>{originMap[c] ?? heOrigin(c)}</span>
-                    </span>
-                  </React.Fragment>
-                ))}
+              <div className="flex items-start gap-2">
+                <Globe2 className="h-4 w-4 text-slate-400 shrink-0 mt-0.5" />
+                <span className="text-slate-800 leading-snug">
+                  {originCodes.map((c) => originMap[c] ?? heOrigin(c)).join(', ')}
+                </span>
               </div>
             ) : (
-              <div className="inline-flex items-center gap-1.5 text-slate-400">
-                <Globe2 className="h-3.5 w-3.5" /> ללא העדפת מוצא
+              <div className="flex items-center gap-2 text-slate-400">
+                <Globe2 className="h-4 w-4 shrink-0" />
+                <span>ללא העדפת מוצא</span>
               </div>
             )}
             {regionLabel && (
-              <div className="inline-flex items-center gap-1.5">
-                <MapPin className="h-3.5 w-3.5 text-slate-400" />
-                {regionLabel}
+              <div className="flex items-center gap-2">
+                <MapPin className="h-4 w-4 text-slate-400 shrink-0" />
+                <span className="text-slate-800">{regionLabel}</span>
               </div>
             )}
           </div>
@@ -462,17 +447,15 @@ function DealCard({
                                 {workers.map((w, wIdx) => {
                                   const wAny = w as unknown as { experience_range?: string };
                                   const origin = w.origin_country ? heOrigin(w.origin_country) : null;
-                                  const flag   = w.origin_country ? flagEmoji(w.origin_country) : null;
                                   const exp = wAny.experience_range
                                     ? `ניסיון ${wAny.experience_range}`
                                     : (w.experience_years != null ? `${w.experience_years} שנות ניסיון` : null);
                                   return (
-                                    <li key={w.id || wIdx} className="flex items-center gap-2 px-2.5 py-1.5 text-xs">
-                                      <span className="h-5 w-5 rounded-full bg-brand-100 flex items-center justify-center text-[10px] font-bold text-brand-700 shrink-0">
+                                    <li key={w.id || wIdx} className="flex items-center gap-2 px-2.5 py-1.5 text-sm">
+                                      <span className="h-6 w-6 rounded-full bg-brand-100 flex items-center justify-center text-[11px] font-bold text-brand-700 shrink-0">
                                         {wIdx + 1}
                                       </span>
                                       <div className="flex-1 min-w-0 inline-flex items-center gap-1.5 flex-wrap">
-                                        {flag && <span aria-hidden>{flag}</span>}
                                         {origin && <span className="font-medium text-slate-900">{origin}</span>}
                                         {origin && exp && <span className="text-slate-300">·</span>}
                                         {exp && <span className="text-slate-600">{exp}</span>}
