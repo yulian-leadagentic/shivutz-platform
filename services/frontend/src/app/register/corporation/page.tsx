@@ -248,7 +248,7 @@ export default function RegisterCorporationPage() {
         <div className="h-2 rounded-t-xl bg-gradient-to-e from-brand-600 to-brand-400" />
         <Card className="rounded-t-none shadow-md">
           <CardHeader className="pb-2">
-            <div className="flex justify-center mb-2"><Logo size={48} /></div>
+            <div className="flex justify-center mb-3"><Logo size="md" variant="on-light" /></div>
             <CardTitle className="text-center">הרשמת תאגיד</CardTitle>
             <CardDescription className="text-center">שלב {step} מתוך {TOTAL_STEPS}</CardDescription>
             <div className="mt-3 flex gap-1.5">

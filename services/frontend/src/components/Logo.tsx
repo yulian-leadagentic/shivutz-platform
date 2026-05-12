@@ -1,58 +1,68 @@
 // BuildUp brand logo — single source of truth for the wordmark.
 //
-// We render the transparent-bg PNG (white + orange on transparent).
-// On its own it only reads well over dark surfaces — on white the
-// white parts vanish — so we always wrap the lockup in a dark navy
-// panel. That keeps the logo visually consistent regardless of the
-// surrounding page background.
+// Two variants ship with the app and the caller picks the one that
+// matches the surrounding surface:
 //
-// The optional `bare` prop skips the navy panel for cases where the
-// surrounding container is already dark (sidebars, hero, landing
-// nav over the dark hero) and a wrapper would just add visual
-// noise.
+//   variant="on-light"  → /brand/buildup-logo.png
+//                         Navy + orange lockup with the lockup's own
+//                         white space. Use on white cards, scrolled
+//                         nav, dashboards, auth/onboarding.
+//   variant="on-dark"   → /brand/buildup-logo-light.png
+//                         White + orange wordmark on transparent.
+//                         Use on slate-900 sidebars, the unscrolled
+//                         landing hero, dark modals.
 //
-// `size` controls the rendered height in px. Width auto-scales.
+// The previous "wrap in a navy chip" workaround is gone: pick the
+// right variant for the surface and the lockup composes naturally
+// without an outer container.
+//
+// Size buckets keep visual weight consistent across the app:
+//   sm  → 32px tall — sidebars, topbars, footer
+//   md  → 44px tall — landing nav, in-page section headers
+//   lg  → 56px tall — auth, onboarding, the "brand moment" screens
 
 import Image from 'next/image';
 
+export type LogoVariant = 'on-light' | 'on-dark';
+export type LogoSize = 'sm' | 'md' | 'lg';
+
+const HEIGHT: Record<LogoSize, number> = { sm: 32, md: 44, lg: 56 };
+
 interface LogoProps {
-  /** Height in pixels for the logo image. */
-  size?: number;
-  /** Skip the dark wrapper panel — use when the surrounding
-   *  container is already dark and a panel would be redundant. */
-  bare?: boolean;
+  /** Visual weight bucket. Defaults to 'md'. */
+  size?: LogoSize;
+  /** Which lockup to render. Defaults to 'on-light' since most of
+   *  the authenticated app surfaces are white cards. */
+  variant?: LogoVariant;
   className?: string;
+  /** Decorative-only — pass true when the logo sits next to a
+   *  visible "BuildUp" label and a second aria-label would be
+   *  redundant noise for screen readers. */
+  decorative?: boolean;
 }
 
-export default function Logo({ size = 48, bare = false, className = '' }: LogoProps) {
-  // ~1.27 aspect from the lockup PNG. Width auto-derives so the asset
-  // doesn't squash at any size.
-  const width = Math.round(size * 1.27);
-  const img = (
-    <Image
-      src="/brand/buildup-logo-light.png"
-      alt="BuildUp"
-      width={width}
-      height={size}
-      className="object-contain"
-      style={{ height: size, width: 'auto' }}
-      priority
-      unoptimized
-    />
-  );
-  if (bare) {
-    return <span className={className}>{img}</span>;
-  }
-  // Padding scales with size so the panel always looks intentional,
-  // not cramped or balloon-y. Rounded-2xl matches the rest of the
-  // card / panel aesthetic.
-  const pad = Math.max(8, Math.round(size * 0.18));
+export default function Logo({
+  size      = 'md',
+  variant   = 'on-light',
+  className = '',
+  decorative = false,
+}: LogoProps) {
+  const h = HEIGHT[size];
+  // Both source files share the ~1.27 lockup aspect ratio.
+  const w = Math.round(h * 1.27);
+  const src = variant === 'on-dark'
+    ? '/brand/buildup-logo-light.png'
+    : '/brand/buildup-logo.png';
   return (
-    <span
-      className={`inline-flex items-center justify-center bg-slate-900 rounded-2xl ${className}`}
-      style={{ padding: `${pad}px ${pad * 1.5}px` }}
-    >
-      {img}
-    </span>
+    <Image
+      src={src}
+      alt={decorative ? '' : 'BuildUp'}
+      aria-hidden={decorative || undefined}
+      width={w}
+      height={h}
+      className={`object-contain ${className}`}
+      style={{ height: h, width: 'auto' }}
+      priority
+    />
   );
 }

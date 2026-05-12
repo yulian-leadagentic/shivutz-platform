@@ -108,8 +108,8 @@ export default function SelectEntityPage() {
         <div className="h-2 rounded-t-xl bg-gradient-to-e from-brand-600 to-brand-400" />
         <Card className="rounded-t-none shadow-md">
           <CardHeader className="text-center pb-2">
-            <div className="flex justify-center mb-2">
-              <Logo size={56} />
+            <div className="flex justify-center mb-3">
+              <Logo size="lg" variant="on-light" />
             </div>
             <CardTitle className="text-xl">בחר חשבון</CardTitle>
             <CardDescription>הנך משויך למספר ישויות. אנא בחר בה תרצה להמשיך</CardDescription>
