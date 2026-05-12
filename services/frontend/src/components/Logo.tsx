@@ -63,6 +63,15 @@ export default function Logo({
       className={`object-contain ${className}`}
       style={{ height: h, width: 'auto' }}
       priority
+      // The on-dark variant is a transparent PNG. Next.js's
+      // sharp-based optimizer flattens alpha to an opaque white
+      // background when it transcodes to its colormap-PNG output
+      // (visibly: a white chip behind the logo on dark surfaces).
+      // Skip optimization entirely so the source PNG ships as-is
+      // and the alpha channel survives. The source files are
+      // already small enough that bypassing the optimizer is
+      // fine — switch to SVG when ready and we can drop this.
+      unoptimized
     />
   );
 }
