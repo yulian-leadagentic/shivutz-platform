@@ -432,6 +432,9 @@ export default function FindFormPage() {
               the no-match screen calmer. */}
           {corps.length > 0 && <FireworksOverlay />}
 
+          {/* Spinning brand video — z-20 keeps it above the
+              fireworks overlay (z-10). A subtle white halo lifts
+              it visually away from the fireworks behind. */}
           <video
             src="/brand/buildup-logo-spinning.mp4"
             poster="/brand/buildup-logo.png"
@@ -439,27 +442,29 @@ export default function FindFormPage() {
             loop
             muted
             playsInline
-            className="relative w-40 h-40 mx-auto object-contain rounded-xl bg-white"
+            className="relative z-20 w-40 h-40 mx-auto object-contain rounded-full bg-white/90 shadow-lg shadow-white/60"
             aria-hidden="true"
           />
 
           {corps.length > 0 ? (
-            <div className="mt-5 space-y-4 max-w-md mx-auto">
+            <div className="relative z-20 mt-5 space-y-4 max-w-md mx-auto">
               <div>
-                <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 leading-tight">
-                  נמצאו {corps.length} {corps.length === 1 ? 'תאגיד שיכול לתת' : 'תאגידים שיכולים לתת'} מענה לדרישה שלך
+                <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 leading-tight drop-shadow-sm">
+                  {corps.length === 1
+                    ? 'נמצאה התאמה לתאגיד אחד לפחות'
+                    : `נמצאו התאמות ל-${corps.length} תאגידים`}
                 </h2>
                 <p className="text-sm font-semibold text-emerald-700 mt-2">
                   שלחנו פניה לכולם
                 </p>
               </div>
 
-              <div className="rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-3 text-sm text-emerald-900 leading-relaxed">
+              <div className="rounded-xl bg-emerald-50/95 border border-emerald-200 px-4 py-3 text-sm text-emerald-900 leading-relaxed backdrop-blur-sm">
                 <p>ברגע שיאשרו זמינות עובדים נעדכן אותך בהודעת SMS</p>
                 <p className="text-emerald-700/80 mt-0.5">למספר ששמור במערכת</p>
               </div>
 
-              <p className="text-sm text-slate-600 leading-relaxed">
+              <p className="text-sm text-slate-700 leading-relaxed bg-white/80 rounded-lg px-3 py-2 backdrop-blur-sm">
                 אתה יכול לעקוב אחר התקדמות העסקה בתפריט{' '}
                 <Link href="/contractor/deals" className="font-bold text-brand-600 hover:underline">
                   בקשות ועסקאות
@@ -467,7 +472,7 @@ export default function FindFormPage() {
               </p>
             </div>
           ) : (
-            <div className="mt-5 space-y-4 max-w-md mx-auto">
+            <div className="relative z-20 mt-5 space-y-4 max-w-md mx-auto">
               <div>
                 <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 leading-tight">
                   לא נמצאו התאמות
@@ -483,7 +488,7 @@ export default function FindFormPage() {
             </div>
           )}
 
-          <div className="mt-6 flex flex-col sm:flex-row gap-3 justify-center">
+          <div className="relative z-20 mt-6 flex flex-col sm:flex-row gap-3 justify-center">
             <Link
               href="/contractor/deals"
               className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold px-5 py-2.5 shadow-sm shadow-emerald-200"
