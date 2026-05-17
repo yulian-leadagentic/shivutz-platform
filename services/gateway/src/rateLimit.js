@@ -2,10 +2,18 @@ const Redis = require('ioredis');
 
 const redis = new Redis(process.env.REDIS_URL || 'redis://redis:6379');
 
+// Gateway projects entity_type → x-user-role (see attachUserHeaders
+// in index.js), so authenticated users arrive here with role
+// 'contractor' / 'corporation' rather than the generic 'user'. Both
+// share the same per-minute budget as 'user' — they're the same
+// kind of caller from a rate-limit POV. Keeping 'user' as an alias
+// for anything we add later that legitimately needs that bucket.
 const LIMITS = {
-  anon:  parseInt(process.env.RATE_LIMIT_ANON  || '30'),
-  user:  parseInt(process.env.RATE_LIMIT_USER  || '200'),
-  admin: parseInt(process.env.RATE_LIMIT_ADMIN || '500'),
+  anon:        parseInt(process.env.RATE_LIMIT_ANON  || '30'),
+  user:        parseInt(process.env.RATE_LIMIT_USER  || '200'),
+  contractor:  parseInt(process.env.RATE_LIMIT_USER  || '200'),
+  corporation: parseInt(process.env.RATE_LIMIT_USER  || '200'),
+  admin:       parseInt(process.env.RATE_LIMIT_ADMIN || '500'),
 };
 
 async function rateLimiter(req, res) {
