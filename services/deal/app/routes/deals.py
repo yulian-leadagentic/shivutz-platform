@@ -377,7 +377,7 @@ async def commit_deal(
         # Compute commission snapshot — per-contractor rate, fallback to system default.
         rate = _fetch_commission_rate(conn, contractor_id=deal["contractor_id"])
         commission_amount = rate * len(body.worker_ids)
-        approval_hours = _read_setting_int(conn, "approval_deadline_hours", 168)
+        approval_hours = _read_setting_int(conn, "approval_deadline_hours", 24)
 
         now = datetime.utcnow()
         expires_at = now + timedelta(hours=approval_hours)
@@ -578,6 +578,93 @@ async def reject_deal(
         })
         await publish_event("deal.rejected", payload)
         return {"id": deal_id, "status": "rejected"}
+    except HTTPException:
+        raise
+    finally:
+        conn.close()
+
+
+@router.post("/{deal_id}/contractor-cancel")
+async def contractor_cancel_deal(
+    deal_id: str,
+    body: CancelRequest,
+    x_org_id: Optional[str] = Header(default=None),
+    x_user_id: Optional[str] = Header(default=None),
+    x_user_role: Optional[str] = Header(default=None),
+):
+    """Contractor withdraws an in-flight deal.
+
+    Used by the "סגור שאר ההצעות" action on the deals page: when one
+    corp has fulfilled the full requested quantity, the other corps'
+    bids become irrelevant and the contractor should be able to
+    retract them in one click.
+
+    Allowed source states:
+      * proposed / counter_proposed — corp hasn't responded yet,
+        so nothing to unlock / void.
+      * corp_committed             — corp committed workers; we
+        also unlock those workers + void the payment hold, just
+        like reject does.
+
+    Anything else (already accepted, closed, cancelled, expired,
+    rejected) is rejected with 409 wrong_state — those deals are
+    either done or already terminal-negative.
+    """
+    if x_user_role not in ("contractor", "admin"):
+        raise HTTPException(status_code=403, detail="contractor_only")
+
+    cancellable_states = {"proposed", "counter_proposed", "corp_committed"}
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM deals WHERE id=%s AND deleted_at IS NULL", (deal_id,))
+        deal = cur.fetchone()
+        if not deal:
+            raise HTTPException(status_code=404, detail="deal_not_found")
+        if x_user_role != "admin" and deal["contractor_id"] != x_org_id:
+            raise HTTPException(status_code=403, detail="not_your_deal")
+        if deal["status"] not in cancellable_states:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "wrong_state", "current": deal["status"]},
+            )
+
+        now    = datetime.utcnow()
+        reason = (body.reason or "").strip() or "התקבלה הצעה אחרת"
+        had_workers = deal["status"] == "corp_committed"
+
+        if had_workers:
+            _unlock_workers(cur, deal_id)
+        cur.execute(
+            """UPDATE deals
+                  SET status='cancelled_by_contractor',
+                      cancelled_at=%s,
+                      cancelled_by='contractor',
+                      cancellation_reason=%s,
+                      expires_at=NULL,
+                      scheduled_capture_at=NULL
+                WHERE id=%s""",
+            (now, reason, deal_id),
+        )
+        conn.commit()
+        audit.log(
+            "deal", deal_id, "contractor_cancelled", x_user_id or "unknown",
+            new_value={"reason": reason, "from_status": deal["status"]},
+        )
+        if had_workers:
+            await _void_payment_hold(deal_id)
+
+        payload = _enrich_event_payload(
+            deal_id, deal["contractor_id"], deal["corporation_id"],
+            search_id=deal.get("search_id"),
+        )
+        payload.update({
+            "cancellation_reason": reason,
+            "cancelled_at":        now.isoformat() + "Z",
+            "from_status":         deal["status"],
+        })
+        await publish_event("deal.contractor_cancelled", payload)
+        return {"id": deal_id, "status": "cancelled_by_contractor"}
     except HTTPException:
         raise
     finally:
@@ -851,7 +938,7 @@ async def replace_worker(
         # capture is cancelled if it was scheduled.
         new_status = deal["status"]
         if material and deal["status"] == "approved":
-            approval_hours = _read_setting_int(conn, "approval_deadline_hours", 168)
+            approval_hours = _read_setting_int(conn, "approval_deadline_hours", 24)
             new_expires_at = datetime.utcnow() + timedelta(hours=approval_hours)
             cur.execute(
                 """UPDATE deals

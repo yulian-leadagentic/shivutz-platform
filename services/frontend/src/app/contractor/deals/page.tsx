@@ -322,12 +322,15 @@ interface DealCardProps {
   onApprove:      (id: string) => void;
   onReject:       (id: string) => void;
   onConfirmClose: (id: string) => void;
+  onCancelOthers: (dealIds: string[]) => void;
+  cancellingOthers: boolean;
 }
 
 function DealCard({
   card, profMap, regionMap, originMap,
   workersById, loadingWorkers, expandedDealId, onToggleDeal,
   actingId, actionError, onApprove, onReject, onConfirmClose,
+  onCancelOthers, cancellingOthers,
 }: DealCardProps) {
   void onReject; // kept on the API for the deal-detail page; not surfaced here
   const { searchId: _searchId, search, deals: group } = card;
@@ -368,6 +371,25 @@ function DealCard({
 
   // Hand-off target for the card-wide "בדוק ואשר" CTA.
   const awaitingDealId = group.find((d) => d.status === 'corp_committed')?.id;
+
+  // "סגור שאר ההצעות" logic.
+  //
+  // The full requested quantity is considered fulfilled once the sum
+  // of worker_count across deals the contractor has already approved
+  // (accepted/active/reporting + closed) reaches `requested`. When
+  // that's true AND there are still corps in proposed / corp_committed
+  // for the same search, those bids are irrelevant — we expose a
+  // button to withdraw them in one click. If the fill is partial,
+  // we leave the other bids open so the contractor can pick up the
+  // remaining workers elsewhere.
+  const SETTLED = new Set(['accepted', 'active', 'reporting', 'completed', 'closed']);
+  const settledFilled = group.filter((d) => SETTLED.has(d.status))
+                             .reduce((s, d) => s + (d.worker_count ?? 0), 0);
+  const isFullyFilled = requested > 0 && settledFilled >= requested;
+  const cancellableOthers = group.filter((d) =>
+    PROPOSED.has(d.status) || d.status === 'corp_committed',
+  );
+  const showCancelOthers = isFullyFilled && cancellableOthers.length > 0;
 
   return (
     <div className={`rounded-2xl border ${meta.cardRing} bg-white shadow-sm overflow-hidden`}>
@@ -448,7 +470,7 @@ function DealCard({
               <p className="text-sm text-slate-700 leading-snug">
                 {state === 'noMatch'
                   ? 'נשלחה הודעה לכל התאגידים הרשומים'
-                  : 'ההודעה תישלח לתאגידים ברגע שתימצא התאמה'}
+                  : <>הדרישה שלך לעובדים בתחום <span className="font-bold text-slate-900">{profLabel}</span> הופצה לכל התאגידים הרשומים אצלינו</>}
               </p>
             </div>
           ) : (
@@ -627,6 +649,36 @@ function DealCard({
           )}
           {/* Stage 3 doesn't need a card-wide CTA — the per-row
               "האם נסגרה עסקה?" question is exact enough. */}
+
+          {/* Close-other-bids prompt. Visible only when the quantity
+              is fully filled by deals the contractor has already
+              approved AND there are still pending corps. One click
+              withdraws every other proposed / corp_committed deal
+              for this search so the corps can release their workers
+              and credit. */}
+          {showCancelOthers && (
+            <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50/60 px-3 py-2.5 space-y-2">
+              <p className="text-xs text-rose-900 leading-snug">
+                <span className="font-bold">הדרישה מולאה</span> — {cancellableOthers.length === 1
+                  ? 'נשארה הצעה אחת ממתינה'
+                  : `נשארו ${cancellableOthers.length} הצעות ממתינות`} שכבר אינן רלוונטיות.
+              </p>
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-full h-8 text-xs border-rose-300 text-rose-700 hover:bg-rose-100 font-bold"
+                onClick={() => {
+                  if (!confirm('לסגור את שאר ההצעות? הפעולה תשחרר לתאגידים האחרים את העובדים והאשראי.')) return;
+                  onCancelOthers(cancellableOthers.map((d) => d.id));
+                }}
+                disabled={cancellingOthers}
+              >
+                {cancellingOthers
+                  ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  : <><XCircle className="h-3.5 w-3.5" /> סגור שאר ההצעות</>}
+              </Button>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -792,6 +844,19 @@ export default function ContractorDealsPage() {
     } catch (e) {
       setActionError((s) => ({ ...s, [dealId]: (e as Error).message || 'שגיאה בסגירת העסקה' }));
     } finally { setActingId(null); }
+  }
+  // "סגור שאר ההצעות" — withdraw every pending bid for a search
+  // once the requested quantity has been fulfilled by another corp.
+  // Runs all cancels in parallel, single reload at the end.
+  const [cancellingSearchId, setCancellingSearchId] = useState<string | null>(null);
+  async function handleCancelOthers(searchId: string, dealIds: string[]) {
+    setCancellingSearchId(searchId);
+    try {
+      await Promise.allSettled(
+        dealIds.map((id) => dealApi.contractorCancel(id, 'התקבלה הצעה אחרת')),
+      );
+      reload();
+    } finally { setCancellingSearchId(null); }
   }
 
   // Count per filter pill — totals come from the deals list,
@@ -962,6 +1027,8 @@ export default function ContractorDealsPage() {
               onApprove={handleApprove}
               onReject={handleReject}
               onConfirmClose={handleConfirmClose}
+              onCancelOthers={(ids) => handleCancelOthers(card.searchId, ids)}
+              cancellingOthers={cancellingSearchId === card.searchId}
             />
           ))}
         </div>
