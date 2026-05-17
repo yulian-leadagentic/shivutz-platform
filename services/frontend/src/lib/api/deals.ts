@@ -87,6 +87,16 @@ export const dealApi = {
     apiFetch<{ id: string; status: string }>(
       `/deals/${id}/cancel`, { method: 'POST', body: JSON.stringify({ reason: reason || null }) }
     ),
+  /** Contractor withdraws an in-flight deal (proposed / corp_committed).
+   *  Used by the "close other bids" action when one corp has already
+   *  fulfilled the full requested quantity. */
+  contractorCancel: (id: string, reason?: string) =>
+    apiFetch<{ id: string; status: string }>(
+      `/deals/${id}/contractor-cancel`, {
+        method: 'POST',
+        body: JSON.stringify({ reason: reason || null }),
+      }
+    ),
   replaceWorker: (id: string, oldWorkerId: string, newWorkerId: string) =>
     apiFetch<{ id: string; status: string; material_change: boolean }>(
       `/deals/${id}/replace_worker`, {
