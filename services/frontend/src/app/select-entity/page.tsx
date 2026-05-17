@@ -46,23 +46,40 @@ export default function SelectEntityPage() {
       return;
     }
 
-    // If the user came from a role-specific landing CTA we already
-    // know which entity_type they want — auto-pick the first
-    // matching membership and never render the picker. With multiple
-    // memberships of the same role, picking the first is good enough
-    // for now; an in-app entity-switcher can handle multi-org users
-    // later if that case actually shows up in the wild.
+    // Auto-pick / picker decision based on the landing intent.
+    //
+    // intent absent OR no matching membership for the intent →
+    //   render the full picker (the honest UI when we don't know
+    //   what they want or can't honour it).
+    // intent + exactly 1 matching →
+    //   auto-pick, skip the screen entirely.
+    // intent + >1 matching →
+    //   render the picker FILTERED to those matching memberships so
+    //   the user picks which specific contractor/corporation
+    //   account to act as. This is the multi-org case the user
+    //   asked us to support.
+    //
+    // The `?force=1` query param (set by the landing CTA when it
+    //   discovered >1 matching) is a hint, but we always re-check
+    //   here using the actual list — sessionStorage is the source
+    //   of truth.
     const intent = sessionStorage.getItem('pending_intent');
     if (intent === 'contractor' || intent === 'corporation') {
       const matching = list.filter((m) => m.entity_type === intent);
-      if (matching.length >= 1) {
+      if (matching.length === 1) {
         sessionStorage.removeItem('pending_intent');
         select(matching[0]);
         return;
       }
-      // matching.length === 0 — fall back to showing all memberships;
-      // the user does have other valid roles, so the picker is the
-      // honest UI here.
+      if (matching.length > 1) {
+        // Render the picker but ONLY for matching memberships so the
+        // user isn't asked to disambiguate between unrelated roles.
+        sessionStorage.removeItem('pending_intent');
+        setMemberships(matching);
+        return;
+      }
+      // matching.length === 0 — fall back to showing the full
+      // membership list (user does have other valid roles).
     }
     setMemberships(list);
     // Eslint disable — `select` and `router` are stable for this page

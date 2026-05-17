@@ -101,22 +101,41 @@ export default function HeroSection(_: HeroSectionProps) {
       router.push(`/login?intent=${role}`);
       return;
     }
-    if (entityType === role) {
-      router.push(dashboardOf(role));
-      return;
-    }
-    // Cross-role click — try to hot-swap entity context.
+    // Always fetch memberships so we can offer the picker to users
+    // who have >1 entity of the requested role (e.g. multiple
+    // contractor companies). Used to skip this when entityType
+    // already matched — that silently locked the user into the
+    // first contractor they had.
     setSwitching(role);
     try {
       const { memberships } = await otpApi.myMemberships();
-      const matching = memberships.find((m) => m.entity_type === role);
-      if (!matching) {
+      const matching = memberships.filter((m) => m.entity_type === role);
+      if (matching.length === 0) {
         // Logged-in user clicked a role they don't have a membership
-        // for — registration is the right next step, not /login.
+        // for — registration is the right next step.
         router.push(registerOf(role));
         return;
       }
-      const tokens = await otpApi.selectEntity(matching.entity_id, matching.entity_type);
+      if (matching.length > 1) {
+        // Multi-entity user: push to the picker so they can choose
+        // which contractor / corporation account to act as. The
+        // `force` flag tells select-entity to render the chooser
+        // even when the intent matches multiple memberships
+        // (default behaviour auto-picks the first).
+        sessionStorage.setItem('pending_intent', role);
+        sessionStorage.setItem('pending_memberships', JSON.stringify(memberships));
+        router.push(`/select-entity?intent=${role}&force=1`);
+        return;
+      }
+      // Exactly one matching membership.
+      if (entityType === role) {
+        // The user only has one entity of this role, so the current
+        // entity context IS that one — skip the select-entity round-
+        // trip and go straight to the dashboard.
+        router.push(dashboardOf(role));
+        return;
+      }
+      const tokens = await otpApi.selectEntity(matching[0].entity_id, matching[0].entity_type);
       saveTokens(tokens.access_token, tokens.refresh_token);
       refreshAuth();
       router.push(dashboardOf(role));
