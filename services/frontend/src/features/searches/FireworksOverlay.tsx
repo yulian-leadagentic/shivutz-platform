@@ -30,12 +30,12 @@ export function FireworksOverlay() {
   }, []);
 
   if (hasVideo) {
-    // Foreground celebration: video sits ABOVE the static card
-    // background but BELOW the spinning logo + text (those get
-    // z-20 at the call site). No blend mode — the user's clip
-    // washes out into white with mix-blend-screen.
+    // Foreground celebration: video sits ON TOP of the spinning
+    // logo + text (z-50). pointer-events-none keeps the CTAs
+    // underneath clickable through it. No blend mode — the
+    // user's clip washes out into white with mix-blend-screen.
     return (
-      <div className="pointer-events-none absolute inset-0 z-10 overflow-hidden rounded-2xl">
+      <div className="pointer-events-none absolute inset-0 z-50 overflow-hidden rounded-2xl">
         <video
           ref={videoRef}
           src="/brand/fireworks.mp4"
@@ -51,7 +51,7 @@ export function FireworksOverlay() {
   }
 
   return (
-    <div className="pointer-events-none absolute inset-0 z-10 overflow-hidden rounded-2xl">
+    <div className="pointer-events-none absolute inset-0 z-50 overflow-hidden rounded-2xl">
       {Array.from({ length: PIECE_COUNT }).map((_, i) => {
         const left  = Math.random() * 100;
         const delay = Math.random() * 0.8;
