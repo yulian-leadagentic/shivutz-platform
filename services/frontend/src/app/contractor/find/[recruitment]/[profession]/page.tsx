@@ -96,6 +96,11 @@ export default function FindFormPage() {
   // ── UI state ──────────────────────────────────────────────────────
   const [submitting, setSubmitting]   = useState(false);
   const [matching, setMatching]       = useState(false);
+  // Redirect-to-deals countdown after a successful match — fires
+  // 6 s after the success screen appears (the user said "after the
+  // fireworks") or immediately on click. Cleared if the user
+  // unmounts / navigates earlier.
+  const REDIRECT_AFTER_MS = 6000;
   const [searchId, setSearchId]       = useState<string | null>(null);
   const [corps, setCorps]             = useState<CorpMatch[] | null>(null);
   const [error, setError]             = useState<string>('');
@@ -205,6 +210,23 @@ export default function FindFormPage() {
     } catch (e) {
       setError((e as Error).message ?? 'שגיאה בשליחת הפנייה');
     }
+  }
+
+  // After a successful match the next thing the contractor should
+  // do is open /contractor/deals to track corp responses. Auto-
+  // push them there 6 s after the success screen appears, OR
+  // immediately on any click on the success card. The timer is
+  // armed only once per success render and cleaned up if the
+  // user navigates away first.
+  useEffect(() => {
+    if (matching) return;          // animation still running
+    if (!corps || corps.length === 0) return;  // no match → don't redirect
+    const t = setTimeout(() => router.push('/contractor/deals'), REDIRECT_AFTER_MS);
+    return () => clearTimeout(t);
+  }, [corps, matching, router]);
+
+  function handleSuccessClick() {
+    if (corps && corps.length > 0) router.push('/contractor/deals');
   }
 
   return (
@@ -427,7 +449,12 @@ export default function FindFormPage() {
           The brand video keeps looping so the screen still feels
           "alive". */}
       {corps !== null && !matching && (
-        <section className="relative bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 shadow-sm text-center">
+        <section
+          onClick={handleSuccessClick}
+          className={`relative bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 shadow-sm text-center ${corps.length > 0 ? 'cursor-pointer' : ''}`}
+          role={corps.length > 0 ? 'button' : undefined}
+          aria-label={corps.length > 0 ? 'מעבר לבקשות ועסקאות' : undefined}
+        >
           {/* Celebration overlay only on a successful match — keep
               the no-match screen calmer. */}
           {corps.length > 0 && <FireworksOverlay />}
