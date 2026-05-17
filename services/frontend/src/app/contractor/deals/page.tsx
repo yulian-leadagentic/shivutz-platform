@@ -14,7 +14,7 @@ import Link from 'next/link';
 import {
   AlertCircle, Handshake, MessageSquare, Calendar, MapPin, Globe2,
   Plus, ChevronDown, Loader2, CheckCircle2, XCircle, Bell,
-  Search, ArrowLeft, Users,
+  Search, ArrowLeft, Users, MoreVertical, Trash2,
 } from 'lucide-react';
 import { dealApi, searchApi } from '@/lib/api';
 import { enumApi } from '@/lib/api/enums';
@@ -201,6 +201,13 @@ const CLOSED          = new Set(['completed', 'closed']);
 const CANCELLED_S     = new Set(['cancelled', 'cancelled_by_corp', 'cancelled_by_contractor', 'rejected', 'expired', 'disputed']);
 
 function classifyCard(deals: EnrichedDeal[], search?: WorkerSearch): CardState {
+  // A search the contractor has explicitly deleted (DELETE
+  // /searches/{id} → status='cancelled') reads as 'cancelled'
+  // regardless of the deals still on it. The cascade should have
+  // moved any open deals to cancelled_by_contractor already, but
+  // we don't depend on that here — the search's own status is
+  // the source of truth for the card's bucket.
+  if (search?.status === 'cancelled')                   return 'cancelled';
   if (deals.some((d) => ACTION_REQUIRED.has(d.status))) return 'awaiting';
   if (deals.some((d) => IN_FIELD.has(d.status)))        return 'toClose';
   if (deals.some((d) => PROPOSED.has(d.status)))        return 'proposed';
@@ -324,6 +331,8 @@ interface DealCardProps {
   onConfirmClose: (id: string) => void;
   onCancelOthers: (dealIds: string[]) => void;
   cancellingOthers: boolean;
+  onDeleteSearch: (dealIds: string[]) => void;
+  deletingSearch:  boolean;
 }
 
 function DealCard({
@@ -331,8 +340,10 @@ function DealCard({
   workersById, loadingWorkers, expandedDealId, onToggleDeal,
   actingId, actionError, onApprove, onReject, onConfirmClose,
   onCancelOthers, cancellingOthers,
+  onDeleteSearch, deletingSearch,
 }: DealCardProps) {
   void onReject; // kept on the API for the deal-detail page; not surfaced here
+  const [menuOpen, setMenuOpen] = useState(false);
   const { searchId: _searchId, search, deals: group } = card;
   void _searchId;
 
@@ -372,6 +383,22 @@ function DealCard({
   // Hand-off target for the card-wide "בדוק ואשר" CTA.
   const awaitingDealId = group.find((d) => d.status === 'corp_committed')?.id;
 
+  // Delete-search eligibility — option 2(c):
+  //   * Allowed when nothing is in flight (no corp_committed,
+  //     accepted, active, reporting).
+  //   * Blocked otherwise — contractor must finish or withdraw
+  //     those bids individually first.
+  // When allowed, the cascade target is every proposed /
+  // counter_proposed / corp_committed deal on this search (the
+  // last one shouldn't exist at this point per the rule, but we
+  // include it defensively).
+  const isAlreadyCancelled  = state === 'cancelled';
+  const inFlight = group.some((d) => IN_FIELD.has(d.status));
+  const canDelete = !isAlreadyCancelled && !inFlight;
+  const cancellableForDelete = group
+    .filter((d) => PROPOSED.has(d.status) || d.status === 'corp_committed')
+    .map((d) => d.id);
+
   // "סגור שאר ההצעות" logic.
   //
   // The full requested quantity is considered fulfilled once the sum
@@ -397,10 +424,75 @@ function DealCard({
 
         {/* ── Meta column (first in DOM → right in RTL) ────────── */}
         <div className="md:col-span-4 p-4 sm:p-5 space-y-2.5">
-          <span className={`inline-flex items-center gap-1.5 text-[11px] font-bold px-2 py-1 rounded-full ${meta.badgeCls}`}>
-            {state === 'awaiting' && <Bell className="h-3 w-3 animate-pulse" />}
-            {meta.badge}
-          </span>
+          <div className="flex items-start justify-between gap-2">
+            <span className={`inline-flex items-center gap-1.5 text-[11px] font-bold px-2 py-1 rounded-full ${meta.badgeCls}`}>
+              {state === 'awaiting' && <Bell className="h-3 w-3 animate-pulse" />}
+              {meta.badge}
+            </span>
+
+            {/* Kebab — currently only "מחק בקשה". Disabled when
+                the search has deals in flight (option 2c). */}
+            {!isAlreadyCancelled && (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setMenuOpen((v) => !v)}
+                  aria-label="עוד פעולות"
+                  aria-expanded={menuOpen}
+                  className="p-1 rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                >
+                  <MoreVertical className="h-4 w-4" />
+                </button>
+                {menuOpen && (
+                  <>
+                    {/* Click-away shim — closes the menu when the
+                        user clicks anywhere else. */}
+                    <div
+                      className="fixed inset-0 z-30"
+                      onClick={() => setMenuOpen(false)}
+                      aria-hidden
+                    />
+                    <div
+                      role="menu"
+                      className="absolute end-0 top-full mt-1 min-w-[200px] z-40 rounded-lg border border-slate-200 bg-white shadow-lg overflow-hidden"
+                    >
+                      <button
+                        type="button"
+                        role="menuitem"
+                        disabled={!canDelete || deletingSearch}
+                        onClick={() => {
+                          if (!canDelete) return;
+                          const msg = cancellableForDelete.length === 0
+                            ? 'למחוק את הבקשה? לא ניתן יהיה לשחזר.'
+                            : `למחוק את הבקשה? ${cancellableForDelete.length} הצעות שטרם אושרו יבוטלו אוטומטית והעובדים והאשראי ישוחררו לתאגידים.`;
+                          if (!confirm(msg)) return;
+                          setMenuOpen(false);
+                          onDeleteSearch(cancellableForDelete);
+                        }}
+                        title={canDelete ? undefined : 'לא ניתן למחוק בקשה כאשר יש עסקה פעילה. סיים או בטל אותה תחילה.'}
+                        className={`w-full text-start flex items-center gap-2 px-3 py-2 text-sm font-medium transition-colors ${
+                          canDelete
+                            ? 'text-rose-700 hover:bg-rose-50'
+                            : 'text-slate-400 cursor-not-allowed'
+                        }`}
+                      >
+                        {deletingSearch
+                          ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          : <Trash2 className="h-3.5 w-3.5" />}
+                        מחק בקשה
+                      </button>
+                      {!canDelete && (
+                        <p className="px-3 py-2 text-[11px] text-slate-500 border-t border-slate-100 leading-snug">
+                          לא ניתן למחוק בקשה כאשר יש עסקה פעילה.
+                          סיים או בטל אותה תחילה.
+                        </p>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
 
           <div className="flex items-start gap-3">
             {profCode && (
@@ -859,6 +951,27 @@ export default function ContractorDealsPage() {
     } finally { setCancellingSearchId(null); }
   }
 
+  // Delete-search (cascade) — option 1(b): also fan out
+  // contractor-cancel to every proposed / corp_committed deal on
+  // this search so corps release workers + credit, then mark the
+  // search itself as cancelled. Gated upstream by option 2(c):
+  // the card's kebab disables this when any deal is already
+  // accepted/active/reporting (the contractor must finish/withdraw
+  // those individually first).
+  const [deletingSearchId, setDeletingSearchId] = useState<string | null>(null);
+  async function handleDeleteSearch(searchId: string, dealIds: string[]) {
+    setDeletingSearchId(searchId);
+    try {
+      if (dealIds.length > 0) {
+        await Promise.allSettled(
+          dealIds.map((id) => dealApi.contractorCancel(id, 'הבקשה נמחקה ע״י הקבלן')),
+        );
+      }
+      await searchApi.cancel(searchId);
+      reload();
+    } finally { setDeletingSearchId(null); }
+  }
+
   // Count per filter pill — totals come from the deals list,
   // except "הכל" which counts unique searches (one card each).
   const counts = useMemo(() => {
@@ -872,6 +985,9 @@ export default function ContractorDealsPage() {
       else if (contractorMatchesFilter(d.status, 'completed'))    out.completed++;
       else if (contractorMatchesFilter(d.status, 'cancelled'))    out.cancelled++;
     }
+    // Cancelled searches (deleted by the contractor) also live
+    // under the "בוטל" pill — count them too.
+    out.cancelled += searches.filter((s) => s.status === 'cancelled').length;
     return out;
   }, [deals, searches]);
 
@@ -893,7 +1009,11 @@ export default function ContractorDealsPage() {
     const q = query.trim().toLowerCase();
     return cards.filter((c) => {
       if (filter !== 'all') {
-        if (!c.deals.some((d) => contractorMatchesFilter(d.status, filter))) return false;
+        const dealMatches   = c.deals.some((d) => contractorMatchesFilter(d.status, filter));
+        // A search the contractor deleted (search.status='cancelled')
+        // surfaces under the "בוטל" pill alongside cancelled deals.
+        const searchMatches = filter === 'cancelled' && c.search?.status === 'cancelled';
+        if (!dealMatches && !searchMatches) return false;
       }
       if (q) {
         const profLabel = c.deals[0]?.profession_he
@@ -1029,6 +1149,8 @@ export default function ContractorDealsPage() {
               onConfirmClose={handleConfirmClose}
               onCancelOthers={(ids) => handleCancelOthers(card.searchId, ids)}
               cancellingOthers={cancellingSearchId === card.searchId}
+              onDeleteSearch={(ids) => handleDeleteSearch(card.searchId, ids)}
+              deletingSearch={deletingSearchId === card.searchId}
             />
           ))}
         </div>
