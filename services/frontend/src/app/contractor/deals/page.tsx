@@ -8,15 +8,18 @@
 // the card level) so a contractor can scan "where is each
 // request" in one pass.
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import {
   AlertCircle, Handshake, MessageSquare, Calendar, MapPin, Globe2,
   Plus, ChevronDown, Loader2, CheckCircle2, XCircle, Bell,
   Search, ArrowLeft, Users, MoreVertical, Trash2,
+  Building2, Phone, Mail, Send, Lock,
 } from 'lucide-react';
 import { dealApi, searchApi } from '@/lib/api';
+import { orgApi } from '@/lib/api/organizations';
+import type { Corporation, Message } from '@/types';
 import { enumApi } from '@/lib/api/enums';
 import { ProfessionIcon } from '@/features/searches/ProfessionIcon';
 import type { Deal, Worker, WorkerSearch, Profession } from '@/types';
@@ -344,6 +347,10 @@ function DealCard({
 }: DealCardProps) {
   void onReject; // kept on the API for the deal-detail page; not surfaced here
   const [menuOpen, setMenuOpen] = useState(false);
+  // Corp contact panel — lazy-fetched once per deal when its row
+  // expands AND the deal is past the disclosure point.
+  const [corpById, setCorpById] = useState<Record<string, Corporation>>({});
+  const [loadingCorp, setLoadingCorp] = useState<Record<string, boolean>>({});
   const { searchId: _searchId, search, deals: group } = card;
   void _searchId;
 
@@ -379,6 +386,20 @@ function DealCard({
 
   // Identity reveal only after the contractor approves.
   const REVEALED = ['accepted', 'active', 'reporting', 'completed', 'closed'];
+
+  // Lazy-fetch corp contact info for whichever revealed deal is
+  // currently expanded. One-shot per deal_id; cached in corpById.
+  useEffect(() => {
+    if (!expandedDealId) return;
+    const deal = group.find((d) => d.id === expandedDealId);
+    if (!deal || !REVEALED.includes(deal.status) || !deal.corporation_id) return;
+    if (corpById[deal.id] || loadingCorp[deal.id]) return;
+    setLoadingCorp((s) => ({ ...s, [deal.id]: true }));
+    orgApi.getCorporation(deal.corporation_id)
+      .then((c) => setCorpById((s) => ({ ...s, [deal.id]: c })))
+      .catch(() => {/* leave empty — panel will show a fallback */})
+      .finally(() => setLoadingCorp((s) => ({ ...s, [deal.id]: false })));
+  }, [expandedDealId, group, corpById, loadingCorp]);
 
   // Hand-off target for the card-wide "בדוק ואשר" CTA.
   const awaitingDealId = group.find((d) => d.status === 'corp_committed')?.id;
@@ -574,8 +595,16 @@ function DealCard({
                 .slice()
                 .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
                 .map((d, idx) => {
-                  const corpLabel = REVEALED.includes(d.status) && d.corporation_id
-                    ? `תאגיד ${d.corporation_id.slice(0, 6)}`
+                  // Anonymous "תאגיד N" until the contractor approves
+                  // → then swap to the real company name once the
+                  // corp record has been lazy-fetched (see corpById).
+                  // Falls back to a short-id stub while the fetch is
+                  // in flight so the label doesn't flicker.
+                  const corpInfo  = corpById[d.id];
+                  const revealed  = REVEALED.includes(d.status);
+                  const corpLabel = revealed
+                    ? (corpInfo?.company_name_he || corpInfo?.company_name
+                       || (d.corporation_id ? `תאגיד ${d.corporation_id.slice(0, 6)}` : `תאגיד ${idx + 1}`))
                     : `תאגיד ${idx + 1}`;
                   const pill = DEAL_STATUS_PILL[d.status] ?? {
                     cls: 'bg-slate-100 text-slate-600 border-slate-200',
@@ -631,6 +660,17 @@ function DealCard({
 
                       {proposalOpen && (
                         <div className="px-3 pb-3 pt-1 bg-slate-50 border-t border-slate-100 space-y-2">
+                          {/* Inline corp contact panel — only after
+                              contractor has approved the deal (status
+                              accepted/active/reporting/closed). */}
+                          {REVEALED.includes(d.status) && (
+                            <CorpContactPanel
+                              corp={corpById[d.id]}
+                              loading={!!loadingCorp[d.id] && !corpById[d.id]}
+                            />
+                          )}
+
+                          {/* Workers list (aggregated by origin) */}
                           {isLoadingW ? (
                             <div className="flex items-center gap-2 py-3 text-xs text-slate-500">
                               <Loader2 className="h-3.5 w-3.5 animate-spin" /> טוען רשימת עובדים…
@@ -638,7 +678,6 @@ function DealCard({
                           ) : workers.length === 0 ? (
                             <p className="py-2 text-xs text-slate-500">אין עובדים זמינים להצגה.</p>
                           ) : (
-                            // Aggregated by origin: one row per country.
                             <ul className="bg-white rounded-md border border-slate-200 divide-y divide-slate-100">
                               {aggregateByOrigin(workers).map((agg) => (
                                 <li key={agg.country} className="flex items-baseline justify-between gap-2 px-3 py-2 text-sm">
@@ -656,6 +695,18 @@ function DealCard({
                             </ul>
                           )}
 
+                          {/* Inline chat — locked banner until the
+                              contractor has approved, then full thread.
+                              Cancelled / rejected deals don't get chat. */}
+                          {REVEALED.includes(d.status) ? (
+                            <DealChat dealId={d.id} />
+                          ) : canViewCorp ? (
+                            <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 flex items-center gap-2 text-xs text-slate-600">
+                              <Lock className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                              <span>הצ׳אט יפתח לאחר לחיצה על <strong>צפה בפרטי תאגיד</strong></span>
+                            </div>
+                          ) : null}
+
                           {actionError[d.id] && (
                             <p className="text-xs text-rose-600 bg-rose-50 border border-rose-200 rounded-md px-2 py-1.5">
                               {actionError[d.id]}
@@ -663,11 +714,11 @@ function DealCard({
                           )}
 
                           {/* Action area per stage:
-                              · Stage 2 (canViewCorp) — big green
-                                "צפה בפרטי תאגיד" button.
-                              · Stage 3 (canConfirmClose) — close-the-loop
-                                question "האם נסגרה עסקה?" + כן/לא.
-                              · Other states — just the chat link. */}
+                              · canViewCorp (corp_committed) → green
+                                "צפה בפרטי תאגיד" button → approve()
+                              · canConfirmClose (accepted/active/
+                                reporting) → "האם נסגרה עסקה?" prompt
+                              · other states → nothing extra */}
                           {canConfirmClose ? (
                             <div className="rounded-md border border-violet-200 bg-violet-50/60 px-3 py-2.5 space-y-2">
                               <p className="text-sm font-bold text-violet-900 text-center">
@@ -696,29 +747,20 @@ function DealCard({
                                 </Button>
                               </div>
                             </div>
-                          ) : (
-                            <div className="flex items-center justify-between flex-wrap gap-2">
-                              <Link
-                                href={`/contractor/deals/${d.id}`}
-                                className="inline-flex items-center gap-1 text-xs font-semibold text-brand-600 hover:text-brand-700"
+                          ) : canViewCorp ? (
+                            <div className="flex justify-end">
+                              <Button
+                                size="sm"
+                                className="h-9 text-sm bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-sm shadow-emerald-200"
+                                onClick={() => onApprove(d.id)}
+                                disabled={actingId === d.id}
                               >
-                                <MessageSquare className="w-3.5 h-3.5" />
-                                צ׳אט מלא
-                              </Link>
-                              {canViewCorp && (
-                                <Button
-                                  size="sm"
-                                  className="h-9 text-sm bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-sm shadow-emerald-200"
-                                  onClick={() => onApprove(d.id)}
-                                  disabled={actingId === d.id}
-                                >
-                                  {actingId === d.id
-                                    ? <Loader2 className="h-4 w-4 animate-spin" />
-                                    : <>צפה בפרטי תאגיד <ArrowLeft className="h-4 w-4" /></>}
-                                </Button>
-                              )}
+                                {actingId === d.id
+                                  ? <Loader2 className="h-4 w-4 animate-spin" />
+                                  : <>צפה בפרטי תאגיד <ArrowLeft className="h-4 w-4" /></>}
+                              </Button>
                             </div>
-                          )}
+                          ) : null}
                         </div>
                       )}
                     </div>
@@ -773,6 +815,189 @@ function DealCard({
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── CorpContactPanel ───────────────────────────────────────────
+// Inline reveal of the corporation's real identity + contact
+// channels, shown on a deal row's expand once the contractor has
+// approved (status accepted/active/reporting/closed).
+
+function CorpContactPanel({ corp, loading }: { corp?: Corporation; loading: boolean }) {
+  if (loading) {
+    return (
+      <div className="rounded-md border border-emerald-200 bg-emerald-50/50 px-3 py-3 flex items-center gap-2 text-sm text-emerald-800">
+        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        טוען פרטי תאגיד…
+      </div>
+    );
+  }
+  if (!corp) {
+    return (
+      <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">
+        פרטי תאגיד לא זמינים כרגע. נסה לרענן את העמוד.
+      </div>
+    );
+  }
+  const name = corp.company_name_he || corp.company_name || '—';
+  return (
+    <div className="rounded-md border border-emerald-200 bg-emerald-50/50 px-3 py-2.5 space-y-1.5">
+      <div className="flex items-center gap-2">
+        <Building2 className="h-4 w-4 text-emerald-700 shrink-0" />
+        <span className="text-sm font-bold text-slate-900">{name}</span>
+      </div>
+      {corp.contact_name && (
+        <div className="flex items-center gap-2 text-sm text-slate-700">
+          <Users className="h-3.5 w-3.5 text-emerald-700/70 shrink-0" />
+          <span>{corp.contact_name}</span>
+        </div>
+      )}
+      {corp.contact_phone && (
+        <div className="flex items-center gap-2 text-sm">
+          <Phone className="h-3.5 w-3.5 text-emerald-700/70 shrink-0" />
+          <a href={`tel:${corp.contact_phone}`} dir="ltr"
+             className="font-semibold text-emerald-800 hover:underline">
+            {corp.contact_phone}
+          </a>
+        </div>
+      )}
+      {corp.contact_email && (
+        <div className="flex items-center gap-2 text-sm">
+          <Mail className="h-3.5 w-3.5 text-emerald-700/70 shrink-0" />
+          <a href={`mailto:${corp.contact_email}`} dir="ltr"
+             className="text-emerald-800 hover:underline truncate">
+            {corp.contact_email}
+          </a>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── DealChat ───────────────────────────────────────────────────
+// Inline message thread between contractor and corp for a given
+// deal. Lazy-loads on mount, polls every 10s for incoming corp
+// messages, and exposes a tiny send box. Mounts ONLY when the
+// caller decides chat is allowed (post-approval); otherwise the
+// caller renders the locked banner instead.
+
+function DealChat({ dealId }: { dealId: string }) {
+  const [messages, setMessages] = useState<Message[] | null>(null);
+  const [loading, setLoading]   = useState(true);
+  const [draft, setDraft]       = useState('');
+  const [sending, setSending]   = useState(false);
+  const [error, setError]       = useState<string | null>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  // Load once + poll every 10s while mounted.
+  useEffect(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setInterval> | null = null;
+    async function fetchOnce() {
+      try {
+        const ms = await dealApi.messages(dealId);
+        if (!cancelled) setMessages(ms);
+      } catch {
+        if (!cancelled) setMessages([]);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    fetchOnce();
+    timer = setInterval(fetchOnce, 10_000);
+    return () => { cancelled = true; if (timer) clearInterval(timer); };
+  }, [dealId]);
+
+  // Auto-scroll to the latest message on update.
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [messages]);
+
+  async function handleSend() {
+    const content = draft.trim();
+    if (!content || sending) return;
+    setSending(true);
+    setError(null);
+    try {
+      const msg = await dealApi.sendMsg(dealId, content);
+      setMessages((prev) => [...(prev ?? []), msg]);
+      setDraft('');
+    } catch (e) {
+      setError((e as Error).message || 'שגיאה בשליחת ההודעה');
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <div className="rounded-md border border-slate-200 bg-white">
+      <div className="px-3 py-2 text-[10px] uppercase tracking-widest text-slate-400 border-b border-slate-100 flex items-center justify-between">
+        <span className="inline-flex items-center gap-1.5">
+          <MessageSquare className="h-3 w-3" />
+          צ׳אט עם התאגיד
+        </span>
+        {loading && <Loader2 className="h-3 w-3 animate-spin text-slate-400" />}
+      </div>
+
+      <div ref={scrollRef} className="max-h-[240px] overflow-y-auto px-3 py-2 space-y-2 bg-slate-50/40">
+        {messages === null || (loading && (messages?.length ?? 0) === 0) ? (
+          <p className="text-xs text-slate-400 text-center py-4">טוען…</p>
+        ) : messages.length === 0 ? (
+          <p className="text-xs text-slate-500 text-center py-4">אין הודעות עדיין — שלח את ההודעה הראשונה.</p>
+        ) : (
+          messages.map((m) => {
+            const isMine    = m.sender_role === 'contractor';
+            const isSystem  = m.content_type === 'system' || m.sender_role === 'admin';
+            const time      = new Date(m.created_at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+            if (isSystem) {
+              return (
+                <div key={m.id} className="text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-md px-2 py-1 text-center">
+                  {m.content}
+                </div>
+              );
+            }
+            return (
+              <div key={m.id} className={`flex flex-col gap-0.5 ${isMine ? 'items-end' : 'items-start'}`}>
+                <div className={`max-w-[85%] rounded-xl px-3 py-1.5 text-sm whitespace-pre-line ${
+                  isMine ? 'bg-brand-600 text-white' : 'bg-white border border-slate-200 text-slate-800'
+                }`}>
+                  {m.content}
+                </div>
+                <span className="text-[10px] text-slate-400">{time}</span>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {error && (
+        <p className="px-3 py-1 text-[11px] text-rose-600 bg-rose-50 border-t border-rose-100">{error}</p>
+      )}
+
+      <form
+        onSubmit={(e) => { e.preventDefault(); handleSend(); }}
+        className="flex items-center gap-2 px-2.5 py-2 border-t border-slate-100"
+      >
+        <input
+          type="text"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder="כתוב הודעה…"
+          className="flex-1 text-sm rounded-md border border-slate-300 px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+          maxLength={1000}
+        />
+        <Button
+          type="submit"
+          size="sm"
+          className="h-8 px-3 text-xs bg-brand-600 hover:bg-brand-700 text-white"
+          disabled={sending || !draft.trim()}
+        >
+          {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+        </Button>
+      </form>
     </div>
   );
 }
