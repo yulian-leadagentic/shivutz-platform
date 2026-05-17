@@ -63,18 +63,21 @@ export default function SelectEntityPage() {
     //   discovered >1 matching) is a hint, but we always re-check
     //   here using the actual list — sessionStorage is the source
     //   of truth.
+    // IMPORTANT: do NOT remove `pending_intent` here. React strict
+    // mode runs the effect twice on mount; the second pass would
+    // read null and fall through to the all-memberships branch
+    // below, overwriting the filtered set. We let `select()` clear
+    // it after a successful pick instead.
     const intent = sessionStorage.getItem('pending_intent');
     if (intent === 'contractor' || intent === 'corporation') {
       const matching = list.filter((m) => m.entity_type === intent);
       if (matching.length === 1) {
-        sessionStorage.removeItem('pending_intent');
         select(matching[0]);
         return;
       }
       if (matching.length > 1) {
         // Render the picker but ONLY for matching memberships so the
         // user isn't asked to disambiguate between unrelated roles.
-        sessionStorage.removeItem('pending_intent');
         setMemberships(matching);
         return;
       }
