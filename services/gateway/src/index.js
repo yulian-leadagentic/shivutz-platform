@@ -130,7 +130,22 @@ for (const [prefix, target] of Object.entries(services)) {
       // This fixed the "contractor_only" 403 a corp-rooted contractor
       // got when approving a deal.
       req.headers['x-user-role'] = user.entity_type || user.role;
-      if (user.org_id)          req.headers['x-org-id']          = user.org_id;
+      // x-org-id is consumed across services as the CURRENT ACTING
+      // entity's id (the thing the user is operating as right now),
+      // not as the legacy users.org_id. For multi-membership users
+      // (own a corp AND a contractor), the legacy org_id reflects
+      // their first signup — which is the WRONG entity if they're
+      // currently acting as the other one. Mirror the entity-aware
+      // projection we do for x-user-role: when entity context is
+      // present, project entity_id into x-org-id; only fall back
+      // to the legacy org_id when there's no entity context (admins
+      // with no org, old single-entity users).
+      // Audit 2026-05-17: every x-org-id reader (deals, job-match,
+      // payment, user-org/marketplace*, worker) treats this as
+      // "current acting entity" already, so the projection is
+      // semantically lossless.
+      const effectiveOrgId = user.entity_id || user.org_id;
+      if (effectiveOrgId)       req.headers['x-org-id']          = effectiveOrgId;
       else                      delete req.headers['x-org-id'];
       if (user.phone)           req.headers['x-phone']           = user.phone;
       else                      delete req.headers['x-phone'];
