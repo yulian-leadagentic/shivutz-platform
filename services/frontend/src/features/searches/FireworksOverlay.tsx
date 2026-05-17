@@ -40,6 +40,7 @@ export function FireworksOverlay() {
           ref={videoRef}
           src="/brand/fireworks.mp4"
           autoPlay
+          loop
           muted
           playsInline
           onError={() => setHasVideo(false)}
