@@ -115,7 +115,7 @@ const CONTRACTOR_FILTERS: Filter[] = ['all', 'awaiting_approval', 'proposed', 'c
 const CONTRACTOR_STATUS_GROUP: Record<Exclude<Filter, 'all' | 'active'>, string[]> = {
   awaiting_approval: ['corp_committed'],
   proposed:          ['proposed', 'counter_proposed'],
-  completed:         ['accepted', 'active', 'reporting', 'completed', 'closed'],
+  completed:         ['approved', 'accepted', 'active', 'reporting', 'completed', 'closed'],
   cancelled:         ['cancelled', 'cancelled_by_corp', 'cancelled_by_contractor', 'rejected', 'expired', 'disputed'],
 };
 
@@ -199,7 +199,10 @@ const CARD_STATE_PRIORITY: Record<CardState, number> = {
 
 const ACTION_REQUIRED = new Set(['corp_committed']);
 const PROPOSED        = new Set(['proposed', 'counter_proposed']);
-const IN_FIELD        = new Set(['accepted', 'active', 'reporting']);
+// 'approved' is the backend's actual post-contractor-approve
+// status (services/deal/app/routes/deals.py:484). 'accepted' is
+// kept for backward-compat in case any legacy rows exist.
+const IN_FIELD        = new Set(['approved', 'accepted', 'active', 'reporting']);
 const CLOSED          = new Set(['completed', 'closed']);
 const CANCELLED_S     = new Set(['cancelled', 'cancelled_by_corp', 'cancelled_by_contractor', 'rejected', 'expired', 'disputed']);
 
@@ -237,19 +240,21 @@ interface StateMeta {
 
 const STATE_META: Record<CardState, StateMeta> = {
   awaiting:  {
-    // "תאגידים ממתינים לפנייתך" — corp(s) confirmed availability,
-    // contractor needs to view corp details next. Emerald everything
-    // so the card screams "good news, act on this now".
-    badge: 'תאגיד אישר התקשרות', badgeCls: 'bg-emerald-100 text-emerald-800',
-    illoCls: 'bg-emerald-500 text-white', IlloIcon: CheckCircle2,
-    cardRing: 'border-emerald-400 ring-2 ring-emerald-200',
+    // Corp committed workers, contractor hasn't yet clicked
+    // "לחשיפת פרטי תאגיד". Amber = "action needed, you've got
+    // good news waiting" but kept distinct from the post-approve
+    // green so the contractor sees clear progress on click.
+    badge: 'תאגיד אישר זמינות', badgeCls: 'bg-amber-100 text-amber-800',
+    illoCls: 'bg-amber-500 text-white', IlloIcon: Bell,
+    cardRing: 'border-amber-400 ring-2 ring-amber-200',
   },
   toClose:   {
-    // "החלה התקשרות" — contractor already viewed corp details,
-    // only step left is reporting whether the deal actually closed.
-    badge: 'החלה התקשרות', badgeCls: 'bg-violet-100 text-violet-800',
-    illoCls: 'bg-violet-100 text-violet-700', IlloIcon: Handshake,
-    cardRing: 'border-violet-300 ring-2 ring-violet-100',
+    // Contractor has approved the engagement: corp contact info
+    // is revealed and the only step left is reporting whether
+    // the deal actually closed. Green to confirm progress.
+    badge: 'התקשרות אושרה', badgeCls: 'bg-emerald-100 text-emerald-800',
+    illoCls: 'bg-emerald-500 text-white', IlloIcon: CheckCircle2,
+    cardRing: 'border-emerald-400 ring-2 ring-emerald-200',
   },
   proposed:  {
     badge: 'ממתין לאישור התאגיד', badgeCls: 'bg-sky-100 text-sky-800',
@@ -282,10 +287,11 @@ const STATE_META: Record<CardState, StateMeta> = {
 const DEAL_STATUS_PILL: Record<string, { cls: string; label: string }> = {
   proposed:                { cls: 'bg-sky-50 text-sky-700 border-sky-200',                    label: 'ממתין לאישור התאגיד' },
   counter_proposed:        { cls: 'bg-sky-50 text-sky-700 border-sky-200',                    label: 'הצעה נגדית' },
-  corp_committed:          { cls: 'bg-emerald-500 text-white border-emerald-500',             label: 'התאגיד אישר' },
-  accepted:                { cls: 'bg-violet-100 text-violet-800 border-violet-200',          label: 'החלה התקשרות' },
-  active:                  { cls: 'bg-violet-100 text-violet-800 border-violet-200',          label: 'החלה התקשרות' },
-  reporting:               { cls: 'bg-violet-100 text-violet-800 border-violet-200',          label: 'החלה התקשרות' },
+  corp_committed:          { cls: 'bg-amber-500 text-white border-amber-500',                 label: 'התאגיד אישר' },
+  approved:                { cls: 'bg-emerald-500 text-white border-emerald-500',             label: 'אושר' },
+  accepted:                { cls: 'bg-emerald-500 text-white border-emerald-500',             label: 'אושר' },
+  active:                  { cls: 'bg-emerald-500 text-white border-emerald-500',             label: 'אושר' },
+  reporting:               { cls: 'bg-emerald-500 text-white border-emerald-500',             label: 'אושר' },
   closed:                  { cls: 'bg-emerald-50 text-emerald-700 border-emerald-200',        label: 'נסגרה' },
   completed:               { cls: 'bg-emerald-50 text-emerald-700 border-emerald-200',        label: 'נסגרה' },
   rejected:                { cls: 'bg-rose-50 text-rose-700 border-rose-200',                 label: 'התאגיד דחה' },
@@ -374,7 +380,7 @@ function DealCard({
 
   const COMMITTED = new Set([
     'proposed', 'corp_committed', 'counter_proposed',
-    'accepted', 'active', 'reporting',
+    'approved', 'accepted', 'active', 'reporting',
   ]);
   const filled  = group.filter((d) => COMMITTED.has(d.status))
                        .reduce((s, d) => s + (d.worker_count ?? 0), 0);
@@ -385,7 +391,7 @@ function DealCard({
     : 0;
 
   // Identity reveal only after the contractor approves.
-  const REVEALED = ['accepted', 'active', 'reporting', 'completed', 'closed'];
+  const REVEALED = ['approved', 'accepted', 'active', 'reporting', 'completed', 'closed'];
 
   // Lazy-fetch corp contact info for whichever revealed deal is
   // currently expanded. One-shot per deal_id; cached in corpById.
@@ -430,7 +436,7 @@ function DealCard({
   // button to withdraw them in one click. If the fill is partial,
   // we leave the other bids open so the contractor can pick up the
   // remaining workers elsewhere.
-  const SETTLED = new Set(['accepted', 'active', 'reporting', 'completed', 'closed']);
+  const SETTLED = new Set(['approved', 'accepted', 'active', 'reporting', 'completed', 'closed']);
   const settledFilled = group.filter((d) => SETTLED.has(d.status))
                              .reduce((s, d) => s + (d.worker_count ?? 0), 0);
   const isFullyFilled = requested > 0 && settledFilled >= requested;
@@ -602,10 +608,17 @@ function DealCard({
                   // in flight so the label doesn't flicker.
                   const corpInfo  = corpById[d.id];
                   const revealed  = REVEALED.includes(d.status);
+                  // Per user's spec:
+                  //   Pre-approve  → "תאגיד 1/2/…" (anonymous index).
+                  //   Post-approve → "תאגיד {company_name_he} אישר X עובדים".
+                  const realCorpName = corpInfo?.company_name_he || corpInfo?.company_name;
                   const corpLabel = revealed
-                    ? (corpInfo?.company_name_he || corpInfo?.company_name
-                       || (d.corporation_id ? `תאגיד ${d.corporation_id.slice(0, 6)}` : `תאגיד ${idx + 1}`))
+                    ? `תאגיד ${realCorpName
+                        || (d.corporation_id ? d.corporation_id.slice(0, 6) : idx + 1)}`
                     : `תאגיד ${idx + 1}`;
+                  const corpSuffix = revealed && d.worker_count != null
+                    ? `אישר ${d.worker_count} עובדים`
+                    : null;
                   const pill = DEAL_STATUS_PILL[d.status] ?? {
                     cls: 'bg-slate-100 text-slate-600 border-slate-200',
                     label: d.status,
@@ -616,13 +629,12 @@ function DealCard({
                   const canViewCorp     = d.status === 'corp_committed';
                   const canConfirmClose = IN_FIELD.has(d.status);
                   const fresh = canViewCorp && isRecent(d.created_at);
-                  // Stage 2 rows (corp_committed) get the loudest
-                  // green treatment — these are the "good news, your
-                  // turn" responses.
+                  // Pre-approve = amber ("action needed, good news");
+                  // post-approve = emerald ("approved, in motion").
                   const rowRing = canViewCorp
-                    ? 'border-emerald-400 bg-emerald-50/70 ring-2 ring-emerald-100'
+                    ? 'border-amber-400 bg-amber-50/70 ring-2 ring-amber-100'
                     : canConfirmClose
-                      ? 'border-violet-300 bg-violet-50/40'
+                      ? 'border-emerald-400 bg-emerald-50/70 ring-2 ring-emerald-100'
                       : 'border-slate-200';
                   return (
                     <div key={d.id}
@@ -636,6 +648,9 @@ function DealCard({
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-semibold text-slate-900 text-sm">{corpLabel}</span>
+                            {corpSuffix && (
+                              <span className="text-sm text-emerald-700 font-semibold">{corpSuffix}</span>
+                            )}
                             <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full border ${pill.cls}`}>
                               {pill.label}
                             </span>
@@ -647,7 +662,12 @@ function DealCard({
                           </div>
                           <p className="text-[11px] text-slate-500 mt-0.5 inline-flex items-center gap-1.5">
                             <span>{timeAgo(d.created_at)}</span>
-                            {d.worker_count != null && (
+                            {/* For pre-approve only, surface the
+                                pending worker count under the
+                                anonymous label so the contractor
+                                sees scale before clicking the
+                                reveal button. */}
+                            {!revealed && d.worker_count != null && (
                               <>
                                 <span className="text-slate-300">·</span>
                                 <span><span className="font-bold text-slate-700">{d.worker_count}</span> עובדים</span>
@@ -703,7 +723,7 @@ function DealCard({
                           ) : canViewCorp ? (
                             <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 flex items-center gap-2 text-xs text-slate-600">
                               <Lock className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-                              <span>הצ׳אט יפתח לאחר לחיצה על <strong>צפה בפרטי תאגיד</strong></span>
+                              <span>הצ׳אט יפתח לאחר לחיצה על <strong>לחשיפת פרטי תאגיד</strong></span>
                             </div>
                           ) : null}
 
@@ -715,7 +735,7 @@ function DealCard({
 
                           {/* Action area per stage:
                               · canViewCorp (corp_committed) → green
-                                "צפה בפרטי תאגיד" button → approve()
+                                "לחשיפת פרטי תאגיד" button → approve()
                               · canConfirmClose (accepted/active/
                                 reporting) → "האם נסגרה עסקה?" prompt
                               · other states → nothing extra */}
@@ -757,7 +777,7 @@ function DealCard({
                               >
                                 {actingId === d.id
                                   ? <Loader2 className="h-4 w-4 animate-spin" />
-                                  : <>צפה בפרטי תאגיד <ArrowLeft className="h-4 w-4" /></>}
+                                  : <>לחשיפת פרטי תאגיד <ArrowLeft className="h-4 w-4" /></>}
                               </Button>
                             </div>
                           ) : null}
@@ -776,7 +796,7 @@ function DealCard({
           {state === 'awaiting' && (
             <Button asChild className="w-full mt-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-sm shadow-emerald-200">
               <Link href={`/contractor/deals/${group.find((d) => d.status === 'corp_committed')?.id}`}>
-                צפה בפרטי תאגיד
+                לחשיפת פרטי תאגיד
                 <ArrowLeft className="h-4 w-4" />
               </Link>
             </Button>
@@ -1024,20 +1044,21 @@ function CentreBlurb({ state, awaitingN, proposedN, inFieldN, corpsTotal }: {
     case 'awaiting':
       return (
         <div className="space-y-1">
-          <p className="text-base font-extrabold text-emerald-700">
+          <p className="text-base font-extrabold text-amber-700">
             {awaitingN === 1 ? 'תאגיד אחד ממתין לפנייתך' : `${awaitingN} תאגידים ממתינים לפנייתך`}
           </p>
-          <p className="text-xs text-emerald-600 font-semibold">צפה בפרטי תאגיד</p>
+          <p className="text-xs text-amber-600 font-semibold">לחץ &quot;לחשיפת פרטי תאגיד&quot; ליד התאגיד</p>
         </div>
       );
-    // Stage 3 — contractor viewed corp details; report whether the deal actually closed.
+    // Stage 3 — contractor approved engagement; corp details
+    // revealed; report whether the deal actually closed.
     case 'toClose':
       return (
         <div className="space-y-1">
-          <p className="text-base font-bold text-slate-900">
-            {inFieldN === 1 ? 'החלה התקשרות עם תאגיד' : `החלה התקשרות עם ${inFieldN} תאגידים`}
+          <p className="text-base font-extrabold text-emerald-700">
+            {corpsTotal === 1 ? 'נמצא תאגיד מתאים' : `נמצאו ${corpsTotal} תאגידים מתאימים`}
           </p>
-          <p className="text-xs text-violet-700 font-semibold">אנא עדכן ברגע שנסגרה עסקה</p>
+          <p className="text-xs text-emerald-600 font-semibold">פרטי התקשרות נחשפו · עדכן כשנסגרה עסקה</p>
         </div>
       );
     case 'searching':
