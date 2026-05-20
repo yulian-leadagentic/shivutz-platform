@@ -1233,7 +1233,7 @@ async def admin_overdue_count():
 @router.get("/internal/by-search/{search_id}")
 async def internal_deals_by_search(search_id: str):
     """List existing (deal_id, corporation_id, status) tuples for a
-    given worker_search_id. Internal-only — used by the notification
+    given search_id. Internal-only — used by the notification
     consumer's rematch flow to skip corps that already have a deal
     before creating new ones.
 
@@ -1247,7 +1247,7 @@ async def internal_deals_by_search(search_id: str):
         cur.execute(
             """SELECT id, corporation_id, status
                   FROM deals
-                 WHERE worker_search_id = %s
+                 WHERE search_id = %s
                    AND deleted_at IS NULL""",
             (search_id,),
         )
