@@ -5,11 +5,12 @@
 // drills down to the per-profession search form.
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, AlertCircle } from 'lucide-react';
 import { enumApi } from '@/lib/api/enums';
 import { ProfessionIcon } from '@/features/searches/ProfessionIcon';
+import { Button } from '@/components/ui/button';
 import type { Profession, RecruitmentType } from '@/types';
 
 const TITLES: Record<RecruitmentType, string> = {
@@ -21,12 +22,21 @@ export default function ProfessionTilesPage() {
   const { recruitment } = useParams<{ recruitment: RecruitmentType }>();
   const [profs, setProfs] = useState<Profession[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState(false);
 
-  useEffect(() => {
+  // Loader is wrapped so the retry button can fire it again.
+  // Previously this page had no .catch — a transient
+  // "Failed to fetch" left it loading=false / profs=[] / no
+  // visible error, which read to the user as a blank page.
+  const load = useCallback(() => {
+    setLoading(true); setError(false);
     enumApi.professions()
-      .then((p) => setProfs(p))
+      .then(setProfs)
+      .catch(() => setError(true))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => { load(); }, [load]);
 
   const title = TITLES[recruitment] ?? 'איתור עובדים';
 
@@ -40,7 +50,14 @@ export default function ProfessionTilesPage() {
         <p className="text-sm text-slate-600">בחר מקצוע</p>
       </header>
 
-      {loading ? (
+      {error ? (
+        <div className="bg-white border border-rose-200 rounded-2xl flex flex-col items-center gap-3 py-12 text-center px-4">
+          <AlertCircle className="h-10 w-10 text-rose-400" />
+          <p className="text-slate-700 font-medium">לא הצלחנו לטעון את רשימת המקצועות</p>
+          <p className="text-slate-400 text-sm">בדוק את החיבור לאינטרנט ונסה שוב</p>
+          <Button variant="outline" size="sm" onClick={load}>נסה שוב</Button>
+        </div>
+      ) : loading ? (
         <div className="text-center text-sm text-slate-500 py-12">טוען...</div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
