@@ -314,12 +314,15 @@ function CorporationDealsPageContent() {
         </div>
       )}
 
-      {/* Tile grid — sortedFiltered puts proposed (action-needed)
-          cards first, ordered by oldest created_at (smallest time
-          remaining) so the corp handles the most-urgent inquiries
-          first. */}
+      {/* 3-column horizontal cards — same layout the contractor
+          /deals page uses. One card per row, full-width:
+            Right  (4)  meta — profession + workers + dates + region + status pill
+            Centre (4)  illustration / countdown for proposed
+            Left   (4)  action area — CTA button + deal ref
+          sortedFiltered puts proposed cards at the top, ordered
+          by oldest created_at (smallest time remaining first). */}
       {!loading && !error && sortedFiltered.length > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="space-y-3">
           {sortedFiltered.map((d) => {
             const profCode  = d.profession_type ?? '';
             const profLabel = d.profession_he ?? d.profession_type ?? '—';
@@ -331,115 +334,142 @@ function CorporationDealsPageContent() {
               cls: 'bg-slate-100 text-slate-700 border-slate-200',
               label: d.status,
             };
+            // Countdown state for the centre column on proposed
+            // cards — corp can still respond after the window
+            // (the cron just notifies admin), so the post-zero copy
+            // softens to "החלון נסגר — חשוב לענות בהקדם" instead
+            // of the harsher "exceeded" wording.
+            const remainingMs   = parseUtcMs(d.created_at) + CORP_RESPONSE_HOURS * 3_600_000 - Date.now();
+            const stillInWindow = remainingMs > 0;
+            const isFresh       = isPending && Date.now() - parseUtcMs(d.created_at) < 12 * 60 * 60 * 1000;
             return (
               <Link
                 key={d.id}
                 href={`/corporation/deals/${d.id}`}
-                className={`group relative flex flex-col rounded-2xl bg-white p-4 sm:p-5 shadow-sm
-                            hover:shadow-md active:scale-[0.99] transition border-2 ${CARD_RING[cardState]}`}
+                className={`group relative block rounded-2xl bg-white shadow-sm
+                            hover:shadow-md transition border-2 overflow-hidden ${CARD_RING[cardState]}`}
               >
-                {/* "חדש" badge for fresh proposed deals so the corp
-                    spots new requests immediately even mid-list. */}
-                {isPending && Date.now() - parseUtcMs(d.created_at) < 12 * 60 * 60 * 1000 && (
-                  <span className="absolute -top-2 end-3 inline-flex items-center gap-1
+                {/* "חדש" badge — sits above the card top edge */}
+                {isFresh && (
+                  <span className="absolute -top-2 end-4 inline-flex items-center gap-1
                                   bg-rose-500 text-white text-[10px] font-bold
                                   uppercase tracking-wide px-2 py-0.5 rounded-full
-                                  shadow-sm">
+                                  shadow-sm z-10">
                     <Bell className="w-3 h-3" /> חדש
                   </span>
                 )}
 
-                {/* Header — icon + profession + coloured pill */}
-                <div className="flex items-start gap-3 mb-3">
-                  {profCode && (
-                    <ProfessionIcon
-                      code={profCode}
-                      size={56}
-                      alt={profLabel}
-                      className="shrink-0 object-contain"
-                    />
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <div className="font-bold text-slate-900 text-base truncate">
-                      {profLabel}
-                    </div>
-                    <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border mt-1.5 ${pill.cls}`}>
+                <div className="grid grid-cols-1 md:grid-cols-12">
+
+                  {/* ── Meta column (first in DOM → right in RTL) ── */}
+                  <div className="md:col-span-4 p-4 sm:p-5 space-y-2.5">
+                    <span className={`inline-flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-full border ${pill.cls}`}>
                       {pill.label}
                     </span>
-                  </div>
-                </div>
 
-                {/* Countdown — only on proposed cards. 48h from
-                    deal.created_at. Shows HH:MM:SS, ticks every
-                    second. After 0 the row stays visible (corp
-                    can still respond late) but copy shifts to
-                    "חרגת מזמן התגובה". */}
-                {isPending && (
-                  <div className="mb-3 flex items-center justify-center gap-3 rounded-lg bg-amber-50/60 border border-amber-200 px-3 py-2">
-                    <Bell className="h-4 w-4 text-amber-700 animate-pulse shrink-0" />
-                    <CorpResponseCountdown
-                      createdAtIso={d.created_at}
-                      responseHours={CORP_RESPONSE_HOURS}
-                      size="compact"
-                      tone="amber"
-                    />
-                    <span className="text-xs font-semibold text-amber-800 leading-tight">
-                      {(() => {
-                        const remaining = parseUtcMs(d.created_at) + CORP_RESPONSE_HOURS * 3_600_000 - Date.now();
-                        return remaining > 0 ? 'נשאר לך להגיב' : 'חרגת מזמן התגובה';
-                      })()}
-                    </span>
-                  </div>
-                )}
+                    <div className="flex items-start gap-3">
+                      {profCode && (
+                        <ProfessionIcon
+                          code={profCode}
+                          size={44}
+                          alt={profLabel}
+                          className="shrink-0 object-contain"
+                        />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <h3 className="text-lg font-bold text-slate-900 leading-tight truncate">{profLabel}</h3>
+                        <p className="text-sm font-semibold text-slate-700 mt-1 inline-flex items-center gap-1.5">
+                          <UsersIcon className="h-4 w-4 text-slate-400" />
+                          <span>
+                            <span className="text-slate-900">{requested > 0 ? `${offered}/${requested}` : offered}</span>{' '}
+                            עובדים
+                          </span>
+                        </p>
+                      </div>
+                    </div>
 
-                {/* Status context */}
-                <p className={`text-xs mb-3 leading-relaxed line-clamp-2 ${
-                  isPending      ? 'text-amber-700 font-medium'
-                  : cardState === 'engaged' ? 'text-emerald-700'
-                  : cardState === 'cancelled' ? 'text-rose-700'
-                                              : 'text-slate-600'
-                }`}>
-                  {STATUS_CONTEXT[d.status] ?? d.status}
-                </p>
+                    <div className="space-y-1.5 text-sm text-slate-700">
+                      <div className="flex items-center gap-2">
+                        <Calendar className="h-4 w-4 text-slate-400 shrink-0" />
+                        <span className="text-slate-800">נוצרה: {fmt(d.created_at)}</span>
+                      </div>
+                      {d.region_he && (
+                        <div className="flex items-center gap-2">
+                          <MapPin className="h-4 w-4 text-slate-400 shrink-0" />
+                          <span className="text-slate-800">{d.region_he}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
 
-                {/* Meta — workers / region / date */}
-                <div className="grid grid-cols-3 gap-2 text-[11px] text-slate-500 mb-3 pt-2 border-t border-slate-100">
-                  <div className="flex flex-col items-center text-center">
-                    <UsersIcon className="w-3.5 h-3.5 mb-0.5 text-slate-400" />
-                    <span className="font-semibold text-slate-700">
-                      {requested > 0 ? `${offered}/${requested}` : (offered || '—')}
-                    </span>
-                    <span className="text-[10px]">{requested > 0 ? 'הצעת/ביקש' : 'עובדים'}</span>
+                  {/* ── Centre column: countdown for proposed, state
+                       illustration otherwise ── */}
+                  <div className="md:col-span-4 p-4 sm:p-5 flex flex-col items-center justify-center gap-3 text-center bg-slate-50/40 md:border-s md:border-e md:border-slate-100 border-t md:border-t-0">
+                    {isPending ? (
+                      <>
+                        <div className="w-24 h-24 rounded-full bg-amber-50 border-4 border-amber-200 flex items-center justify-center">
+                          <CorpResponseCountdown
+                            createdAtIso={d.created_at}
+                            responseHours={CORP_RESPONSE_HOURS}
+                            size="compact"
+                            tone="amber"
+                          />
+                        </div>
+                        <div className="space-y-0.5">
+                          <p className="text-sm font-extrabold text-amber-700">
+                            {stillInWindow ? 'נשאר לך להגיב' : 'החלון נסגר — חשוב לענות בהקדם'}
+                          </p>
+                          <p className="text-xs text-amber-600 font-semibold">
+                            {STATUS_CONTEXT[d.status] ?? 'דרושה החלטה'}
+                          </p>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className={`w-16 h-16 rounded-full flex items-center justify-center ${
+                          cardState === 'committed'   ? 'bg-sky-100 text-sky-700'
+                          : cardState === 'engaged'   ? 'bg-emerald-500 text-white'
+                          : cardState === 'closed'    ? 'bg-emerald-50 text-emerald-600'
+                          : cardState === 'cancelled' ? 'bg-rose-50 text-rose-500'
+                                                      : 'bg-slate-100 text-slate-500'
+                        }`}>
+                          {cardState === 'committed'   ? <MessageSquare className="h-7 w-7" />
+                           : cardState === 'engaged'   ? <CheckCircle2 className="h-7 w-7" />
+                           : cardState === 'closed'    ? <CheckCircle2 className="h-7 w-7" />
+                           : cardState === 'cancelled' ? <XCircle className="h-7 w-7" />
+                                                       : <Handshake className="h-7 w-7" />}
+                        </div>
+                        <p className={`text-sm font-bold ${
+                          cardState === 'engaged'    ? 'text-emerald-700'
+                          : cardState === 'cancelled' ? 'text-rose-600'
+                                                      : 'text-slate-800'
+                        }`}>
+                          {STATUS_CONTEXT[d.status] ?? d.status}
+                        </p>
+                      </>
+                    )}
                   </div>
-                  <div className="flex flex-col items-center text-center">
-                    <MapPin className="w-3.5 h-3.5 mb-0.5 text-slate-400" />
-                    <span className="font-semibold text-slate-700 truncate w-full">
-                      {d.region_he ?? '—'}
-                    </span>
-                    <span className="text-[10px]">אזור</span>
-                  </div>
-                  <div className="flex flex-col items-center text-center">
-                    <Calendar className="w-3.5 h-3.5 mb-0.5 text-slate-400" />
-                    <span className="font-semibold text-slate-700">{fmt(d.created_at)}</span>
-                    <span className="text-[10px]">נוצרה</span>
-                  </div>
-                </div>
 
-                {/* Footer CTA — coloured per state */}
-                <div className="mt-auto flex items-center justify-between pt-1">
-                  <span className="font-mono text-[10px] text-slate-400">#{dealRef(d.id)}</span>
-                  <span className={`inline-flex items-center gap-1 text-xs font-semibold ${
-                    isPending                 ? 'text-amber-700 group-hover:text-amber-800'
-                    : cardState === 'engaged' ? 'text-emerald-700 group-hover:text-emerald-800'
-                    : cardState === 'committed' ? 'text-sky-700 group-hover:text-sky-800'
-                                                : 'text-slate-600 group-hover:text-slate-800'
-                  }`}>
-                    {isPending                   ? <><AlertCircle className="w-3.5 h-3.5" /> אשר / דחה</>
-                     : cardState === 'engaged'   ? <><CheckCircle2 className="w-3.5 h-3.5" /> פרטים וצ׳אט</>
-                     : cardState === 'committed' ? <><MessageSquare className="w-3.5 h-3.5" /> ממתין לקבלן</>
-                     : cardState === 'cancelled' ? <><XCircle className="w-3.5 h-3.5" /> פרטים</>
-                                                 : <><MessageSquare className="w-3.5 h-3.5" /> פרטים וצ׳אט</>}
-                  </span>
+                  {/* ── Action column (last in DOM → left in RTL) ── */}
+                  <div className="md:col-span-4 p-4 sm:p-5 flex flex-col justify-between gap-3 bg-white border-t md:border-t-0">
+                    <div className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">
+                      עסקה #{dealRef(d.id)}
+                    </div>
+
+                    <div className={`flex items-center justify-center gap-1.5 w-full rounded-lg py-3 px-4 font-bold text-sm transition ${
+                      isPending                    ? 'bg-amber-500 text-white group-hover:bg-amber-600'
+                      : cardState === 'engaged'    ? 'bg-emerald-500 text-white group-hover:bg-emerald-600'
+                      : cardState === 'committed'  ? 'bg-sky-100 text-sky-800 border border-sky-200 group-hover:bg-sky-200'
+                      : cardState === 'cancelled'  ? 'bg-slate-100 text-slate-600 border border-slate-200 group-hover:bg-slate-200'
+                                                   : 'bg-white text-slate-700 border border-slate-300 group-hover:bg-slate-50'
+                    }`}>
+                      {isPending                   ? <><AlertCircle className="w-4 h-4" /> אשר / דחה</>
+                       : cardState === 'engaged'   ? <><CheckCircle2 className="w-4 h-4" /> פרטים וצ׳אט</>
+                       : cardState === 'committed' ? <><MessageSquare className="w-4 h-4" /> ממתין לקבלן</>
+                       : cardState === 'cancelled' ? <><XCircle className="w-4 h-4" /> פרטי העסקה</>
+                                                   : <><MessageSquare className="w-4 h-4" /> פרטים וצ׳אט</>}
+                    </div>
+                  </div>
                 </div>
               </Link>
             );
