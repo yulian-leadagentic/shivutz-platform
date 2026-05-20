@@ -1230,6 +1230,39 @@ async def admin_overdue_count():
         conn.close()
 
 
+@router.get("/internal/by-search/{search_id}")
+async def internal_deals_by_search(search_id: str):
+    """List existing (deal_id, corporation_id, status) tuples for a
+    given worker_search_id. Internal-only — used by the notification
+    consumer's rematch flow to skip corps that already have a deal
+    before creating new ones.
+
+    No auth header gating: lives under /internal/* alongside the
+    overdue endpoints, which run from the same trust boundary
+    (notification consumer, cron, admin dashboard counter).
+    """
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT id, corporation_id, status
+                  FROM deals
+                 WHERE worker_search_id = %s
+                   AND deleted_at IS NULL""",
+            (search_id,),
+        )
+        return [
+            {
+                "deal_id": r["id"],
+                "corporation_id": r["corporation_id"],
+                "status": r["status"],
+            }
+            for r in cur.fetchall()
+        ]
+    finally:
+        conn.close()
+
+
 @router.get("/{deal_id}/workers")
 def get_deal_workers(
     deal_id: str,

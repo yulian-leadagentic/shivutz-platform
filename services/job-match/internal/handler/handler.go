@@ -451,7 +451,10 @@ type matchInternalResult struct {
 	ShouldNotify bool   `json:"should_notify"`
 	Skipped      bool   `json:"skipped"` // true when debounced or search not found
 
-	// Populated when ShouldNotify=true.
+	// Populated whenever the matcher ran (Skipped=false), regardless
+	// of ShouldNotify — downstream consumers (notification service)
+	// need these fields to materialise new deals + SMS the corps,
+	// not just on the complete-transition path.
 	ContractorID string  `json:"contractor_id,omitempty"`
 	ContactName  string  `json:"contact_name,omitempty"`
 	ContactPhone string  `json:"contact_phone,omitempty"`
@@ -460,6 +463,11 @@ type matchInternalResult struct {
 	Region       string  `json:"region,omitempty"`
 	WorkerCount  int     `json:"worker_count,omitempty"`
 	BestFillPct  float64 `json:"best_fill_pct,omitempty"`
+
+	// Every corp that matched the search (sorted by best-first).
+	// Used by the notification consumer to materialise deals for
+	// any corp that doesn't already have one on this search.
+	MatchedCorps []string `json:"matched_corps,omitempty"`
 }
 
 func (h *Handler) runMatchInternal(ctx context.Context, searchID string, force bool) matchInternalResult {
@@ -520,29 +528,41 @@ func (h *Handler) runMatchInternal(ctx context.Context, searchID string, force b
 		log.Printf("[rematch] match_cache write failed for %s: %v", searchID, err)
 	}
 
-	if !(prevState != "complete" && newState == "complete") {
-		return res
+	// Always surface the corp IDs + contractor metadata so the
+	// notification consumer can materialise deals for any newly
+	// matched corp, even when this isn't the first-complete edge.
+	matched := make([]string, 0, len(corps))
+	for _, c := range corps {
+		matched = append(matched, c.CorporationID)
+	}
+	res.MatchedCorps = matched
+
+	if len(corps) > 0 {
+		var contactName, contactPhone, contactEmail sql.NullString
+		if err := h.db.QueryRow(
+			`SELECT c.contact_name, c.contact_phone, c.contact_email
+			   FROM org_db.contractors c WHERE c.id=?`,
+			s.ContractorID,
+		).Scan(&contactName, &contactPhone, &contactEmail); err != nil {
+			log.Printf("[rematch] contact lookup failed for contractor %s: %v", s.ContractorID, err)
+		}
+		res.ContractorID = s.ContractorID
+		res.ContactName = contactName.String
+		res.ContactPhone = contactPhone.String
+		res.ContactEmail = contactEmail.String
+		res.Profession = s.ProfessionType
+		res.Region = s.Region
+		res.WorkerCount = s.Quantity
+		res.BestFillPct = bestFillPct
 	}
 
-	// Hydrate contractor contact for notification.
-	var contactName, contactPhone, contactEmail sql.NullString
-	if err := h.db.QueryRow(
-		`SELECT c.contact_name, c.contact_phone, c.contact_email
-		   FROM org_db.contractors c WHERE c.id=?`,
-		s.ContractorID,
-	).Scan(&contactName, &contactPhone, &contactEmail); err != nil {
-		log.Printf("[rematch] contact lookup failed for contractor %s: %v", s.ContractorID, err)
+	// ShouldNotify keeps the "first time we hit complete" semantics —
+	// that's the only edge where the existing SMS-to-contractor "match
+	// found!" template fires. New-deal materialisation runs separately
+	// in the notification consumer off MatchedCorps.
+	if prevState != "complete" && newState == "complete" {
+		res.ShouldNotify = true
 	}
-
-	res.ShouldNotify = true
-	res.ContractorID = s.ContractorID
-	res.ContactName = contactName.String
-	res.ContactPhone = contactPhone.String
-	res.ContactEmail = contactEmail.String
-	res.Profession = s.ProfessionType
-	res.Region = s.Region
-	res.WorkerCount = s.Quantity
-	res.BestFillPct = bestFillPct
 	return res
 }
 
