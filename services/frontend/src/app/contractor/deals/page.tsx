@@ -1100,7 +1100,7 @@ function CentreBlurb({ state, awaitingN, proposedN, inFieldN, corpsTotal, oldest
           <p className="text-base font-bold text-slate-900">
             {corpsTotal === 1 ? 'נמצא תאגיד מתאים' : `נמצאו ${corpsTotal} תאגידים מתאימים`}
           </p>
-          <p className="text-xs text-slate-500">תאגיד יענה בתוך החלון הבא</p>
+          <p className="text-xs text-slate-500">תאגיד יענה בתוך חלון הזמן הבא</p>
         </div>
       );
     // Stage 2 — at least one corp committed workers, contractor's turn.
