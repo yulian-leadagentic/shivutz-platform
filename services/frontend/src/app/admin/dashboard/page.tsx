@@ -56,10 +56,19 @@ export default function AdminDashboard() {
   const [stats, setStats]   = useState<AdminDashboard | null>(null);
   const [alerts, setAlerts] = useState<AdminAlerts | null>(null);
   const [loading, setLoading] = useState(true);
+  // Count of `proposed` deals past the corp-response deadline.
+  // The notification cron also SMSes admins for each new overdue,
+  // but the in-app banner is independent and just polls the count
+  // so it's always current regardless of cron timing.
+  const [overdue, setOverdue] = useState<{ count: number; hours: number } | null>(null);
 
   useEffect(() => {
-    Promise.all([adminApi.dashboard(), adminApi.alerts()])
-      .then(([s, a]) => { setStats(s); setAlerts(a); })
+    Promise.all([
+      adminApi.dashboard(),
+      adminApi.alerts(),
+      adminApi.corpResponseOverdueCount().catch(() => ({ count: 0, hours: 48 })),
+    ])
+      .then(([s, a, o]) => { setStats(s); setAlerts(a); setOverdue(o); })
       .catch(console.error)
       .finally(() => setLoading(false));
   }, []);
@@ -99,6 +108,37 @@ export default function AdminDashboard() {
         <h1 className="text-2xl font-bold text-slate-900">לוח בקרה</h1>
         <p className="text-xs text-slate-400" dir="ltr">as of {fmtDate(stats.as_of)}</p>
       </div>
+
+      {/* Corp-response overdue banner — proposed deals past the
+          corp_response_hours deadline. SMS to admins is sent by
+          the notification cron once per deal; this banner is
+          purely informational and shows the cumulative count so
+          admin sees the load at a glance. */}
+      {overdue && overdue.count > 0 && (
+        <Card className="border-amber-300 bg-amber-50">
+          <CardContent className="pt-4 pb-4 flex items-start gap-3">
+            <div className="p-2 rounded-lg bg-amber-100 text-amber-700 shrink-0">
+              <AlertTriangle className="h-5 w-5" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-bold text-amber-900">
+                {overdue.count === 1
+                  ? 'בקשה אחת עברה את חלון התגובה'
+                  : `${overdue.count} בקשות עברו את חלון התגובה`}
+              </p>
+              <p className="text-xs text-amber-700 mt-0.5">
+                תאגיד לא הגיב לדרישת הקבלן בתוך {overdue.hours} שעות. ייתכן ויש צורך בליווי ידני.
+              </p>
+            </div>
+            <Link
+              href="/admin/deals"
+              className="inline-flex items-center gap-1 text-sm font-semibold text-amber-800 hover:text-amber-900 shrink-0"
+            >
+              עבור לעסקאות <ChevronLeft className="h-4 w-4" />
+            </Link>
+          </CardContent>
+        </Card>
+      )}
 
       {/* SLA WARNINGS — top of page when present */}
       {slaWarnings.length > 0 && (

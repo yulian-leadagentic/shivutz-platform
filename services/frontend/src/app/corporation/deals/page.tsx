@@ -6,43 +6,144 @@
 // region, date, and a CTA whose copy depends on whether the corp
 // still owes a response (אשר / דחה) or it's already in progress (פרטים).
 
-import { useEffect, useState, Suspense } from 'react';
+import { useEffect, useMemo, useState, Suspense } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import {
   Loader2, Calendar, MapPin, Users as UsersIcon,
-  AlertCircle, Handshake, MessageSquare,
+  AlertCircle, Handshake, MessageSquare, CheckCircle2, XCircle, Bell,
 } from 'lucide-react';
 import { dealApi } from '@/lib/api';
 import { dealRef } from '@/lib/utils';
 import { ProfessionIcon } from '@/features/searches/ProfessionIcon';
 import type { Deal } from '@/types';
-import StatusBadge from '@/components/StatusBadge';
 import { Button } from '@/components/ui/button';
 import { DEAL_STATUS_GROUP, type DealFilter } from '@/i18n/he';
+import { CorpResponseCountdown } from '@/components/CorpResponseCountdown';
+
+// Mirrors CORP_RESPONSE_HOURS on the contractor page. Server-side
+// uses the DB setting; this constant matches the migration default.
+const CORP_RESPONSE_HOURS = 48;
 
 // Corp side uses a tighter, locally-owned filter set. The shared
 // DealFilter is a superset that also covers contractor-side
 // awaiting/cancelled buckets — corp doesn't surface those as pills.
 type Filter = Extract<DealFilter, 'all' | 'proposed' | 'active' | 'completed'>;
 
-// Corp-side wording differs from the central DEAL_FILTER_LABEL
-// (e.g. "ממתינות לאישור" vs "ממתינות לתאגיד") — kept local on purpose.
+// Filter labels. "proposed" = corp owes a response (the urgent
+// bucket the corp must work first). "active" = corp committed,
+// contractor's turn (passive wait). Keep wording local because
+// it's semantically different from the shared/contractor copy.
 const FILTER_LABELS: Record<Filter, string> = {
   all:       'הכל',
-  proposed:  'ממתינות לאישור',
-  active:    'פעילות',
+  proposed:  'ממתינות לאישורך',
+  active:    'בעבודה',
   completed: 'הושלמו',
+};
+
+// Each filter gets its own colour so the bar reads as five
+// distinct chips, not five identical buttons. Mirrors the
+// contractor-side tone palette but with semantics for the
+// corp's perspective:
+//   proposed  = AMBER (your turn, act now)
+//   active    = SKY   (passive — waiting on contractor)
+//   completed = EMERALD (done)
+//   all       = neutral
+const FILTER_TONE: Record<Filter, {
+  active:   string;
+  idle:     string;
+  badgeOn:  string;
+  badgeOff: string;
+}> = {
+  all: {
+    active:   'bg-slate-900 text-white border-slate-900',
+    idle:     'bg-white text-slate-700 border-slate-300 hover:bg-slate-50',
+    badgeOn:  'bg-white/20 text-white',
+    badgeOff: 'bg-slate-100 text-slate-600',
+  },
+  proposed: {
+    active:   'bg-amber-500 text-white border-amber-500',
+    idle:     'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100',
+    badgeOn:  'bg-white/25 text-white',
+    badgeOff: 'bg-amber-200 text-amber-900',
+  },
+  active: {
+    active:   'bg-sky-600 text-white border-sky-600',
+    idle:     'bg-sky-50 text-sky-800 border-sky-200 hover:bg-sky-100',
+    badgeOn:  'bg-white/25 text-white',
+    badgeOff: 'bg-sky-100 text-sky-700',
+  },
+  completed: {
+    active:   'bg-emerald-600 text-white border-emerald-600',
+    idle:     'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100',
+    badgeOn:  'bg-white/25 text-white',
+    badgeOff: 'bg-emerald-100 text-emerald-700',
+  },
 };
 
 const STATUS_CONTEXT: Record<string, string> = {
   proposed:          'נשלחה אליך — דרושה החלטה',
   corp_committed:    'הצעת עובדים נשלחה לקבלן',
   approved:          'אושר ע״י הקבלן — עובדים בשטח',
+  active:            'בעבודה',
+  reporting:         'מדווח',
   closed:            'הושלמה',
+  completed:         'הושלמה',
   rejected:          'נדחתה',
   cancelled_by_corp: 'בוטלה על ידך',
+  cancelled_by_contractor: 'בוטל ע״י הקבלן',
   expired:           'פג תוקף',
+};
+
+// Corp-perspective state classifier — drives the card ring,
+// status pill colour, and the "action needed" copy.
+//   actionNeeded → 'proposed'                       — corp owes a response (AMBER)
+//   committed    → 'corp_committed'                 — corp committed, contractor's turn (SKY, passive)
+//   engaged      → approved/active/reporting        — contractor approved, deal in motion (EMERALD)
+//   closed       → completed/closed                 — done
+//   cancelled    → cancelled_*/rejected/expired
+type CorpCardState = 'actionNeeded' | 'committed' | 'engaged' | 'closed' | 'cancelled' | 'unknown';
+
+const ENGAGED_S   = new Set(['approved', 'accepted', 'active', 'reporting']);
+const CLOSED_S    = new Set(['completed', 'closed']);
+const CANCELLED_S = new Set(['cancelled', 'cancelled_by_corp', 'cancelled_by_contractor', 'rejected', 'expired', 'disputed']);
+
+function classifyCorpDeal(status: string): CorpCardState {
+  if (status === 'proposed' || status === 'counter_proposed') return 'actionNeeded';
+  if (status === 'corp_committed')                              return 'committed';
+  if (ENGAGED_S.has(status))                                    return 'engaged';
+  if (CLOSED_S.has(status))                                     return 'closed';
+  if (CANCELLED_S.has(status))                                  return 'cancelled';
+  return 'unknown';
+}
+
+// Per-card ring + small status pill — colour-coded to the
+// CorpCardState. AMBER stands out so the corp's eye lands on
+// the deals where they owe a response.
+const CARD_RING: Record<CorpCardState, string> = {
+  actionNeeded: 'border-amber-400 ring-2 ring-amber-100',
+  committed:    'border-sky-300 ring-1 ring-sky-100',
+  engaged:      'border-emerald-400 ring-2 ring-emerald-100',
+  closed:       'border-slate-200',
+  cancelled:    'border-slate-200 opacity-80',
+  unknown:      'border-slate-200',
+};
+
+const STATUS_PILL: Record<string, { cls: string; label: string }> = {
+  proposed:                { cls: 'bg-amber-500 text-white border-amber-500',                 label: 'דרושה החלטה' },
+  counter_proposed:        { cls: 'bg-amber-100 text-amber-800 border-amber-300',             label: 'הצעה נגדית' },
+  corp_committed:          { cls: 'bg-sky-100 text-sky-800 border-sky-200',                   label: 'נשלחה לקבלן' },
+  approved:                { cls: 'bg-emerald-500 text-white border-emerald-500',             label: 'אושר' },
+  accepted:                { cls: 'bg-emerald-500 text-white border-emerald-500',             label: 'אושר' },
+  active:                  { cls: 'bg-emerald-500 text-white border-emerald-500',             label: 'פעיל' },
+  reporting:               { cls: 'bg-emerald-500 text-white border-emerald-500',             label: 'מדווח' },
+  closed:                  { cls: 'bg-emerald-50 text-emerald-700 border-emerald-200',        label: 'נסגרה' },
+  completed:               { cls: 'bg-emerald-50 text-emerald-700 border-emerald-200',        label: 'הושלמה' },
+  rejected:                { cls: 'bg-rose-50 text-rose-700 border-rose-200',                 label: 'נדחתה' },
+  cancelled_by_corp:       { cls: 'bg-rose-50 text-rose-700 border-rose-200',                 label: 'בוטלה על ידך' },
+  cancelled_by_contractor: { cls: 'bg-rose-50 text-rose-700 border-rose-200',                 label: 'בוטל ע״י קבלן' },
+  cancelled:               { cls: 'bg-rose-50 text-rose-700 border-rose-200',                 label: 'בוטלה' },
+  expired:                 { cls: 'bg-slate-100 text-slate-500 border-slate-200',             label: 'פג תוקף' },
 };
 
 type EnrichedDeal = Deal & {
@@ -131,6 +232,18 @@ function CorporationDealsPageContent() {
   });
   const pendingCount = deals.filter((d) => d.status === 'proposed').length;
 
+  // Per-filter counts for the pill badges.
+  const counts = useMemo(() => {
+    const out: Record<Filter, number> = { all: 0, proposed: 0, active: 0, completed: 0 };
+    out.all = deals.length;
+    for (const d of deals) {
+      if (d.status === 'proposed') out.proposed++;
+      else if (DEAL_STATUS_GROUP.active.includes(d.status))    out.active++;
+      else if (DEAL_STATUS_GROUP.completed.includes(d.status)) out.completed++;
+    }
+    return out;
+  }, [deals]);
+
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 space-y-5">
       <header className="flex items-center justify-between flex-wrap gap-3">
@@ -144,21 +257,29 @@ function CorporationDealsPageContent() {
         </div>
       </header>
 
-      {/* Filter pills */}
+      {/* Filter pills — coloured per category with count badges.
+          Mirrors the contractor-side design so the corp sees the
+          same "five distinct chips" layout. */}
       <div className="flex gap-2 flex-wrap">
-        {(Object.keys(FILTER_LABELS) as Filter[]).map((f) => (
-          <button
-            key={f}
-            onClick={() => setFilter(f)}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-              filter === f
-                ? 'bg-brand-600 text-white'
-                : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-50'
-            }`}
-          >
-            {FILTER_LABELS[f]}
-          </button>
-        ))}
+        {(Object.keys(FILTER_LABELS) as Filter[]).map((f) => {
+          const tone  = FILTER_TONE[f];
+          const isOn  = filter === f;
+          const count = counts[f];
+          const cls   = isOn ? tone.active   : tone.idle;
+          const badge = isOn ? tone.badgeOn  : tone.badgeOff;
+          return (
+            <button
+              key={f}
+              onClick={() => setFilter(f)}
+              className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${cls}`}
+            >
+              <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full leading-none ${badge}`}>
+                {count}
+              </span>
+              <span>{FILTER_LABELS[f]}</span>
+            </button>
+          );
+        })}
       </div>
 
       {/* Error */}
@@ -179,7 +300,7 @@ function CorporationDealsPageContent() {
       )}
 
       {/* Empty */}
-      {!loading && !error && filtered.length === 0 && (
+      {!loading && !error && sortedFiltered.length === 0 && (
         <div className="bg-white border border-slate-200 rounded-2xl flex flex-col items-center gap-3 py-12 text-center px-4">
           <Handshake className="h-10 w-10 text-slate-200" />
           <p className="text-slate-600 font-medium">
@@ -193,27 +314,42 @@ function CorporationDealsPageContent() {
         </div>
       )}
 
-      {/* Tile grid */}
-      {!loading && !error && filtered.length > 0 && (
+      {/* Tile grid — sortedFiltered puts proposed (action-needed)
+          cards first, ordered by oldest created_at (smallest time
+          remaining) so the corp handles the most-urgent inquiries
+          first. */}
+      {!loading && !error && sortedFiltered.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filtered.map((d) => {
+          {sortedFiltered.map((d) => {
             const profCode  = d.profession_type ?? '';
             const profLabel = d.profession_he ?? d.profession_type ?? '—';
             const offered   = d.worker_count ?? 0;
             const requested = d.requested_count ?? 0;
-            const isPending = d.status === 'proposed';
+            const cardState = classifyCorpDeal(d.status);
+            const isPending = cardState === 'actionNeeded';
+            const pill      = STATUS_PILL[d.status] ?? {
+              cls: 'bg-slate-100 text-slate-700 border-slate-200',
+              label: d.status,
+            };
             return (
               <Link
                 key={d.id}
                 href={`/corporation/deals/${d.id}`}
-                className={`group flex flex-col rounded-2xl bg-white p-4 sm:p-5 shadow-sm
-                            hover:shadow-md active:scale-[0.99] transition ${
-                              isPending
-                                ? 'border-2 border-amber-300 ring-2 ring-amber-50'
-                                : 'border border-slate-200 hover:border-brand-400'
-                            }`}
+                className={`group relative flex flex-col rounded-2xl bg-white p-4 sm:p-5 shadow-sm
+                            hover:shadow-md active:scale-[0.99] transition border-2 ${CARD_RING[cardState]}`}
               >
-                {/* Header — icon + profession + status badge */}
+                {/* "חדש" badge for fresh proposed deals so the corp
+                    spots new requests immediately even mid-list. */}
+                {isPending && Date.now() - parseUtcMs(d.created_at) < 12 * 60 * 60 * 1000 && (
+                  <span className="absolute -top-2 end-3 inline-flex items-center gap-1
+                                  bg-rose-500 text-white text-[10px] font-bold
+                                  uppercase tracking-wide px-2 py-0.5 rounded-full
+                                  shadow-sm">
+                    <Bell className="w-3 h-3" /> חדש
+                  </span>
+                )}
+
+                {/* Header — icon + profession + coloured pill */}
                 <div className="flex items-start gap-3 mb-3">
                   {profCode && (
                     <ProfessionIcon
@@ -227,13 +363,41 @@ function CorporationDealsPageContent() {
                     <div className="font-bold text-slate-900 text-base truncate">
                       {profLabel}
                     </div>
-                    <div className="mt-1.5"><StatusBadge status={d.status} /></div>
+                    <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border mt-1.5 ${pill.cls}`}>
+                      {pill.label}
+                    </span>
                   </div>
                 </div>
 
+                {/* Countdown — only on proposed cards. 48h from
+                    deal.created_at. Shows HH:MM:SS, ticks every
+                    second. After 0 the row stays visible (corp
+                    can still respond late) but copy shifts to
+                    "חרגת מזמן התגובה". */}
+                {isPending && (
+                  <div className="mb-3 flex items-center justify-center gap-3 rounded-lg bg-amber-50/60 border border-amber-200 px-3 py-2">
+                    <Bell className="h-4 w-4 text-amber-700 animate-pulse shrink-0" />
+                    <CorpResponseCountdown
+                      createdAtIso={d.created_at}
+                      responseHours={CORP_RESPONSE_HOURS}
+                      size="compact"
+                      tone="amber"
+                    />
+                    <span className="text-xs font-semibold text-amber-800 leading-tight">
+                      {(() => {
+                        const remaining = parseUtcMs(d.created_at) + CORP_RESPONSE_HOURS * 3_600_000 - Date.now();
+                        return remaining > 0 ? 'נשאר לך להגיב' : 'חרגת מזמן התגובה';
+                      })()}
+                    </span>
+                  </div>
+                )}
+
                 {/* Status context */}
                 <p className={`text-xs mb-3 leading-relaxed line-clamp-2 ${
-                  isPending ? 'text-amber-700 font-medium' : 'text-slate-600'
+                  isPending      ? 'text-amber-700 font-medium'
+                  : cardState === 'engaged' ? 'text-emerald-700'
+                  : cardState === 'cancelled' ? 'text-rose-700'
+                                              : 'text-slate-600'
                 }`}>
                   {STATUS_CONTEXT[d.status] ?? d.status}
                 </p>
@@ -261,14 +425,20 @@ function CorporationDealsPageContent() {
                   </div>
                 </div>
 
-                {/* Footer CTA */}
+                {/* Footer CTA — coloured per state */}
                 <div className="mt-auto flex items-center justify-between pt-1">
                   <span className="font-mono text-[10px] text-slate-400">#{dealRef(d.id)}</span>
                   <span className={`inline-flex items-center gap-1 text-xs font-semibold ${
-                    isPending ? 'text-amber-600 group-hover:text-amber-700' : 'text-brand-600 group-hover:text-brand-700'
+                    isPending                 ? 'text-amber-700 group-hover:text-amber-800'
+                    : cardState === 'engaged' ? 'text-emerald-700 group-hover:text-emerald-800'
+                    : cardState === 'committed' ? 'text-sky-700 group-hover:text-sky-800'
+                                                : 'text-slate-600 group-hover:text-slate-800'
                   }`}>
-                    {isPending ? <AlertCircle className="w-3.5 h-3.5" /> : <MessageSquare className="w-3.5 h-3.5" />}
-                    {isPending ? 'אשר / דחה' : 'פרטים וצ׳אט'}
+                    {isPending                   ? <><AlertCircle className="w-3.5 h-3.5" /> אשר / דחה</>
+                     : cardState === 'engaged'   ? <><CheckCircle2 className="w-3.5 h-3.5" /> פרטים וצ׳אט</>
+                     : cardState === 'committed' ? <><MessageSquare className="w-3.5 h-3.5" /> ממתין לקבלן</>
+                     : cardState === 'cancelled' ? <><XCircle className="w-3.5 h-3.5" /> פרטים</>
+                                                 : <><MessageSquare className="w-3.5 h-3.5" /> פרטים וצ׳אט</>}
                   </span>
                 </div>
               </Link>

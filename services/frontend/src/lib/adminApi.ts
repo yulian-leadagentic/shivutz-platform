@@ -224,6 +224,14 @@ export const adminApi = {
   dashboard: () => apiFetch<AdminDashboard>('/admin/dashboard'),
   alerts:    () => apiFetch<AdminAlerts>('/admin/alerts'),
 
+  // Read-only count of deals still in `proposed` state past the
+  // corp-response deadline (default 48h). Drives the admin
+  // dashboard's "X bids overdue" banner. The endpoint lives on
+  // the deal service under /internal/ — no auth check, no
+  // dependency on the cron, just a cheap COUNT(*).
+  corpResponseOverdueCount: () =>
+    apiFetch<{ count: number; hours: number }>('/deals/internal/corp-response-overdue/count'),
+
   pendingApprovals: () => apiFetch<PendingOrg[]>('/admin/pending-approvals'),
 
   getOrg: (id: string, orgType: string) =>
