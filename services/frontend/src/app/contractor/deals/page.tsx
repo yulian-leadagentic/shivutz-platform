@@ -9,6 +9,15 @@
 // request" in one pass.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { CorpResponseCountdown } from '@/components/CorpResponseCountdown';
+
+// corp_response_hours from payment_db.system_settings (migration
+// 027). Kept as a constant for now — when an admin tunes the DB
+// value the frontend still uses 48 until this constant is updated
+// or we add a /enums/settings endpoint. Server-side timing (cron,
+// internal queries) does read the DB value, so the admin-notify
+// fires at the real deadline regardless.
+const CORP_RESPONSE_HOURS = 48;
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -32,9 +41,22 @@ import {
 
 // ── Helpers ────────────────────────────────────────────────────
 
+// MySQL TIMESTAMP columns serialize as "YYYY-MM-DD HH:MM:SS" with
+// no `T` separator and no `Z` suffix. `new Date(...)` interprets
+// such strings as *local* time, but the DB value is UTC. On a
+// machine in UTC+3 a deal created two minutes ago shows up as
+// "3 hours ago". Normalise here so every callsite is timezone-safe.
+function parseUtcMs(iso?: string): number {
+  if (!iso) return NaN;
+  let s = iso.trim();
+  if (s.includes(' ') && !s.includes('T')) s = s.replace(' ', 'T');
+  if (!/[Zz]$|[+-]\d{2}:?\d{2}$/.test(s)) s = s + 'Z';
+  return new Date(s).getTime();
+}
+
 function fmt(iso?: string) {
   if (!iso) return '—';
-  return new Date(iso).toLocaleDateString('he-IL');
+  return new Date(parseUtcMs(iso)).toLocaleDateString('he-IL');
 }
 
 // Relative time in Hebrew — used per corp response so the
@@ -43,7 +65,7 @@ function fmt(iso?: string) {
 // at different times.
 function timeAgo(iso?: string): string {
   if (!iso) return '';
-  const ms = Date.now() - new Date(iso).getTime();
+  const ms = Date.now() - parseUtcMs(iso);
   if (ms < 60_000)         return 'הרגע';
   const mins = Math.floor(ms / 60_000);
   if (mins < 60)           return `לפני ${mins} דק׳`;
@@ -53,7 +75,7 @@ function timeAgo(iso?: string): string {
   if (days < 7)            return `לפני ${days} ימים`;
   const weeks = Math.floor(days / 7);
   if (weeks < 5)           return `לפני ${weeks} שבועות`;
-  return new Date(iso).toLocaleDateString('he-IL');
+  return new Date(parseUtcMs(iso)).toLocaleDateString('he-IL');
 }
 
 // True if the deal moved into corp_committed in the last 24h.
@@ -61,7 +83,7 @@ function timeAgo(iso?: string): string {
 // when multiple corps reply at different times.
 function isRecent(iso?: string): boolean {
   if (!iso) return false;
-  return Date.now() - new Date(iso).getTime() < 24 * 60 * 60 * 1000;
+  return Date.now() - parseUtcMs(iso) < 24 * 60 * 60 * 1000;
 }
 
 // Aggregate a worker list by origin country so the inline
@@ -385,6 +407,16 @@ function DealCard({
   const filled  = group.filter((d) => COMMITTED.has(d.status))
                        .reduce((s, d) => s + (d.worker_count ?? 0), 0);
   const fillPct = requested > 0 ? Math.min(100, Math.round((filled / requested) * 100)) : 0;
+  // Earliest created_at among the still-proposed deals — drives
+  // the centre-circle countdown. The most-urgent proposed deal
+  // expires first, so this is the timer the contractor should see.
+  const proposedDeals = group.filter((d) => PROPOSED.has(d.status));
+  const oldestProposedAt = proposedDeals.length > 0
+    ? proposedDeals
+        .map((d) => d.created_at)
+        .filter((c): c is string => !!c)
+        .sort()[0]
+    : null;
   const matchPct      = search?.best_fill_pct ?? -1;
   const matchWorkers  = matchPct > 0 && requested > 0
     ? Math.min(requested, Math.round(matchPct / 100 * requested))
@@ -569,15 +601,32 @@ function DealCard({
 
         {/* ── Centre column: state illustration + blurb ─────────── */}
         <div className="md:col-span-4 p-4 sm:p-5 flex flex-col items-center justify-center gap-3 text-center bg-slate-50/40 md:border-s md:border-e md:border-slate-100 border-t md:border-t-0">
-          <div className={`w-16 h-16 rounded-full flex items-center justify-center ${meta.illoCls}`}>
-            <Illo className={`h-7 w-7 ${state === 'awaiting' ? 'animate-pulse' : ''}`} />
-          </div>
+          {/* When the deal(s) are in `proposed` and at least one
+              proposed deal exists, the centre circle becomes the
+              corp-response countdown (HH:MM:SS). 48h from the
+              earliest proposed deal's created_at. After 0 it
+              renders 00:00:00 with an "admin notified" line. */}
+          {state === 'proposed' && oldestProposedAt ? (
+            <div className="w-24 h-24 rounded-full bg-amber-50 border-4 border-amber-200 flex items-center justify-center">
+              <CorpResponseCountdown
+                createdAtIso={oldestProposedAt}
+                responseHours={CORP_RESPONSE_HOURS}
+                size="compact"
+                tone="amber"
+              />
+            </div>
+          ) : (
+            <div className={`w-16 h-16 rounded-full flex items-center justify-center ${meta.illoCls}`}>
+              <Illo className={`h-7 w-7 ${state === 'awaiting' ? 'animate-pulse' : ''}`} />
+            </div>
+          )}
           <CentreBlurb
             state={state}
             awaitingN={group.filter((d) => d.status === 'corp_committed').length}
             proposedN={group.filter((d) => PROPOSED.has(d.status)).length}
             inFieldN={group.filter((d) => IN_FIELD.has(d.status)).length}
             corpsTotal={group.length}
+            oldestProposedAt={oldestProposedAt}
           />
         </div>
 
@@ -599,7 +648,7 @@ function DealCard({
               </div>
               {group
                 .slice()
-                .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+                .sort((a, b) => parseUtcMs(b.created_at) - parseUtcMs(a.created_at))
                 .map((d, idx) => {
                   // Anonymous "תאגיד N" until the contractor approves
                   // → then swap to the real company name once the
@@ -1022,22 +1071,36 @@ function DealChat({ dealId }: { dealId: string }) {
   );
 }
 
-function CentreBlurb({ state, awaitingN, proposedN, inFieldN, corpsTotal }: {
-  state:      CardState;
-  awaitingN:  number; // corps in corp_committed
-  proposedN:  number; // corps still in proposed/counter_proposed
-  inFieldN:   number; // corps in accepted/active/reporting
-  corpsTotal: number; // total corps reached
+function CentreBlurb({ state, awaitingN, proposedN, inFieldN, corpsTotal, oldestProposedAt }: {
+  state:             CardState;
+  awaitingN:         number; // corps in corp_committed
+  proposedN:         number; // corps still in proposed/counter_proposed
+  inFieldN:          number; // corps in accepted/active/reporting
+  corpsTotal:        number; // total corps reached
+  oldestProposedAt?: string | null; // earliest created_at of a still-proposed deal
 }) {
+  // Centre-circle countdown lives at the call site (replaces the
+  // icon visually) — here we just describe what the contractor
+  // is looking at + handle the expired-state copy switch.
+  const expired = !!oldestProposedAt
+    && (new Date(oldestProposedAt).getTime() + CORP_RESPONSE_HOURS * 3_600_000) <= Date.now();
+
   switch (state) {
     // Stage 1 — corps notified, none has committed workers yet.
     case 'proposed':
-      return (
+      return expired ? (
+        <div className="space-y-1">
+          <p className="text-base font-bold text-slate-700">
+            {corpsTotal === 1 ? 'תאגיד אחד' : `${corpsTotal} תאגידים`} עברו את חלון התגובה
+          </p>
+          <p className="text-xs text-slate-500">לא התקבל מענה — נטפל בזה</p>
+        </div>
+      ) : (
         <div className="space-y-1">
           <p className="text-base font-bold text-slate-900">
             {corpsTotal === 1 ? 'נמצא תאגיד מתאים' : `נמצאו ${corpsTotal} תאגידים מתאימים`}
           </p>
-          <p className="text-xs text-slate-500">המערכת ממתינה לאישורם</p>
+          <p className="text-xs text-slate-500">תאגיד יענה בתוך החלון הבא</p>
         </div>
       );
     // Stage 2 — at least one corp committed workers, contractor's turn.
@@ -1277,9 +1340,9 @@ export default function ContractorDealsPage() {
   const sorted = useMemo(() => {
     const ts = (c: typeof visible[number]) => {
       const fromDeals = c.deals.length > 0
-        ? Math.max(...c.deals.map((d) => new Date(d.created_at).getTime()))
+        ? Math.max(...c.deals.map((d) => parseUtcMs(d.created_at)))
         : 0;
-      const fromSearch = c.search?.created_at ? new Date(c.search.created_at).getTime() : 0;
+      const fromSearch = c.search?.created_at ? parseUtcMs(c.search.created_at) : 0;
       return Math.max(fromDeals, fromSearch);
     };
     return [...visible].sort((a, b) => {

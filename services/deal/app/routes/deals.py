@@ -1135,6 +1135,101 @@ async def cron_admin_nudge():
     return {"nudged": len(rows)}
 
 
+@router.get("/internal/corp-response-overdue")
+async def cron_corp_response_overdue():
+    """Cron target: deals in 'proposed' state past the corp-response
+    deadline whose admin notification hasn't yet fired.
+
+    The corp has `corp_response_hours` hours from the deal's
+    created_at to commit workers (commit_deal transitions the deal
+    to 'corp_committed'). If they don't, admin gets notified once
+    per deal. Late commits are still allowed — the notification
+    is informational, not blocking.
+
+    Returns the deal payload + admin recipients so the cron in the
+    notification service can compose the SMS and the admin
+    dashboard can render the in-app banner.
+    """
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        hours = _read_setting_int(conn, "corp_response_hours", 48)
+        cur.execute(
+            f"""SELECT d.id, d.contractor_id, d.corporation_id, d.search_id,
+                       d.created_at, d.proposed_admin_notified_at,
+                       TIMESTAMPDIFF(HOUR, d.created_at, NOW()) AS hours_past_deadline_total
+                  FROM deals d
+                 WHERE d.status = 'proposed'
+                   AND d.deleted_at IS NULL
+                   AND d.proposed_admin_notified_at IS NULL
+                   AND d.created_at + INTERVAL {int(hours)} HOUR <= NOW()""",
+        )
+        deals = cur.fetchall()
+        # Admin recipients — phones only (a row with NULL phone is skipped).
+        cur.execute(
+            "SELECT id, phone FROM auth_db.users WHERE role='admin' AND phone IS NOT NULL"
+        )
+        admins = cur.fetchall()
+        return {
+            "hours": hours,
+            "deals": [
+                {
+                    "id":            d["id"],
+                    "contractor_id": d["contractor_id"],
+                    "corporation_id": d["corporation_id"],
+                    "search_id":     d["search_id"],
+                    "created_at":    d["created_at"].isoformat() + "Z" if d["created_at"] else None,
+                    "hours_past":    int(d["hours_past_deadline_total"] or 0) - hours,
+                }
+                for d in deals
+            ],
+            "admins": admins,
+        }
+    finally:
+        conn.close()
+
+
+@router.post("/internal/corp-response-overdue/{deal_id}/mark-notified")
+async def cron_corp_response_overdue_mark(deal_id: str):
+    """Idempotency latch — sets proposed_admin_notified_at so the
+    cron doesn't re-fire the SMS / banner for this deal."""
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """UPDATE deals
+                  SET proposed_admin_notified_at = NOW()
+                WHERE id = %s
+                  AND proposed_admin_notified_at IS NULL""",
+            (deal_id,),
+        )
+        conn.commit()
+        return {"id": deal_id, "rows_affected": cur.rowcount}
+    finally:
+        conn.close()
+
+
+@router.get("/internal/corp-response-overdue/count")
+async def admin_overdue_count():
+    """Lightweight count for the admin dashboard banner — total
+    proposed deals past the corp-response deadline (notified or
+    not). Used by the admin banner to decide whether to render."""
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        hours = _read_setting_int(conn, "corp_response_hours", 48)
+        cur.execute(
+            f"""SELECT COUNT(*) AS n
+                  FROM deals d
+                 WHERE d.status = 'proposed'
+                   AND d.deleted_at IS NULL
+                   AND d.created_at + INTERVAL {int(hours)} HOUR <= NOW()""",
+        )
+        return {"count": int(cur.fetchone()["n"]), "hours": hours}
+    finally:
+        conn.close()
+
+
 @router.get("/{deal_id}/workers")
 def get_deal_workers(
     deal_id: str,

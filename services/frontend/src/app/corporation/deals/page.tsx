@@ -53,9 +53,21 @@ type EnrichedDeal = Deal & {
   requested_count?: number;
 };
 
+// MySQL TIMESTAMP serializes as "YYYY-MM-DD HH:MM:SS" (no Z) and
+// JS parses such strings as local time — but the DB value is UTC.
+// Normalise so deal age / sort positions reflect real elapsed time
+// regardless of the browser's locale.
+function parseUtcMs(iso?: string): number {
+  if (!iso) return NaN;
+  let s = iso.trim();
+  if (s.includes(' ') && !s.includes('T')) s = s.replace(' ', 'T');
+  if (!/[Zz]$|[+-]\d{2}:?\d{2}$/.test(s)) s = s + 'Z';
+  return new Date(s).getTime();
+}
+
 function fmt(iso?: string) {
   if (!iso) return '—';
-  return new Date(iso).toLocaleDateString('he-IL');
+  return new Date(parseUtcMs(iso)).toLocaleDateString('he-IL');
 }
 
 function DealTileSkeleton() {
@@ -101,6 +113,21 @@ function CorporationDealsPageContent() {
     if (filter === 'proposed') return d.status === 'proposed';
     const group = DEAL_STATUS_GROUP[filter as Exclude<DealFilter, 'all'>];
     return group ? group.includes(d.status) : false;
+  });
+  // Sort: proposed deals first, ordered by oldest created_at (so
+  // the corp deals with the smallest time-remaining are at the top
+  // and they handle the most-urgent contractor requests first).
+  // Non-proposed deals keep their natural reverse-chrono order.
+  const sortedFiltered = [...filtered].sort((a, b) => {
+    const aIsProposed = a.status === 'proposed';
+    const bIsProposed = b.status === 'proposed';
+    if (aIsProposed && !bIsProposed) return -1;
+    if (!aIsProposed && bIsProposed) return 1;
+    if (aIsProposed && bIsProposed) {
+      // Older first → smaller remaining time first.
+      return parseUtcMs(a.created_at) - parseUtcMs(b.created_at);
+    }
+    return parseUtcMs(b.created_at) - parseUtcMs(a.created_at);
   });
   const pendingCount = deals.filter((d) => d.status === 'proposed').length;
 
