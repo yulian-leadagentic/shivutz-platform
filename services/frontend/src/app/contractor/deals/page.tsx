@@ -268,6 +268,11 @@ interface StateMeta {
   illoCls:  string;
   IlloIcon: typeof Bell;
   cardRing: string;
+  // Optional accent strip painted along the card's left edge (visual
+  // left — `end` side in RTL). Used by the closed/success state to
+  // give the settled card a strong "this one's done" marker without
+  // tinting the whole body.
+  accentEdge?: string;
 }
 
 const STATE_META: Record<CardState, StateMeta> = {
@@ -311,6 +316,7 @@ const STATE_META: Record<CardState, StateMeta> = {
     badge: 'עסקה נסגרה ואושרה', badgeCls: 'bg-emerald-500 text-white',
     illoCls: 'bg-emerald-500 text-white', IlloIcon: CheckCircle2,
     cardRing: 'border-emerald-400 ring-2 ring-emerald-200',
+    accentEdge: 'bg-emerald-500',
   },
   cancelled: {
     badge: 'בוטל', badgeCls: 'bg-rose-100 text-rose-700',
@@ -493,7 +499,12 @@ function DealCard({
   const showCancelOthers = isFullyFilled && cancellableOthers.length > 0;
 
   return (
-    <div className={`rounded-2xl border ${meta.cardRing} bg-white shadow-sm overflow-hidden`}>
+    <div className={`relative rounded-2xl border ${meta.cardRing} bg-white shadow-sm overflow-hidden`}>
+      {meta.accentEdge && (
+        // Visual left edge in RTL (`end` side) — solid colour strip.
+        // The card's `overflow-hidden` clips it to the rounded corners.
+        <div className={`absolute inset-y-0 end-0 w-1.5 ${meta.accentEdge}`} aria-hidden="true" />
+      )}
       <div className="grid grid-cols-1 md:grid-cols-12">
 
         {/* ── Meta column (first in DOM → right in RTL) ────────── */}
