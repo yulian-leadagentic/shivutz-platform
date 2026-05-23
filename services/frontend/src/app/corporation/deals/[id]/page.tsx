@@ -617,7 +617,7 @@ function CorporationDealPageInner() {
         <div>
           <div className="flex items-center gap-2 flex-wrap">
             <h1 className="text-2xl font-bold text-slate-900">עסקה #{dealRef(id)}</h1>
-            <StatusBadge status={deal.status} />
+            <StatusBadge status={deal.status} perspective="corporation" />
           </div>
           <p className="text-sm text-slate-500 mt-0.5">נוצרה: {fmtDate(deal.created_at)}</p>
         </div>

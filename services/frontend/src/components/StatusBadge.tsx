@@ -7,6 +7,11 @@ interface StatusConfig {
   variant: BadgeVariant;
 }
 
+// Default labels — written from the contractor / admin / neutral
+// point of view. The corporation page passes perspective="corporation"
+// to override the entries that read as third-person from the corp's
+// own screen (e.g. "תאגיד הגיב" makes sense to a contractor reading
+// "the other side responded" — not to a corp reading about itself).
 const STATUS_MAP: Record<string, StatusConfig> = {
   // Job request statuses
   open:               { label: 'פתוח',           variant: 'default' },
@@ -36,13 +41,31 @@ const STATUS_MAP: Record<string, StatusConfig> = {
   approved:           { label: 'מאושר',          variant: 'success' },
 };
 
+// Corp-screen overrides. Only override statuses that read awkwardly
+// when the corp is looking at its own deal; everything else falls
+// through to STATUS_MAP.
+const CORPORATION_OVERRIDES: Record<string, StatusConfig> = {
+  // Corp has already committed workers — from the corp's own POV
+  // the deal is now sitting on the contractor's desk for approval.
+  corp_committed:    { label: 'ממתין לאישור קבלן', variant: 'warning' },
+  // Corp cancelled their own deal — "by the corp" is impersonal.
+  cancelled_by_corp: { label: 'בוטלה על ידך',       variant: 'destructive' },
+};
+
+type Perspective = 'contractor' | 'corporation' | 'admin';
+
 interface StatusBadgeProps {
   status: string;
   className?: string;
+  /** Whose screen is rendering this. Switches labels that are
+   *  written in third-person to a first-person variant on the
+   *  matching side. Defaults to the neutral / contractor labels. */
+  perspective?: Perspective;
 }
 
-export default function StatusBadge({ status, className }: StatusBadgeProps) {
-  const config = STATUS_MAP[status] ?? { label: status, variant: 'secondary' as BadgeVariant };
+export default function StatusBadge({ status, className, perspective }: StatusBadgeProps) {
+  const override = perspective === 'corporation' ? CORPORATION_OVERRIDES[status] : undefined;
+  const config = override ?? STATUS_MAP[status] ?? { label: status, variant: 'secondary' as BadgeVariant };
   return (
     <Badge variant={config.variant} className={className}>
       {config.label}
