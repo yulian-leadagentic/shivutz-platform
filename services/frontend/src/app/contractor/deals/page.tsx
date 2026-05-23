@@ -33,6 +33,7 @@ import { enumApi } from '@/lib/api/enums';
 import { ProfessionIcon } from '@/features/searches/ProfessionIcon';
 import type { Deal, Worker, WorkerSearch, Profession } from '@/types';
 import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import {
   DEAL_FILTER_LABEL,
   heOrigin,
@@ -375,6 +376,7 @@ function DealCard({
 }: DealCardProps) {
   void onReject; // kept on the API for the deal-detail page; not surfaced here
   const [menuOpen, setMenuOpen] = useState(false);
+  const [confirmCancelOthersOpen, setConfirmCancelOthersOpen] = useState(false);
   // Corp contact panel — lazy-fetched once per deal when its row
   // expands AND the deal is past the disclosure point.
   const [corpById, setCorpById] = useState<Record<string, Corporation>>({});
@@ -870,16 +872,26 @@ function DealCard({
                 size="sm"
                 variant="outline"
                 className="w-full h-8 text-xs border-rose-300 text-rose-700 hover:bg-rose-100 font-bold"
-                onClick={() => {
-                  if (!confirm('לסגור את שאר ההצעות? הפעולה תשחרר לתאגידים האחרים את העובדים והאשראי.')) return;
-                  onCancelOthers(cancellableOthers.map((d) => d.id));
-                }}
+                onClick={() => setConfirmCancelOthersOpen(true)}
                 disabled={cancellingOthers}
               >
                 {cancellingOthers
                   ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   : <><XCircle className="h-3.5 w-3.5" /> סגור שאר ההצעות</>}
               </Button>
+              <ConfirmDialog
+                open={confirmCancelOthersOpen}
+                title="סגירת שאר ההצעות"
+                message="הפעולה תשחרר לתאגידים האחרים את העובדים. האם להמשיך?"
+                confirmLabel="סגור הצעות"
+                cancelLabel="ביטול"
+                variant="destructive"
+                onConfirm={() => {
+                  setConfirmCancelOthersOpen(false);
+                  onCancelOthers(cancellableOthers.map((d) => d.id));
+                }}
+                onCancel={() => setConfirmCancelOthersOpen(false)}
+              />
             </div>
           )}
         </div>
