@@ -285,6 +285,13 @@ function CorporationDealPageInner() {
   const [deal, setDeal]         = useState<Deal | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [allWorkers, setAllWorkers] = useState<Worker[]>([]);
+  // Workers actually attached to this deal (from /deals/{id}/workers).
+  // Used to render the post-commit "עובדים משובצים" card directly,
+  // without relying on a roster-fetch + selectedIds filter (which
+  // turns up empty when the corp roster lookup misses an assigned
+  // worker for any reason — and leaves the corp staring at an
+  // empty section on a deal that does have workers attached).
+  const [assignedWorkers, setAssignedWorkers] = useState<Worker[]>([]);
   const [slots, setSlots]       = useState<ProfessionSlot[]>([]);
   const { professionMap: profMap } = useEnums();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -338,6 +345,11 @@ function CorporationDealPageInner() {
         setDeal(d);
         setMessages(msgs);
         setAllWorkers(allW);
+        // `stubs` from /deals/{id}/workers carries full worker rows
+        // for the corp's own deal — keep them around so we can render
+        // the post-commit "עובדים משובצים" card straight from this
+        // list instead of intersecting with the broader roster.
+        setAssignedWorkers(stubs as Worker[]);
 
         // Pre-select originally proposed workers
         const proposedIds = new Set<string>((stubs as { id: string }[]).map((s) => s.id));
@@ -649,10 +661,22 @@ function CorporationDealPageInner() {
       {isAuthorized && (commitResult?.grace_period_expires_at || deal.payment_status === 'authorized') && (
         <GraceBadge
           dealId={id}
+          // Prefer the real backend timestamp (deal.scheduled_capture_at
+          // is the auto-capture moment = grace window end). The
+          // commitResult.grace_period_expires_at is only available in
+          // the same session as the commit; on a reload of an already-
+          // authorized deal it would otherwise fall back to a fake
+          // "Date.now() + 48h" — making the badge always read ~47:59
+          // remaining regardless of when the freeze actually started.
           graceExpiresAt={
             commitResult?.grace_period_expires_at
+            ?? deal.scheduled_capture_at
             ?? new Date(Date.now() + 48 * 3600_000).toISOString()
           }
+          // When the J5 hold was placed — pin this to the contractor-
+          // approval moment so the corp can see exactly when their
+          // 48h cancel window opened.
+          freezeStartedAt={deal.approved_at ?? deal.corp_committed_at ?? null}
           onCancelled={handleCancelled}
         />
       )}
@@ -817,15 +841,15 @@ function CorporationDealPageInner() {
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2 text-base">
                 <Users className="h-4 w-4 text-brand-600" />
-                עובדים משובצים
+                עובדים משובצים ({assignedWorkers.length})
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {allWorkers.filter((w) => selectedIds.has(w.id)).length === 0 ? (
+              {assignedWorkers.length === 0 ? (
                 <p className="text-slate-500 text-sm text-center py-4">אין עובדים משובצים</p>
               ) : (
                 <div className="space-y-2">
-                  {allWorkers.filter((w) => selectedIds.has(w.id)).map((w) => (
+                  {assignedWorkers.map((w) => (
                     <div key={w.id} className="flex items-center gap-3 p-2.5 rounded-xl bg-slate-50 border border-slate-100">
                       <div className="h-8 w-8 rounded-full bg-brand-100 flex items-center justify-center text-xs font-bold text-brand-700 shrink-0">
                         {w.first_name?.[0]}{w.last_name?.[0]}
