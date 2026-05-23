@@ -239,7 +239,17 @@ function classifyCard(deals: EnrichedDeal[], search?: WorkerSearch): CardState {
   if (search?.status === 'cancelled')                   return 'cancelled';
   if (deals.some((d) => ACTION_REQUIRED.has(d.status))) return 'awaiting';
   if (deals.some((d) => IN_FIELD.has(d.status)))        return 'toClose';
-  if (deals.some((d) => PROPOSED.has(d.status)))        return 'proposed';
+
+  // Settled — at least one deal closed AND every non-cancelled deal
+  // is closed. Cancelled siblings (rejected corps, withdrawn bids)
+  // are cleanup; the headline is "you got this filled". Without this
+  // branch a search with one closed + one cancelled deal falls into
+  // the default 'proposed' bucket and shows the misleading "ממתין
+  // לאישור התאגיד" badge even though everything is settled.
+  const live = deals.filter((d) => !CANCELLED_S.has(d.status));
+  if (live.length > 0 && live.every((d) => CLOSED.has(d.status))) return 'closed';
+
+  if (deals.some((d) => PROPOSED.has(d.status))) return 'proposed';
   if (deals.length === 0) {
     // best_fill_pct: -1 = match not yet run, 0 = ran but no
     // matches, >0 = matched (this last case shouldn't sit here
@@ -248,7 +258,6 @@ function classifyCard(deals: EnrichedDeal[], search?: WorkerSearch): CardState {
     // it as "still searching").
     return (search?.best_fill_pct ?? -1) === 0 ? 'noMatch' : 'searching';
   }
-  if (deals.every((d) => CLOSED.has(d.status)))    return 'closed';
   if (deals.every((d) => CANCELLED_S.has(d.status))) return 'cancelled';
   return 'proposed';
 }
@@ -295,9 +304,13 @@ const STATE_META: Record<CardState, StateMeta> = {
     cardRing: 'border-slate-200',
   },
   closed:    {
-    badge: 'נסגרה', badgeCls: 'bg-emerald-50 text-emerald-700',
-    illoCls: 'bg-emerald-50 text-emerald-600', IlloIcon: CheckCircle2,
-    cardRing: 'border-slate-200',
+    // Final state — corp delivered, contractor confirmed close.
+    // Prominent emerald so a settled deal reads as a clear "done /
+    // success" at-a-glance and isn't visually confused with the
+    // sky-blue "waiting on corp" bucket.
+    badge: 'עסקה נסגרה ואושרה', badgeCls: 'bg-emerald-500 text-white',
+    illoCls: 'bg-emerald-500 text-white', IlloIcon: CheckCircle2,
+    cardRing: 'border-emerald-400 ring-2 ring-emerald-200',
   },
   cancelled: {
     badge: 'בוטל', badgeCls: 'bg-rose-100 text-rose-700',
