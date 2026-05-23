@@ -68,9 +68,13 @@ export function CorpResponseCountdown({
   size = 'lg',
   tone = 'amber',
 }: CorpResponseCountdownProps) {
-  // Tick every second so seconds visibly count down.
+  // Tick every second so seconds visibly count down. useNow returns
+  // 0 during SSR + the first client render to keep hydration HTML
+  // identical — skip the countdown render until the effect has
+  // populated a real timestamp, otherwise we'd briefly paint a
+  // bogus huge "remaining" value computed against now=0.
   const now = useNow(1000);
-  if (!createdAtIso) return null;
+  if (!createdAtIso || now === 0) return null;
   const created = parseUtcMs(createdAtIso);
   if (!Number.isFinite(created)) return null;
   const deadline   = created + responseHours * 3_600_000;
