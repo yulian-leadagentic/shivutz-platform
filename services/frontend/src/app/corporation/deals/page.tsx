@@ -119,14 +119,27 @@ function classifyCorpDeal(status: string): CorpCardState {
 
 // Per-card ring + small status pill — colour-coded to the
 // CorpCardState. AMBER stands out so the corp's eye lands on
-// the deals where they owe a response.
+// the deals where they owe a response. Settled outcomes
+// (closed / cancelled) get a prominent ring + accent edge
+// too so the corp scans wins and losses at a glance.
 const CARD_RING: Record<CorpCardState, string> = {
   actionNeeded: 'border-amber-400 ring-2 ring-amber-100',
   committed:    'border-sky-300 ring-1 ring-sky-100',
   engaged:      'border-emerald-400 ring-2 ring-emerald-100',
-  closed:       'border-slate-200',
-  cancelled:    'border-slate-200 opacity-80',
+  closed:       'border-emerald-400 ring-2 ring-emerald-200',
+  cancelled:    'border-rose-400 ring-2 ring-rose-100',
   unknown:      'border-slate-200',
+};
+
+// Saturated coloured edge bar on the visual left side (RTL `end`),
+// keyed to CorpCardState. Empty string = no bar painted.
+const CARD_ACCENT: Record<CorpCardState, string> = {
+  actionNeeded: '',
+  committed:    '',
+  engaged:      '',
+  closed:       'bg-emerald-500',
+  cancelled:    'bg-rose-500',
+  unknown:      '',
 };
 
 const STATUS_PILL: Record<string, { cls: string; label: string }> = {
@@ -137,13 +150,13 @@ const STATUS_PILL: Record<string, { cls: string; label: string }> = {
   accepted:                { cls: 'bg-emerald-500 text-white border-emerald-500',             label: 'אושר' },
   active:                  { cls: 'bg-emerald-500 text-white border-emerald-500',             label: 'פעיל' },
   reporting:               { cls: 'bg-emerald-500 text-white border-emerald-500',             label: 'מדווח' },
-  closed:                  { cls: 'bg-emerald-50 text-emerald-700 border-emerald-200',        label: 'נסגרה' },
-  completed:               { cls: 'bg-emerald-50 text-emerald-700 border-emerald-200',        label: 'הושלמה' },
-  rejected:                { cls: 'bg-rose-50 text-rose-700 border-rose-200',                 label: 'נדחתה' },
-  cancelled_by_corp:       { cls: 'bg-rose-50 text-rose-700 border-rose-200',                 label: 'בוטלה על ידך' },
-  cancelled_by_contractor: { cls: 'bg-rose-50 text-rose-700 border-rose-200',                 label: 'בוטל ע״י קבלן' },
-  cancelled:               { cls: 'bg-rose-50 text-rose-700 border-rose-200',                 label: 'בוטלה' },
-  expired:                 { cls: 'bg-slate-100 text-slate-500 border-slate-200',             label: 'פג תוקף' },
+  closed:                  { cls: 'bg-emerald-500 text-white border-emerald-500',             label: 'עסקה נסגרה' },
+  completed:               { cls: 'bg-emerald-500 text-white border-emerald-500',             label: 'עסקה נסגרה' },
+  rejected:                { cls: 'bg-rose-500 text-white border-rose-500',                   label: 'לא נסגרה' },
+  cancelled_by_corp:       { cls: 'bg-rose-500 text-white border-rose-500',                   label: 'לא נסגרה' },
+  cancelled_by_contractor: { cls: 'bg-rose-500 text-white border-rose-500',                   label: 'לא נסגרה' },
+  cancelled:               { cls: 'bg-rose-500 text-white border-rose-500',                   label: 'לא נסגרה' },
+  expired:                 { cls: 'bg-rose-500 text-white border-rose-500',                   label: 'לא נסגרה' },
 };
 
 type EnrichedDeal = Deal & {
@@ -342,6 +355,7 @@ function CorporationDealsPageContent() {
             const remainingMs   = parseUtcMs(d.created_at) + CORP_RESPONSE_HOURS * 3_600_000 - Date.now();
             const stillInWindow = remainingMs > 0;
             const isFresh       = isPending && Date.now() - parseUtcMs(d.created_at) < 12 * 60 * 60 * 1000;
+            const accent = CARD_ACCENT[cardState];
             return (
               <Link
                 key={d.id}
@@ -349,6 +363,13 @@ function CorporationDealsPageContent() {
                 className={`group relative block rounded-2xl bg-white shadow-sm
                             hover:shadow-md transition border-2 overflow-hidden ${CARD_RING[cardState]}`}
               >
+                {accent && (
+                  // Coloured strip along the card's visual left edge
+                  // (`end` in RTL). Marks settled outcomes (closed
+                  // emerald / cancelled rose) so the corp can scan
+                  // the list and spot wins vs losses immediately.
+                  <div className={`absolute inset-y-0 end-0 w-1.5 ${accent}`} aria-hidden="true" />
+                )}
                 {/* "חדש" badge — sits above the card top edge */}
                 {isFresh && (
                   <span className="absolute -top-2 end-4 inline-flex items-center gap-1
@@ -429,8 +450,8 @@ function CorporationDealsPageContent() {
                         <div className={`w-16 h-16 rounded-full flex items-center justify-center ${
                           cardState === 'committed'   ? 'bg-sky-100 text-sky-700'
                           : cardState === 'engaged'   ? 'bg-emerald-500 text-white'
-                          : cardState === 'closed'    ? 'bg-emerald-50 text-emerald-600'
-                          : cardState === 'cancelled' ? 'bg-rose-50 text-rose-500'
+                          : cardState === 'closed'    ? 'bg-emerald-500 text-white'
+                          : cardState === 'cancelled' ? 'bg-rose-500 text-white'
                                                       : 'bg-slate-100 text-slate-500'
                         }`}>
                           {cardState === 'committed'   ? <MessageSquare className="h-7 w-7" />
@@ -441,7 +462,8 @@ function CorporationDealsPageContent() {
                         </div>
                         <p className={`text-sm font-bold ${
                           cardState === 'engaged'    ? 'text-emerald-700'
-                          : cardState === 'cancelled' ? 'text-rose-600'
+                          : cardState === 'closed'   ? 'text-emerald-700'
+                          : cardState === 'cancelled' ? 'text-rose-700'
                                                       : 'text-slate-800'
                         }`}>
                           {STATUS_CONTEXT[d.status] ?? d.status}

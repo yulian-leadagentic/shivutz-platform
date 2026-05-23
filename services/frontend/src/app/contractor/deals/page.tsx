@@ -326,6 +326,9 @@ const STATE_META: Record<CardState, StateMeta> = {
 };
 
 // Per-deal compact status pill (sits next to each corp's label).
+// Settled states (closed/cancelled/rejected) are intentionally saturated —
+// once a deal is final the contractor should read its outcome
+// at-a-glance from the corp row, not have to drill in.
 const DEAL_STATUS_PILL: Record<string, { cls: string; label: string }> = {
   proposed:                { cls: 'bg-sky-50 text-sky-700 border-sky-200',                    label: 'ממתין לאישור התאגיד' },
   counter_proposed:        { cls: 'bg-sky-50 text-sky-700 border-sky-200',                    label: 'הצעה נגדית' },
@@ -334,13 +337,13 @@ const DEAL_STATUS_PILL: Record<string, { cls: string; label: string }> = {
   accepted:                { cls: 'bg-emerald-500 text-white border-emerald-500',             label: 'אושר' },
   active:                  { cls: 'bg-emerald-500 text-white border-emerald-500',             label: 'אושר' },
   reporting:               { cls: 'bg-emerald-500 text-white border-emerald-500',             label: 'אושר' },
-  closed:                  { cls: 'bg-emerald-50 text-emerald-700 border-emerald-200',        label: 'נסגרה' },
-  completed:               { cls: 'bg-emerald-50 text-emerald-700 border-emerald-200',        label: 'נסגרה' },
-  rejected:                { cls: 'bg-rose-50 text-rose-700 border-rose-200',                 label: 'התאגיד דחה' },
-  cancelled_by_corp:       { cls: 'bg-rose-50 text-rose-700 border-rose-200',                 label: 'בוטל ע״י תאגיד' },
-  cancelled_by_contractor: { cls: 'bg-rose-50 text-rose-700 border-rose-200',                 label: 'בוטל על ידך' },
-  cancelled:               { cls: 'bg-rose-50 text-rose-700 border-rose-200',                 label: 'בוטל' },
-  expired:                 { cls: 'bg-slate-100 text-slate-500 border-slate-200',             label: 'פג תוקף' },
+  closed:                  { cls: 'bg-emerald-500 text-white border-emerald-500',             label: 'נסגרה' },
+  completed:               { cls: 'bg-emerald-500 text-white border-emerald-500',             label: 'נסגרה' },
+  rejected:                { cls: 'bg-rose-500 text-white border-rose-500',                   label: 'לא נסגר' },
+  cancelled_by_corp:       { cls: 'bg-rose-500 text-white border-rose-500',                   label: 'לא נסגר' },
+  cancelled_by_contractor: { cls: 'bg-rose-500 text-white border-rose-500',                   label: 'לא נסגר' },
+  cancelled:               { cls: 'bg-rose-500 text-white border-rose-500',                   label: 'לא נסגר' },
+  expired:                 { cls: 'bg-rose-500 text-white border-rose-500',                   label: 'לא נסגר' },
 };
 
 function DealTileSkeleton() {
@@ -704,13 +707,24 @@ function DealCard({
                   const canViewCorp     = d.status === 'corp_committed';
                   const canConfirmClose = IN_FIELD.has(d.status);
                   const fresh = canViewCorp && isRecent(d.created_at);
-                  // Pre-approve = amber ("action needed, good news");
-                  // post-approve = emerald ("approved, in motion").
+                  // Settled outcomes also get a coloured ring so the
+                  // contractor can scan the corp list and see win /
+                  // loss without reading the pill text:
+                  //   pre-approve (corp committed) = amber
+                  //   post-approve, in flight       = light emerald
+                  //   closed / completed            = saturated emerald
+                  //   any cancellation / rejected   = saturated rose
+                  const isSettledClosed = CLOSED.has(d.status);
+                  const isCancelled     = CANCELLED_S.has(d.status);
                   const rowRing = canViewCorp
                     ? 'border-amber-400 bg-amber-50/70 ring-2 ring-amber-100'
                     : canConfirmClose
                       ? 'border-emerald-400 bg-emerald-50/70 ring-2 ring-emerald-100'
-                      : 'border-slate-200';
+                      : isSettledClosed
+                        ? 'border-emerald-500 bg-emerald-50 ring-2 ring-emerald-200'
+                        : isCancelled
+                          ? 'border-rose-400 bg-rose-50 ring-2 ring-rose-100'
+                          : 'border-slate-200';
                   return (
                     <div key={d.id}
                          className={`rounded-lg border overflow-hidden ${rowRing}`}>
