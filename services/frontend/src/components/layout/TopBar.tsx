@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { LogOut, ChevronDown, Building2, HardHat, Check, Loader2 } from 'lucide-react';
 import { getAccessToken, decodeJwtPayload, clearTokens, saveTokens } from '@/lib/auth';
-import { authApi, otpApi, type Membership } from '@/lib/api';
+import { otpApi, type Membership } from '@/lib/api';
 import { useAuth } from '@/lib/AuthContext';
 import MobileNavDrawer from './MobileNavDrawer';
 
@@ -110,7 +110,7 @@ export default function TopBar({ mobileNav }: TopBarProps = {}) {
   // brief logout-redirect window) shouldn't 401-fetch.
   useEffect(() => {
     if (!isLoggedIn) { setMemberships([]); return; }
-    authApi.memberships()
+    otpApi.myMemberships()
       .then((res) => setMemberships(res.memberships ?? []))
       .catch(() => setMemberships([]));
   }, [isLoggedIn, entityId]);
