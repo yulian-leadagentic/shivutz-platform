@@ -8,6 +8,7 @@ import {
   BadgeCheck, CircleAlert, UserCheck, CreditCard, ShieldCheck,
 } from 'lucide-react';
 import { dealApi, workerApi, paymentApi } from '@/lib/api';
+import { orgApi } from '@/lib/api/organizations';
 import { dealRef } from '@/lib/utils';
 import { useEnums } from '@/features/enums/EnumsContext';
 import { Button } from '@/components/ui/button';
@@ -23,6 +24,7 @@ import {
   CommitEngagementModal, consumePendingLowProfile,
 } from '@/features/payment/CommitEngagementModal';
 import { GraceBadge } from '@/features/payment/GraceBadge';
+import { CapturedBadge } from '@/features/payment/CapturedBadge';
 
 function expLabel(w: Worker) {
   return EXP_LABELS[w.experience_range ?? ''] ?? (w.experience_years ? `${w.experience_years} שנים` : '—');
@@ -312,6 +314,19 @@ function CorporationDealPageInner() {
   const [paymentMethods, setPaymentMethods]     = useState<PaymentMethod[]>([]);
   const [pmLoading, setPmLoading]               = useState(true);
   const [commitResult, setCommitResult]         = useState<CommitEngagementResult | null>(null);
+  // Captured-state extras — loaded lazily once we know payment_status
+  // has moved to 'captured'. Held separately so the deal payload
+  // doesn't have to round-trip through the payment service on every
+  // open of an authorized deal.
+  const [capturedTx, setCapturedTx] = useState<
+    | { amount?: number | null;
+        auth_code?: string | null;
+        invoice_url?: string | null;
+        invoice_number?: string | null;
+        charged_at?: string | null; }
+    | null
+  >(null);
+  const [corpEmail, setCorpEmail] = useState<string | null>(null);
   // Pattern A modal state
   const [showCommitModal, setShowCommitModal]   = useState(false);
   const [previewAmount, setPreviewAmount]       = useState<number | undefined>(undefined);
@@ -335,75 +350,83 @@ function CorporationDealPageInner() {
     async function init() {
       setLoading(true);
       try {
-        const [d, msgs, stubs, allW] = await Promise.all([
+        // Always-needed payload — three small reads in parallel, no
+        // per-worker fan-out. `dealApi.workers` already returns full
+        // Worker rows for the corp's own deal, so we can paint the
+        // assigned-workers card immediately without a second hop.
+        const [d, msgs, stubs] = await Promise.all([
           dealApi.get(id),
           dealApi.messages(id).catch(() => [] as Message[]),
           dealApi.workers(id).catch(() => []),
-          workerApi.list().catch(() => [] as Worker[]),
         ]);
 
         setDeal(d);
         setMessages(msgs);
-        setAllWorkers(allW);
-        // `stubs` from /deals/{id}/workers carries full worker rows
-        // for the corp's own deal — keep them around so we can render
-        // the post-commit "עובדים משובצים" card straight from this
-        // list instead of intersecting with the broader roster.
         setAssignedWorkers(stubs as Worker[]);
+        setSelectedIds(new Set<string>((stubs as { id: string }[]).map((s) => s.id)));
 
-        // Pre-select originally proposed workers
-        const proposedIds = new Set<string>((stubs as { id: string }[]).map((s) => s.id));
-        setSelectedIds(proposedIds);
+        // The expensive part — full corp roster + per-worker details
+        // for slot-building — is ONLY needed in the proposed flow,
+        // where the corp toggles workers on/off to commit the deal.
+        // Once the deal is past `proposed` (committed/approved/closed)
+        // the assignment is fixed and we're just rendering it.
+        // Previously this fan-out ran every time, dragging the open
+        // of a 7-worker deal to several seconds.
+        if (d.status === 'proposed') {
+          const [allW, proposedDetails] = await Promise.all([
+            workerApi.list().catch(() => [] as Worker[]),
+            Promise.allSettled(
+              (stubs as { id: string }[]).map((s) => workerApi.get(s.id))
+            ),
+          ]);
+          setAllWorkers(allW);
 
-        // Fetch full details of proposed workers to understand required professions
-        const proposedDetails = await Promise.allSettled(
-          [...proposedIds].map((wid) => workerApi.get(wid))
-        );
-        const proposed = proposedDetails
-          .filter((r): r is PromiseFulfilledResult<Worker> => r.status === 'fulfilled')
-          .map((r) => r.value);
+          const proposed = proposedDetails
+            .filter((r): r is PromiseFulfilledResult<Worker> => r.status === 'fulfilled')
+            .map((r) => r.value);
 
-        // Build the slot from the contractor's REQUEST (line item) — this is
-        // the authoritative source of "what's needed". Fall back to grouping
-        // the proposed workers if the deal API didn't enrich the line-item
-        // info (older deals).
-        //
-        // IMPORTANT: use `d` (the just-fetched payload), not the `deal`
-        // state — `setDeal(d)` above schedules an async update, so on this
-        // tick `deal` is still its previous value (null on first mount).
-        // Reading `deal.profession_type` would throw and bubble up to the
-        // outer catch as "שגיאה בטעינת העסקה" for every fresh open.
-        const builtSlots: ProfessionSlot[] = [];
-        const dealAny = d as unknown as { profession_type?: string; profession_he?: string; requested_count?: number };
-        if (dealAny.profession_type && dealAny.requested_count) {
-          const code = dealAny.profession_type;
-          builtSlots.push({
-            profCode: code,
-            profName: dealAny.profession_he || profMap[code] || code,
-            needed: dealAny.requested_count,
-            minExpMonths: 0,
-            proposedWorkerIds: new Set(proposed.filter((w) => w.profession_type === code).map((w) => w.id)),
-          });
-        } else {
-          // Legacy fallback: group proposed workers by their profession
-          const slotMap = new Map<string, { workers: Worker[] }>();
-          for (const w of proposed) {
-            const code = w.profession_type;
-            if (!slotMap.has(code)) slotMap.set(code, { workers: [] });
-            slotMap.get(code)!.workers.push(w);
-          }
-          for (const [code, { workers: pws }] of slotMap) {
-            const minExp = Math.max(0, ...pws.map((w) => expMonths(w)));
+          // Build the slot from the contractor's REQUEST (line item) —
+          // this is the authoritative source of "what's needed". Fall
+          // back to grouping the proposed workers if the deal API
+          // didn't enrich the line-item info (older deals).
+          //
+          // Use `d` (the just-fetched payload), not the `deal` state —
+          // setDeal(d) above schedules an async update so `deal` is
+          // still null on this tick. Reading `deal.profession_type`
+          // would throw and bubble up to the outer catch as a generic
+          // "שגיאה בטעינת העסקה" on every fresh open.
+          const builtSlots: ProfessionSlot[] = [];
+          const dealAny = d as unknown as { profession_type?: string; profession_he?: string; requested_count?: number };
+          if (dealAny.profession_type && dealAny.requested_count) {
+            const code = dealAny.profession_type;
             builtSlots.push({
               profCode: code,
-              profName: profMap[code] ?? code,
-              needed: pws.length,
-              minExpMonths: minExp,
-              proposedWorkerIds: new Set(pws.map((w) => w.id)),
+              profName: dealAny.profession_he || profMap[code] || code,
+              needed: dealAny.requested_count,
+              minExpMonths: 0,
+              proposedWorkerIds: new Set(proposed.filter((w) => w.profession_type === code).map((w) => w.id)),
             });
+          } else {
+            // Legacy fallback: group proposed workers by their profession
+            const slotMap = new Map<string, { workers: Worker[] }>();
+            for (const w of proposed) {
+              const code = w.profession_type;
+              if (!slotMap.has(code)) slotMap.set(code, { workers: [] });
+              slotMap.get(code)!.workers.push(w);
+            }
+            for (const [code, { workers: pws }] of slotMap) {
+              const minExp = Math.max(0, ...pws.map((w) => expMonths(w)));
+              builtSlots.push({
+                profCode: code,
+                profName: profMap[code] ?? code,
+                needed: pws.length,
+                minExpMonths: minExp,
+                proposedWorkerIds: new Set(pws.map((w) => w.id)),
+              });
+            }
           }
+          setSlots(builtSlots);
         }
-        setSlots(builtSlots);
       } catch {
         setError('שגיאה בטעינת העסקה');
       } finally {
@@ -415,6 +438,49 @@ function CorporationDealPageInner() {
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  // Captured-state extras — fetched lazily once we know the deal's
+  // J5 hold has actually been charged. Two parallel reads:
+  //   * payment transaction → invoice URL, auth code, charged_at
+  //   * org_db.corporations row → contact_email (where the receipt
+  //     was mailed; the corp's own user might not see emails so we
+  //     surface the recipient explicitly).
+  // Skipped entirely for non-captured deals so the deal page open
+  // stays cheap in the common authorized + proposed flows.
+  useEffect(() => {
+    if (!deal) return;
+    if (deal.payment_status !== 'captured') return;
+    if (capturedTx) return; // already loaded for this deal
+    const txId = deal.active_payment_transaction_id;
+    if (!txId) return;
+    paymentApi.getTransaction(txId)
+      .then((tx) => setCapturedTx({
+        amount:         tx.total_amount ?? deal.payment_amount_estimated ?? null,
+        auth_code:      tx.provider_response_code ?? null,
+        invoice_url:    tx.invoice_url ?? null,
+        invoice_number: tx.invoice_number ?? null,
+        charged_at:     tx.charged_at ?? null,
+      }))
+      .catch(() => {
+        // Best-effort — if the transaction read fails we still
+        // surface a stub CapturedBadge with whatever we know from
+        // the deal record. No retry; admin can dig in via the
+        // payments dashboard if a real value is missing.
+        setCapturedTx({
+          amount:         deal.payment_amount_estimated ?? null,
+          auth_code:      null,
+          invoice_url:    null,
+          invoice_number: null,
+          charged_at:     null,
+        });
+      });
+    if (deal.corporation_id && !corpEmail) {
+      orgApi.getCorporation(deal.corporation_id)
+        .then((c) => setCorpEmail(c.contact_email ?? null))
+        .catch(() => { /* recipient line will simply not render */ });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deal?.payment_status, deal?.active_payment_transaction_id, deal?.corporation_id]);
 
   // Only scroll the message thread to bottom when NEW messages arrive (user
   // sent or received). Skip the initial mount + skip same-length re-renders;
@@ -663,8 +729,24 @@ function CorporationDealPageInner() {
         </div>
       </div>
 
-      {/* ── Grace period badge (visible while authorized) ── */}
-      {isAuthorized && (commitResult?.grace_period_expires_at || deal.payment_status === 'authorized') && (
+      {/* ── Payment status banner ── two states:
+            captured  → green CapturedBadge with charge amount,
+                         clearance auth code, invoice download +
+                         recipient email
+            authorized → GraceBadge with countdown to auto-capture
+                         + "cancel without charge" button
+          Anything else (no payment yet, cancelled hold) renders
+          nothing — the assignment / commit UI carries the load. */}
+      {deal.payment_status === 'captured' ? (
+        <CapturedBadge
+          amount={capturedTx?.amount ?? deal.payment_amount_estimated ?? null}
+          authCode={capturedTx?.auth_code ?? null}
+          invoiceUrl={capturedTx?.invoice_url ?? null}
+          invoiceNumber={capturedTx?.invoice_number ?? null}
+          recipientEmail={corpEmail}
+          chargedAtIso={capturedTx?.charged_at ?? null}
+        />
+      ) : isAuthorized && (commitResult?.grace_period_expires_at || deal.payment_status === 'authorized') ? (
         <GraceBadge
           dealId={id}
           // Prefer the real backend timestamp (deal.scheduled_capture_at
@@ -685,7 +767,7 @@ function CorporationDealPageInner() {
           freezeStartedAt={deal.approved_at ?? deal.corp_committed_at ?? null}
           onCancelled={handleCancelled}
         />
-      )}
+      ) : null}
 
       {/* ── Contractor notes ── */}
       {deal.notes && (

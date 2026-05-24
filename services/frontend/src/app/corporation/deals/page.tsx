@@ -234,19 +234,28 @@ function CorporationDealsPageContent() {
     const group = DEAL_STATUS_GROUP[filter as Exclude<DealFilter, 'all'>];
     return group ? group.includes(d.status) : false;
   });
-  // Sort: proposed deals first, ordered by oldest created_at (so
-  // the corp deals with the smallest time-remaining are at the top
-  // and they handle the most-urgent contractor requests first).
-  // Non-proposed deals keep their natural reverse-chrono order.
+  // Sort buckets, top → bottom:
+  //   1. proposed         — your turn, most urgent (oldest first so
+  //                         the deal closest to its deadline floats up)
+  //   2. corp_committed   — waiting on the contractor; still on your
+  //                         radar so it shouldn't get buried under
+  //                         settled deals (oldest first → "longest
+  //                         we've been waiting" surfaces)
+  //   3. everything else  — settled, in flight, cancelled: natural
+  //                         reverse-chrono order
+  const sortPriority = (s: string): number => {
+    if (s === 'proposed')       return 0;
+    if (s === 'corp_committed') return 1;
+    return 2;
+  };
   const sortedFiltered = [...filtered].sort((a, b) => {
-    const aIsProposed = a.status === 'proposed';
-    const bIsProposed = b.status === 'proposed';
-    if (aIsProposed && !bIsProposed) return -1;
-    if (!aIsProposed && bIsProposed) return 1;
-    if (aIsProposed && bIsProposed) {
-      // Older first → smaller remaining time first.
-      return parseUtcMs(a.created_at) - parseUtcMs(b.created_at);
-    }
+    const pa = sortPriority(a.status);
+    const pb = sortPriority(b.status);
+    if (pa !== pb) return pa - pb;
+    // Within "your turn" or "waiting on contractor", show the oldest
+    // first so the deal that's been sitting longest is most visible.
+    if (pa < 2) return parseUtcMs(a.created_at) - parseUtcMs(b.created_at);
+    // Settled / everything else: most recent on top.
     return parseUtcMs(b.created_at) - parseUtcMs(a.created_at);
   });
   const pendingCount = deals.filter((d) => d.status === 'proposed').length;
@@ -429,8 +438,10 @@ function CorporationDealsPageContent() {
                     </div>
                   </div>
 
-                  {/* ── Centre column: countdown for proposed, state
-                       illustration otherwise ── */}
+                  {/* ── Centre column: countdown for proposed AND for
+                       corp_committed (where the corp is waiting on the
+                       contractor's 7-day approval window). Static state
+                       illustration for everything else. ── */}
                   <div className="md:col-span-4 p-4 sm:p-5 flex flex-col items-center justify-center gap-3 text-center bg-slate-50/40 md:border-s md:border-e md:border-slate-100 border-t md:border-t-0">
                     {isPending ? (
                       <>
@@ -448,6 +459,24 @@ function CorporationDealsPageContent() {
                           </p>
                           <p className="text-xs text-amber-600 font-semibold">
                             {STATUS_CONTEXT[d.status] ?? 'דרושה החלטה'}
+                          </p>
+                        </div>
+                      </>
+                    ) : cardState === 'committed' && d.expires_at ? (
+                      <>
+                        <div className="w-24 h-24 rounded-full bg-sky-50 border-4 border-sky-200 flex items-center justify-center">
+                          <CorpResponseCountdown
+                            deadlineIso={d.expires_at}
+                            size="compact"
+                            tone="sky"
+                          />
+                        </div>
+                        <div className="space-y-0.5">
+                          <p className="text-sm font-extrabold text-sky-700">
+                            ממתין לאישור הקבלן
+                          </p>
+                          <p className="text-xs text-sky-600 font-semibold">
+                            {STATUS_CONTEXT[d.status] ?? 'הצעת עובדים נשלחה לקבלן'}
                           </p>
                         </div>
                       </>

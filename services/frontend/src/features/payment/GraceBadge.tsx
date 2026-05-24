@@ -141,7 +141,12 @@ export function GraceBadge({ dealId, graceExpiresAt, freezeStartedAt, onCancelle
           {expired ? (
             <div className="flex items-center gap-2 text-xs text-emerald-700 mt-1.5">
               <Clock className="h-3.5 w-3.5 shrink-0" />
-              <span>חלון הביטול הסתיים — החיוב מתבצע כעת</span>
+              {/* Honest copy: the window closed, but we can't claim
+                  "charging now" — capture runs on a cron, may have
+                  already happened (deal will switch to CapturedBadge
+                  once payment_status flips), may be queued. Don't
+                  promise a state we can't verify in this render. */}
+              <span>חלון הביטול נסגר — החיוב יבוצע בקרוב</span>
             </div>
           ) : (
             <div className="flex items-center gap-2 mt-1.5">

@@ -29,10 +29,15 @@ function parseUtcMs(iso: string): number {
 
 interface CorpResponseCountdownProps {
   /** Server-side deal.created_at — ISO string. The deadline is
-   *  created_at + responseHours. */
+   *  created_at + responseHours. Ignored if `deadlineIso` is set. */
   createdAtIso?:    string | null;
-  /** corp_response_hours setting (server-supplied, default 48). */
+  /** corp_response_hours setting (server-supplied, default 48).
+   *  Ignored if `deadlineIso` is set. */
   responseHours?:   number;
+  /** Explicit deadline ISO — overrides the createdAt + responseHours
+   *  computation. Use for corp_committed deals whose contractor-
+   *  approval window is stored as `expires_at` (7 days, not 48h). */
+  deadlineIso?:     string | null;
   /** Audience-specific copy under the clock when expired. */
   expiredLabel?:    string;
   /** Audience-specific copy under the clock when still running. */
@@ -41,9 +46,9 @@ interface CorpResponseCountdownProps {
    *  Use on the per-row corp dashboard where space is tight. */
   size?:            'lg' | 'compact';
   /** Override tone — defaults to amber while running, slate when
-   *  expired. Pass 'emerald' on rows that have already moved on
-   *  (corp committed late — keep the row visually "resolved"). */
-  tone?:            'amber' | 'emerald' | 'rose';
+   *  expired. 'sky' = passive wait (waiting on counter-party),
+   *  'emerald' = resolved/late-commit, 'rose' = critical. */
+  tone?:            'amber' | 'emerald' | 'rose' | 'sky';
 }
 
 function pad(n: number): string {
@@ -63,6 +68,7 @@ function fmt(remainingMs: number): { hh: string; mm: string; ss: string; expired
 export function CorpResponseCountdown({
   createdAtIso,
   responseHours = 48,
+  deadlineIso,
   expiredLabel,
   runningLabel,
   size = 'lg',
@@ -74,10 +80,18 @@ export function CorpResponseCountdown({
   // populated a real timestamp, otherwise we'd briefly paint a
   // bogus huge "remaining" value computed against now=0.
   const now = useNow(1000);
-  if (!createdAtIso || now === 0) return null;
-  const created = parseUtcMs(createdAtIso);
-  if (!Number.isFinite(created)) return null;
-  const deadline   = created + responseHours * 3_600_000;
+  if (now === 0) return null;
+  let deadline: number;
+  if (deadlineIso) {
+    deadline = parseUtcMs(deadlineIso);
+  } else if (createdAtIso) {
+    const created = parseUtcMs(createdAtIso);
+    if (!Number.isFinite(created)) return null;
+    deadline = created + responseHours * 3_600_000;
+  } else {
+    return null;
+  }
+  if (!Number.isFinite(deadline)) return null;
   const remaining  = deadline - now;
   const { hh, mm, ss, expired } = fmt(remaining);
 
@@ -85,6 +99,7 @@ export function CorpResponseCountdown({
     ? 'text-slate-500'
     : tone === 'emerald' ? 'text-emerald-700'
     : tone === 'rose'    ? 'text-rose-600'
+    : tone === 'sky'     ? 'text-sky-700'
                          : 'text-amber-700';
 
   if (size === 'compact') {
