@@ -367,8 +367,14 @@ function CorporationDealPageInner() {
         // the authoritative source of "what's needed". Fall back to grouping
         // the proposed workers if the deal API didn't enrich the line-item
         // info (older deals).
+        //
+        // IMPORTANT: use `d` (the just-fetched payload), not the `deal`
+        // state — `setDeal(d)` above schedules an async update, so on this
+        // tick `deal` is still its previous value (null on first mount).
+        // Reading `deal.profession_type` would throw and bubble up to the
+        // outer catch as "שגיאה בטעינת העסקה" for every fresh open.
         const builtSlots: ProfessionSlot[] = [];
-        const dealAny = deal as unknown as { profession_type?: string; profession_he?: string; requested_count?: number };
+        const dealAny = d as unknown as { profession_type?: string; profession_he?: string; requested_count?: number };
         if (dealAny.profession_type && dealAny.requested_count) {
           const code = dealAny.profession_type;
           builtSlots.push({
@@ -712,13 +718,27 @@ function CorporationDealPageInner() {
                     <div className="flex gap-2 shrink-0">
                       <Button
                         size="sm"
-                        className="bg-green-600 hover:bg-green-700 font-medium"
+                        className={`font-medium ${
+                          totalSelected === 0
+                            // Pre-selection: gray, disabled, prompts the
+                            // corp to actually pick workers first. Avoids
+                            // the previous "אשר ושבץ 0 עובדים" wording
+                            // that read as an active CTA on 0 selection.
+                            ? 'bg-slate-300 text-slate-600 hover:bg-slate-300 cursor-not-allowed'
+                            // Once workers are picked, the button promotes
+                            // to the green commit CTA. Stays disabled
+                            // (still green) when slots aren't fully
+                            // filled — the inline hint below explains why.
+                            : 'bg-green-600 hover:bg-green-700 text-white'
+                        }`}
                         onClick={handleAccept}
                         disabled={accepting || rejecting || !canAccept}
                       >
                         {accepting
                           ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />שולח...</>
-                          : <><CheckCircle className="h-3.5 w-3.5" />אשר ושבץ {totalSelected} עובדים</>}
+                          : totalSelected === 0
+                            ? <><CheckCircle className="h-3.5 w-3.5" />בחר עובדים לשיבוץ</>
+                            : <><CheckCircle className="h-3.5 w-3.5" />אשר ושבץ {totalSelected} עובדים</>}
                       </Button>
                       <Button size="sm" variant="destructive"
                         onClick={() => setShowRejectConfirm(true)}
