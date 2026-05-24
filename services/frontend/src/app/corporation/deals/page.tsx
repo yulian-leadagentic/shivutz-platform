@@ -215,7 +215,13 @@ function CorporationDealsPageContent() {
     setLoading(true); setError(false);
     dealApi.list({ page_size: 200 })
       .then((res) => setDeals(res.items as EnrichedDeal[]))
-      .catch(() => setError(true))
+      .catch((err) => {
+        // Log so we can actually diagnose the next failure — the
+        // generic "לא ניתן לטעון את העסקאות" copy on its own
+        // tells the user nothing and tells us less.
+        console.error('[corporation/deals] list failed:', err);
+        setError(true);
+      })
       .finally(() => setLoading(false));
   }
   useEffect(() => { reload(); }, []);
