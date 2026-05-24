@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, FormEvent, useRef, Suspense } from 'react';
+import { useState, useRef, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Loader2, ArrowLeft, UserPlus } from 'lucide-react';
@@ -152,8 +152,14 @@ function LoginPageInner() {
     router.push('/select-entity');
   }
 
-  async function handleSendOtp(e: FormEvent) {
-    e.preventDefault(); setError('');
+  // All three of these can be triggered from either an onSubmit
+  // (Enter key in an input) OR an explicit button onClick (so we can
+  // use type="button" and bypass the form submission path entirely
+  // — fix for a reported case where the page full-reloaded to
+  // /login? on every click, i.e. preventDefault wasn't winning the
+  // race against native form submission).
+  async function handleSendOtp(e?: { preventDefault?: () => void }) {
+    e?.preventDefault?.(); setError('');
     if (!phone.trim()) { setError('יש להזין מספר טלפון'); return; }
     setLoading(true);
     try {
@@ -167,8 +173,8 @@ function LoginPageInner() {
     } finally { setLoading(false); }
   }
 
-  async function handleOtpLogin(e: FormEvent) {
-    e.preventDefault(); setError('');
+  async function handleOtpLogin(e?: { preventDefault?: () => void }) {
+    e?.preventDefault?.(); setError('');
     if (code.length !== 6) { setError('קוד האימות חייב להכיל 6 ספרות'); return; }
     setLoading(true);
     try {
@@ -182,8 +188,8 @@ function LoginPageInner() {
     } finally { setLoading(false); }
   }
 
-  async function handleEmailLogin(e: FormEvent) {
-    e.preventDefault(); setError('');
+  async function handleEmailLogin(e?: { preventDefault?: () => void }) {
+    e?.preventDefault?.(); setError('');
     if (!email.trim()) { setError('יש להזין כתובת אימייל'); return; }
     if (!password)     { setError('יש להזין סיסמה'); return; }
     setLoading(true);
@@ -226,8 +232,19 @@ function LoginPageInner() {
 
           <CardContent>
             {/* ── SMS (primary) ─────────────────────────────────────────── */}
+            {/* action="#" + button type="button": defense in depth.
+                If preventDefault loses a race against native form
+                submission, the form posts to "#" instead of /login?
+                — so the page doesn't full-reload and lose state
+                (which is what was sending the user back to the
+                phone entry on every click). */}
             {mode === 'sms' && otpPhase === 'phone' && (
-              <form onSubmit={handleSendOtp} className="flex flex-col gap-4" noValidate>
+              <form
+                action="#"
+                onSubmit={(e) => { e.preventDefault(); handleSendOtp(); }}
+                className="flex flex-col gap-4"
+                noValidate
+              >
                 <Input
                   label="מספר טלפון נייד"
                   type="tel"
@@ -242,7 +259,13 @@ function LoginPageInner() {
                     {error}
                   </p>
                 )}
-                <Button type="submit" size="lg" disabled={loading} className="w-full">
+                <Button
+                  type="button"
+                  size="lg"
+                  disabled={loading}
+                  className="w-full"
+                  onClick={() => handleSendOtp()}
+                >
                   {loading
                     ? <><Loader2 className="h-4 w-4 animate-spin" /><span>שולח...</span></>
                     : copy.existingLabel}
@@ -251,7 +274,12 @@ function LoginPageInner() {
             )}
 
             {mode === 'sms' && otpPhase === 'code' && (
-              <form onSubmit={handleOtpLogin} className="flex flex-col gap-4" noValidate>
+              <form
+                action="#"
+                onSubmit={(e) => { e.preventDefault(); handleOtpLogin(); }}
+                className="flex flex-col gap-4"
+                noValidate
+              >
                 <p className="text-sm text-slate-600 text-center">
                   קוד אימות נשלח אל <span className="font-medium" dir="ltr">{normPhone}</span>
                 </p>
@@ -274,7 +302,13 @@ function LoginPageInner() {
                     {error}
                   </p>
                 )}
-                <Button type="submit" size="lg" disabled={loading} className="w-full">
+                <Button
+                  type="button"
+                  size="lg"
+                  disabled={loading}
+                  className="w-full"
+                  onClick={() => handleOtpLogin()}
+                >
                   {loading
                     ? <><Loader2 className="h-4 w-4 animate-spin" /><span>מאמת...</span></>
                     : 'כניסה'}
@@ -291,7 +325,12 @@ function LoginPageInner() {
 
             {/* ── Email (secondary, hidden behind a small link) ─────────── */}
             {mode === 'email' && (
-              <form onSubmit={handleEmailLogin} className="flex flex-col gap-4" noValidate>
+              <form
+                action="#"
+                onSubmit={(e) => { e.preventDefault(); handleEmailLogin(); }}
+                className="flex flex-col gap-4"
+                noValidate
+              >
                 <Input
                   label="כתובת אימייל"
                   type="email"
@@ -315,7 +354,13 @@ function LoginPageInner() {
                     {error}
                   </p>
                 )}
-                <Button type="submit" size="lg" disabled={loading} className="w-full mt-1">
+                <Button
+                  type="button"
+                  size="lg"
+                  disabled={loading}
+                  className="w-full mt-1"
+                  onClick={() => handleEmailLogin()}
+                >
                   {loading
                     ? <><Loader2 className="h-4 w-4 animate-spin" /><span>מתחבר...</span></>
                     : 'כניסה'}
