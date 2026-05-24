@@ -22,8 +22,17 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="he" dir="rtl" className={heebo.variable}>
-      <body className="font-sans antialiased bg-slate-50 text-slate-900">
+    // `suppressHydrationWarning` ONLY on <html>/<body>: browser
+    // extensions routinely inject root-level attributes after SSR
+    // (Lusha → lusha-extension-installed, Grammarly →
+    // data-new-gr-c-s-check-loaded, dark-mode add-ons → class
+    // tweaks). React 19 treats those as hydration mismatches and
+    // tears down the whole tree, which silently drops event
+    // handlers — login form clicks then appear to do nothing.
+    // The flag is scoped to the root tags only so genuine
+    // mismatches inside the app still surface as warnings.
+    <html lang="he" dir="rtl" className={heebo.variable} suppressHydrationWarning>
+      <body className="font-sans antialiased bg-slate-50 text-slate-900" suppressHydrationWarning>
         <AuthProvider>
           <EnumsProvider>{children}</EnumsProvider>
         </AuthProvider>
