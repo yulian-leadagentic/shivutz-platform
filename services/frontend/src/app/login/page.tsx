@@ -118,33 +118,39 @@ function LoginPageInner() {
       return;
     }
 
-    // With an intent filter, try to auto-resolve.
+    // Intent filter behavior:
+    //
+    //   intent + 0 matches  → "no account for that role, register?"
+    //   intent + exactly 1  → auto-pick, frictionless single-entity case
+    //   intent + 2+ matches → SHOW the picker filtered to matching set
+    //                         so the user explicitly chooses which of
+    //                         their entities of that role they want to
+    //                         enter as. Previously we silently picked
+    //                         matching[0], locking users out of all
+    //                         their other entities of the same role
+    //                         (re-login auto-picked the same one).
+    //   no intent           → render the unfiltered picker
     if (intent) {
       const matching = memberships.filter((m) => m.entity_type === intent);
       if (matching.length === 0) {
-        // The user has an account but not for this role. Tell them
-        // exactly that, with a link to register instead of bouncing
-        // them through a picker that won't help.
         setError(copy.noAccountHint ?? 'מספר זה אינו רשום עבור התפקיד שבחרת.');
         setLoading(false);
         return;
       }
-      // 1+ matching memberships — auto-pick the first one. The user
-      // came in via a role-specific CTA so they want to enter as
-      // that role; choosing which specific entity within the role is
-      // a separate concern that an in-app entity-switcher can handle
-      // later if/when users actually have multiple orgs of the same
-      // role.
-      try {
-        const tokens = await otpApi.selectEntity(matching[0].entity_id, matching[0].entity_type);
-        saveTokens(tokens.access_token, tokens.refresh_token);
-        refreshAuth();
-        router.push(intent === 'corporation' ? '/corporation/dashboard' : '/contractor/dashboard');
-        return;
-      } catch {
-        // Fall through to the picker if select-entity fails for any
-        // reason (server hiccup, race, etc.) — that's the safe path.
+      if (matching.length === 1) {
+        try {
+          const tokens = await otpApi.selectEntity(matching[0].entity_id, matching[0].entity_type);
+          saveTokens(tokens.access_token, tokens.refresh_token);
+          refreshAuth();
+          router.push(intent === 'corporation' ? '/corporation/dashboard' : '/contractor/dashboard');
+          return;
+        } catch {
+          // Fall through to the picker on any failure — safer than
+          // surfacing a confusing error to the user.
+        }
       }
+      // matching.length > 1 → hand off to the picker. The select-entity
+      // page reads `pending_intent` and renders the filtered list.
     }
 
     sessionStorage.setItem('pending_memberships', JSON.stringify(memberships));

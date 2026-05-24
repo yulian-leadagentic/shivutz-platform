@@ -87,5 +87,19 @@ for i in $(seq 1 60); do
   sleep 1
 done
 
+# 6. Pre-warm the critical auth-flow paths. Without this, the
+#    first user to hit /select-entity after a flush eats the
+#    22-second Turbopack cold compile and assumes login is
+#    broken. Curling each route here moves the cost off the
+#    user. Background so they compile in parallel; we don't
+#    block on the result because the dev server is already
+#    serving everything else.
+info "Pre-warming auth-flow routes..."
+for path in /login /login?intent=contractor /login?intent=corporation /select-entity /contractor/dashboard /corporation/dashboard; do
+  curl -fsS "${URL%/}${path}" > /dev/null 2>&1 &
+done
+wait
+ok "Pre-warmed"
+
 echo
 ok "Cache flushed. Now hard-refresh your browser (Ctrl+Shift+R)."
