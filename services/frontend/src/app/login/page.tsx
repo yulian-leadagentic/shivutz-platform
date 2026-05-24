@@ -62,10 +62,27 @@ const COPY = {
   },
 } as const;
 
+// Build marker — bump this whenever something user-facing on this
+// page changes so you can confirm the user's browser is on the
+// expected bundle. Look for [login v=…] in their console.
+const LOGIN_BUILD = 'option-a-2026-05-24';
+
 function LoginPageInner() {
   const router        = useRouter();
   const searchParams  = useSearchParams();
   const { refreshAuth } = useAuth();
+
+  // One-shot, on first render. Visible in DevTools → Console
+  // so we can ask "does it say option-a-2026-05-24?" to confirm
+  // a cached old bundle is or isn't the cause of the next bug.
+  if (typeof window !== 'undefined') {
+    const w = window as unknown as { __loginBuildLogged?: boolean };
+    if (!w.__loginBuildLogged) {
+      // eslint-disable-next-line no-console
+      console.log(`[login v=${LOGIN_BUILD}] forms have action="#", buttons type="button" + onClick`);
+      w.__loginBuildLogged = true;
+    }
+  }
 
   // The `intent` param tells us which CTA the user clicked on the
   // landing page. We use it to (1) show role-specific copy on this
