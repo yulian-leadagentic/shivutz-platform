@@ -29,6 +29,14 @@ services:
       # native fs events through bind-mounts. With these on, save → HMR.
       WATCHPACK_POLLING: "true"
       CHOKIDAR_USEPOLLING: "true"
+      # Bump Node's V8 heap from the ~1.5GB default to 4GB. Without
+      # this, long-lived dev sessions (Watchpack scanning ~150 routes
+      # over polling + Turbopack chunk cache + HMR state) eventually
+      # hit "Watchpack Error (initial scan): ENOMEM" — the process
+      # runs out of heap mid-compile and starts dropping HTTP
+      # connections (browser sees ERR_CONNECTION_RESET). Container
+      # itself has 7.5GB; the bottleneck was the per-process limit.
+      NODE_OPTIONS: "--max-old-space-size=4096"
 
   # Force stub SMS locally so OTPs don't drain the Vonage quota or fail
   # silently when the account is rate-limited / out of credits. The
