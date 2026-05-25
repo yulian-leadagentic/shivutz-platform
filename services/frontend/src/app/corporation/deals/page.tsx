@@ -6,7 +6,7 @@
 // region, date, and a CTA whose copy depends on whether the corp
 // still owes a response (אשר / דחה) or it's already in progress (פרטים).
 
-import { useEffect, useMemo, useState, Suspense } from 'react';
+import { useEffect, useMemo, useRef, useState, Suspense } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import {
@@ -81,18 +81,23 @@ const FILTER_TONE: Record<Filter, {
   },
 };
 
+// Secondary line rendered under the centre illustration. Keep
+// wording aligned with the customer-facing flow document — every
+// settled-success deal reads "עסקה נסגרה", every dead deal reads
+// the same Hebrew phrase as the status pill ("לא נסגרה") so the
+// corp doesn't see two different names for the same outcome.
 const STATUS_CONTEXT: Record<string, string> = {
   proposed:          'נשלחה אליך — דרושה החלטה',
   corp_committed:    'הצעת עובדים נשלחה לקבלן',
   approved:          'אושר ע״י הקבלן — עובדים בשטח',
   active:            'בעבודה',
   reporting:         'מדווח',
-  closed:            'הושלמה',
-  completed:         'הושלמה',
-  rejected:          'נדחתה',
+  closed:            'עסקה נסגרה',
+  completed:         'עסקה נסגרה',
+  rejected:          'נדחתה ע״י הקבלן',
   cancelled_by_corp: 'בוטלה על ידך',
   cancelled_by_contractor: 'בוטל ע״י הקבלן',
-  expired:           'פג תוקף',
+  expired:           'בוטלה עקב חוסר תגובה',
 };
 
 // Corp-perspective state classifier — drives the card ring,
@@ -211,18 +216,38 @@ function CorporationDealsPageContent() {
     urlFilter && Object.keys(FILTER_LABELS).includes(urlFilter) ? urlFilter : 'all'
   );
 
+  // `inFlight` tracks the latest reload() invocation so an older,
+  // slower response can't clobber the state set by a newer one. Two
+  // failure modes this defends against:
+  //   1. React 19 StrictMode fires the mount effect twice in dev;
+  //      both fetches resolve in arbitrary order. Without this, the
+  //      later-resolving response wins, and if it failed (rate-limit,
+  //      transient 401, anything), the user saw deals briefly then
+  //      the error banner replaced them.
+  //   2. User mashes the "נסה שוב" retry button; old + new requests
+  //      race the same way.
+  const inFlightRef = useRef(0);
+
   function reload() {
+    const myToken = ++inFlightRef.current;
     setLoading(true); setError(false);
     dealApi.list({ page_size: 200 })
-      .then((res) => setDeals(res.items as EnrichedDeal[]))
+      .then((res) => {
+        if (inFlightRef.current !== myToken) return; // stale
+        setDeals(res.items as EnrichedDeal[]);
+      })
       .catch((err) => {
+        if (inFlightRef.current !== myToken) return; // stale
         // Log so we can actually diagnose the next failure — the
         // generic "לא ניתן לטעון את העסקאות" copy on its own
         // tells the user nothing and tells us less.
         console.error('[corporation/deals] list failed:', err);
         setError(true);
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (inFlightRef.current !== myToken) return; // stale
+        setLoading(false);
+      });
   }
   useEffect(() => { reload(); }, []);
 
