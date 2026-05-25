@@ -30,6 +30,29 @@ export interface DealReport {
   submitted_at: string;
 }
 
+/** Row returned by GET /admin/deals — the listing endpoint. Lighter
+ *  than `AdminDealDetail` (no reports, commission, or full worker
+ *  list) but carries party contacts + stuck-stage so the admin can
+ *  scan the table without clicking through. */
+export interface AdminDealRow extends Deal {
+  contractor_name:    string | null;
+  corporation_name:   string | null;
+  contractor_contact: { name: string | null; phone: string | null; email: string | null } | null;
+  corporation_contact: { name: string | null; phone: string | null; email: string | null } | null;
+  profession_type?:   string | null;
+  profession_he?:     string | null;
+  region?:            string | null;
+  requested_count?:   number | null;
+  worker_count?:      number;
+  /** Which party is currently blocking the deal from moving forward.
+   *  Drives the dashboard's filter chips + the "stuck on X" label
+   *  on each row. */
+  stuck_on:           'corp' | 'contractor' | 'system' | 'admin' | 'neither' | 'unknown';
+  /** Hours the deal has been in its current stage. Drives the
+   *  "stuck for Xh" hint + colour escalation as it grows. */
+  hours_in_stage:     number | null;
+}
+
 export interface AdminDealDetail extends Deal {
   contractor_name: string;
   corporation_name: string;
@@ -279,7 +302,34 @@ export const adminApi = {
 
   allOrgs: () => apiFetch<PendingOrg[]>('/admin/approved-orgs'),
 
+  /** @deprecated — calls the role-scoped deal service /deals list,
+   *  which doesn't carry party names. Use `allDealsForAdmin()`
+   *  below for the dashboard, that hits the admin service's
+   *  /admin/deals endpoint with full party enrichment. */
   allDeals: () => apiFetch<Deal[]>('/deals'),
+
+  /**
+   * Every deal in the system, enriched for the admin dashboard:
+   *  - contractor_name + contractor_contact (name/phone/email)
+   *  - corporation_name + corporation_contact
+   *  - profession_he, region, requested_count from the search row
+   *  - stuck_on: 'corp' | 'contractor' | 'system' | 'admin' | 'neither'
+   *  - hours_in_stage: how long the deal has been in its current
+   *    stage (drives the "stuck for X hours" hint)
+   *
+   * `stuck` and `status` filters are server-side (we ship the
+   * narrowed list to the browser, not the full 65-row dump). The
+   * frontend can also sort/filter further client-side once loaded.
+   */
+  allDealsForAdmin: (params?: { stuck?: string; status?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.stuck)  qs.set('stuck',  params.stuck);
+    if (params?.status) qs.set('status', params.status);
+    const tail = qs.toString();
+    return apiFetch<{ items: AdminDealRow[]; total: number }>(
+      `/admin/deals${tail ? `?${tail}` : ''}`,
+    );
+  },
 
   getDeal: (id: string) => apiFetch<AdminDealDetail>(`/admin/deals/${id}`),
 
