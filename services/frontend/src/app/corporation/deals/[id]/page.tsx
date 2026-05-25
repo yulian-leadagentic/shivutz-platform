@@ -749,22 +749,23 @@ function CorporationDealPageInner() {
       ) : isAuthorized && (commitResult?.grace_period_expires_at || deal.payment_status === 'authorized') ? (
         <GraceBadge
           dealId={id}
-          // Prefer the real backend timestamp (deal.scheduled_capture_at
-          // is the auto-capture moment = grace window end). The
-          // commitResult.grace_period_expires_at is only available in
-          // the same session as the commit; on a reload of an already-
-          // authorized deal it would otherwise fall back to a fake
-          // "Date.now() + 48h" — making the badge always read ~47:59
-          // remaining regardless of when the freeze actually started.
+          // End of the 48h cancel-without-charge window =
+          // auto-capture moment. Real backend timestamp wins; the
+          // in-session commitResult is preferred since it carries
+          // the post-server-side-rounding value; fallback is the
+          // estimated value if neither is available yet (rare).
           graceExpiresAt={
             commitResult?.grace_period_expires_at
             ?? deal.scheduled_capture_at
             ?? new Date(Date.now() + 48 * 3600_000).toISOString()
           }
-          // When the J5 hold was placed — pin this to the contractor-
-          // approval moment so the corp can see exactly when their
-          // 48h cancel window opened.
-          freezeStartedAt={deal.approved_at ?? deal.corp_committed_at ?? null}
+          // J5 hold placed when the corp submitted workers — DIFFERENT
+          // from contractor-approval. Previously we conflated them
+          // under a single "הוקפא ב" line, which read as if the corp's
+          // money got frozen only after the contractor said yes.
+          holdPlacedAt={deal.corp_committed_at ?? null}
+          // When the contractor approved → cancel window opened.
+          approvedAt={deal.approved_at ?? null}
           onCancelled={handleCancelled}
         />
       ) : null}
