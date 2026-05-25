@@ -146,8 +146,35 @@ export default function DealDetailPage() {
       }
     }
     init();
-    pollRef.current = setInterval(loadMessages, 30_000);
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+
+    // Visibility-aware polling — pause when the tab isn't focused
+    // so a stale background tab doesn't churn one of the browser's
+    // 6 concurrent connections per origin against the gateway.
+    // Same pattern as the corp deal detail page.
+    function startPolling() {
+      if (pollRef.current) clearInterval(pollRef.current);
+      pollRef.current = setInterval(loadMessages, 30_000);
+    }
+    function stopPolling() {
+      if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+    }
+    function onVisibility() {
+      if (typeof document === 'undefined') return;
+      if (document.visibilityState === 'visible') { loadMessages(); startPolling(); }
+      else stopPolling();
+    }
+    if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+      startPolling();
+    }
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', onVisibility);
+    }
+    return () => {
+      stopPolling();
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', onVisibility);
+      }
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 

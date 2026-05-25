@@ -434,8 +434,39 @@ function CorporationDealPageInner() {
       }
     }
     init();
-    pollRef.current = setInterval(() => dealApi.messages(id).then(setMessages).catch(() => {}), 30_000);
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+
+    // Visibility-aware message polling. When the tab isn't focused
+    // the corp can't read incoming messages anyway, so the poll is
+    // pure background noise — it occupies one of the browser's 6
+    // concurrent connections per origin and was contributing to
+    // ERR_CONNECTION_RESET on simultaneous requests (auth send-otp,
+    // enums, page chunks). Pause when hidden; refresh-then-resume
+    // when the tab comes back so the corp catches up instantly.
+    const fetchMessages = () => dealApi.messages(id).then(setMessages).catch(() => {});
+    function startPolling() {
+      if (pollRef.current) clearInterval(pollRef.current);
+      pollRef.current = setInterval(fetchMessages, 30_000);
+    }
+    function stopPolling() {
+      if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+    }
+    function onVisibility() {
+      if (typeof document === 'undefined') return;
+      if (document.visibilityState === 'visible') { fetchMessages(); startPolling(); }
+      else stopPolling();
+    }
+    if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+      startPolling();
+    }
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', onVisibility);
+    }
+    return () => {
+      stopPolling();
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', onVisibility);
+      }
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
