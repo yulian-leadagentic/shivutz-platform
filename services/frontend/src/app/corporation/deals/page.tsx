@@ -397,20 +397,20 @@ function CorporationDealsPageContent() {
             const isFresh       = isPending && Date.now() - parseUtcMs(d.created_at) < 12 * 60 * 60 * 1000;
             const accent = CARD_ACCENT[cardState];
             return (
+              // Outer wrapper — `relative` for positioning but NO
+              // overflow-hidden so the "חדש" badge can spill above
+              // the card top edge. The inner div carries the rounded
+              // border + overflow-hidden so the accent-edge strip
+              // still gets clipped to the corners.
               <Link
                 key={d.id}
                 href={`/corporation/deals/${d.id}`}
-                className={`group relative block rounded-2xl bg-white shadow-sm
-                            hover:shadow-md transition border-2 overflow-hidden ${CARD_RING[cardState]}`}
+                className="group relative block"
               >
-                {accent && (
-                  // Coloured strip along the card's visual left edge
-                  // (`end` in RTL). Marks settled outcomes (closed
-                  // emerald / cancelled rose) so the corp can scan
-                  // the list and spot wins vs losses immediately.
-                  <div className={`absolute inset-y-0 end-0 w-1.5 ${accent}`} aria-hidden="true" />
-                )}
-                {/* "חדש" badge — sits above the card top edge */}
+                {/* "חדש" badge — sits above the card top edge.
+                    Outside the overflow-hidden inner div so the
+                    negative `-top-2` doesn't get clipped (previous
+                    bug — the bell icon was cut in half). */}
                 {isFresh && (
                   <span className="absolute -top-2 end-4 inline-flex items-center gap-1
                                   bg-rose-500 text-white text-[10px] font-bold
@@ -419,6 +419,16 @@ function CorporationDealsPageContent() {
                     <Bell className="w-3 h-3" /> חדש
                   </span>
                 )}
+
+                <div className={`relative rounded-2xl bg-white shadow-sm
+                                hover:shadow-md transition border-2 overflow-hidden ${CARD_RING[cardState]}`}>
+                  {accent && (
+                    // Coloured strip along the card's visual left edge
+                    // (`end` in RTL). Marks settled outcomes (closed
+                    // emerald / cancelled rose) so the corp can scan
+                    // the list and spot wins vs losses immediately.
+                    <div className={`absolute inset-y-0 end-0 w-1.5 ${accent}`} aria-hidden="true" />
+                  )}
 
                 <div className="grid grid-cols-1 md:grid-cols-12">
 
@@ -552,6 +562,7 @@ function CorporationDealsPageContent() {
                                                    : <><MessageSquare className="w-4 h-4" /> פרטים וצ׳אט</>}
                     </div>
                   </div>
+                </div>
                 </div>
               </Link>
             );

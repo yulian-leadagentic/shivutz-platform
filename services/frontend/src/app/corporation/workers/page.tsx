@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Loader2, Search, Plus, AlertTriangle, Check, X, Pencil, Clock } from 'lucide-react';
 import { workerApi, orgApi } from '@/lib/api';
 import { getAccessToken, decodeJwtPayload } from '@/lib/auth';
+import { useAuth } from '@/lib/AuthContext';
 import type { Worker } from '@/types';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -301,6 +302,11 @@ function EmpNumCell({ workerId, value, onSaved }: {
 
 // ── Main page ──────────────────────────────────────────────────────────────
 export default function WorkersPage() {
+  // entityId watched by the fetch effect — if the corp switches
+  // entity (TopBar dropdown) or comes back from the Excel-import
+  // page after just attaching workers, the list re-fetches so the
+  // newly-attached rows show up without a hard reload.
+  const { entityId } = useAuth();
   const [workers, setWorkers]             = useState<Worker[]>([]);
   const [loading, setLoading]             = useState(true);
   const [search, setSearch]               = useState('');
@@ -328,16 +334,17 @@ export default function WorkersPage() {
   );
 
   useEffect(() => {
+    setLoading(true);
     workerApi.list().then(setWorkers).catch(console.error).finally(() => setLoading(false));
 
     // Detect pending-approval state for the banner.
     const token = getAccessToken();
     if (!token) return;
     const payload = decodeJwtPayload(token);
-    const entityId = (payload?.entity_id || payload?.org_id) as string | undefined;
+    const tokenEntityId = (payload?.entity_id || payload?.org_id) as string | undefined;
     const entType  = (payload?.entity_type || payload?.org_type) as string | undefined;
-    if (entityId && entType === 'corporation') {
-      orgApi.getCorporation(entityId)
+    if (tokenEntityId && entType === 'corporation') {
+      orgApi.getCorporation(tokenEntityId)
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         .then((c: any) => {
           // Pending iff not yet tier_2. tier_2 is the only setting that
@@ -346,7 +353,10 @@ export default function WorkersPage() {
         })
         .catch(() => {});
     }
-  }, []);
+  // Re-run when entityId changes (switched entity via TopBar /
+  // came back from Excel import). Otherwise the list shows the
+  // OLD entity's workers and the just-imported rows look missing.
+  }, [entityId]);
 
   // Update employee_number in local state after inline save
   function handleEmpNumSaved(workerId: string, newVal: string) {
