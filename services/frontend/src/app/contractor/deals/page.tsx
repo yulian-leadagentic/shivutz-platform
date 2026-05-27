@@ -419,6 +419,20 @@ function DealCard({
   const startDate   = search?.start_date;
   const endDate     = search?.end_date;
   const originCodes = search?.origin_preference ?? [];
+  // When the contractor actually submitted the search. Different
+  // from the work dates (start_date/end_date which are when the
+  // job is scheduled to happen); user asked for a clear "submitted
+  // on" line so they can see at a glance how long ago they kicked
+  // off this request. Fall back to the oldest associated deal's
+  // created_at if the search row wasn't joined (legacy rows).
+  const submittedAt = search?.created_at
+                   ?? (group.length > 0
+                        ? group.reduce<string | null>((oldest, d) => {
+                            if (!d.created_at) return oldest;
+                            if (!oldest) return d.created_at;
+                            return parseUtcMs(d.created_at) < parseUtcMs(oldest) ? d.created_at : oldest;
+                          }, null)
+                        : null);
 
   const state = classifyCard(group, search);
   const meta  = STATE_META[state];
@@ -597,6 +611,12 @@ function DealCard({
           </div>
 
           <div className="space-y-1.5 text-sm text-slate-700">
+            {submittedAt && (
+              <div className="flex items-center gap-2 text-[12px] text-slate-500">
+                <Calendar className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                <span>הוגשה ב-<span className="font-semibold text-slate-700">{fmt(submittedAt ?? undefined)}</span></span>
+              </div>
+            )}
             {(startDate || endDate) && (
               <div className="flex items-center gap-2">
                 <Calendar className="h-4 w-4 text-slate-400 shrink-0" />
