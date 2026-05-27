@@ -404,6 +404,12 @@ export interface WorkerInput {
   available_region?: string | null;
   available_from?: string | null;
   employee_number?: string | null;
+  /** Explicitly scope to this corp. Belt-and-suspenders against the
+   *  gateway falling back to `users.org_id` when there's no active
+   *  entity context (admin user without a selected entity), which
+   *  on staging pointed at the user's first-signup contractor and
+   *  blew up worker create with "corporation_not_found". */
+  corporation_id?: string;
 }
 
 // Update accepts any known mutable field plus an index signature for

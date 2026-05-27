@@ -3,10 +3,10 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ChevronDown, ArrowLeft, Home, Wrench, Briefcase, Store, Users, Building2, Loader2, LogOut, ShieldCheck } from 'lucide-react';
+import { ChevronDown, ArrowLeft, Home, Wrench, Briefcase, Store, Users, Building2, Loader2 } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
 import { otpApi } from '@/lib/api';
-import { saveTokens, clearTokens } from '@/lib/auth';
+import { saveTokens } from '@/lib/auth';
 
 // Lead-capture button removed from the hero per user feedback —
 // the two role-specific tiles are clearer entry points and the
@@ -72,20 +72,10 @@ const MARKET_CATS = [
 
 export default function HeroSection(_: HeroSectionProps) {
   const router = useRouter();
-  const { isLoggedIn, entityType, role, displayName, refreshAuth } = useAuth();
+  const { isLoggedIn, entityType, refreshAuth } = useAuth();
   // Tracks which tile is currently hot-swapping its entity context.
   // Used to disable both buttons and show a spinner on the active one.
   const [switching, setSwitching] = useState<'contractor' | 'corporation' | null>(null);
-
-  function handleLogout() {
-    clearTokens();
-    // Hard reload — same pattern as TopBar.handleLogout. Without
-    // this, the in-memory AuthContext state (name, isLoggedIn=true)
-    // survives the soft router.push and the header still renders
-    // as if the user is logged in.
-    if (typeof window !== 'undefined') window.location.assign('/');
-    else router.push('/');
-  }
 
   const dashboardOf = (role: 'contractor' | 'corporation') =>
     role === 'corporation' ? '/corporation/dashboard' : '/contractor/dashboard';
@@ -182,47 +172,13 @@ export default function HeroSection(_: HeroSectionProps) {
         style={{ backgroundImage: 'radial-gradient(circle, #fff 1px, transparent 1px)', backgroundSize: '32px 32px' }}
       />
 
-      {/* ── Logged-in strip — name, optional "admin" link, logout.
-           Shown only when the user is logged in so anonymous
-           visitors keep the marketing-y top whitespace. Sits above
-           the hero so the user always has a way out of the session
-           from the landing page (previously they had to navigate
-           into a dashboard to reach the TopBar's logout dropdown). */}
-      {isLoggedIn && (
-        <div className="relative z-10 border-b border-slate-700/40 bg-slate-900/40 backdrop-blur-sm">
-          <div className="max-w-6xl mx-auto px-6 py-2.5 flex items-center justify-between gap-3 flex-wrap">
-            <div className="text-sm text-slate-300">
-              שלום, <span className="font-semibold text-white">{displayName || '—'}</span>
-              {entityType && (
-                <span className="text-xs text-slate-400 ms-2">
-                  ({entityType === 'corporation' ? 'תאגיד' : 'קבלן'})
-                </span>
-              )}
-            </div>
-            <div className="flex items-center gap-2">
-              {role === 'admin' && (
-                <Link
-                  href="/admin/dashboard"
-                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-rose-300 hover:text-rose-200 transition-colors px-3 py-1.5 rounded-md border border-rose-400/40 hover:border-rose-400/60"
-                >
-                  <ShieldCheck className="h-3.5 w-3.5" />
-                  פאנל ניהול
-                </Link>
-              )}
-              <button
-                type="button"
-                onClick={handleLogout}
-                className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-300 hover:text-white transition-colors px-3 py-1.5 rounded-md border border-slate-600/60 hover:border-slate-400"
-              >
-                <LogOut className="h-3.5 w-3.5" />
-                התנתקות
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* ── Main hero content ── */}
+      {/* Logged-in strip previously rendered here was redundant
+          with LandingNav (which already shows name + admin link +
+          logout when isLoggedIn). The duplicate buttons were
+          stacking visually on the dark hero. LandingNav stays
+          fixed-top across the whole page so it's the only place
+          we need these controls. */}
       <div className="relative">
         <div className="max-w-6xl mx-auto px-6 w-full pt-28 pb-12">
           {/* Top: brand + headline + subtitle, centered */}

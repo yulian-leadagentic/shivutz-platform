@@ -5,7 +5,7 @@ const ITEMS = [
     icon: ShieldCheck,
     value: '100%',
     label: 'תאגידים ברי-רישיון',
-    desc: 'כל תאגיד עובר אימות רשיון לפני אישור',
+    desc: 'כל תאגיד עובר אימות רישיון לפני אישור',
     color: 'text-brand-600',
     bg: 'bg-brand-50',
   },
