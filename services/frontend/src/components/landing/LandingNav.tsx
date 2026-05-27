@@ -1,11 +1,18 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
-import { Menu, X, LayoutDashboard, LogOut, ShieldCheck } from 'lucide-react';
+import { Menu, X, LayoutDashboard, LogOut, ShieldCheck, ChevronDown } from 'lucide-react';
 import Logo from '@/components/Logo';
 import { useAuth } from '@/lib/AuthContext';
 import { clearTokens } from '@/lib/auth';
+
+function getInitials(label: string): string {
+  if (!label) return '?';
+  const words = label.trim().split(/\s+/).filter(Boolean);
+  if (words.length >= 2) return (words[0][0] + words[1][0]);
+  return label.slice(0, 2);
+}
 
 interface LandingNavProps {
   onLeadCapture: () => void;
@@ -14,7 +21,20 @@ interface LandingNavProps {
 export default function LandingNav({ onLeadCapture }: LandingNavProps) {
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement>(null);
   const { isLoggedIn, displayName, entityType, role } = useAuth();
+
+  // Close user dropdown on outside click (mirrors TopBar behaviour).
+  useEffect(() => {
+    function onClick(e: MouseEvent) {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
+        setUserMenuOpen(false);
+      }
+    }
+    if (userMenuOpen) document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, [userMenuOpen]);
 
   // Hard-nav logout so the AuthContext state actually resets.
   // Soft router.push leaves the in-memory `isLoggedIn=true` alive
@@ -73,46 +93,75 @@ export default function LandingNav({ onLeadCapture }: LandingNavProps) {
         {/* Desktop buttons */}
         <div className="hidden md:flex items-center gap-2">
           {isLoggedIn ? (
-            <>
-              {displayName && (
-                <span className={`text-xs font-medium ${scrolled ? 'text-slate-500' : 'text-slate-400'}`}>
-                  מחובר: <span className={scrolled ? 'text-slate-700' : 'text-slate-200'}>{displayName}</span>
-                </span>
-              )}
-              {role === 'admin' && (
-                <Link
-                  href="/admin/dashboard"
-                  className={`inline-flex items-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-lg transition-colors border ${
-                    scrolled
-                      ? 'text-rose-700 border-rose-300 hover:bg-rose-50'
-                      : 'text-rose-200 border-rose-400/40 hover:bg-rose-500/10'
-                  }`}
-                >
-                  <ShieldCheck className="h-4 w-4" />
-                  פאנל ניהול
-                </Link>
-              )}
-              <Link
-                href={dashboardHref}
-                className="inline-flex items-center gap-1.5 text-sm font-semibold bg-brand-600 hover:bg-brand-500 text-white px-4 py-2 rounded-lg transition-colors shadow-sm"
-              >
-                <LayoutDashboard className="h-4 w-4" />
-                לוח בקרה
-              </Link>
+            // Single avatar dropdown — consolidates name + dashboard
+            // + admin panel + logout into one button so the four
+            // inline elements (with their Hebrew labels) don't overrun
+            // the navbar width at mid-size viewports. Mirrors the
+            // in-app TopBar's user menu pattern.
+            <div className="relative" ref={userMenuRef}>
               <button
                 type="button"
-                onClick={handleLogout}
-                aria-label="התנתקות"
-                className={`inline-flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg transition-colors border ${
-                  scrolled
-                    ? 'text-slate-600 border-slate-300 hover:bg-slate-100 hover:text-slate-900'
-                    : 'text-slate-300 border-slate-600/60 hover:bg-slate-800/60 hover:text-white'
+                onClick={() => setUserMenuOpen((o) => !o)}
+                className={`flex items-center gap-2 rounded-lg pe-2 ps-1 py-1 transition-colors ${
+                  scrolled ? 'hover:bg-slate-100' : 'hover:bg-slate-800/60'
                 }`}
+                aria-label="תפריט משתמש"
               >
-                <LogOut className="h-4 w-4" />
-                התנתקות
+                <div className="h-9 w-9 rounded-full bg-brand-600 flex items-center justify-center shrink-0">
+                  <span className="text-white text-xs font-bold">{getInitials(displayName || '?')}</span>
+                </div>
+                <span className={`hidden sm:inline text-sm font-medium max-w-[180px] truncate ${
+                  scrolled ? 'text-slate-700' : 'text-slate-200'
+                }`}>
+                  {displayName || '—'}
+                </span>
+                <ChevronDown className={`h-4 w-4 transition-transform ${userMenuOpen ? 'rotate-180' : ''} ${
+                  scrolled ? 'text-slate-500' : 'text-slate-400'
+                }`} />
               </button>
-            </>
+
+              {userMenuOpen && (
+                <div className="absolute end-0 top-full mt-1.5 z-50 w-56 bg-white rounded-xl border border-slate-200 shadow-lg py-1">
+                  {displayName && (
+                    <div className="px-3 py-2 border-b border-slate-100">
+                      <p className="text-sm text-slate-800 font-medium truncate">{displayName}</p>
+                      {entityType && (
+                        <p className="text-xs text-slate-400 truncate">
+                          {entityType === 'corporation' ? 'תאגיד' : entityType === 'contractor' ? 'קבלן' : entityType}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  <Link
+                    href={dashboardHref}
+                    onClick={() => setUserMenuOpen(false)}
+                    className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-slate-700 hover:bg-brand-50 hover:text-brand-700 transition-colors"
+                  >
+                    <LayoutDashboard className="h-4 w-4 shrink-0" />
+                    לוח בקרה
+                  </Link>
+                  {role === 'admin' && (
+                    <Link
+                      href="/admin/dashboard"
+                      onClick={() => setUserMenuOpen(false)}
+                      className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-rose-700 hover:bg-rose-50 transition-colors"
+                    >
+                      <ShieldCheck className="h-4 w-4 shrink-0" />
+                      פאנל ניהול
+                    </Link>
+                  )}
+                  <div className="border-t border-slate-100 my-1" />
+                  <button
+                    type="button"
+                    onClick={handleLogout}
+                    className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                  >
+                    <LogOut className="h-4 w-4 shrink-0" />
+                    התנתקות
+                  </button>
+                </div>
+              )}
+            </div>
           ) : (
             <>
               <Link
