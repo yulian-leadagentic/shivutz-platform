@@ -42,7 +42,11 @@ export interface AdminDealRow extends Deal {
   profession_type?:   string | null;
   profession_he?:     string | null;
   region?:            string | null;
-  requested_count?:   number | null;
+  // `requested_count` was already on Deal as `number | undefined`;
+  // can't tighten OR widen it incompatibly here. Backend returns
+  // null on rows whose worker_search row got pruned, so callers
+  // already need to defensively coalesce — same shape as Deal.
+  requested_count?:   number;
   worker_count?:      number;
   /** Which party is currently blocking the deal from moving forward.
    *  Drives the dashboard's filter chips + the "stuck on X" label

@@ -8,7 +8,7 @@
 // the card level) so a contractor can scan "where is each
 // request" in one pass.
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, Suspense } from 'react';
 import { CorpResponseCountdown } from '@/components/CorpResponseCountdown';
 
 // corp_response_hours from payment_db.system_settings (migration
@@ -1201,7 +1201,12 @@ function CentreBlurb({ state, awaitingN, proposedN, inFieldN, corpsTotal, oldest
 
 // ── Page ───────────────────────────────────────────────────────
 
-export default function ContractorDealsPage() {
+// Inner component owns the actual render; useSearchParams() must
+// be wrapped in a Suspense boundary or `next build` bails the
+// prerender step on this page ("useSearchParams() should be
+// wrapped in a suspense boundary"). Same pattern the corporation
+// deals page uses.
+function ContractorDealsPageInner() {
   const searchParams = useSearchParams();
   const initialFilter = (() => {
     const f = searchParams?.get('filter');
@@ -1515,5 +1520,17 @@ export default function ContractorDealsPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function ContractorDealsPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex justify-center py-20">
+        <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
+      </div>
+    }>
+      <ContractorDealsPageInner />
+    </Suspense>
   );
 }

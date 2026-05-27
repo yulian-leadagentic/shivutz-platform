@@ -173,6 +173,14 @@ export interface Deal {
   standard_contract_doc_name?: string;
   payment_status?: string;
   payment_amount_estimated?: number;
+  /** ID of the active payment transaction (the one that's been
+   *  authorized for this deal). Returned by /deals/{id} + the list
+   *  endpoints. Used to fetch the captured transaction for the
+   *  CapturedBadge invoice/auth-code display. */
+  active_payment_transaction_id?: string | null;
+  /** Last-modified timestamp. Returned everywhere; used by the
+   *  admin dashboard's "sort by recent activity" column. */
+  updated_at?: string;
 }
 
 export interface Message {

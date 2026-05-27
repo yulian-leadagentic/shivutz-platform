@@ -393,7 +393,7 @@ export default function DealDetailPage() {
             <div className="flex gap-2 flex-wrap">
               <Button
                 onClick={handleContractorConfirmClosed}
-                disabled={closing}
+                disabled={closing !== null}
                 className="bg-emerald-600 hover:bg-emerald-700 text-white"
               >
                 {closing === 'confirm'
