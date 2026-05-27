@@ -128,7 +128,18 @@ export default function TopBar({ mobileNav }: TopBarProps = {}) {
 
   function handleLogout() {
     clearTokens();
-    router.push('/');
+    // Hard navigate (not router.push) so the whole React tree
+    // re-mounts against an empty cookie jar. Without this,
+    // AuthContext keeps its in-memory `state` (name, entityId,
+    // isLoggedIn=true) until the next full reload — which made
+    // the landing page's HeroSection still render the logged-in
+    // header (with the name showing on the left). The previous
+    // soft-nav cleared cookies but didn't reset the React state.
+    if (typeof window !== 'undefined') {
+      window.location.assign('/');
+    } else {
+      router.push('/');
+    }
   }
 
   // Switch the active entity. Calls /auth/select-entity, replaces

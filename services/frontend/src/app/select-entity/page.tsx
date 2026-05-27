@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Loader2, Building2, HardHat } from 'lucide-react';
+import { Loader2, Building2, HardHat, ShieldCheck } from 'lucide-react';
 import { otpApi, type Membership } from '@/lib/api';
-import { saveTokens } from '@/lib/auth';
+import { saveTokens, getAccessToken, decodeJwtPayload } from '@/lib/auth';
 import { useAuth } from '@/lib/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -27,11 +27,29 @@ export default function SelectEntityPage() {
   const router = useRouter();
   const { refreshAuth } = useAuth();
 
+  // Read role from the partial JWT issued by /auth/login/otp. When
+  // the user is an admin we offer the admin dashboard as an extra
+  // tile above their entity memberships — without this, an admin
+  // who also owns a contractor/corporation entity gets routed
+  // through the entity picker and can never reach /admin/* via the
+  // login flow.
+  const [isAdmin, setIsAdmin] = useState(false);
+
   const [memberships, setMemberships] = useState<Membership[]>([]);
   const [loading, setLoading]         = useState<string | null>(null); // membership_id being selected
   const [error, setError]             = useState('');
 
   useEffect(() => {
+    // One-shot role read from the JWT cookie. The login flow saves
+    // tokens (incl. the partial admin/role claim) BEFORE pushing
+    // us here, so the cookie is already populated by the time this
+    // effect fires.
+    const token = getAccessToken();
+    if (token) {
+      const p = decodeJwtPayload(token);
+      if (p && typeof p.role === 'string' && p.role === 'admin') setIsAdmin(true);
+    }
+
     const raw = sessionStorage.getItem('pending_memberships');
     if (!raw) {
       // No pending memberships — redirect to login
@@ -136,6 +154,31 @@ export default function SelectEntityPage() {
           </CardHeader>
 
           <CardContent className="flex flex-col gap-3">
+            {/* Admin tile — only for users whose JWT carries role=admin.
+                The login JWT (partial, pre-select-entity) already
+                carries the admin claim, so the gateway accepts it on
+                /api/admin/* without any further entity scoping. We
+                just route the user to the admin dashboard and let
+                their existing token through. */}
+            {isAdmin && (
+              <button
+                key="__admin__"
+                onClick={() => {
+                  sessionStorage.removeItem('pending_memberships');
+                  sessionStorage.removeItem('pending_intent');
+                  router.push('/admin/dashboard');
+                }}
+                disabled={loading !== null}
+                className="w-full flex items-center gap-4 p-4 rounded-lg border-2 border-rose-300 bg-rose-50/40 hover:border-rose-400 hover:bg-rose-50 transition-colors text-start disabled:opacity-60"
+              >
+                <ShieldCheck className="h-8 w-8 text-rose-600 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-slate-900">מנהל מערכת</p>
+                  <p className="text-xs text-slate-500 mt-0.5">פאנל ניהול הפלטפורמה</p>
+                </div>
+              </button>
+            )}
+
             {memberships.map((m) => (
               <button
                 key={m.membership_id}
