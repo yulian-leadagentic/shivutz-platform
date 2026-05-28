@@ -17,12 +17,13 @@ import { Input } from '@/components/ui/input';
 interface LineItem {
   key: string;
   profession_type: string;
+  origin_country: string;   // per-line origin
   quantity: number;
   min_experience: number;
 }
 
 function newLine(): LineItem {
-  return { key: crypto.randomUUID(), profession_type: '', quantity: 10, min_experience: 0 };
+  return { key: crypto.randomUUID(), profession_type: '', origin_country: '', quantity: 10, min_experience: 0 };
 }
 
 const EXP_OPTIONS = [
@@ -34,12 +35,10 @@ const EXP_OPTIONS = [
 
 export default function NewTenderPage() {
   const router = useRouter();
-  const { professions, regions, origins } = useEnums();
+  const { professions, origins } = useEnums();
   const activeProfs = professions.filter((p) => p.is_active);
 
   const [title, setTitle]       = useState('');
-  const [origin, setOrigin]     = useState('');
-  const [region, setRegion]     = useState('');
   const [startDate, setStart]   = useState('');
   const [notes, setNotes]       = useState('');
   const [lines, setLines]       = useState<LineItem[]>([newLine()]);
@@ -64,12 +63,11 @@ export default function NewTenderPage() {
     try {
       const res = await tenderApi.create({
         title: title.trim() || undefined,
-        origin_country: origin || undefined,
-        region: region || undefined,
         target_start_date: startDate || undefined,
         notes: notes.trim() || undefined,
         items: validLines.map((l) => ({
           profession_type: l.profession_type,
+          origin_country: l.origin_country || undefined,
           quantity: Number(l.quantity),
           min_experience: Number(l.min_experience) || 0,
         })),
@@ -120,7 +118,7 @@ export default function NewTenderPage() {
               )}
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div>
                 <label className="text-xs font-medium text-slate-600 block mb-1">מקצוע</label>
                 <select
@@ -134,6 +132,17 @@ export default function NewTenderPage() {
                   ))}
                 </select>
               </div>
+              <div>
+                <label className="text-xs font-medium text-slate-600 block mb-1">ארץ מוצא</label>
+                <select
+                  value={line.origin_country}
+                  onChange={(e) => updateLine(line.key, { origin_country: e.target.value })}
+                  className="w-full h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm"
+                >
+                  <option value="">ללא העדפה</option>
+                  {origins.map((o) => (<option key={o.code} value={o.code}>{o.name_he}</option>))}
+                </select>
+              </div>
               <Input
                 label="כמות"
                 type="number"
@@ -142,7 +151,7 @@ export default function NewTenderPage() {
                 onChange={(e) => updateLine(line.key, { quantity: Number(e.target.value) })}
               />
               <div>
-                <label className="text-xs font-medium text-slate-600 block mb-1">ניסיון מינימלי</label>
+                <label className="text-xs font-medium text-slate-600 block mb-1">ניסיון מינ׳</label>
                 <select
                   value={line.min_experience}
                   onChange={(e) => updateLine(line.key, { min_experience: Number(e.target.value) })}
@@ -165,25 +174,9 @@ export default function NewTenderPage() {
       {/* ── Tender meta ── */}
       <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4 sm:p-5 space-y-4">
         <h2 className="font-bold text-slate-900">פרטי המכרז</h2>
-        <Input label="כותרת (אופציונלי)" placeholder="לדוגמה: 50 עובדים לפרויקט בצפון"
-          value={title} onChange={(e) => setTitle(e.target.value)} />
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div>
-            <label className="text-xs font-medium text-slate-600 block mb-1">מדינת מוצא מועדפת</label>
-            <select value={origin} onChange={(e) => setOrigin(e.target.value)}
-              className="w-full h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm">
-              <option value="">ללא העדפה</option>
-              {origins.map((o) => (<option key={o.code} value={o.code}>{o.name_he}</option>))}
-            </select>
-          </div>
-          <div>
-            <label className="text-xs font-medium text-slate-600 block mb-1">אזור עבודה</label>
-            <select value={region} onChange={(e) => setRegion(e.target.value)}
-              className="w-full h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm">
-              <option value="">כל הארץ</option>
-              {regions.map((r) => (<option key={r.code} value={r.code}>{r.name_he}</option>))}
-            </select>
-          </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Input label="כותרת (אופציונלי)" placeholder="לדוגמה: עובדים לפרויקט חדש"
+            value={title} onChange={(e) => setTitle(e.target.value)} />
           <Input label="תאריך התחלה רצוי" type="date"
             value={startDate} onChange={(e) => setStart(e.target.value)} />
         </div>
@@ -195,6 +188,12 @@ export default function NewTenderPage() {
         </div>
       </div>
 
+      {/* Admin-approval notice */}
+      <div className="flex items-start gap-2 bg-sky-50 border border-sky-200 rounded-xl px-3 py-2.5 text-sm text-sky-900">
+        <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-sky-600" />
+        <span>המכרז יישלח לאישור מנהל המערכת לפני שיפורסם לתאגידים. לאחר האישור תקבל הצעות.</span>
+      </div>
+
       {error && (
         <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2 flex items-center gap-2">
           <AlertCircle className="h-4 w-4 shrink-0" /> {error}
@@ -204,8 +203,8 @@ export default function NewTenderPage() {
       <div className="flex gap-3">
         <Button type="button" disabled={!canSubmit} onClick={handlePublish} size="lg" className="flex-1">
           {submitting
-            ? <><Loader2 className="h-4 w-4 animate-spin" /> מפרסם…</>
-            : <><Send className="h-4 w-4" /> פרסם מכרז ל-{totalWorkers} עובדים</>}
+            ? <><Loader2 className="h-4 w-4 animate-spin" /> שולח…</>
+            : <><Send className="h-4 w-4" /> שלח לאישור — {totalWorkers} עובדים</>}
         </Button>
         <Button type="button" variant="outline" size="lg" onClick={() => router.push('/contractor/tenders')}>
           ביטול

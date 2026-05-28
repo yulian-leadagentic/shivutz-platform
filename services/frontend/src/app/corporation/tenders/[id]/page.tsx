@@ -20,17 +20,17 @@ import { Input } from '@/components/ui/input';
 export default function CorpTenderDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const { professionMap } = useEnums();
+  const { professionMap, originMap } = useEnums();
 
   const [tender, setTender]   = useState<Tender | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  // Per-tender-item offered quantities, keyed by tender_item_id.
+  // Per-tender-item offered quantities + hourly rates, keyed by tender_item_id.
   const [offered, setOffered] = useState<Record<string, number>>({});
-  const [price, setPrice]     = useState('');
-  const [days, setDays]       = useState('');
+  const [rates, setRates]     = useState<Record<string, number>>({});
+  const [arrival, setArrival] = useState('');
   const [notes, setNotes]     = useState('');
   const [contractorCorp, setContractorCorp] = useState<Corporation | null>(null);
 
@@ -38,14 +38,18 @@ export default function CorpTenderDetailPage() {
     tenderApi.get(id)
       .then((t) => {
         setTender(t);
-        // Seed offered map from an existing live bid (re-bid flow).
+        // Seed from an existing live bid (re-bid flow).
         const mine = (t.bids ?? []).find((b) => b.status === 'submitted' || b.status === 'selected' || b.status === 'confirmed');
         if (mine) {
-          const seed: Record<string, number> = {};
-          mine.items.forEach((bi) => { seed[bi.tender_item_id] = bi.quantity_offered; });
-          setOffered(seed);
-          if (mine.total_price != null) setPrice(String(mine.total_price));
-          if (mine.delivery_estimate_days != null) setDays(String(mine.delivery_estimate_days));
+          const seedQty: Record<string, number> = {};
+          const seedRate: Record<string, number> = {};
+          mine.items.forEach((bi) => {
+            seedQty[bi.tender_item_id] = bi.quantity_offered;
+            if (bi.hourly_rate != null) seedRate[bi.tender_item_id] = bi.hourly_rate;
+          });
+          setOffered(seedQty);
+          setRates(seedRate);
+          if (mine.arrival_date) setArrival(mine.arrival_date.slice(0, 10));
           if (mine.notes) setNotes(mine.notes);
         }
       })
@@ -74,6 +78,9 @@ export default function CorpTenderDetailPage() {
     const clamped = Math.max(0, Math.min(val || 0, max));
     setOffered((prev) => ({ ...prev, [itemId]: clamped }));
   }
+  function setRate(itemId: string, val: number) {
+    setRates((prev) => ({ ...prev, [itemId]: Math.max(0, val || 0) }));
+  }
 
   const totalOffered = Object.values(offered).reduce((s, n) => s + (n || 0), 0);
   const canSubmit = totalOffered > 0 && !submitting && tender?.status === 'open';
@@ -86,13 +93,13 @@ export default function CorpTenderDetailPage() {
         tender_item_id: it.id,
         profession_type: it.profession_type,
         quantity_offered: offered[it.id],
+        hourly_rate: rates[it.id] ? Number(rates[it.id]) : undefined,
       }));
     if (!items.length) { setError('יש להציע לפחות עובד אחד'); return; }
     setSubmitting(true); setError('');
     try {
       await tenderApi.submitBid(id, {
-        total_price: price ? Number(price) : undefined,
-        delivery_estimate_days: days ? Number(days) : undefined,
+        arrival_date: arrival || undefined,
         notes: notes.trim() || undefined,
         items,
       });
@@ -123,8 +130,7 @@ export default function CorpTenderDetailPage() {
       <div className="rounded-2xl border-2 border-brand-200 bg-brand-50/40 p-4 text-sm">
         <p className="text-slate-700">
           מאת: <span className="font-bold">{revealed && contractorCorp ? (contractorCorp.company_name_he || contractorCorp.company_name) : (tender.contractor_anon || 'קבלן')}</span>
-          {tender.origin_country && <> · מוצא מבוקש: <span className="font-semibold">{tender.origin_country}</span></>}
-          {tender.region && <> · אזור: <span className="font-semibold">{tender.region}</span></>}
+          {tender.target_start_date && <> · התחלה רצויה: <span className="font-semibold">{tender.target_start_date.slice(0, 10)}</span></>}
         </p>
         {tender.notes && <p className="text-slate-500 mt-2">{tender.notes}</p>}
       </div>
@@ -160,34 +166,50 @@ export default function CorpTenderDetailPage() {
 
         <div className="space-y-2">
           {tender.items.map((it) => (
-            <div key={it.id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50/40 px-3 py-2.5">
+            <div key={it.id} className="rounded-xl border border-slate-200 bg-slate-50/40 px-3 py-2.5 space-y-2">
               <div className="flex items-center gap-2 min-w-0">
                 <Users className="h-4 w-4 text-brand-600 shrink-0" />
                 <span className="text-sm font-semibold text-slate-800 truncate">
                   {professionMap[it.profession_type] ?? it.profession_type}
                 </span>
                 <span className="text-xs text-slate-400 shrink-0">מבוקש: {it.quantity}</span>
+                {it.origin_country && (
+                  <span className="text-xs bg-white border border-slate-200 rounded-full px-2 py-0.5 text-slate-500 shrink-0">
+                    {originMap[it.origin_country] ?? it.origin_country}
+                  </span>
+                )}
               </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <span className="text-xs text-slate-500">אספק:</span>
-                <input
-                  type="number" min={0} max={it.quantity}
-                  disabled={!editable}
-                  value={offered[it.id] ?? ''}
-                  onChange={(e) => setQty(it.id, Number(e.target.value), it.quantity)}
-                  className="w-20 h-9 rounded-lg border border-slate-200 px-2 text-sm text-center disabled:bg-slate-100"
-                  placeholder="0"
-                />
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs text-slate-500">אספק</span>
+                  <input
+                    type="number" min={0} max={it.quantity}
+                    disabled={!editable}
+                    value={offered[it.id] ?? ''}
+                    onChange={(e) => setQty(it.id, Number(e.target.value), it.quantity)}
+                    className="w-16 h-9 rounded-lg border border-slate-200 px-2 text-sm text-center disabled:bg-slate-100"
+                    placeholder="0"
+                  />
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs text-slate-500">₪/שעה</span>
+                  <input
+                    type="number" min={0} step="0.5"
+                    disabled={!editable}
+                    value={rates[it.id] ?? ''}
+                    onChange={(e) => setRate(it.id, Number(e.target.value))}
+                    className="w-20 h-9 rounded-lg border border-slate-200 px-2 text-sm text-center disabled:bg-slate-100"
+                    placeholder="0"
+                  />
+                </div>
               </div>
             </div>
           ))}
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-          <Input label="מחיר כולל (₪)" type="number" min={0} disabled={!editable}
-            value={price} onChange={(e) => setPrice(e.target.value)} placeholder="לדוגמה: 48000" />
-          <Input label="זמן אספקה (ימים)" type="number" min={1} disabled={!editable}
-            value={days} onChange={(e) => setDays(e.target.value)} placeholder="לדוגמה: 90" />
+        <div className="pt-1">
+          <Input label="מועד הגעה לארץ" type="date" disabled={!editable}
+            value={arrival} onChange={(e) => setArrival(e.target.value)} />
         </div>
         <div>
           <label className="text-xs font-medium text-slate-600 block mb-1">הערות (אופציונלי)</label>

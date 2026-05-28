@@ -10,9 +10,9 @@ import { useEnums } from '@/features/enums/EnumsContext';
 import { Button } from '@/components/ui/button';
 
 const STATUS_PILL: Record<string, { cls: string; label: string }> = {
+  pending_admin:  { cls: 'bg-slate-200 text-slate-700 border-slate-300',     label: 'ממתין לאישור פרסום' },
   open:           { cls: 'bg-sky-100 text-sky-800 border-sky-200',           label: 'פתוח להצעות' },
-  selecting:      { cls: 'bg-amber-100 text-amber-800 border-amber-200',     label: 'בבחירה' },
-  awaiting_admin: { cls: 'bg-amber-500 text-white border-amber-500',         label: 'ממתין לאישור מנהל' },
+  awaiting_admin: { cls: 'bg-amber-500 text-white border-amber-500',         label: 'בקשת קשר — ממתין למנהל' },
   in_progress:    { cls: 'bg-emerald-500 text-white border-emerald-500',     label: 'בתהליך' },
   closed:         { cls: 'bg-emerald-50 text-emerald-700 border-emerald-200', label: 'הושלם' },
   cancelled:      { cls: 'bg-rose-50 text-rose-700 border-rose-200',         label: 'בוטל' },

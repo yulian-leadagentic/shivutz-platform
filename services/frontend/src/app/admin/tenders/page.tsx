@@ -16,9 +16,9 @@ import { useEnums } from '@/features/enums/EnumsContext';
 import { Button } from '@/components/ui/button';
 
 const STATUS: Record<string, { cls: string; label: string }> = {
+  pending_admin:  { cls: 'bg-slate-800 text-white',        label: 'ממתין לאישור פרסום' },
   open:           { cls: 'bg-sky-100 text-sky-800',        label: 'פתוח להצעות' },
-  selecting:      { cls: 'bg-amber-100 text-amber-800',    label: 'בבחירה' },
-  awaiting_admin: { cls: 'bg-amber-500 text-white',        label: 'ממתין לאישורך' },
+  awaiting_admin: { cls: 'bg-amber-500 text-white',        label: 'בקשת קשר — ממתין לאישורך' },
   in_progress:    { cls: 'bg-emerald-500 text-white',      label: 'בתהליך' },
   closed:         { cls: 'bg-emerald-50 text-emerald-700', label: 'הושלם' },
   cancelled:      { cls: 'bg-rose-50 text-rose-700',       label: 'בוטל' },
@@ -73,9 +73,20 @@ export default function AdminTendersPage() {
     finally { setActing(null); }
   }
 
-  // Awaiting-admin first — that's the admin's action queue.
+  async function publish(id: string) {
+    setActing(id);
+    try { await tenderApi.adminPublish(id); load(); }
+    catch { /* surfaced by reload */ }
+    finally { setActing(null); }
+  }
+
+  // Action queue order: pending publish first, then contact requests,
+  // then in-progress, then the rest.
   const sorted = [...tenders].sort((a, b) => {
-    const pr = (t: Tender) => (t.status === 'awaiting_admin' ? 0 : t.status === 'in_progress' ? 1 : 2);
+    const pr = (t: Tender) =>
+      t.status === 'pending_admin' ? 0
+      : t.status === 'awaiting_admin' ? 1
+      : t.status === 'in_progress' ? 2 : 3;
     return pr(a) - pr(b);
   });
 
@@ -104,7 +115,10 @@ export default function AdminTendersPage() {
         const selectedBids = (t.bids ?? []).filter((b) => b.status === 'selected' || b.status === 'confirmed');
         const isOpen = expanded === t.id;
         return (
-          <div key={t.id} className={`rounded-2xl border-2 bg-white shadow-sm ${t.status === 'awaiting_admin' ? 'border-amber-400 ring-2 ring-amber-100' : 'border-slate-200'}`}>
+          <div key={t.id} className={`rounded-2xl border-2 bg-white shadow-sm ${
+            t.status === 'pending_admin' ? 'border-slate-800 ring-2 ring-slate-200'
+            : t.status === 'awaiting_admin' ? 'border-amber-400 ring-2 ring-amber-100'
+            : 'border-slate-200'}`}>
             <button type="button" onClick={() => setExpanded(isOpen ? null : t.id)}
               className="w-full text-start p-4 sm:p-5 flex items-start justify-between gap-3">
               <div className="min-w-0">
@@ -124,7 +138,7 @@ export default function AdminTendersPage() {
 
             {isOpen && (
               <div className="px-4 sm:px-5 pb-5 space-y-4 border-t border-slate-100 pt-4">
-                {/* Requested */}
+                {/* Requested (with per-line origin) */}
                 <div>
                   <p className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1.5">מבוקש</p>
                   <div className="flex flex-wrap gap-2">
@@ -132,12 +146,13 @@ export default function AdminTendersPage() {
                       <span key={i.id} className="inline-flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-sm">
                         <Users className="h-3.5 w-3.5 text-slate-400" />
                         {i.quantity} {professionMap[i.profession_type] ?? i.profession_type}
+                        {i.origin_country && <span className="text-xs text-slate-400">({i.origin_country})</span>}
                       </span>
                     ))}
                   </div>
                 </div>
 
-                {/* Bids (unmasked for admin) */}
+                {/* Bids (unmasked for admin) — per-line hourly rates */}
                 <div>
                   <p className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1.5">הצעות</p>
                   <div className="space-y-2">
@@ -150,25 +165,44 @@ export default function AdminTendersPage() {
                               {b.corporation_id ? (names[b.corporation_id] || b.corporation_id.slice(0, 8)) : '—'}
                             </span>
                             <div className="flex items-center gap-2">
-                              {b.total_price != null && <span className="text-sm font-bold">₪{b.total_price.toLocaleString('he-IL')}</span>}
+                              {b.arrival_date && <span className="text-xs text-slate-500">הגעה {fmt(b.arrival_date)}</span>}
                               {isSel && <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-500 text-white">נבחר</span>}
                             </div>
                           </div>
-                          <p className="text-xs text-slate-600 mt-1">
-                            {b.items.map((it) => `${it.quantity_offered} ${professionMap[it.profession_type] ?? it.profession_type}`).join(' · ')}
-                            {b.delivery_estimate_days != null && ` · ${b.delivery_estimate_days} ימים`}
-                          </p>
+                          <div className="text-xs text-slate-600 mt-1 space-y-0.5">
+                            {b.items.map((it) => (
+                              <div key={it.id} className={`flex items-center justify-between ${it.selected ? 'text-emerald-700 font-semibold' : ''}`}>
+                                <span>{it.selected && '✓ '}{it.quantity_offered} {professionMap[it.profession_type] ?? it.profession_type}</span>
+                                <span>{it.hourly_rate != null ? `₪${it.hourly_rate}/שעה` : '—'}</span>
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       );
                     })}
                   </div>
                 </div>
 
-                {/* Approve action */}
+                {/* Gate 1 — publish approval */}
+                {t.status === 'pending_admin' && (
+                  <div className="rounded-xl bg-slate-100 border border-slate-300 p-3 space-y-2">
+                    <p className="text-sm text-slate-700">
+                      מכרז חדש ממתין לאישורך. לאחר אישור הפרסום הוא יישלח לכל התאגידים לקבלת הצעות.
+                    </p>
+                    <Button type="button" disabled={acting === t.id}
+                      onClick={() => publish(t.id)}>
+                      {acting === t.id
+                        ? <><Loader2 className="h-4 w-4 animate-spin" /> מפרסם…</>
+                        : <><ShieldCheck className="h-4 w-4" /> אשר ופרסם לתאגידים</>}
+                    </Button>
+                  </div>
+                )}
+
+                {/* Gate 2 — contact-request approval + reveal */}
                 {t.status === 'awaiting_admin' && (
                   <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 space-y-2">
                     <p className="text-sm text-amber-900">
-                      הקבלן בחר {selectedBids.length} הצעות. לאחר תיאום התשלום מול הצדדים — אשר כדי לחשוף את הפרטים לשני הצדדים.
+                      הקבלן בחר {selectedBids.length} תאגידים. לאחר תיאום התשלום מול הצדדים — אשר כדי לחשוף את הפרטים לשני הצדדים.
                     </p>
                     <Button type="button" disabled={acting === t.id || selectedBids.length === 0}
                       className="bg-emerald-600 hover:bg-emerald-700"

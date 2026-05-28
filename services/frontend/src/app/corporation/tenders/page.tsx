@@ -82,7 +82,6 @@ export default function CorpTendersPage() {
                       </p>
                       <p className="text-xs text-slate-400 mt-1">
                         {t.contractor_anon || 'קבלן'} · פורסם {fmt(t.created_at)}
-                        {t.origin_country && ` · מוצא: ${t.origin_country}`}
                       </p>
                     </div>
                     <span className="shrink-0 text-sm font-semibold text-amber-700 inline-flex items-center gap-1">
@@ -118,7 +117,7 @@ export default function CorpTendersPage() {
                       </div>
                       <p className="text-sm text-slate-600 mt-1">
                         הצעתך: {b.items.reduce((s, i) => s + i.quantity_offered, 0)} עובדים
-                        {b.total_price != null && ` · ₪${b.total_price.toLocaleString('he-IL')}`}
+                        {b.arrival_date && ` · הגעה ${fmt(b.arrival_date)}`}
                       </p>
                       <p className="text-xs text-slate-400 mt-1">הוגש {fmt(b.submitted_at)}</p>
                     </div>

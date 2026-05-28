@@ -11,6 +11,7 @@ export interface TenderItem {
   id: string;
   tender_id?: string;
   profession_type: string;
+  origin_country?: string | null;     // per-line origin preference
   quantity: number;
   min_experience: number;
   notes?: string | null;
@@ -22,7 +23,8 @@ export interface BidItem {
   tender_item_id: string;
   profession_type: string;
   quantity_offered: number;
-  unit_price?: number | null;
+  hourly_rate?: number | null;        // ₪/hour for this line
+  selected?: boolean;                 // contractor picked this line
 }
 
 export interface Bid {
@@ -30,9 +32,8 @@ export interface Bid {
   tender_id: string;
   corporation_id: string | null;     // null while masked
   corp_anon?: string;                // "תאגיד N" while masked
-  total_price: number | null;
   currency: string;
-  delivery_estimate_days: number | null;
+  arrival_date?: string | null;      // when workers reach Israel
   notes?: string | null;
   status: 'submitted' | 'selected' | 'confirmed' | 'rejected' | 'withdrawn';
   submitted_at: string;
@@ -49,11 +50,9 @@ export interface Tender {
   contractor_id: string | null;       // null while masked
   contractor_anon?: string;           // "קבלן" while masked
   title?: string | null;
-  origin_country?: string | null;
-  region?: string | null;
   target_start_date?: string | null;
   notes?: string | null;
-  status: 'open' | 'selecting' | 'awaiting_admin' | 'in_progress' | 'closed' | 'cancelled';
+  status: 'pending_admin' | 'open' | 'awaiting_admin' | 'in_progress' | 'closed' | 'cancelled';
   revealed_at?: string | null;
   created_at: string;
   items: TenderItem[];
@@ -66,19 +65,16 @@ export interface Tender {
 
 export interface TenderCreatePayload {
   title?: string;
-  origin_country?: string;
-  region?: string;
   target_start_date?: string;
   notes?: string;
-  items: Array<{ profession_type: string; quantity: number; min_experience?: number; notes?: string }>;
+  items: Array<{ profession_type: string; quantity: number; origin_country?: string; min_experience?: number; notes?: string }>;
 }
 
 export interface BidCreatePayload {
-  total_price?: number;
+  arrival_date?: string;
   currency?: string;
-  delivery_estimate_days?: number;
   notes?: string;
-  items: Array<{ tender_item_id: string; profession_type: string; quantity_offered: number; unit_price?: number }>;
+  items: Array<{ tender_item_id: string; profession_type: string; quantity_offered: number; hourly_rate?: number }>;
 }
 
 export const tenderApi = {
@@ -89,9 +85,10 @@ export const tenderApi = {
     }),
   listMine: () => apiFetch<Tender[]>('/tenders'),
   get: (id: string) => apiFetch<Tender>(`/tenders/${id}`),
-  select: (id: string, bidIds: string[]) =>
+  // Contractor selects individual offer LINES (bid_item ids).
+  selectLines: (id: string, bidItemIds: string[]) =>
     apiFetch<{ ok: boolean; status: string }>(`/tenders/${id}/select`, {
-      method: 'POST', body: JSON.stringify({ bid_ids: bidIds }),
+      method: 'POST', body: JSON.stringify({ bid_item_ids: bidItemIds }),
     }),
   cancel: (id: string) =>
     apiFetch<{ ok: boolean; status: string }>(`/tenders/${id}/cancel`, { method: 'POST' }),
@@ -108,6 +105,10 @@ export const tenderApi = {
 
   // Admin
   adminListAll: () => apiFetch<Tender[]>('/tenders/admin/all'),
+  // Gate 1 — approve a pending tender for broadcast to corps.
+  adminPublish: (id: string) =>
+    apiFetch<{ ok: boolean; status: string }>(`/tenders/${id}/admin/publish`, { method: 'POST' }),
+  // Gate 2 — approve the contractor's contact request + reveal.
   adminApprove: (id: string) =>
     apiFetch<{ ok: boolean; status: string; confirmed: number }>(`/tenders/${id}/admin/approve`, { method: 'POST' }),
   adminClose: (id: string) =>

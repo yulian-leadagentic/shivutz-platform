@@ -49,36 +49,40 @@ def _ser(row: dict) -> dict:
 class TenderItemIn(BaseModel):
     profession_type: str
     quantity: int
+    origin_country: Optional[str] = None    # per-line origin preference
     min_experience: int = 0
     notes: Optional[str] = None
 
 
 class TenderCreate(BaseModel):
     title: Optional[str] = None
-    origin_country: Optional[str] = None
-    region: Optional[str] = None
     target_start_date: Optional[str] = None
     notes: Optional[str] = None
     items: List[TenderItemIn]
+    # region dropped from the foreign flow — accepted-but-ignored for
+    # any stale client.
+    origin_country: Optional[str] = None
+    region: Optional[str] = None
 
 
 class BidItemIn(BaseModel):
     tender_item_id: str
     profession_type: str
     quantity_offered: int
-    unit_price: Optional[float] = None
+    hourly_rate: Optional[float] = None      # ₪/hour for this line
 
 
 class BidCreate(BaseModel):
-    total_price: Optional[float] = None
+    arrival_date: Optional[str] = None       # when workers reach Israel
     currency: str = "ILS"
-    delivery_estimate_days: Optional[int] = None
     notes: Optional[str] = None
     items: List[BidItemIn]
 
 
-class SelectBids(BaseModel):
-    bid_ids: List[str]
+class SelectLines(BaseModel):
+    # Contractor picks individual offer LINES (bid_item ids), not whole
+    # bids — different corps can win different professions.
+    bid_item_ids: List[str]
 
 
 # ── Internal loaders ────────────────────────────────────────────────
@@ -111,8 +115,17 @@ def _load_bids_with_items(conn, tender_id: str) -> List[dict]:
             "SELECT * FROM foreign_bid_items WHERE bid_id=%s ORDER BY created_at",
             (b["id"],),
         )
-        b["items"] = [_ser(r) for r in cur.fetchall()]
+        b["items"] = [_bid_item(r) for r in cur.fetchall()]
     return bids
+
+
+def _bid_item(row: dict) -> dict:
+    """Serialize a bid line, aliasing the unit_price column to
+    `hourly_rate` (its real meaning) + exposing `selected` as bool."""
+    out = _ser(row)
+    out["hourly_rate"] = out.get("unit_price")
+    out["selected"] = bool(out.get("selected"))
+    return out
 
 
 def _anon_label_map(bids: List[dict]) -> dict:
@@ -148,24 +161,25 @@ async def create_tender(
     conn = get_db()
     try:
         cur = conn.cursor()
+        # Created in 'pending_admin' — NOT broadcast yet. The admin must
+        # approve it for publishing first (see /admin/publish below).
         cur.execute(
             """INSERT INTO foreign_tenders
-               (id, contractor_id, title, origin_country, region,
-                target_start_date, notes, status)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,'open')""",
-            (tender_id, x_org_id, data.title, data.origin_country, data.region,
+               (id, contractor_id, title, target_start_date, notes, status)
+               VALUES (%s,%s,%s,%s,%s,'pending_admin')""",
+            (tender_id, x_org_id, data.title,
              data.target_start_date or None, data.notes),
         )
         for it in data.items:
             cur.execute(
                 """INSERT INTO foreign_tender_items
-                   (id, tender_id, profession_type, quantity, min_experience, notes)
-                   VALUES (%s,%s,%s,%s,%s,%s)""",
-                (str(uuid.uuid4()), tender_id, it.profession_type, it.quantity,
-                 it.min_experience, it.notes),
+                   (id, tender_id, profession_type, origin_country, quantity, min_experience, notes)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s)""",
+                (str(uuid.uuid4()), tender_id, it.profession_type, it.origin_country,
+                 it.quantity, it.min_experience, it.notes),
             )
         conn.commit()
-        audit.log("foreign_tender", tender_id, "published", x_user_id or "unknown",
+        audit.log("foreign_tender", tender_id, "created_pending_admin", x_user_id or "unknown",
                   new_value={"items": len(data.items)})
     except Exception as e:
         conn.rollback()
@@ -173,15 +187,15 @@ async def create_tender(
     finally:
         conn.close()
 
-    # Broadcast to corps (notification consumer fans out SMS to tier_2).
-    await publish_event("tender.published", {
+    # Tell admins a tender is waiting for publish approval (no corp
+    # broadcast yet — that happens on admin publish).
+    await publish_event("tender.pending_admin", {
         "tender_id": tender_id,
         "contractor_id": x_org_id,
         "professions": [it.profession_type for it in data.items],
         "total_quantity": sum(it.quantity for it in data.items),
-        "origin_country": data.origin_country,
     })
-    return {"id": tender_id, "status": "open"}
+    return {"id": tender_id, "status": "pending_admin"}
 
 
 @router.get("")
@@ -226,7 +240,7 @@ def list_open_tenders(
     try:
         cur = conn.cursor()
         cur.execute(
-            "SELECT * FROM foreign_tenders WHERE status IN ('open','selecting') ORDER BY created_at DESC",
+            "SELECT * FROM foreign_tenders WHERE status='open' ORDER BY created_at DESC",
         )
         rows = [_ser(r) for r in cur.fetchall()]
         out = []
@@ -267,7 +281,7 @@ def list_my_bids(
         bids = [_ser(r) for r in cur.fetchall()]
         for b in bids:
             cur.execute("SELECT * FROM foreign_bid_items WHERE bid_id=%s", (b["id"],))
-            b["items"] = [_ser(r) for r in cur.fetchall()]
+            b["items"] = [_bid_item(r) for r in cur.fetchall()]
             tender = _load_tender(conn, b["tender_id"])
             if tender:
                 t = _ser(tender)
@@ -354,7 +368,7 @@ async def submit_bid(
         tender = _load_tender(conn, tender_id)
         if not tender:
             raise HTTPException(status_code=404, detail="tender_not_found")
-        if tender["status"] not in ("open", "selecting"):
+        if tender["status"] != "open":
             raise HTTPException(status_code=409, detail="tender_not_accepting_bids")
 
         cur = conn.cursor()
@@ -365,21 +379,24 @@ async def submit_bid(
             (tender_id, x_org_id),
         )
         bid_id = str(uuid.uuid4())
+        # No whole-bid total any more — pricing is per-line hourly. We
+        # keep total_price NULL and store arrival_date.
         cur.execute(
             """INSERT INTO foreign_bids
-               (id, tender_id, corporation_id, total_price, currency,
-                delivery_estimate_days, notes, status, created_by_user_id)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,'submitted',%s)""",
-            (bid_id, tender_id, x_org_id, data.total_price, data.currency,
-             data.delivery_estimate_days, data.notes, x_user_id),
+               (id, tender_id, corporation_id, currency,
+                arrival_date, notes, status, created_by_user_id)
+               VALUES (%s,%s,%s,%s,%s,%s,'submitted',%s)""",
+            (bid_id, tender_id, x_org_id, data.currency,
+             data.arrival_date or None, data.notes, x_user_id),
         )
         for it in data.items:
+            # unit_price column carries the per-line HOURLY rate.
             cur.execute(
                 """INSERT INTO foreign_bid_items
                    (id, bid_id, tender_item_id, profession_type, quantity_offered, unit_price)
                    VALUES (%s,%s,%s,%s,%s,%s)""",
                 (str(uuid.uuid4()), bid_id, it.tender_item_id, it.profession_type,
-                 it.quantity_offered, it.unit_price),
+                 it.quantity_offered, it.hourly_rate),
             )
         conn.commit()
         audit.log("foreign_bid", bid_id, "submitted", x_user_id or "unknown",
@@ -423,20 +440,21 @@ def withdraw_bid(
         conn.close()
 
 
-# ── Contractor: select bids ─────────────────────────────────────────
+# ── Contractor: select offer LINES + send contact request ──────────
 
 @router.post("/{tender_id}/select")
-async def select_bids(
+async def select_lines(
     tender_id: str,
-    data: SelectBids,
+    data: SelectLines,
     x_org_id: Optional[str] = Header(default=None),
     x_user_id: Optional[str] = Header(default=None),
     x_user_role: Optional[str] = Header(default=None),
 ):
-    """Contractor picks one or more bids. Marks them 'selected', resets
-    any previously-selected-but-now-deselected bids back to 'submitted',
-    and moves the tender to 'awaiting_admin' so the admin can approve +
-    reveal. Re-callable until the admin approves."""
+    """Contractor picks individual offer LINES (bid_item ids) — different
+    corps can win different professions. Marks those bid_items selected
+    (+ their parent bids), clears any deselected lines, and moves the
+    tender to 'awaiting_admin' (the contact request the admin must
+    approve before identities are revealed). Re-callable until approval."""
     conn = get_db()
     try:
         tender = _load_tender(conn, tender_id)
@@ -444,42 +462,58 @@ async def select_bids(
             raise HTTPException(status_code=404, detail="tender_not_found")
         if x_user_role != "admin" and x_org_id != tender["contractor_id"]:
             raise HTTPException(status_code=403, detail="forbidden")
-        if tender["status"] not in ("open", "selecting", "awaiting_admin"):
+        if tender["status"] not in ("open", "awaiting_admin"):
             raise HTTPException(status_code=409, detail="tender_locked")
-        if not data.bid_ids:
-            raise HTTPException(status_code=400, detail="select_at_least_one_bid")
+        if not data.bid_item_ids:
+            raise HTTPException(status_code=400, detail="select_at_least_one_line")
 
         cur = conn.cursor()
-        # Validate the bids belong to this tender + are live.
-        fmt = ",".join(["%s"] * len(data.bid_ids))
+        # Validate every chosen line belongs to a live bid on this tender.
+        fmt = ",".join(["%s"] * len(data.bid_item_ids))
         cur.execute(
-            f"SELECT id FROM foreign_bids WHERE tender_id=%s AND id IN ({fmt}) "
-            f"AND status IN ('submitted','selected')",
-            (tender_id, *data.bid_ids),
+            f"""SELECT bi.id, bi.bid_id FROM foreign_bid_items bi
+                  JOIN foreign_bids b ON b.id = bi.bid_id
+                 WHERE b.tender_id=%s AND bi.id IN ({fmt})
+                   AND b.status IN ('submitted','selected')""",
+            (tender_id, *data.bid_item_ids),
         )
-        valid = {r["id"] for r in cur.fetchall()}
-        if len(valid) != len(set(data.bid_ids)):
-            raise HTTPException(status_code=400, detail="invalid_bid_ids")
+        valid_rows = cur.fetchall()
+        if len(valid_rows) != len(set(data.bid_item_ids)):
+            raise HTTPException(status_code=400, detail="invalid_line_ids")
+        winning_bid_ids = {r["bid_id"] for r in valid_rows}
 
-        # Reset selection: anything previously selected goes back to
-        # submitted, then mark the chosen set selected.
+        # Clear all line selections on this tender, then set the chosen.
+        cur.execute(
+            """UPDATE foreign_bid_items bi
+                  JOIN foreign_bids b ON b.id = bi.bid_id
+                 SET bi.selected=0
+               WHERE b.tender_id=%s""",
+            (tender_id,),
+        )
+        cur.execute(
+            f"UPDATE foreign_bid_items SET selected=1 WHERE id IN ({fmt})",
+            tuple(data.bid_item_ids),
+        )
+        # A bid is 'selected' iff it has at least one selected line.
         cur.execute(
             "UPDATE foreign_bids SET status='submitted', selected_at=NULL "
             "WHERE tender_id=%s AND status='selected'",
             (tender_id,),
         )
-        cur.execute(
-            f"UPDATE foreign_bids SET status='selected', selected_at=NOW() "
-            f"WHERE id IN ({fmt})",
-            tuple(data.bid_ids),
-        )
+        if winning_bid_ids:
+            bfmt = ",".join(["%s"] * len(winning_bid_ids))
+            cur.execute(
+                f"UPDATE foreign_bids SET status='selected', selected_at=NOW() "
+                f"WHERE id IN ({bfmt})",
+                tuple(winning_bid_ids),
+            )
         cur.execute(
             "UPDATE foreign_tenders SET status='awaiting_admin' WHERE id=%s",
             (tender_id,),
         )
         conn.commit()
-        audit.log("foreign_tender", tender_id, "bids_selected", x_user_id or "unknown",
-                  new_value={"bid_ids": data.bid_ids})
+        audit.log("foreign_tender", tender_id, "lines_selected", x_user_id or "unknown",
+                  new_value={"bid_item_ids": data.bid_item_ids})
     except HTTPException:
         raise
     except Exception as e:
@@ -488,9 +522,10 @@ async def select_bids(
     finally:
         conn.close()
 
-    await publish_event("tender.bids_selected", {
+    # Notify admins a contact request is awaiting approval.
+    await publish_event("tender.contact_requested", {
         "tender_id": tender_id,
-        "bid_ids": data.bid_ids,
+        "bid_item_ids": data.bid_item_ids,
     })
     return {"ok": True, "status": "awaiting_admin"}
 
@@ -545,6 +580,47 @@ def admin_list_tenders(
         return rows
     finally:
         conn.close()
+
+
+@router.post("/{tender_id}/admin/publish")
+async def admin_publish(
+    tender_id: str,
+    x_user_id: Optional[str] = Header(default=None),
+    x_user_role: Optional[str] = Header(default=None),
+):
+    """Gate 1 — admin approves a pending tender for broadcast. Flips
+    pending_admin → open and fans the tender out to corps for bidding.
+    Until this runs, corps never see the tender."""
+    if x_user_role != "admin":
+        raise HTTPException(status_code=403, detail="admin_only")
+    conn = get_db()
+    try:
+        tender = _load_tender(conn, tender_id)
+        if not tender:
+            raise HTTPException(status_code=404, detail="tender_not_found")
+        if tender["status"] != "pending_admin":
+            raise HTTPException(status_code=409, detail="not_pending_publish")
+        cur = conn.cursor()
+        cur.execute("UPDATE foreign_tenders SET status='open' WHERE id=%s", (tender_id,))
+        conn.commit()
+        items = _load_items(conn, tender_id)
+        audit.log("foreign_tender", tender_id, "admin_published", x_user_id or "admin")
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+    # NOW broadcast to corps (notification consumer fans out SMS).
+    await publish_event("tender.published", {
+        "tender_id": tender_id,
+        "contractor_id": tender["contractor_id"],
+        "professions": [it["profession_type"] for it in items],
+        "total_quantity": sum(it["quantity"] for it in items),
+    })
+    return {"ok": True, "status": "open"}
 
 
 @router.post("/{tender_id}/admin/approve")
