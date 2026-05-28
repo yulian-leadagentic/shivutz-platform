@@ -1,5 +1,5 @@
 from fastapi import FastAPI, HTTPException
-from app.routes import deals, messages, reports, commissions
+from app.routes import deals, messages, reports, commissions, tenders
 from app.db import get_db, init_db
 from app.errors import register_error_handlers
 
@@ -35,3 +35,4 @@ app.include_router(deals.router,       prefix="/deals",       tags=["deals"])
 app.include_router(messages.router,    prefix="/deals",       tags=["messages"])
 app.include_router(reports.router,     prefix="/deals",       tags=["reports"])
 app.include_router(commissions.router, prefix="/commissions", tags=["commissions"])
+app.include_router(tenders.router,     prefix="/tenders",     tags=["tenders"])

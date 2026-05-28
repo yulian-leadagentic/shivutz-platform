@@ -44,6 +44,7 @@ const services = {
   '/api/searches':      process.env.JOB_MATCH_SERVICE_URL     || 'http://job-match:3004',
   '/api/deals':         process.env.DEAL_SERVICE_URL          || 'http://deal:3005',
   '/api/commissions':   process.env.DEAL_SERVICE_URL          || 'http://deal:3005',
+  '/api/tenders':       process.env.DEAL_SERVICE_URL          || 'http://deal:3005',
   '/api/notifications': process.env.NOTIFICATION_SERVICE_URL  || 'http://notification:3006',
   '/api/webhooks':      process.env.NOTIFICATION_SERVICE_URL  || 'http://notification:3006',
   '/api/admin':         process.env.ADMIN_SERVICE_URL         || 'http://admin:3007',
