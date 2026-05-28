@@ -52,13 +52,18 @@ interface Props {
 
 export function ProfessionIcon({ code, size = 48, className, alt }: Props) {
   if (HAS_IMAGE[code]) {
+    // The illustrated PNGs aren't square (the LEGO-style renders are
+    // portrait). Constrain to a `size`×`size` box but use object-contain
+    // so they letterbox instead of squashing. `object-contain` is
+    // forced on regardless of the caller's className.
     return (
       <Image
         src={`/profession-icons/${code}.png`}
         alt={alt ?? code}
         width={size}
         height={size}
-        className={className}
+        className={`object-contain ${className ?? ''}`}
+        style={{ width: size, height: size }}
         unoptimized
       />
     );
