@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import Logo from '@/components/Logo';
-import { Home, LayoutDashboard, Users, Handshake, LogOut, UserCog, CreditCard, Store } from 'lucide-react';
+import { Home, LayoutDashboard, Users, Handshake, LogOut, UserCog, CreditCard, Store, Globe2 } from 'lucide-react';
 import { clearTokens } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 
@@ -22,6 +22,11 @@ const navItems = [
     label: 'עסקאות',
     href: '/corporation/deals',
     icon: Handshake,
+  },
+  {
+    label: 'מכרזי ייבוא',
+    href: '/corporation/tenders',
+    icon: Globe2,
   },
   {
     label: 'שוק',

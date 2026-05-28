@@ -1,17 +1,17 @@
 'use client';
 
-// Wave 3 — contractor "find workers" entry point.
-// Step 1: pick a recruitment category (domestic vs foreign).
-//
-// Wave 4 polish: the "ייבוא עובדים מחו״ל" tile is intentionally
-// disabled with a "בקרוב" badge — that flow isn't built yet, but the
-// category needs to be visible so contractors know it's coming.
+// Contractor "find workers" entry point.
+// Step 1: pick a recruitment category.
+//   domestic → existing matcher-driven search flow (/contractor/find/domestic)
+//   foreign  → tender flow: publish a multi-profession import request,
+//              corps bid, contractor selects (/contractor/tenders/new)
 
 import Link from 'next/link';
 import { Globe2, MapPin } from 'lucide-react';
 
 interface Category {
   slug: 'domestic' | 'foreign';
+  href: string;
   title: string;
   subtitle: string;
   icon: typeof MapPin;
@@ -21,16 +21,17 @@ interface Category {
 const CATEGORIES: Category[] = [
   {
     slug: 'domestic',
+    href: '/contractor/find/domestic',
     title: 'גיוס עובדים מהארץ',
     subtitle: 'עובדים שכבר נמצאים בישראל ומוכנים לעבודה',
     icon: MapPin,
   },
   {
     slug: 'foreign',
+    href: '/contractor/tenders/new',
     title: 'ייבוא עובדים חדשים מחו״ל',
-    subtitle: 'עובדים מחו״ל — תהליך הבאה לישראל',
+    subtitle: 'פרסום מכרז לתאגידים — קבלת הצעות והבאת עובדים לישראל',
     icon: Globe2,
-    comingSoon: true,
   },
 ];
 
@@ -83,7 +84,7 @@ export default function FindCategoriesPage() {
           return (
             <Link
               key={cat.slug}
-              href={`/contractor/find/${cat.slug}`}
+              href={cat.href}
               className={`${baseClass} hover:border-brand-500 hover:bg-brand-50/30 hover:shadow-md active:scale-[0.99]`}
             >
               {inner}

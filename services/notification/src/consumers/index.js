@@ -41,6 +41,12 @@ async function startConsumer() {
     // there's a contractor actively looking — turns dead-ends into
     // recruiting moments.
     'search.no_match',
+    // Foreign-import tenders: published → broadcast to corps; bid →
+    // nudge contractor; revealed → tell both parties identities are
+    // now visible.
+    'tender.published',
+    'tender.bid_submitted',
+    'tender.revealed',
   ];
   for (const key of keys) {
     await channel.bindQueue(queue, EXCHANGE_NAME, key);

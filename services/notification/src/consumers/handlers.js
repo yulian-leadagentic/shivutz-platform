@@ -590,6 +590,25 @@ async function handle(routingKey, payload, sendEmail) {
       await broadcastNoMatch(payload);
       break;
 
+    // ── Foreign-import tenders ──────────────────────────────────────
+
+    case 'tender.published':
+      // A contractor published an import tender. Broadcast to every
+      // tier_2 corp so they can bid. Contractor stays anonymous.
+      await broadcastTender(payload);
+      break;
+
+    case 'tender.bid_submitted':
+      // A corp bid on a tender — nudge the contractor to review.
+      await notifyContractorOfBid(payload);
+      break;
+
+    case 'tender.revealed':
+      // Admin approved + revealed. Tell the contractor + each winning
+      // corp that identities are now visible and they can connect.
+      await notifyTenderRevealed(payload);
+      break;
+
     default:
       console.warn(`[handlers] No handler for: ${routingKey}`);
   }
@@ -647,6 +666,97 @@ async function translateProfession(code) {
     return hit?.name_he || code;
   } catch {
     return code;
+  }
+}
+
+// ── Foreign-tender notification helpers ─────────────────────────────
+
+async function fetchCorpPhone(corpId) {
+  try {
+    const r = await fetch(`${USER_ORG_URL}/organizations/corporations/${corpId}`);
+    if (r.ok) { const c = await r.json(); return c?.contact_phone || null; }
+  } catch (err) { console.error('[tender] corp lookup unreachable:', err.message); }
+  return null;
+}
+
+async function fetchContractorPhone(contractorId) {
+  try {
+    const r = await fetch(`${USER_ORG_URL}/organizations/contractors/${contractorId}`);
+    if (r.ok) { const c = await r.json(); return c?.contact_phone || null; }
+  } catch (err) { console.error('[tender] contractor lookup unreachable:', err.message); }
+  return null;
+}
+
+/**
+ * tender.published — fan out to every active tier_2 corporation. The
+ * contractor's identity is NOT included (double-blind); the SMS just
+ * says "a new import tender is open, go bid".
+ */
+async function broadcastTender(payload) {
+  const profCount = Array.isArray(payload.professions) ? payload.professions.length : 0;
+  const qty = payload.total_quantity || 0;
+  let corps = [];
+  try {
+    // foreign tenders → corps that recruit foreign workers (tier_2).
+    const url = `${USER_ORG_URL}/organizations/corporations?tier=tier_2&recruitment_type=foreign`;
+    const resp = await fetch(url);
+    if (resp.ok) corps = await resp.json();
+  } catch (err) {
+    console.error('[tender.published] corp directory unreachable:', err.message);
+    return;
+  }
+  if (!Array.isArray(corps) || corps.length === 0) return;
+
+  const link = `${FRONTEND_URL}/corporation/tenders`;
+  const message =
+    `שיבוץ — מכרז ייבוא חדש: קבלן מבקש ${qty} עובדים מחו״ל ` +
+    `(${profCount} מקצועות). אם תוכלו לספק — הגישו הצעה: ${link}`;
+
+  for (const c of corps) {
+    if (!c?.contact_phone) continue;
+    await sendSmsInternal(c.contact_phone, message);
+  }
+}
+
+/**
+ * tender.bid_submitted — nudge the contractor that a new bid landed.
+ */
+async function notifyContractorOfBid(payload) {
+  if (!payload.contractor_id) return;
+  const phone = await fetchContractorPhone(payload.contractor_id);
+  if (!phone) return;
+  const link = `${FRONTEND_URL}/contractor/tenders/${payload.tender_id}`;
+  await sendSmsInternal(
+    phone,
+    `שיבוץ — התקבלה הצעה חדשה למכרז הייבוא שלך. היכנס לבדוק ולבחור: ${link}`,
+  );
+}
+
+/**
+ * tender.revealed — admin approved + unblinded. Notify the contractor
+ * and each winning corp that they can now see each other + connect.
+ */
+async function notifyTenderRevealed(payload) {
+  const contractorLink = `${FRONTEND_URL}/contractor/tenders/${payload.tender_id}`;
+  const corpLink       = `${FRONTEND_URL}/corporation/tenders/${payload.tender_id}`;
+
+  if (payload.contractor_id) {
+    const cPhone = await fetchContractorPhone(payload.contractor_id);
+    if (cPhone) {
+      await sendSmsInternal(
+        cPhone,
+        `שיבוץ — מכרז הייבוא אושר ע״י מנהל המערכת. פרטי התאגיד הזוכה נחשפו: ${contractorLink}`,
+      );
+    }
+  }
+  for (const corpId of (payload.corporation_ids || [])) {
+    const phone = await fetchCorpPhone(corpId);
+    if (phone) {
+      await sendSmsInternal(
+        phone,
+        `שיבוץ — זכיתם במכרז ייבוא עובדים! פרטי הקבלן נחשפו, ניתן ליצור קשר: ${corpLink}`,
+      );
+    }
   }
 }
 

@@ -11,6 +11,8 @@ export { orgApi } from './organizations';
 export { jobApi, searchApi } from './jobs';
 export { workerApi } from './workers';
 export { dealApi } from './deals';
+export { tenderApi } from './tenders';
+export type { Tender, TenderItem, Bid, BidItem, TenderCreatePayload, BidCreatePayload } from './tenders';
 
 export { memberApi } from './members';
 export type { TeamMember } from './members';
