@@ -128,6 +128,42 @@ def _bid_item(row: dict) -> dict:
     return out
 
 
+def _corp_ref_no(conn, tender_id: str, corp_id: str) -> int:
+    """Anonymous per-corp running number for a tender. Returns the
+    existing ref or assigns the next sequential number for this corp.
+    Lets the corp see "בקשה מספר N" without ever learning the
+    contractor's title."""
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT ref_no FROM foreign_tender_corp_ref WHERE tender_id=%s AND corporation_id=%s",
+        (tender_id, corp_id),
+    )
+    row = cur.fetchone()
+    if row:
+        return int(row["ref_no"])
+    cur.execute(
+        "SELECT COALESCE(MAX(ref_no),0)+1 AS n FROM foreign_tender_corp_ref WHERE corporation_id=%s",
+        (corp_id,),
+    )
+    nxt = int(cur.fetchone()["n"])
+    try:
+        cur.execute(
+            "INSERT INTO foreign_tender_corp_ref (id, tender_id, corporation_id, ref_no) VALUES (%s,%s,%s,%s)",
+            (str(uuid.uuid4()), tender_id, corp_id, nxt),
+        )
+        conn.commit()
+    except Exception:
+        # Race: another request assigned it first — re-read.
+        conn.rollback()
+        cur.execute(
+            "SELECT ref_no FROM foreign_tender_corp_ref WHERE tender_id=%s AND corporation_id=%s",
+            (tender_id, corp_id),
+        )
+        r = cur.fetchone()
+        nxt = int(r["ref_no"]) if r else nxt
+    return nxt
+
+
 def _anon_label_map(bids: List[dict]) -> dict:
     """Stable 'תאגיד N' label per corporation_id, numbered by the order
     their first bid arrived. Keeps the same corp looking like the same
@@ -245,10 +281,12 @@ def list_open_tenders(
         rows = [_ser(r) for r in cur.fetchall()]
         out = []
         for t in rows:
-            # Double-blind: hide the contractor until revealed.
+            # Double-blind: hide the contractor + title until revealed.
             if not t.get("revealed_at"):
                 t["contractor_id"] = None
                 t["contractor_anon"] = "קבלן"
+                t["title"] = None
+            t["ref_no"] = _corp_ref_no(conn, t["id"], x_org_id)
             t["items"] = _load_items(conn, t["id"])
             cur.execute(
                 "SELECT * FROM foreign_bids WHERE tender_id=%s AND corporation_id=%s ORDER BY submitted_at DESC LIMIT 1",
@@ -288,6 +326,8 @@ def list_my_bids(
                 if not t.get("revealed_at"):
                     t["contractor_id"] = None
                     t["contractor_anon"] = "קבלן"
+                    t["title"] = None
+                t["ref_no"] = _corp_ref_no(conn, t["id"], x_org_id)
                 t["items"] = _load_items(conn, t["id"])
                 b["tender"] = t
         return bids
@@ -325,7 +365,10 @@ def get_tender(
             return t
 
         if is_owner:
-            bids = _load_bids_with_items(conn, tender_id)
+            # The contractor only ever sees admin-APPROVED bids. A bid
+            # sitting in 'pending_admin' (or rejected/withdrawn) is hidden.
+            bids = [b for b in _load_bids_with_items(conn, tender_id)
+                    if b["status"] in ("submitted", "selected", "confirmed")]
             if not revealed:
                 labels = _anon_label_map(bids)
                 for b in bids:
@@ -335,10 +378,13 @@ def get_tender(
             return t
 
         if is_corp and x_org_id:
-            # Corp sees the tender (contractor masked) + only its own bid.
+            # Corp sees the tender (contractor + title masked) + only
+            # its own bid, plus its anonymous per-corp request number.
             if not revealed:
                 t["contractor_id"] = None
                 t["contractor_anon"] = "קבלן"
+                t["title"] = None
+            t["ref_no"] = _corp_ref_no(conn, tender_id, x_org_id)
             all_bids = _load_bids_with_items(conn, tender_id)
             t["bids"] = [b for b in all_bids if b["corporation_id"] == x_org_id]
             return t
@@ -362,6 +408,14 @@ async def submit_bid(
         raise HTTPException(status_code=403, detail="only_corporation_can_bid")
     if not data.items:
         raise HTTPException(status_code=400, detail="bid_must_offer_workers")
+    # Every offered line must carry an hourly rate. Return the offending
+    # profession codes so the frontend can build a Hebrew message like
+    # "לא הוזן מחיר שעת עבודה לעובדי הריצוף מסין".
+    missing = [it.profession_type for it in data.items
+               if it.quantity_offered and (it.hourly_rate is None or it.hourly_rate <= 0)]
+    if missing:
+        raise HTTPException(status_code=400,
+                            detail={"code": "missing_hourly_rate", "professions": missing})
 
     conn = get_db()
     try:
@@ -372,20 +426,22 @@ async def submit_bid(
             raise HTTPException(status_code=409, detail="tender_not_accepting_bids")
 
         cur = conn.cursor()
-        # One active bid per corp per tender — withdraw any prior live one.
+        # One active bid per corp per tender — withdraw any prior live one
+        # (including one still pending admin approval).
         cur.execute(
             "UPDATE foreign_bids SET status='withdrawn' "
-            "WHERE tender_id=%s AND corporation_id=%s AND status IN ('submitted','selected')",
+            "WHERE tender_id=%s AND corporation_id=%s AND status IN ('pending_admin','submitted','selected')",
             (tender_id, x_org_id),
         )
         bid_id = str(uuid.uuid4())
-        # No whole-bid total any more — pricing is per-line hourly. We
-        # keep total_price NULL and store arrival_date.
+        # Bid lands as 'pending_admin' — INVISIBLE to the contractor until
+        # the admin approves it (see admin_approve_bid). Pricing is
+        # per-line hourly so total_price stays NULL; arrival_date stored.
         cur.execute(
             """INSERT INTO foreign_bids
                (id, tender_id, corporation_id, currency,
                 arrival_date, notes, status, created_by_user_id)
-               VALUES (%s,%s,%s,%s,%s,%s,'submitted',%s)""",
+               VALUES (%s,%s,%s,%s,%s,%s,'pending_admin',%s)""",
             (bid_id, tender_id, x_org_id, data.currency,
              data.arrival_date or None, data.notes, x_user_id),
         )
@@ -399,7 +455,7 @@ async def submit_bid(
                  it.quantity_offered, it.hourly_rate),
             )
         conn.commit()
-        audit.log("foreign_bid", bid_id, "submitted", x_user_id or "unknown",
+        audit.log("foreign_bid", bid_id, "submitted_pending_admin", x_user_id or "unknown",
                   new_value={"tender_id": tender_id})
     except HTTPException:
         raise
@@ -409,13 +465,14 @@ async def submit_bid(
     finally:
         conn.close()
 
-    await publish_event("tender.bid_submitted", {
+    # Admin-facing only (not bound → no SMS). The contractor is notified
+    # later, when the admin APPROVES the bid (publishes tender.bid_submitted).
+    await publish_event("tender.bid_pending_admin", {
         "tender_id": tender_id,
         "bid_id": bid_id,
         "corporation_id": x_org_id,
-        "contractor_id": tender["contractor_id"],
     })
-    return {"id": bid_id, "status": "submitted"}
+    return {"id": bid_id, "status": "pending_admin"}
 
 
 @router.post("/{tender_id}/bids/withdraw")
@@ -431,11 +488,99 @@ def withdraw_bid(
         cur = conn.cursor()
         cur.execute(
             "UPDATE foreign_bids SET status='withdrawn' "
-            "WHERE tender_id=%s AND corporation_id=%s AND status IN ('submitted','selected')",
+            "WHERE tender_id=%s AND corporation_id=%s AND status IN ('pending_admin','submitted','selected')",
             (tender_id, x_org_id),
         )
         conn.commit()
         return {"ok": True, "withdrawn": cur.rowcount}
+    finally:
+        conn.close()
+
+
+# ── Admin: per-bid approval gate ────────────────────────────────────
+# A corp's bid lands as 'pending_admin' and is invisible to the
+# contractor. The admin reviews it and either approves it (→ 'submitted',
+# now visible + contractor notified) or rejects it with a reason.
+
+class BidReject(BaseModel):
+    reason: Optional[str] = None
+
+
+@router.post("/{tender_id}/bids/{bid_id}/admin/approve")
+async def admin_approve_bid(
+    tender_id: str,
+    bid_id: str,
+    x_user_id: Optional[str] = Header(default=None),
+    x_user_role: Optional[str] = Header(default=None),
+):
+    if x_user_role != "admin":
+        raise HTTPException(status_code=403, detail="admin_only")
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT * FROM foreign_bids WHERE id=%s AND tender_id=%s",
+            (bid_id, tender_id),
+        )
+        bid = cur.fetchone()
+        if not bid:
+            raise HTTPException(status_code=404, detail="bid_not_found")
+        if bid["status"] != "pending_admin":
+            raise HTTPException(status_code=409, detail="bid_not_pending")
+        cur.execute(
+            "UPDATE foreign_bids SET status='submitted', approved_at=NOW(), "
+            "approved_by_user_id=%s WHERE id=%s",
+            (x_user_id, bid_id),
+        )
+        conn.commit()
+        tender = _load_tender(conn, tender_id)
+        audit.log("foreign_bid", bid_id, "admin_approved", x_user_id or "admin")
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+    # Now visible to the contractor — reuse the existing "new bid" SMS.
+    await publish_event("tender.bid_submitted", {
+        "tender_id": tender_id,
+        "bid_id": bid_id,
+        "corporation_id": bid["corporation_id"],
+        "contractor_id": tender["contractor_id"] if tender else None,
+    })
+    return {"ok": True, "status": "submitted"}
+
+
+@router.post("/{tender_id}/bids/{bid_id}/admin/reject")
+async def admin_reject_bid(
+    tender_id: str,
+    bid_id: str,
+    data: BidReject,
+    x_user_id: Optional[str] = Header(default=None),
+    x_user_role: Optional[str] = Header(default=None),
+):
+    if x_user_role != "admin":
+        raise HTTPException(status_code=403, detail="admin_only")
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id FROM foreign_bids WHERE id=%s AND tender_id=%s",
+            (bid_id, tender_id),
+        )
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail="bid_not_found")
+        cur.execute(
+            "UPDATE foreign_bids SET status='rejected', rejection_reason=%s, "
+            "rejected_at=NOW(), rejected_by_user_id=%s WHERE id=%s",
+            (data.reason or None, x_user_id, bid_id),
+        )
+        conn.commit()
+        audit.log("foreign_bid", bid_id, "admin_rejected", x_user_id or "admin",
+                  new_value={"reason": data.reason})
+        return {"ok": True, "status": "rejected"}
     finally:
         conn.close()
 
@@ -559,6 +704,167 @@ def cancel_tender(
         conn.close()
 
 
+class TenderEdit(BaseModel):
+    title: Optional[str] = None
+    target_start_date: Optional[str] = None
+    notes: Optional[str] = None
+    items: Optional[List[TenderItemIn]] = None
+
+
+def _bid_count(conn, tender_id: str) -> int:
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT COUNT(*) AS n FROM foreign_bids WHERE tender_id=%s "
+        "AND status IN ('submitted','selected','confirmed')",
+        (tender_id,),
+    )
+    return int(cur.fetchone()["n"])
+
+
+@router.patch("/{tender_id}")
+def edit_tender(
+    tender_id: str,
+    data: TenderEdit,
+    x_org_id: Optional[str] = Header(default=None),
+    x_user_id: Optional[str] = Header(default=None),
+    x_user_role: Optional[str] = Header(default=None),
+):
+    """Edit a request.
+       * Owner: allowed only while still editable (status pending_admin
+         or open) AND no live bids yet. Can edit everything incl. items.
+       * Admin: can edit title/notes any time (to SCRUB PII the
+         contractor may have typed — phone, company name — keeping the
+         request anonymous). Items only when there are no bids."""
+    conn = get_db()
+    try:
+        tender = _load_tender(conn, tender_id)
+        if not tender:
+            raise HTTPException(status_code=404, detail="tender_not_found")
+        is_admin = x_user_role == "admin"
+        is_owner = x_org_id == tender["contractor_id"]
+        if not is_admin and not is_owner:
+            raise HTTPException(status_code=403, detail="forbidden")
+
+        has_bids = _bid_count(conn, tender_id) > 0
+        if not is_admin:
+            if tender["status"] not in ("pending_admin", "open"):
+                raise HTTPException(status_code=409, detail="not_editable")
+            if has_bids:
+                raise HTTPException(status_code=409, detail="has_responses_cannot_edit")
+
+        cur = conn.cursor()
+        sets, params = [], []
+        if data.title is not None:               sets.append("title=%s");             params.append(data.title or None)
+        if data.target_start_date is not None:   sets.append("target_start_date=%s"); params.append(data.target_start_date or None)
+        if data.notes is not None:               sets.append("notes=%s");             params.append(data.notes or None)
+        if sets:
+            cur.execute(f"UPDATE foreign_tenders SET {', '.join(sets)} WHERE id=%s", (*params, tender_id))
+
+        # Items can only be replaced when there are no bids (their ids
+        # are referenced by bid lines).
+        if data.items is not None:
+            if has_bids:
+                raise HTTPException(status_code=409, detail="has_responses_cannot_edit_items")
+            cur.execute("DELETE FROM foreign_tender_items WHERE tender_id=%s", (tender_id,))
+            for it in data.items:
+                cur.execute(
+                    """INSERT INTO foreign_tender_items
+                       (id, tender_id, profession_type, origin_country, quantity, min_experience, notes)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s)""",
+                    (str(uuid.uuid4()), tender_id, it.profession_type, it.origin_country,
+                     it.quantity, it.min_experience, it.notes),
+                )
+        conn.commit()
+        audit.log("foreign_tender", tender_id, "edited", x_user_id or "unknown",
+                  new_value={"by": "admin" if is_admin else "owner"})
+        return {"ok": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+
+@router.delete("/{tender_id}")
+def delete_tender(
+    tender_id: str,
+    x_org_id: Optional[str] = Header(default=None),
+    x_user_role: Optional[str] = Header(default=None),
+):
+    """Hard-delete a request (owner or admin). CASCADE removes items,
+    bids, bid lines and per-corp refs. Pre-launch — no soft-delete."""
+    conn = get_db()
+    try:
+        tender = _load_tender(conn, tender_id)
+        if not tender:
+            raise HTTPException(status_code=404, detail="tender_not_found")
+        if x_user_role != "admin" and x_org_id != tender["contractor_id"]:
+            raise HTTPException(status_code=403, detail="forbidden")
+        cur = conn.cursor()
+        cur.execute("DELETE FROM foreign_tenders WHERE id=%s", (tender_id,))
+        conn.commit()
+        return {"ok": True, "deleted": True}
+    finally:
+        conn.close()
+
+
+@router.post("/{tender_id}/freeze")
+def freeze_tender(
+    tender_id: str,
+    x_org_id: Optional[str] = Header(default=None),
+    x_user_role: Optional[str] = Header(default=None),
+):
+    """Freeze a published request — hidden from corps (status filter
+    excludes 'frozen') but kept + restorable. Owner or admin."""
+    conn = get_db()
+    try:
+        tender = _load_tender(conn, tender_id)
+        if not tender:
+            raise HTTPException(status_code=404, detail="tender_not_found")
+        if x_user_role != "admin" and x_org_id != tender["contractor_id"]:
+            raise HTTPException(status_code=403, detail="forbidden")
+        if tender["status"] not in ("open", "pending_admin"):
+            raise HTTPException(status_code=409, detail="cannot_freeze")
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE foreign_tenders SET status='frozen', frozen_at=NOW() WHERE id=%s",
+            (tender_id,),
+        )
+        conn.commit()
+        return {"ok": True, "status": "frozen"}
+    finally:
+        conn.close()
+
+
+@router.post("/{tender_id}/unfreeze")
+def unfreeze_tender(
+    tender_id: str,
+    x_org_id: Optional[str] = Header(default=None),
+    x_user_role: Optional[str] = Header(default=None),
+):
+    """Restore a frozen request back to 'open'."""
+    conn = get_db()
+    try:
+        tender = _load_tender(conn, tender_id)
+        if not tender:
+            raise HTTPException(status_code=404, detail="tender_not_found")
+        if x_user_role != "admin" and x_org_id != tender["contractor_id"]:
+            raise HTTPException(status_code=403, detail="forbidden")
+        if tender["status"] != "frozen":
+            raise HTTPException(status_code=409, detail="not_frozen")
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE foreign_tenders SET status='open', frozen_at=NULL WHERE id=%s",
+            (tender_id,),
+        )
+        conn.commit()
+        return {"ok": True, "status": "open"}
+    finally:
+        conn.close()
+
+
 # ── Admin: oversight + approve/reveal ───────────────────────────────
 
 @router.get("/admin/all")
@@ -575,9 +881,42 @@ def admin_list_tenders(
         for t in rows:
             t["items"] = _load_items(conn, t["id"])
             bids = _load_bids_with_items(conn, t["id"])
+            # Attach each corp's anonymous per-corp request number so the
+            # admin can map "תאגיד X → בקשה מספר N" back to this tender.
+            cur.execute(
+                "SELECT corporation_id, ref_no FROM foreign_tender_corp_ref WHERE tender_id=%s",
+                (t["id"],),
+            )
+            ref_map = {r["corporation_id"]: int(r["ref_no"]) for r in cur.fetchall()}
+            for b in bids:
+                b["corp_ref_no"] = ref_map.get(b["corporation_id"])
             t["bids"] = bids
             t["selected_bids"] = [b for b in bids if b["status"] in ("selected", "confirmed")]
         return rows
+    finally:
+        conn.close()
+
+
+@router.get("/admin/summary")
+def admin_summary(x_user_role: Optional[str] = Header(default=None)):
+    """Lightweight counts for the admin dashboard widget — how many
+    foreign-import requests sit in each actionable bucket."""
+    if x_user_role != "admin":
+        raise HTTPException(status_code=403, detail="admin_only")
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT
+                 SUM(status='pending_admin')  AS pending_publish,
+                 SUM(status='open')           AS open_for_bids,
+                 SUM(status='awaiting_admin') AS awaiting_contact,
+                 SUM(status='in_progress')    AS in_progress
+               FROM foreign_tenders"""
+        )
+        r = cur.fetchone() or {}
+        return {k: int(r.get(k) or 0) for k in
+                ("pending_publish", "open_for_bids", "awaiting_contact", "in_progress")}
     finally:
         conn.close()
 
@@ -623,6 +962,45 @@ async def admin_publish(
     return {"ok": True, "status": "open"}
 
 
+class RejectReason(BaseModel):
+    reason: Optional[str] = None
+
+
+@router.post("/{tender_id}/admin/reject")
+async def admin_reject(
+    tender_id: str,
+    data: RejectReason,
+    x_user_id: Optional[str] = Header(default=None),
+    x_user_role: Optional[str] = Header(default=None),
+):
+    """Admin rejects a request (at the publish gate or later) with an
+    optional free-text reason. Status → 'rejected'; live bids voided."""
+    if x_user_role != "admin":
+        raise HTTPException(status_code=403, detail="admin_only")
+    conn = get_db()
+    try:
+        tender = _load_tender(conn, tender_id)
+        if not tender:
+            raise HTTPException(status_code=404, detail="tender_not_found")
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE foreign_tenders SET status='rejected', rejection_reason=%s, "
+            "rejected_at=NOW(), rejected_by_user_id=%s WHERE id=%s",
+            (data.reason or None, x_user_id, tender_id),
+        )
+        cur.execute(
+            "UPDATE foreign_bids SET status='rejected' "
+            "WHERE tender_id=%s AND status IN ('submitted','selected')",
+            (tender_id,),
+        )
+        conn.commit()
+        audit.log("foreign_tender", tender_id, "admin_rejected", x_user_id or "admin",
+                  new_value={"reason": data.reason})
+        return {"ok": True, "status": "rejected"}
+    finally:
+        conn.close()
+
+
 @router.post("/{tender_id}/admin/approve")
 async def admin_approve(
     tender_id: str,
@@ -656,7 +1034,7 @@ async def admin_approve(
         )
         cur.execute(
             "UPDATE foreign_bids SET status='rejected' "
-            "WHERE tender_id=%s AND status='submitted'",
+            "WHERE tender_id=%s AND status IN ('submitted','pending_admin')",
             (tender_id,),
         )
         cur.execute(

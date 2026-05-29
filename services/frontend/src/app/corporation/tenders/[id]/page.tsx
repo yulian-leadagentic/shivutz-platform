@@ -9,7 +9,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
   Loader2, Globe2, AlertCircle, Users, Send, ShieldCheck, Clock,
-  Phone, Mail, Building2,
+  Phone, Mail, Building2, XCircle,
 } from 'lucide-react';
 import { tenderApi, orgApi, type Tender, type Bid } from '@/lib/api';
 import type { Corporation } from '@/types';
@@ -38,8 +38,10 @@ export default function CorpTenderDetailPage() {
     tenderApi.get(id)
       .then((t) => {
         setTender(t);
-        // Seed from an existing live bid (re-bid flow).
-        const mine = (t.bids ?? []).find((b) => b.status === 'submitted' || b.status === 'selected' || b.status === 'confirmed');
+        // Seed from the most-recent live bid (re-bid flow). Includes a
+        // bid still pending admin approval.
+        const mine = [...(t.bids ?? [])].reverse()
+          .find((b) => b.status !== 'withdrawn' && b.status !== 'rejected');
         if (mine) {
           const seedQty: Record<string, number> = {};
           const seedRate: Record<string, number> = {};
@@ -59,8 +61,12 @@ export default function CorpTenderDetailPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  const myBid: Bid | undefined = (tender?.bids ?? [])
+  const myBid: Bid | undefined = [...(tender?.bids ?? [])].reverse()
     .find((b) => b.status !== 'withdrawn' && b.status !== 'rejected');
+  // Most-recent rejected bid (admin declined it) — shown only when there's
+  // no live bid, so the corp learns why and can re-submit.
+  const rejectedBid: Bid | undefined = [...(tender?.bids ?? [])].reverse()
+    .find((b) => b.status === 'rejected');
   const revealed = !!tender?.revealed_at;
 
   useEffect(() => {
@@ -77,9 +83,11 @@ export default function CorpTenderDetailPage() {
   function setQty(itemId: string, val: number, max: number) {
     const clamped = Math.max(0, Math.min(val || 0, max));
     setOffered((prev) => ({ ...prev, [itemId]: clamped }));
+    setError('');
   }
   function setRate(itemId: string, val: number) {
     setRates((prev) => ({ ...prev, [itemId]: Math.max(0, val || 0) }));
+    setError('');
   }
 
   const totalOffered = Object.values(offered).reduce((s, n) => s + (n || 0), 0);
@@ -87,15 +95,28 @@ export default function CorpTenderDetailPage() {
 
   async function submit() {
     if (!tender) return;
-    const items = tender.items
-      .filter((it) => (offered[it.id] || 0) > 0)
-      .map((it) => ({
-        tender_item_id: it.id,
-        profession_type: it.profession_type,
-        quantity_offered: offered[it.id],
-        hourly_rate: rates[it.id] ? Number(rates[it.id]) : undefined,
-      }));
-    if (!items.length) { setError('יש להציע לפחות עובד אחד'); return; }
+    const offeredItems = tender.items.filter((it) => (offered[it.id] || 0) > 0);
+    if (!offeredItems.length) { setError('יש להציע לפחות עובד אחד'); return; }
+
+    // Client-side rate validation — every offered line must have a price.
+    // Build a clear, per-line Hebrew message, e.g.
+    // "לא הוזן מחיר שעת עבודה לעובדי ריצוף מסין".
+    const missingRate = offeredItems.filter((it) => !(rates[it.id] > 0));
+    if (missingRate.length) {
+      setError(missingRate.map((it) => {
+        const prof = professionMap[it.profession_type] ?? it.profession_type;
+        const orig = it.origin_country ? ` מ${originMap[it.origin_country] ?? it.origin_country}` : '';
+        return `לא הוזן מחיר שעת עבודה לעובדי ${prof}${orig}`;
+      }).join('\n'));
+      return;
+    }
+
+    const items = offeredItems.map((it) => ({
+      tender_item_id: it.id,
+      profession_type: it.profession_type,
+      quantity_offered: offered[it.id],
+      hourly_rate: Number(rates[it.id]),
+    }));
     setSubmitting(true); setError('');
     try {
       await tenderApi.submitBid(id, {
@@ -103,10 +124,13 @@ export default function CorpTenderDetailPage() {
         notes: notes.trim() || undefined,
         items,
       });
-      load();
+      // Close the screen — back to the requests inbox where the bid
+      // now shows under "ההצעות שלי".
+      router.push('/corporation/tenders');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'שגיאה בהגשת ההצעה');
-    } finally { setSubmitting(false); }
+      setSubmitting(false);
+    }
   }
 
   if (loading) return <div className="flex justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-slate-400" /></div>;
@@ -124,18 +148,39 @@ export default function CorpTenderDetailPage() {
     <div className="max-w-3xl mx-auto px-4 py-6 space-y-5">
       <header className="flex items-center gap-2 flex-wrap">
         <Globe2 className="h-6 w-6 text-brand-600" />
-        <h1 className="text-2xl font-bold text-slate-900">{tender.title || `בקשה ל-${total} עובדים`}</h1>
+        <h1 className="text-2xl font-bold text-slate-900">
+          {tender.ref_no != null ? `בקשה מספר ${tender.ref_no}` : `בקשה ל-${total} עובדים`}
+        </h1>
       </header>
 
       <div className="rounded-2xl border-2 border-brand-200 bg-brand-50/40 p-4 text-sm">
         <p className="text-slate-700">
           מאת: <span className="font-bold">{revealed && contractorCorp ? (contractorCorp.company_name_he || contractorCorp.company_name) : (tender.contractor_anon || 'קבלן')}</span>
-          {tender.target_start_date && <> · התחלה רצויה: <span className="font-semibold">{tender.target_start_date.slice(0, 10)}</span></>}
+          {tender.target_start_date && <> · הגעה לארץ מבוקשת: <span className="font-semibold">{tender.target_start_date.slice(0, 10)}</span></>}
         </p>
         {tender.notes && <p className="text-slate-500 mt-2">{tender.notes}</p>}
       </div>
 
       {/* Bid status banners */}
+      {myBid?.status === 'pending_admin' && (
+        <div className="flex items-start gap-3 bg-slate-100 border border-slate-200 rounded-xl px-4 py-3">
+          <Clock className="h-5 w-5 text-slate-500 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-semibold text-slate-800">הצעתך נשלחה וממתינה לאישור מנהל המערכת</p>
+            <p className="text-xs text-slate-600 mt-0.5">היא תוצג לקבלן רק לאחר אישור מנהל המערכת. ניתן עדיין לעדכן אותה עד לאישור.</p>
+          </div>
+        </div>
+      )}
+      {!myBid && rejectedBid && (
+        <div className="flex items-start gap-3 bg-rose-50 border border-rose-200 rounded-xl px-4 py-3">
+          <XCircle className="h-5 w-5 text-rose-600 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-semibold text-rose-900">הצעתך נדחתה על ידי מנהל המערכת</p>
+            {rejectedBid.rejection_reason && <p className="text-xs text-rose-700 mt-0.5">סיבה: {rejectedBid.rejection_reason}</p>}
+            <p className="text-xs text-rose-700 mt-0.5">ניתן להגיש הצעה מעודכנת.</p>
+          </div>
+        </div>
+      )}
       {myBid?.status === 'selected' && (
         <div className="flex items-start gap-3 bg-amber-50 border border-amber-300 rounded-xl px-4 py-3">
           <Clock className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
@@ -146,7 +191,7 @@ export default function CorpTenderDetailPage() {
         <div className="flex items-start gap-3 bg-emerald-50 border border-emerald-300 rounded-xl px-4 py-3">
           <ShieldCheck className="h-5 w-5 text-emerald-600 shrink-0 mt-0.5" />
           <div>
-            <p className="text-sm font-semibold text-emerald-900">זכית במכרז! 🎉</p>
+            <p className="text-sm font-semibold text-emerald-900">זכית בבקשה! 🎉</p>
             <p className="text-xs text-emerald-700 mt-0.5">פרטי הקבלן נחשפו — ניתן ליצור קשר ישירות.</p>
             {revealed && contractorCorp && (
               <div className="mt-2 space-y-1 text-xs text-emerald-800">
@@ -167,21 +212,22 @@ export default function CorpTenderDetailPage() {
         <div className="space-y-2">
           {tender.items.map((it) => (
             <div key={it.id} className="rounded-xl border border-slate-200 bg-slate-50/40 px-3 py-2.5 space-y-2">
-              <div className="flex items-center gap-2 min-w-0">
+              <div className="flex items-center gap-2.5 min-w-0 flex-wrap">
                 <Users className="h-4 w-4 text-brand-600 shrink-0" />
-                <span className="text-sm font-semibold text-slate-800 truncate">
+                <span className="text-base font-bold text-slate-900 truncate">
                   {professionMap[it.profession_type] ?? it.profession_type}
                 </span>
-                <span className="text-xs text-slate-400 shrink-0">מבוקש: {it.quantity}</span>
+                <span className="text-base font-bold text-brand-700 shrink-0">× {it.quantity}</span>
                 {it.origin_country && (
-                  <span className="text-xs bg-white border border-slate-200 rounded-full px-2 py-0.5 text-slate-500 shrink-0">
+                  <span className="inline-flex items-center gap-1 text-sm font-semibold bg-white border border-brand-200 rounded-full px-2.5 py-0.5 text-brand-700 shrink-0">
+                    <Globe2 className="h-3.5 w-3.5" />
                     {originMap[it.origin_country] ?? it.origin_country}
                   </span>
                 )}
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 flex-wrap">
                 <div className="flex items-center gap-1.5">
-                  <span className="text-xs text-slate-500">אספק</span>
+                  <span className="text-xs text-slate-500">עובדים זמינים</span>
                   <input
                     type="number" min={0} max={it.quantity}
                     disabled={!editable}
@@ -194,7 +240,7 @@ export default function CorpTenderDetailPage() {
                 <div className="flex items-center gap-1.5">
                   <span className="text-xs text-slate-500">₪/שעה</span>
                   <input
-                    type="number" min={0} step="0.5"
+                    type="number" min={0} step="0.01" inputMode="decimal"
                     disabled={!editable}
                     value={rates[it.id] ?? ''}
                     onChange={(e) => setRate(it.id, Number(e.target.value))}
@@ -218,7 +264,7 @@ export default function CorpTenderDetailPage() {
             placeholder="פירוט נוסף על ההצעה" />
         </div>
 
-        {error && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">{error}</p>}
+        {error && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2 whitespace-pre-line">{error}</p>}
 
         {editable ? (
           <div className="flex gap-3">
@@ -230,7 +276,12 @@ export default function CorpTenderDetailPage() {
             <Button type="button" variant="outline" onClick={() => router.push('/corporation/tenders')}>חזרה</Button>
           </div>
         ) : (
-          <Button type="button" variant="outline" onClick={() => router.push('/corporation/tenders')} className="w-full">חזרה למכרזים</Button>
+          <>
+            <p className="text-xs text-slate-500 inline-flex items-center gap-1.5">
+              <Clock className="h-3.5 w-3.5" /> ההצעה ננעלה ואינה ניתנת לעריכה לאחר בחירת הקבלן.
+            </p>
+            <Button type="button" variant="outline" onClick={() => router.push('/corporation/tenders')} className="w-full">חזרה לבקשות</Button>
+          </>
         )}
       </div>
     </div>

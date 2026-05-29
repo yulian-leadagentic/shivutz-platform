@@ -30,7 +30,7 @@ const CATEGORIES: Category[] = [
     slug: 'foreign',
     href: '/contractor/tenders/new',
     title: 'ייבוא עובדים חדשים מחו״ל',
-    subtitle: 'פרסום מכרז לתאגידים — קבלת הצעות והבאת עובדים לישראל',
+    subtitle: 'פרסום בקשה לתאגידים — קבלת הצעות והבאת עובדים לישראל',
     icon: Globe2,
   },
 ];

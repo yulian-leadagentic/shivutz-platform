@@ -24,7 +24,7 @@ const navItems = [
     icon: Handshake,
   },
   {
-    label: 'מכרזי ייבוא',
+    label: 'בקשות ייבוא',
     href: '/corporation/tenders',
     icon: Globe2,
   },

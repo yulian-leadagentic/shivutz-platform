@@ -12,7 +12,7 @@ const NAV = [
   { href: '/admin/dashboard',  label: 'לוח בקרה',      icon: LayoutDashboard },
   { href: '/admin/approvals',  label: 'אישורים',        icon: ClipboardCheck, badge: true },
   { href: '/admin/deals',      label: 'עסקאות',         icon: Handshake },
-  { href: '/admin/tenders',    label: 'מכרזי ייבוא',    icon: Globe2 },
+  { href: '/admin/tenders',    label: 'בקשות ייבוא',    icon: Globe2 },
   { href: '/admin/orgs',       label: 'ארגונים',        icon: Building2 },
   { href: '/admin/users',      label: 'משתמשים',        icon: Users },
   { href: '/admin/leads',      label: 'פניות ובקשות',   icon: Inbox },

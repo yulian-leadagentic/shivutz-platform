@@ -4,11 +4,14 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
   Clock, Briefcase, Handshake, Users, Building2, HardHat,
-  Loader2, AlertTriangle, ChevronLeft, ShieldCheck, Hourglass, Wallet, TrendingUp,
+  Loader2, AlertTriangle, ChevronLeft, ShieldCheck, Hourglass, Wallet, TrendingUp, Globe2,
 } from 'lucide-react';
 import { adminApi, type AdminDashboard, type AdminAlerts } from '@/lib/adminApi';
+import { tenderApi } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+
+type TenderSummary = { pending_publish: number; open_for_bids: number; awaiting_contact: number; in_progress: number };
 
 const DEAL_STATUS_LABEL: Record<string, string> = {
   proposed:           'הצעה נשלחה',
@@ -61,14 +64,16 @@ export default function AdminDashboard() {
   // but the in-app banner is independent and just polls the count
   // so it's always current regardless of cron timing.
   const [overdue, setOverdue] = useState<{ count: number; hours: number } | null>(null);
+  const [tenders, setTenders] = useState<TenderSummary | null>(null);
 
   useEffect(() => {
     Promise.all([
       adminApi.dashboard(),
       adminApi.alerts(),
       adminApi.corpResponseOverdueCount().catch(() => ({ count: 0, hours: 48 })),
+      tenderApi.adminSummary().catch(() => null),
     ])
-      .then(([s, a, o]) => { setStats(s); setAlerts(a); setOverdue(o); })
+      .then(([s, a, o, t]) => { setStats(s); setAlerts(a); setOverdue(o); setTenders(t); })
       .catch(console.error)
       .finally(() => setLoading(false));
   }, []);
@@ -202,6 +207,33 @@ export default function AdminDashboard() {
           sub="הקבלן אישר — חיוב יורד אוטומטית"
           icon={Wallet} color="text-emerald-600" />
       </div>
+
+      {/* FOREIGN-IMPORT REQUESTS — admin's two gates (publish + reveal) */}
+      {tenders && (
+        <div>
+          <h2 className="text-sm font-semibold text-slate-500 mb-2 flex items-center gap-1.5">
+            <Globe2 className="h-4 w-4 text-brand-600" /> בקשות ייבוא עובדים מחו״ל
+          </h2>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <StatTile label="ממתינות לאישור פרסום"
+              value={tenders.pending_publish}
+              sub="חדשות — אשר כדי לפרסם לתאגידים"
+              icon={Hourglass} color="text-slate-700" href="/admin/tenders" />
+            <StatTile label="בקשות קשר לאישורך"
+              value={tenders.awaiting_contact}
+              sub="הקבלן בחר — אשר וחשוף פרטים"
+              icon={ShieldCheck} color="text-amber-600" href="/admin/tenders" />
+            <StatTile label="פתוחות להצעות"
+              value={tenders.open_for_bids}
+              sub="מפורסמות — תאגידים מגישים"
+              icon={Globe2} color="text-sky-600" href="/admin/tenders" />
+            <StatTile label="בתהליך"
+              value={tenders.in_progress}
+              sub="אושרו ונחשפו"
+              icon={Handshake} color="text-emerald-600" href="/admin/tenders" />
+          </div>
+        </div>
+      )}
 
       {/* DEAL STATUS BREAKDOWN */}
       <Card>

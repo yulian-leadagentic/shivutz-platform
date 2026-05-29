@@ -36,7 +36,7 @@ const CONTRACTOR_NAV: NavItem[] = [
   // and the proposals/deals on each. Sidebar label renamed to "בקשות
   // ועסקאות" so the merge is obvious.
   { label: 'בקשות ועסקאות', href: '/contractor/deals',     icon: Handshake },
-  { label: 'מכרזי ייבוא מחו״ל', href: '/contractor/tenders', icon: Globe2 },
+  { label: 'בקשות ייבוא מחו״ל', href: '/contractor/tenders', icon: Globe2 },
   { label: 'ניהול והעלאת מסמכים', href: '/contractor/manage', icon: Users,
     sub: [
       { label: 'צוות',     href: '/contractor/users' },

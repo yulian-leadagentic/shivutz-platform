@@ -11,7 +11,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
   Loader2, Globe2, AlertCircle, Users, Check, Clock, ShieldCheck,
-  Building2, Phone, Mail, XCircle, Send,
+  Building2, Phone, Mail, XCircle, Send, Pencil, Snowflake, Play, Trash2, ArrowRight,
 } from 'lucide-react';
 import { tenderApi, orgApi, type Tender } from '@/lib/api';
 import type { Corporation } from '@/types';
@@ -26,6 +26,8 @@ const STATUS: Record<string, { cls: string; label: string }> = {
   in_progress:    { cls: 'bg-emerald-500 text-white',     label: 'בתהליך' },
   closed:         { cls: 'bg-emerald-50 text-emerald-700', label: 'הושלם' },
   cancelled:      { cls: 'bg-rose-50 text-rose-700',      label: 'בוטל' },
+  frozen:         { cls: 'bg-sky-100 text-sky-700',       label: 'מוקפא' },
+  rejected:       { cls: 'bg-rose-100 text-rose-700',     label: 'נדחה' },
 };
 
 function fmtDate(iso?: string | null) {
@@ -47,6 +49,8 @@ export default function ContractorTenderDetailPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [acting, setActing] = useState(false);
   const [corpById, setCorpById] = useState<Record<string, Corporation>>({});
 
   const load = useCallback(() => {
@@ -101,6 +105,26 @@ export default function ContractorTenderDetailPage() {
     catch (e) { setError(e instanceof Error ? e.message : 'שגיאה'); }
   }
 
+  async function doDelete() {
+    setConfirmDelete(false);
+    try { await tenderApi.remove(id); router.push('/contractor/tenders'); }
+    catch (e) { setError(e instanceof Error ? e.message : 'שגיאה'); }
+  }
+
+  async function doFreeze() {
+    setActing(true); setError('');
+    try { await tenderApi.freeze(id); load(); }
+    catch (e) { setError(e instanceof Error ? e.message : 'שגיאה'); }
+    finally { setActing(false); }
+  }
+
+  async function doUnfreeze() {
+    setActing(true); setError('');
+    try { await tenderApi.unfreeze(id); load(); }
+    catch (e) { setError(e instanceof Error ? e.message : 'שגיאה'); }
+    finally { setActing(false); }
+  }
+
   if (loading) return <div className="flex justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-slate-400" /></div>;
   if (error && !tender) return (
     <div className="max-w-3xl mx-auto px-4 py-10 text-center">
@@ -111,9 +135,15 @@ export default function ContractorTenderDetailPage() {
 
   const pill = STATUS[tender.status] ?? { cls: 'bg-slate-100 text-slate-700', label: tender.status };
   const revealed = !!tender.revealed_at;
-  const locked = ['pending_admin', 'in_progress', 'closed', 'cancelled'].includes(tender.status);
+  const locked = ['pending_admin', 'in_progress', 'closed', 'cancelled', 'frozen', 'rejected'].includes(tender.status);
   const totalWorkers = tender.items.reduce((s, i) => s + i.quantity, 0);
-  const liveBids = (tender.bids ?? []).filter((b) => b.status !== 'withdrawn' && b.status !== 'rejected');
+  const liveBids = (tender.bids ?? []).filter((b) => b.status !== 'withdrawn' && b.status !== 'rejected' && b.status !== 'pending_admin');
+
+  // Edit only while still editable and no responses arrived yet.
+  const canEdit   = ['pending_admin', 'open'].includes(tender.status) && liveBids.length === 0;
+  const canFreeze = ['open', 'pending_admin'].includes(tender.status);
+  const isFrozen  = tender.status === 'frozen';
+  const canCancel = !['pending_admin', 'in_progress', 'closed', 'cancelled', 'rejected'].includes(tender.status);
 
   // Flatten into per-line offers: for each tender item, the competing
   // bid lines from all live bids.
@@ -128,26 +158,53 @@ export default function ContractorTenderDetailPage() {
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-6 space-y-5">
+      {/* Back to the requests list */}
+      <button type="button" onClick={() => router.push('/contractor/tenders')}
+        className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800 transition-colors">
+        <ArrowRight className="h-4 w-4" /> חזרה לבקשות
+      </button>
+
       {/* Header */}
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2 flex-wrap">
           <Globe2 className="h-6 w-6 text-brand-600" />
-          <h1 className="text-2xl font-bold text-slate-900">{tender.title || `מכרז ל-${totalWorkers} עובדים`}</h1>
+          <h1 className="text-2xl font-bold text-slate-900">{tender.title || `בקשה ל-${totalWorkers} עובדים`}</h1>
           <span className={`inline-flex items-center text-xs font-bold px-2.5 py-1 rounded-full ${pill.cls}`}>{pill.label}</span>
         </div>
-        {!locked && (
+        <div className="flex items-center gap-2 flex-wrap">
+          {canEdit && (
+            <Button variant="outline" size="sm" onClick={() => router.push(`/contractor/tenders/${id}/edit`)}>
+              <Pencil className="h-4 w-4" /> ערוך
+            </Button>
+          )}
+          {canFreeze && (
+            <Button variant="outline" size="sm" disabled={acting} onClick={doFreeze}>
+              <Snowflake className="h-4 w-4" /> הקפא
+            </Button>
+          )}
+          {isFrozen && (
+            <Button variant="outline" size="sm" disabled={acting} onClick={doUnfreeze}>
+              <Play className="h-4 w-4" /> הפעל מחדש
+            </Button>
+          )}
+          {canCancel && (
+            <Button variant="outline" size="sm" className="text-rose-600 border-rose-200 hover:bg-rose-50"
+              onClick={() => setConfirmCancel(true)}>
+              <XCircle className="h-4 w-4" /> בטל בקשה
+            </Button>
+          )}
           <Button variant="outline" size="sm" className="text-rose-600 border-rose-200 hover:bg-rose-50"
-            onClick={() => setConfirmCancel(true)}>
-            <XCircle className="h-4 w-4" /> בטל מכרז
+            onClick={() => setConfirmDelete(true)}>
+            <Trash2 className="h-4 w-4" /> מחק
           </Button>
-        )}
+        </div>
       </div>
 
       {/* Status banners */}
       {tender.status === 'pending_admin' && (
         <div className="flex items-start gap-3 bg-slate-100 border border-slate-200 rounded-xl px-4 py-3">
           <Clock className="h-5 w-5 text-slate-500 shrink-0 mt-0.5" />
-          <p className="text-sm text-slate-700">המכרז ממתין לאישור מנהל המערכת לפני פרסום לתאגידים. תקבל הצעות לאחר האישור.</p>
+          <p className="text-sm text-slate-700">הבקשה ממתין לאישור מנהל המערכת לפני פרסום לתאגידים. תקבל הצעות לאחר האישור.</p>
         </div>
       )}
       {tender.status === 'awaiting_admin' && (
@@ -159,10 +216,25 @@ export default function ContractorTenderDetailPage() {
           </div>
         </div>
       )}
+      {tender.status === 'frozen' && (
+        <div className="flex items-start gap-3 bg-sky-50 border border-sky-200 rounded-xl px-4 py-3">
+          <Snowflake className="h-5 w-5 text-sky-600 shrink-0 mt-0.5" />
+          <p className="text-sm text-sky-900">הבקשה מוקפאת ואינה מוצגת לתאגידים. ניתן להפעיל אותה מחדש בכל עת.</p>
+        </div>
+      )}
+      {tender.status === 'rejected' && (
+        <div className="flex items-start gap-3 bg-rose-50 border border-rose-200 rounded-xl px-4 py-3">
+          <XCircle className="h-5 w-5 text-rose-600 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-semibold text-rose-900">הבקשה נדחתה על ידי מנהל המערכת</p>
+            {tender.rejection_reason && <p className="text-xs text-rose-700 mt-0.5">סיבה: {tender.rejection_reason}</p>}
+          </div>
+        </div>
+      )}
       {revealed && (
         <div className="flex items-start gap-3 bg-emerald-50 border border-emerald-300 rounded-xl px-4 py-3">
           <ShieldCheck className="h-5 w-5 text-emerald-600 shrink-0 mt-0.5" />
-          <p className="text-sm font-semibold text-emerald-900">המכרז אושר — פרטי התאגידים הזוכים נחשפו (ראה למטה בכל שורה).</p>
+          <p className="text-sm font-semibold text-emerald-900">הבקשה אושרה — פרטי התאגידים הזוכים נחשפו (ראה למטה בכל שורה).</p>
         </div>
       )}
 
@@ -172,12 +244,13 @@ export default function ContractorTenderDetailPage() {
           <div key={ti.id} className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
             {/* Line header */}
             <div className="bg-brand-50/50 px-4 py-3 border-b border-slate-100 flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2.5">
                 <Users className="h-4 w-4 text-brand-600" />
-                <span className="font-bold text-slate-900">{professionMap[ti.profession_type] ?? ti.profession_type}</span>
-                <span className="text-sm text-slate-500">× {ti.quantity}</span>
+                <span className="font-bold text-base text-slate-900">{professionMap[ti.profession_type] ?? ti.profession_type}</span>
+                <span className="font-bold text-base text-brand-700">× {ti.quantity}</span>
                 {ti.origin_country && (
-                  <span className="text-xs bg-white border border-slate-200 rounded-full px-2 py-0.5 text-slate-600">
+                  <span className="inline-flex items-center gap-1 text-sm font-semibold bg-white border border-brand-200 rounded-full px-2.5 py-0.5 text-brand-700">
+                    <Globe2 className="h-3.5 w-3.5" />
                     {originMap[ti.origin_country] ?? ti.origin_country}
                   </span>
                 )}
@@ -273,13 +346,23 @@ export default function ContractorTenderDetailPage() {
 
       <ConfirmDialog
         open={confirmCancel}
-        title="ביטול מכרז"
-        message="הפעולה תבטל את המכרז וכל ההצעות שהתקבלו. האם להמשיך?"
-        confirmLabel="בטל מכרז"
+        title="ביטול בקשה"
+        message="הפעולה תבטל את הבקשה וכל ההצעות שהתקבלו. האם להמשיך?"
+        confirmLabel="בטל בקשה"
         cancelLabel="חזרה"
         variant="destructive"
         onConfirm={doCancel}
         onCancel={() => setConfirmCancel(false)}
+      />
+      <ConfirmDialog
+        open={confirmDelete}
+        title="מחיקת בקשה"
+        message="הבקשה תימחק לצמיתות יחד עם כל ההצעות. לא ניתן לשחזר. האם להמשיך?"
+        confirmLabel="מחק לצמיתות"
+        cancelLabel="חזרה"
+        variant="destructive"
+        onConfirm={doDelete}
+        onCancel={() => setConfirmDelete(false)}
       />
     </div>
   );
