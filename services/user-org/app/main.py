@@ -47,3 +47,4 @@ app.include_router(marketplace.router, prefix="/marketplace", tags=["marketplace
 app.include_router(marketplace_admin.router, prefix="/marketplace/admin", tags=["marketplace-admin"])
 app.include_router(marketplace_subscriptions.router, prefix="/marketplace", tags=["marketplace-subscriptions"])
 app.include_router(marketplace_uploads.router, prefix="/marketplace/uploads", tags=["marketplace-uploads"])
+# deploy probe — 2026-05-29 (boot runs migrations 031 + 032 on staging)
