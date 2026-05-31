@@ -108,7 +108,7 @@ export default function MarketplacePreview() {
         </div>
 
         {/* CTA strip */}
-        <div className="mt-12 text-center bg-gradient-to-r from-brand-50 via-indigo-50 to-violet-50 rounded-3xl border border-brand-100 py-8 px-6">
+        <div className="mt-12 text-center bg-brand-50 rounded-3xl border border-brand-100 py-8 px-6">
           <p className="text-lg font-bold text-slate-900 mb-2">
             גם אתם רוצים לפרסם? — הצטרפו בחינם
           </p>

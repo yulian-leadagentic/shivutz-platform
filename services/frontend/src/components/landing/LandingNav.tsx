@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { Menu, X, LayoutDashboard, LogOut, ShieldCheck, ChevronDown } from 'lucide-react';
-import Logo from '@/components/Logo';
 import { useAuth } from '@/lib/AuthContext';
 import { clearTokens } from '@/lib/auth';
 
@@ -18,7 +17,10 @@ interface LandingNavProps {
   onLeadCapture: () => void;
 }
 
-export default function LandingNav({ onLeadCapture }: LandingNavProps) {
+export default function LandingNav(_: LandingNavProps) {
+  // onLeadCapture prop intentionally unused after the R2 #5 nav cleanup
+  // (the lead-capture entry now lives in the RegistrationCTA section).
+  // Interface kept so the call site in page.tsx doesn't need to change.
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -60,24 +62,22 @@ export default function LandingNav({ onLeadCapture }: LandingNavProps) {
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
-  const linkCls = scrolled ? 'text-slate-600 hover:text-slate-900' : 'text-slate-400 hover:text-white';
+  const linkCls = 'text-slate-600 hover:text-slate-900';
 
   return (
-    <header className={`fixed top-0 inset-x-0 z-50 transition-all duration-300 ${
-      scrolled ? 'bg-white shadow-sm border-b border-slate-200' : 'bg-transparent'
+    <header className={`fixed top-0 inset-x-0 z-50 transition-shadow duration-300 bg-white border-b border-slate-200 ${
+      scrolled ? 'shadow-sm' : ''
     }`}>
-      <div className="max-w-7xl mx-auto px-6 h-16 flex items-center gap-6">
+      {/* Corner-logo removed per request — the full brand lockup lives
+          in the hero, so the top corner sits empty. justify-end packs
+          nav + buttons toward the inline-end (left in RTL), leaving the
+          right corner clear. */}
+      <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-end gap-6">
 
-        {/* Logo — colour variant swaps with the nav's surface:
-            unscrolled hero is dark → white-on-transparent lockup;
-            scrolled nav is white → full-colour lockup. No panel. */}
-        <Link href="/" className="flex items-center shrink-0 me-auto" aria-label="BuildUp — Home">
-          {scrolled
-            ? <Logo size="sm" variant="on-light" decorative />
-            : <Logo size="md" variant="on-dark"  decorative />}
-        </Link>
-
-        {/* Desktop nav */}
+        {/* Desktop nav — "השאר פרטים" removed per QA (R2 #5): the lead-
+            capture modal is already reachable from the per-role outlined
+            buttons in the RegistrationCTA section; having a third nav
+            entry made the top bar feel cluttered with duplicate paths. */}
         <nav className="hidden md:flex items-center gap-6">
           <a href="#how-it-works" className={`text-sm font-medium transition-colors ${linkCls}`}>
             איך זה עובד
@@ -85,9 +85,6 @@ export default function LandingNav({ onLeadCapture }: LandingNavProps) {
           <Link href="/marketplace" className={`text-sm font-medium transition-colors ${linkCls}`}>
             שוק תאגידים
           </Link>
-          <button onClick={onLeadCapture} className={`text-sm font-medium transition-colors ${linkCls}`}>
-            השאר פרטים
-          </button>
         </nav>
 
         {/* Desktop buttons */}
@@ -102,22 +99,16 @@ export default function LandingNav({ onLeadCapture }: LandingNavProps) {
               <button
                 type="button"
                 onClick={() => setUserMenuOpen((o) => !o)}
-                className={`flex items-center gap-2 rounded-lg pe-2 ps-1 py-1 transition-colors ${
-                  scrolled ? 'hover:bg-slate-100' : 'hover:bg-slate-800/60'
-                }`}
+                className="flex items-center gap-2 rounded-lg pe-2 ps-1 py-1 transition-colors hover:bg-slate-100"
                 aria-label="תפריט משתמש"
               >
                 <div className="h-9 w-9 rounded-full bg-brand-600 flex items-center justify-center shrink-0">
                   <span className="text-white text-xs font-bold">{getInitials(displayName || '?')}</span>
                 </div>
-                <span className={`hidden sm:inline text-sm font-medium max-w-[180px] truncate ${
-                  scrolled ? 'text-slate-700' : 'text-slate-200'
-                }`}>
+                <span className="hidden sm:inline text-sm font-medium max-w-[180px] truncate text-slate-700">
                   {displayName || '—'}
                 </span>
-                <ChevronDown className={`h-4 w-4 transition-transform ${userMenuOpen ? 'rotate-180' : ''} ${
-                  scrolled ? 'text-slate-500' : 'text-slate-400'
-                }`} />
+                <ChevronDown className={`h-4 w-4 transition-transform text-slate-500 ${userMenuOpen ? 'rotate-180' : ''}`} />
               </button>
 
               {userMenuOpen && (
@@ -166,9 +157,7 @@ export default function LandingNav({ onLeadCapture }: LandingNavProps) {
             <>
               <Link
                 href="/login"
-                className={`text-sm font-medium px-4 py-2 rounded-lg transition-colors ${
-                  scrolled ? 'text-slate-600 hover:bg-slate-100' : 'text-slate-300 hover:text-white hover:bg-slate-800/60'
-                }`}
+                className="text-sm font-medium px-4 py-2 rounded-lg transition-colors text-slate-600 hover:bg-slate-100"
               >
                 משתמש רשום? לחץ כאן
               </Link>
@@ -184,7 +173,7 @@ export default function LandingNav({ onLeadCapture }: LandingNavProps) {
 
         {/* Mobile toggle */}
         <button
-          className={`md:hidden p-2 rounded-lg transition-colors ${scrolled ? 'text-slate-700 hover:bg-slate-100' : 'text-slate-400 hover:text-white'}`}
+          className="md:hidden p-2 rounded-lg transition-colors text-slate-700 hover:bg-slate-100"
           onClick={() => setMenuOpen(!menuOpen)}
         >
           {menuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
@@ -196,7 +185,7 @@ export default function LandingNav({ onLeadCapture }: LandingNavProps) {
         <div className="md:hidden bg-white border-t border-slate-100 px-6 py-4 space-y-1 shadow-xl">
           <a href="#how-it-works" className="block text-sm font-medium text-slate-700 py-2.5 hover:text-brand-600" onClick={() => setMenuOpen(false)}>איך זה עובד</a>
           <Link href="/marketplace" className="block text-sm font-medium text-slate-700 py-2.5 hover:text-brand-600" onClick={() => setMenuOpen(false)}>שוק תאגידים</Link>
-          <button className="block text-sm font-medium text-slate-700 py-2.5 hover:text-brand-600 w-full text-start" onClick={() => { setMenuOpen(false); onLeadCapture(); }}>השאר פרטים</button>
+          {/* "השאר פרטים" mobile entry removed — same de-dupe as desktop (R2 #5). */}
           <div className="pt-3 flex flex-col gap-2 border-t border-slate-100 mt-1">
             {isLoggedIn ? (
               <>

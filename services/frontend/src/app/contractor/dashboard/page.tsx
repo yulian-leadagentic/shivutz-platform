@@ -116,10 +116,10 @@ export default function ContractorDashboardPage() {
 
       {/* Hero — recruitment CTA */}
       <section className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-6 sm:p-10">
-        {/* Amber glow */}
+        {/* Brand-orange glow */}
         <div
           className="pointer-events-none absolute -top-24 end-0 h-72 w-72 rounded-full opacity-30"
-          style={{ background: 'radial-gradient(circle, #f59e0b 0%, transparent 70%)' }}
+          style={{ background: 'radial-gradient(circle, #f78203 0%, transparent 70%)' }}
         />
         {/* Subtle dot texture */}
         <div

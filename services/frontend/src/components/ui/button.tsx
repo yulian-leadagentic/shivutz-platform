@@ -18,6 +18,10 @@ const buttonVariants = cva(
           'bg-primary-600 text-white shadow-sm hover:bg-primary-700 active:bg-primary-800',
         outline:
           'border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50 hover:border-slate-300 hover:text-slate-900',
+        // Transparent + white border/text — use on colored/dark backgrounds
+        // (default `outline` is bg-white so it disappears on a brand-bg section).
+        'outline-light':
+          'border border-white/70 bg-transparent text-white hover:bg-white/10 hover:border-white',
         ghost:
           'text-slate-600 hover:bg-slate-100 hover:text-slate-900',
         destructive:

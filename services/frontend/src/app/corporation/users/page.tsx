@@ -13,7 +13,7 @@ const ROLE_LABELS: Record<string, string> = {
   owner: 'בעלים', admin: 'מנהל', viewer: 'צופה',
 };
 const ROLE_COLORS: Record<string, string> = {
-  owner:  'bg-purple-100 text-purple-700',
+  owner:  'bg-navy-100 text-navy-700',
   admin:  'bg-blue-100 text-blue-700',
   viewer: 'bg-slate-100 text-slate-600',
 };

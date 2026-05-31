@@ -27,7 +27,7 @@ const STUCK_FILTERS: { key: StuckFilter; label: string; tone: string }[] = [
   { key: 'all',        label: 'הכל',              tone: 'bg-slate-900 text-white' },
   { key: 'corp',       label: 'תקוע אצל תאגיד',    tone: 'bg-amber-500 text-white' },
   { key: 'contractor', label: 'תקוע אצל קבלן',     tone: 'bg-sky-500 text-white' },
-  { key: 'system',     label: 'ממתין למערכת',      tone: 'bg-violet-500 text-white' },
+  { key: 'system',     label: 'ממתין למערכת',      tone: 'bg-navy-500 text-white' },
   { key: 'admin',      label: 'דורש טיפול אדמין',  tone: 'bg-rose-500 text-white' },
   { key: 'neither',    label: 'סגור / לא תקוע',    tone: 'bg-emerald-500 text-white' },
 ];
@@ -90,7 +90,7 @@ function stuckToneFor(hours: number | null, owner: string): string {
 const STUCK_CHIP: Record<string, string> = {
   corp:       'bg-amber-100 text-amber-800 border-amber-300',
   contractor: 'bg-sky-100 text-sky-800 border-sky-300',
-  system:     'bg-violet-100 text-violet-800 border-violet-300',
+  system:     'bg-navy-100 text-navy-800 border-navy-300',
   admin:      'bg-rose-100 text-rose-800 border-rose-300',
   neither:    'bg-emerald-50 text-emerald-700 border-emerald-200',
   unknown:    'bg-slate-100 text-slate-700 border-slate-200',

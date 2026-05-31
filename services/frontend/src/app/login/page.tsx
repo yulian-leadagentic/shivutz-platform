@@ -28,6 +28,29 @@ function otpError(msg: string): string {
   return 'שגיאה בהתחברות. נסה שוב';
 }
 
+/** Error block — if the error indicates "not registered," surfaces an
+ *  inline register CTA right inside the alert so the user can act on it
+ *  without hunting for the registration link at the bottom of the card. */
+function ErrorBlock({ error, copy }: { error: string; copy: typeof COPY[keyof typeof COPY] }) {
+  if (!error) return null;
+  const notRegistered = /אינו רשום|register/i.test(error);
+  return (
+    <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2.5 text-start space-y-2">
+      <p>{error}</p>
+      {notRegistered && copy.registerHref && (
+        <Link
+          href={copy.registerHref}
+          className="inline-flex items-center gap-1.5 text-red-800 font-semibold hover:underline"
+        >
+          <UserPlus className="h-4 w-4" />
+          {copy.newLabel ?? 'הירשם עכשיו'}
+          <ArrowLeft className="h-3.5 w-3.5" />
+        </Link>
+      )}
+    </div>
+  );
+}
+
 function redirectByRole(router: ReturnType<typeof useRouter>, role: string | null) {
   if (role === 'admin')       { router.push('/admin/dashboard'); return; }
   if (role === 'corporation') { router.push('/corporation/dashboard'); return; }
@@ -277,11 +300,7 @@ function LoginPageInner() {
                   autoComplete="tel"
                   dir="ltr"
                 />
-                {error && (
-                  <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2 text-start">
-                    {error}
-                  </p>
-                )}
+                <ErrorBlock error={error} copy={copy} />
                 <Button
                   type="button"
                   size="lg"
@@ -320,11 +339,7 @@ function LoginPageInner() {
                   dir="ltr"
                   className="text-center text-xl tracking-widest"
                 />
-                {error && (
-                  <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2 text-start">
-                    {error}
-                  </p>
-                )}
+                <ErrorBlock error={error} copy={copy} />
                 <Button
                   type="button"
                   size="lg"
@@ -372,11 +387,7 @@ function LoginPageInner() {
                   autoComplete="current-password"
                   dir="ltr"
                 />
-                {error && (
-                  <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2 text-start">
-                    {error}
-                  </p>
-                )}
+                <ErrorBlock error={error} copy={copy} />
                 <Button
                   type="button"
                   size="lg"

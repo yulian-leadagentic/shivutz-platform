@@ -11,7 +11,7 @@ const ITEMS = [
   },
   {
     icon: Award,
-    value: '48 ש׳',
+    value: '48 שעות',
     label: 'זמן אישור ממוצע',
     desc: 'בדיקת מסמכים ואישור עסק תוך יומיים',
     color: 'text-emerald-600',
@@ -22,16 +22,16 @@ const ITEMS = [
     value: '1,200+',
     label: 'עובדים זרים פעילים',
     desc: 'פרופילים עדכניים עם ויזות תקפות',
-    color: 'text-amber-600',
-    bg: 'bg-amber-50',
+    color: 'text-brand-600',
+    bg: 'bg-brand-50',
   },
   {
     icon: Zap,
-    value: '< 3 ש׳',
+    value: '3 שניות',
     label: 'זמן חיפוש התאמה',
-    desc: 'מנוע ההתאמה שלנו פועל בשניות',
-    color: 'text-violet-600',
-    bg: 'bg-violet-50',
+    desc: 'מנוע ההתאמה שלנו מציג תוצאות מיידיות',
+    color: 'text-brand-600',
+    bg: 'bg-brand-50',
   },
 ];
 
@@ -55,7 +55,7 @@ export default function TrustBar() {
             return (
               <div
                 key={item.label}
-                className="flex flex-col items-center text-center p-6 rounded-2xl bg-slate-50/70 hover:bg-slate-50 border border-slate-100 hover:border-slate-200 hover:shadow-card transition-all duration-200"
+                className="flex flex-col items-center text-center p-6 rounded-2xl bg-slate-50/70 border border-slate-100"
               >
                 <div className={`h-12 w-12 rounded-2xl ${item.bg} flex items-center justify-center mb-4`}>
                   <Icon className={`h-6 w-6 ${item.color}`} />

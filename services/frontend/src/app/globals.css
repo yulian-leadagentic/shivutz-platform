@@ -9,14 +9,28 @@
   --background:        #f8fafc;
   --surface:           #ffffff;
   --border:            #e2e8f0;
-  --primary:           #4f46e5;
-  --primary-hover:     #4338ca;
-  --primary-light:     #eef2ff;
+  --primary:           #f78203;   /* BuildUp orange (logo) */
+  --primary-hover:     #d26a02;
+  --primary-light:     #fff8ed;
 }
 
 /* ─── Base ───────────────────────────────────────────────────────── */
 html[dir="rtl"] {
   direction: rtl;
+}
+
+/* Smooth-scroll for in-page anchors (e.g. nav → #how-it-works).
+   Per the spec, scroll-behavior: smooth ignores prefers-reduced-motion
+   on its own, so the media query below restores instant for users
+   who opted out of animation. */
+html {
+  scroll-behavior: smooth;
+  /* Offset for the fixed top nav so anchor targets don't get hidden
+     under it after the smooth scroll lands. */
+  scroll-padding-top: 80px;
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
 }
 
 body {

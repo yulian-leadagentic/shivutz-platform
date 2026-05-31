@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { HardHat, Building2, Check, ArrowLeft } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 interface RegistrationCTASectionProps {
   onLeadCapture: () => void;
@@ -21,7 +22,7 @@ const CORP_BENEFITS = [
 
 export default function RegistrationCTASection({ onLeadCapture }: RegistrationCTASectionProps) {
   return (
-    <section className="bg-slate-50 py-24">
+    <section className="bg-white py-24 border-t border-slate-100">
       <div className="max-w-5xl mx-auto px-6">
 
         {/* Header */}
@@ -58,16 +59,20 @@ export default function RegistrationCTASection({ onLeadCapture }: RegistrationCT
                 <span>הצטרף כקבלן — בחינם</span>
                 <ArrowLeft className="h-4 w-4" />
               </Link>
-              <button onClick={onLeadCapture} className="w-full text-xs text-slate-400 hover:text-slate-600 transition-colors py-1">
-                או השאר פרטים לחזרה
-              </button>
+              {/* Secondary CTA — outlined button so its clickability is
+                  obvious. The previous grey text-link looked like a label
+                  and surprised users when it turned out to be clickable
+                  (R2 #4). */}
+              <Button type="button" variant="outline" onClick={onLeadCapture} className="w-full">
+                השאר פרטים לחזרה
+              </Button>
             </div>
           </div>
 
           {/* Corporation */}
           <div className="bg-white rounded-3xl border border-slate-200 shadow-card p-8 hover:shadow-card-md transition-shadow flex flex-col">
-            <div className="h-12 w-12 rounded-2xl bg-emerald-100 flex items-center justify-center mb-5">
-              <Building2 className="h-6 w-6 text-emerald-600" />
+            <div className="h-12 w-12 rounded-2xl bg-navy-100 flex items-center justify-center mb-5">
+              <Building2 className="h-6 w-6 text-navy-600" />
             </div>
             <h3 className="text-xl font-bold text-slate-900 mb-1">אני תאגיד</h3>
             <p className="text-sm text-slate-500 mb-5 leading-relaxed">
@@ -76,7 +81,7 @@ export default function RegistrationCTASection({ onLeadCapture }: RegistrationCT
             <ul className="space-y-2.5 mb-7 flex-1">
               {CORP_BENEFITS.map((b) => (
                 <li key={b} className="flex items-start gap-2.5 text-sm text-slate-700">
-                  <Check className="h-4 w-4 shrink-0 text-emerald-500 mt-0.5" />
+                  <Check className="h-4 w-4 shrink-0 text-navy-500 mt-0.5" />
                   {b}
                 </li>
               ))}
@@ -84,14 +89,14 @@ export default function RegistrationCTASection({ onLeadCapture }: RegistrationCT
             <div className="space-y-2">
               <Link
                 href="/register/corporation"
-                className="flex items-center justify-between w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-sm px-5 py-3 rounded-xl transition-colors"
+                className="flex items-center justify-between w-full bg-navy-600 hover:bg-navy-500 text-white font-semibold text-sm px-5 py-3 rounded-xl transition-colors"
               >
                 <span>הצטרף כתאגיד — בחינם</span>
                 <ArrowLeft className="h-4 w-4" />
               </Link>
-              <button onClick={onLeadCapture} className="w-full text-xs text-slate-400 hover:text-slate-600 transition-colors py-1">
-                או השאר פרטים לחזרה
-              </button>
+              <Button type="button" variant="outline" onClick={onLeadCapture} className="w-full">
+                השאר פרטים לחזרה
+              </Button>
             </div>
           </div>
         </div>

@@ -8,7 +8,7 @@ const STEPS = [
     description:
       'קבלן או תאגיד — מלא פרטים, העלה מסמכים נדרשים (רישיון, תעודת רישום). הצוות שלנו מאמת ומאשר תוך 48 שעות.',
     details: ['מילוי פרטי חברה', 'העלאת מסמכים', 'אישור מנהל מערכת', 'קבלת תג "מאומת"'],
-    bgGradient: 'from-brand-50 to-indigo-50',
+    bgGradient: 'from-brand-50 to-brand-100',
     borderColor: 'border-brand-200',
     numColor: 'text-brand-600',
     iconBg: 'bg-brand-100',
@@ -34,17 +34,17 @@ const STEPS = [
     description:
       'בחירת חבילת עובדים, ניהול משא ומתן, סגירת עסקה בין התאגיד והקבלן — הכל בפלטפורמה אחת, בשקיפות מלאה.',
     details: ['בחירת חבילת עובדים', 'ניהול עסקה', 'סגירה בין הצדדים'],
-    bgGradient: 'from-violet-50 to-purple-50',
-    borderColor: 'border-violet-200',
-    numColor: 'text-violet-600',
-    iconBg: 'bg-violet-100',
-    iconColor: 'text-violet-600',
+    bgGradient: 'from-navy-50 to-navy-100',
+    borderColor: 'border-navy-200',
+    numColor: 'text-navy-600',
+    iconBg: 'bg-navy-100',
+    iconColor: 'text-navy-600',
   },
 ];
 
 export default function HowItWorksSection() {
   return (
-    <section id="how-it-works" className="bg-slate-50 py-24">
+    <section id="how-it-works" className="bg-white py-24 border-t border-slate-100">
       <div className="max-w-6xl mx-auto px-6">
 
         {/* Header */}
@@ -66,32 +66,25 @@ export default function HowItWorksSection() {
             const Icon = step.icon;
             return (
               <div key={idx} className="flex flex-col">
-                {/* Card */}
-                <div className={`bg-gradient-to-br ${step.bgGradient} border ${step.borderColor} rounded-3xl p-7 flex-1 hover:shadow-card-md transition-shadow duration-300 flex flex-col`}>
+                {/* Card — shrunk per QA (R2 #2): smaller padding + no chip
+                    pills so the 3-step flow reads as short and quick. */}
+                <div className={`bg-gradient-to-br ${step.bgGradient} border ${step.borderColor} rounded-2xl p-5 flex-1 flex flex-col`}>
 
                   {/* Step number + icon row */}
-                  <div className="flex items-start justify-between mb-5">
-                    <span className={`text-5xl font-black ${step.numColor} opacity-20 leading-none select-none`}>
+                  <div className="flex items-start justify-between mb-3">
+                    <span className={`text-4xl font-black ${step.numColor} opacity-20 leading-none select-none`}>
                       {step.num}
                     </span>
-                    <div className={`h-12 w-12 rounded-2xl ${step.iconBg} flex items-center justify-center shrink-0`}>
-                      <Icon className={`h-6 w-6 ${step.iconColor}`} />
+                    <div className={`h-10 w-10 rounded-xl ${step.iconBg} flex items-center justify-center shrink-0`}>
+                      <Icon className={`h-5 w-5 ${step.iconColor}`} />
                     </div>
                   </div>
 
-                  <h3 className="text-xl font-bold text-slate-900 mb-3">{step.title}</h3>
+                  <h3 className="text-lg font-bold text-slate-900 mb-2">{step.title}</h3>
 
-                  <p className="text-sm text-slate-600 leading-relaxed mb-5 flex-1">
+                  <p className="text-sm text-slate-600 leading-relaxed">
                     {step.description}
                   </p>
-
-                  <div className="flex flex-wrap gap-2">
-                    {step.details.map((d) => (
-                      <span key={d} className="text-xs bg-white/70 border border-white text-slate-600 px-2.5 py-1 rounded-full">
-                        {d}
-                      </span>
-                    ))}
-                  </div>
                 </div>
 
                 {/* Connector dot below card (mobile) / hidden on desktop */}

@@ -5,36 +5,53 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Primary — Indigo
+        // Primary — BuildUp orange (logo #F78203 anchored at 600).
+        // Replaces the previous indigo. Used for CTAs, accents, focus
+        // rings, key data — see globals.css --primary mirrors.
         primary: {
-          50:  '#eef2ff',
-          100: '#e0e7ff',
-          200: '#c7d2fe',
-          300: '#a5b4fc',
-          400: '#818cf8',
-          500: '#6366f1',
-          600: '#4f46e5',
-          700: '#4338ca',
-          800: '#3730a3',
-          900: '#312e81',
-          950: '#1e1b4b',
+          50:  '#fff8ed',
+          100: '#ffeccc',
+          200: '#ffd699',
+          300: '#ffba66',
+          400: '#fb9d33',
+          500: '#f88b17',
+          600: '#f78203',   // ← logo orange
+          700: '#d26a02',
+          800: '#a5530b',
+          900: '#7a3d07',
+          950: '#401e03',
         },
-        // Keep brand alias for backward compat. Filled out the
-        // mid-shades (200/300/400/800/950) so utilities like
-        // `text-brand-300` resolve — previously they were silently
-        // dropped, causing invisible text on dark surfaces.
+        // brand alias — identical to primary so utilities like
+        // `text-brand-300` keep resolving in legacy components.
         brand: {
-          50:  '#eef2ff',
-          100: '#e0e7ff',
-          200: '#c7d2fe',
-          300: '#a5b4fc',
-          400: '#818cf8',
-          500: '#6366f1',
-          600: '#4f46e5',
-          700: '#4338ca',
-          800: '#3730a3',
-          900: '#312e81',
-          950: '#1e1b4b',
+          50:  '#fff8ed',
+          100: '#ffeccc',
+          200: '#ffd699',
+          300: '#ffba66',
+          400: '#fb9d33',
+          500: '#f88b17',
+          600: '#f78203',   // ← logo orange
+          700: '#d26a02',
+          800: '#a5530b',
+          900: '#7a3d07',
+          950: '#401e03',
+        },
+        // Secondary brand — BuildUp navy (logo #022146 at 600). Used
+        // for the wordmark "Build" half, dark hero/footer surfaces,
+        // and any place we specifically want brand-navy (not generic
+        // slate). Sidebar still uses neutral slate by design.
+        navy: {
+          50:  '#e8edf3',
+          100: '#d1dbe7',
+          200: '#a4b7cf',
+          300: '#7693b7',
+          400: '#4970a0',
+          500: '#1e4d88',
+          600: '#022146',   // ← logo navy
+          700: '#021a38',
+          800: '#01142b',
+          900: '#010d1d',
+          950: '#00060f',
         },
         // Surface tokens
         surface: {
@@ -47,7 +64,7 @@ const config: Config = {
           bg:          '#0f172a',
           hover:       '#1e293b',
           active:      '#1e293b',
-          'active-bar':'#6366f1',
+          'active-bar':'#f78203',   // brand orange accent
           text:        '#94a3b8',
           'text-active':'#f1f5f9',
           border:      '#1e293b',
@@ -62,7 +79,7 @@ const config: Config = {
       boxShadow: {
         card:  '0 1px 3px 0 rgb(0 0 0 / 0.07), 0 1px 2px -1px rgb(0 0 0 / 0.07)',
         'card-md': '0 4px 6px -1px rgb(0 0 0 / 0.07), 0 2px 4px -2px rgb(0 0 0 / 0.07)',
-        'card-focus': '0 0 0 3px rgb(99 102 241 / 0.15)',
+        'card-focus': '0 0 0 3px rgb(247 130 3 / 0.15)',
       },
       borderRadius: {
         '4xl': '2rem',

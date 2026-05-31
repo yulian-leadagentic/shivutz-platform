@@ -181,7 +181,7 @@ export default function AdminDashboard() {
             icon={HardHat} color="text-blue-600" href="/admin/orgs?type=contractor" />
           <StatTile label="תאגידים"     value={stats.corporations.total}
             sub={`${stats.corporations.approved} מאושרים · ${stats.corporations.pending} ממתינים`}
-            icon={Building2} color="text-purple-600" href="/admin/orgs?type=corporation" />
+            icon={Building2} color="text-navy-600" href="/admin/orgs?type=corporation" />
           <StatTile label="עובדים"      value={stats.workers.total}
             sub={`${stats.workers.available} פנויים · ${stats.workers.assigned} משובצים`}
             icon={Users} color="text-emerald-600" />

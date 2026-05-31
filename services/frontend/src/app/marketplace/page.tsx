@@ -194,7 +194,7 @@ export default function MarketplacePage() {
               </Button>
             </Link>
             <Link href="/login">
-              <Button variant="outline" className="border-white text-white hover:bg-brand-700">
+              <Button variant="outline-light">
                 כניסה לחשבון קיים
               </Button>
             </Link>

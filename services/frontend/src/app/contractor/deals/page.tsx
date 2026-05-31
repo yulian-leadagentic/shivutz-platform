@@ -849,8 +849,8 @@ function DealCard({
                                 reporting) → "האם נסגרה עסקה?" prompt
                               · other states → nothing extra */}
                           {canConfirmClose ? (
-                            <div className="rounded-md border border-violet-200 bg-violet-50/60 px-3 py-2.5 space-y-2">
-                              <p className="text-sm font-bold text-violet-900 text-center">
+                            <div className="rounded-md border border-navy-200 bg-navy-50/60 px-3 py-2.5 space-y-2">
+                              <p className="text-sm font-bold text-navy-900 text-center">
                                 האם נסגרה עסקה?
                               </p>
                               <div className="flex gap-2">
