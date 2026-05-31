@@ -68,6 +68,20 @@ body {
   to   { opacity: 1; transform: translateY(0); }
 }
 
+/* Brand-orange attention pulse — outward-fading halo. Use sparingly
+   on the single "do this next" CTA per page so it actually pulls the
+   eye instead of becoming visual noise. */
+@keyframes brandPulse {
+  0%, 100% { box-shadow: 0 0 0 0   rgba(247, 130, 3, 0.45); }
+  50%      { box-shadow: 0 0 0 10px rgba(247, 130, 3, 0);   }
+}
+.animate-brand-pulse {
+  animation: brandPulse 2.2s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-brand-pulse { animation: none; }
+}
+
 /* Confetti pieces for FireworksOverlay — falling animation used as
    the CSS-only fallback when /brand/fireworks.mp4 isn't on disk.
    Each piece sets its own delay + duration inline. */

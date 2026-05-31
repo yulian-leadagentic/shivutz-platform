@@ -155,6 +155,55 @@ async function extractErrorMessage(res: Response): Promise<string> {
   return res.statusText;
 }
 
+/**
+ * Translate raw backend error strings (SQL, internal codes, network
+ * messages) into plain-Hebrew sentences a user can act on. Pydantic
+ * messages are already handled in translatePydanticMessage above —
+ * this layer catches everything else that leaks through.
+ *
+ * Strategy: regex/keyword matches against known patterns. Anything
+ * unrecognized is returned unchanged so we don't accidentally hide
+ * useful diagnostics during development.
+ */
+function friendlyError(raw: string): string {
+  if (!raw) return 'אירעה שגיאה. נסה שוב';
+  const m = raw;
+
+  // ── MySQL / SQL constraint violations ──────────────────────────────
+  // "Duplicate entry '0123456789' for key 'business_number'"
+  if (/duplicate entry/i.test(m)) {
+    if (/business_number|tax_id|company_id/i.test(m)) return 'מספר ע.מ / ח.פ זה כבר רשום במערכת';
+    if (/email/i.test(m))                              return 'כתובת אימייל זו כבר רשומה במערכת';
+    if (/phone/i.test(m))                              return 'מספר טלפון זה כבר רשום במערכת';
+    return 'הערך שהזנת כבר קיים במערכת';
+  }
+  if (/foreign key constraint|cannot add or update a child row/i.test(m)) {
+    return 'הפעולה אינה אפשרית — קיימים פריטים תלויים';
+  }
+  if (/cannot delete or update a parent row/i.test(m)) {
+    return 'לא ניתן למחוק — קיימים פריטים שתלויים בערך זה';
+  }
+
+  // Auth/OTP codes (user_not_found, already_registered, phone_not_verified,
+  // rate_limited, etc.) are NOT translated here — the login + register
+  // pages each have their own mapper that adds context-specific hints
+  // ("חזור לשלב הראשון", inline register CTA, etc.). Passing the raw
+  // code lets those handlers continue to specialize. The truly generic
+  // codes below have no per-page specialization, so are safe to translate.
+  if (m === 'forbidden')                  return 'אין לך הרשאה לבצע פעולה זו';
+
+  // ── Network / infra ──────────────────────────────────────────────
+  if (/networkerror|failed to fetch|load failed/i.test(m)) return 'תקלת רשת. בדוק את החיבור ונסה שוב';
+  if (/timeout|timed out/i.test(m))                        return 'הפעולה ארכה יותר מדי. נסה שוב';
+  if (/server error|internal server error/i.test(m))       return 'תקלה בשרת. נסה שוב בעוד מספר רגעים';
+
+  // ── Pure English fallbacks that occasionally leak ────────────────
+  if (m === 'Unauthorized') return 'נדרשת התחברות';
+  if (m === 'Not Found' || m === 'not_found') return 'הפריט לא נמצא';
+
+  return raw;
+}
+
 export async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = getToken();
   const headers: HeadersInit = {
@@ -173,7 +222,7 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
       };
       const retry = await fetch(`${BASE}${path}`, { ...options, headers: retryHeaders });
       if (retry.status !== 401) {
-        if (!retry.ok) throw new Error(await extractErrorMessage(retry));
+        if (!retry.ok) throw new Error(friendlyError(await extractErrorMessage(retry)));
         if (retry.status === 204) return undefined as T;
         return retry.json() as Promise<T>;
       }
@@ -181,7 +230,7 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
     window.location.href = '/login';
     throw new Error('Unauthorized');
   }
-  if (!res.ok) throw new Error(await extractErrorMessage(res));
+  if (!res.ok) throw new Error(friendlyError(await extractErrorMessage(res)));
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
 }

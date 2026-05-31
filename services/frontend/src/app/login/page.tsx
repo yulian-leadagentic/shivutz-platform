@@ -23,9 +23,16 @@ function otpError(msg: string): string {
   if (msg === 'max_attempts')               return 'יותר מדי ניסיונות שגויים. בקש קוד חדש';
   if (msg === 'otp_expired_or_not_found')   return 'הקוד פג תוקף. שלח קוד חדש';
   if (msg === 'otp_expired')                return 'הקוד פג תוקף. שלח קוד חדש';
-  if (msg === 'user_not_found')             return 'מספר הטלפון אינו רשום. אנא הירשם תחילה';
+  if (msg === 'user_not_found')             return 'מספר הטלפון לא רשום במערכת';
   if (msg === 'use_phone_login')            return 'חשבון זה מחייב כניסה עם SMS';
-  return 'שגיאה בהתחברות. נסה שוב';
+  // apiFetch's friendlyError already translates known codes — if the
+  // message is already Hebrew, surface it as-is.
+  if (/[֐-׿]/.test(msg))          return msg;
+  // At the login step, the dominant unmapped-failure cause is "phone
+  // not registered" — every other case has its own mapping above. So
+  // default to that copy + invite to register, rather than the generic
+  // "login error" which gave the user no path forward.
+  return 'מספר הטלפון לא רשום במערכת';
 }
 
 /** Error block — if the error indicates "not registered," surfaces an
@@ -33,7 +40,7 @@ function otpError(msg: string): string {
  *  without hunting for the registration link at the bottom of the card. */
 function ErrorBlock({ error, copy }: { error: string; copy: typeof COPY[keyof typeof COPY] }) {
   if (!error) return null;
-  const notRegistered = /אינו רשום|register/i.test(error);
+  const notRegistered = /לא רשום|לא קיים|אינו רשום|register/i.test(error);
   return (
     <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2.5 text-start space-y-2">
       <p>{error}</p>
@@ -431,8 +438,11 @@ function LoginPageInner() {
             <div className="mt-6 pt-5 border-t border-slate-100">
               {intent ? (
                 <div className="flex flex-col gap-2 text-center">
-                  <p className="text-sm text-slate-600">אין לך עדיין חשבון?</p>
-                  <Button asChild variant="outline" size="lg" className="w-full">
+                  <p className="text-sm text-slate-600 font-medium">אין לך עדיין חשבון?</p>
+                  {/* Filled brand-orange + halo pulse — high-contrast attention
+                      grab for first-time users so the path to register is
+                      unmistakable. The pulse respects prefers-reduced-motion. */}
+                  <Button asChild size="lg" className="w-full animate-brand-pulse">
                     <Link href={copy.registerHref!}>
                       <UserPlus className="h-4 w-4" />
                       {copy.newLabel}
@@ -441,19 +451,22 @@ function LoginPageInner() {
                   </Button>
                 </div>
               ) : (
-                <div className="flex flex-col gap-2 text-sm text-center text-slate-600">
-                  <p>
-                    קבלן?{' '}
-                    <Link href="/register/contractor" className="text-brand-600 font-medium hover:underline">
-                      הירשם כאן
-                    </Link>
-                  </p>
-                  <p>
-                    תאגיד?{' '}
-                    <Link href="/register/corporation" className="text-brand-600 font-medium hover:underline">
-                      הירשמו כאן
-                    </Link>
-                  </p>
+                <div className="flex flex-col gap-3 text-center">
+                  <p className="text-sm text-slate-600 font-medium">אין לך עדיין חשבון?</p>
+                  <div className="flex gap-2">
+                    <Button asChild size="lg" className="flex-1 animate-brand-pulse">
+                      <Link href="/register/contractor">
+                        <UserPlus className="h-4 w-4" />
+                        קבלן חדש — הירשם כאן
+                      </Link>
+                    </Button>
+                    <Button asChild size="lg" variant="outline" className="flex-1">
+                      <Link href="/register/corporation">
+                        <UserPlus className="h-4 w-4" />
+                        תאגיד חדש — הירשם כאן
+                      </Link>
+                    </Button>
+                  </div>
                 </div>
               )}
             </div>
