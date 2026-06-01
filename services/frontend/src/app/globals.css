@@ -63,6 +63,33 @@ body {
   to   { opacity: 1; }
 }
 
+/* Live-activity feed — card enter animation. The outgoing card unmounts
+   on key change; the incoming card runs this keyframe on mount so the
+   swap reads as a quick fade + tiny slide-in from the start side.
+   In RTL the start side is on the right, so positive translateX (which
+   moves right in screen space) feels like "coming in from the start". */
+@keyframes liveCardEnter {
+  from { opacity: 0; transform: translateX(8px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.animate-live-card-enter {
+  animation: liveCardEnter 280ms ease-out;
+}
+
+/* Soft pulsing dot next to the word "Live". 1.6s cycle, gentle enough
+   to read as "alive" without feeling frantic. */
+@keyframes livePulseDot {
+  0%, 100% { opacity: 0.55; transform: scale(1); }
+  50%      { opacity: 1;    transform: scale(1.15); }
+}
+.animate-live-dot {
+  animation: livePulseDot 1.6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-live-card-enter,
+  .animate-live-dot { animation: none; }
+}
+
 @keyframes slideUp {
   from { opacity: 0; transform: translateY(6px); }
   to   { opacity: 1; transform: translateY(0); }
