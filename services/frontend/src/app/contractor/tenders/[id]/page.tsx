@@ -37,6 +37,59 @@ function fmtDate(iso?: string | null) {
   return new Date(z).toLocaleDateString('he-IL');
 }
 
+// SLA the admin is expected to answer pending tenders within. UI-only —
+// nothing on the backend enforces this. Used to colour-code the banner so
+// contractors get a quick "should I still be patient?" signal.
+const ADMIN_APPROVAL_SLA_HOURS = 48;
+
+function PendingAdminBanner({ createdAt }: { createdAt: string }) {
+  const [, force] = useState(0);
+  useEffect(() => {
+    // Re-render once a minute so the countdown text stays fresh while the
+    // tab is open. A minute is fine — the banner shows hours, not seconds.
+    const t = setInterval(() => force((n) => n + 1), 60_000);
+    return () => clearInterval(t);
+  }, []);
+
+  const norm = createdAt.includes(' ') && !createdAt.includes('T') ? createdAt.replace(' ', 'T') : createdAt;
+  const z = /[Zz]$|[+-]\d{2}:?\d{2}$/.test(norm) ? norm : norm + 'Z';
+  const createdMs = new Date(z).getTime();
+  const deadlineMs = createdMs + ADMIN_APPROVAL_SLA_HOURS * 3600_000;
+  const remainingMs = deadlineMs - Date.now();
+  const overdue = remainingMs <= 0;
+
+  let countdownText: string;
+  if (overdue) {
+    const hoursOver = Math.floor(-remainingMs / 3600_000);
+    countdownText = hoursOver < 1 ? 'חרגנו מה-48 שעות' : `חרגנו ב-${hoursOver} שעות`;
+  } else {
+    const hoursLeft = Math.floor(remainingMs / 3600_000);
+    const minsLeft = Math.floor((remainingMs % 3600_000) / 60_000);
+    countdownText = hoursLeft >= 1
+      ? `נותרו ${hoursLeft} שעות${hoursLeft < 6 ? ` ו-${minsLeft} דק׳` : ''}`
+      : `נותרו ${minsLeft} דק׳`;
+  }
+
+  const tone = overdue
+    ? { wrap: 'bg-rose-50 border-rose-300', icon: 'text-rose-600', body: 'text-rose-900', chip: 'bg-rose-600 text-white' }
+    : remainingMs < 12 * 3600_000
+      ? { wrap: 'bg-amber-50 border-amber-300', icon: 'text-amber-600', body: 'text-amber-900', chip: 'bg-amber-500 text-white' }
+      : { wrap: 'bg-slate-100 border-slate-200', icon: 'text-slate-500', body: 'text-slate-700', chip: 'bg-white border border-slate-300 text-slate-700' };
+
+  return (
+    <div className={`flex items-start gap-3 border rounded-xl px-4 py-3 ${tone.wrap}`}>
+      <Clock className={`h-5 w-5 shrink-0 mt-0.5 ${tone.icon}`} />
+      <div className="flex-1 min-w-0">
+        <p className={`text-sm ${tone.body}`}>הבקשה ממתינה לאישור מנהל המערכת לפני פרסום לתאגידים. תקבל הצעות לאחר האישור.</p>
+        <p className="text-xs text-slate-600 mt-1">
+          זמן יעד לאישור: <span className="font-semibold">{ADMIN_APPROVAL_SLA_HOURS} שעות</span> מההגשה.
+        </p>
+      </div>
+      <span className={`shrink-0 text-xs font-bold px-2.5 py-1 rounded-full ${tone.chip}`}>{countdownText}</span>
+    </div>
+  );
+}
+
 export default function ContractorTenderDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -202,10 +255,7 @@ export default function ContractorTenderDetailPage() {
 
       {/* Status banners */}
       {tender.status === 'pending_admin' && (
-        <div className="flex items-start gap-3 bg-slate-100 border border-slate-200 rounded-xl px-4 py-3">
-          <Clock className="h-5 w-5 text-slate-500 shrink-0 mt-0.5" />
-          <p className="text-sm text-slate-700">הבקשה ממתין לאישור מנהל המערכת לפני פרסום לתאגידים. תקבל הצעות לאחר האישור.</p>
-        </div>
+        <PendingAdminBanner createdAt={tender.created_at} />
       )}
       {tender.status === 'awaiting_admin' && (
         <div className="flex items-start gap-3 bg-amber-50 border border-amber-300 rounded-xl px-4 py-3">

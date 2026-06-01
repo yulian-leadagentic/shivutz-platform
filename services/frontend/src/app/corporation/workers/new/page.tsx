@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, FormEvent } from 'react';
+import { useRef, useState, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { CheckCircle2, Loader2, Plus, User, FileSpreadsheet } from 'lucide-react';
 import { workerApi } from '@/lib/api';
@@ -33,12 +33,23 @@ export default function NewWorkerPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError]           = useState('');
   const [toast, setToast]           = useState('');
+  // After a successful save the form goes "locked" — same data still on
+  // screen so the corp can verify what was saved, with an explicit
+  // "+ הוסף עובד נוסף" button to clear the per-worker fields (name +
+  // employee number) and unlock for the next entry. QA-R3 #15.
+  const [justSaved, setJustSaved]   = useState(false);
+  const firstNameRef                = useRef<HTMLInputElement>(null);
 
   const { professions, origins } = useEnums();
 
   // single mode
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName]   = useState('');
+  // Carry-over fields (profession, languages, origin, visa, available_from)
+  // intentionally PERSIST across worker entries — when a corp imports a
+  // squad they share most attributes. Per QA-R3 #13/#14 we never clear
+  // them on save; only the per-worker fields (name, employee_number) are
+  // reset by addAnother() below.
   const [shared, setShared]       = useState<SharedFields>(EMPTY_SHARED);
 
   function showToast(msg: string) {
@@ -58,6 +69,7 @@ export default function NewWorkerPage() {
 
   async function handleSingleSubmit(e: FormEvent) {
     e.preventDefault();
+    if (justSaved) { addAnother(); return; }
     const err = validateSingle();
     if (err) { setError(err); return; }
     setError(''); setSubmitting(true);
@@ -74,11 +86,22 @@ export default function NewWorkerPage() {
         employee_number:  shared.employee_number  || null,
       });
       showToast(`${firstName} ${lastName} נוסף בהצלחה`);
-      setFirstName(''); setLastName('');
-      setShared((s) => ({ ...s, employee_number: '' }));
+      setJustSaved(true);
     } catch (e: unknown) {
       setError((e as Error).message ?? 'שגיאה בשמירה');
     } finally { setSubmitting(false); }
+  }
+
+  function addAnother() {
+    // Clear ONLY the per-worker identity fields. Shared attributes
+    // (profession, languages, origin, visa, available_from) stay so the
+    // corp can rip through a squad of similar workers without re-picking
+    // the same options every time.
+    setFirstName(''); setLastName('');
+    setShared((s) => ({ ...s, employee_number: '' }));
+    setJustSaved(false);
+    setError('');
+    requestAnimationFrame(() => firstNameRef.current?.focus());
   }
 
   // (Bulk-add mode and its handlers were removed in Wave 1 — Excel
@@ -113,16 +136,23 @@ export default function NewWorkerPage() {
             <CardHeader className="pb-2"><CardTitle className="text-base">פרטים אישיים</CardTitle></CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <Input label="שם פרטי *" value={firstName}
-                  onChange={(e) => setFirstName(e.target.value)} autoFocus />
+                <Input ref={firstNameRef} label="שם פרטי *" value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)} autoFocus
+                  disabled={justSaved} />
                 <Input label="שם משפחה *" value={lastName}
-                  onChange={(e) => setLastName(e.target.value)} />
+                  onChange={(e) => setLastName(e.target.value)}
+                  disabled={justSaved} />
               </div>
             </CardContent>
           </Card>
 
           <Card>
-            <CardHeader className="pb-2"><CardTitle className="text-base">פרטים מקצועיים וזמינות</CardTitle></CardHeader>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">
+                פרטים מקצועיים וזמינות
+                <span className="ms-2 text-xs font-normal text-slate-400">השדות נשמרים לעובד הבא</span>
+              </CardTitle>
+            </CardHeader>
             <CardContent>
               <SharedFieldsSection
                 fields={shared}
@@ -136,10 +166,26 @@ export default function NewWorkerPage() {
 
           {error && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">{error}</p>}
 
+          {justSaved && (
+            <div className="flex items-start gap-3 bg-green-50 border border-green-200 rounded-md px-3 py-2.5 text-sm text-green-900">
+              <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0 text-green-600" />
+              <div>
+                <p className="font-semibold">העובד נשמר.</p>
+                <p className="text-xs text-green-700 mt-0.5">מקצוע, שפות, מוצא, ויזה וזמינות נשארים פתוחים — לחץ &quot;הוסף עובד נוסף&quot; כדי להזין שם חדש.</p>
+              </div>
+            </div>
+          )}
+
           <div className="flex gap-3">
-            <Button type="submit" disabled={submitting} className="flex-1">
-              {submitting ? <><Loader2 className="h-4 w-4 animate-spin" /> שומר...</> : <><Plus className="h-4 w-4" /> שמור והוסף עובד נוסף</>}
-            </Button>
+            {justSaved ? (
+              <Button type="button" onClick={addAnother} className="flex-1">
+                <Plus className="h-4 w-4" /> הוסף עובד נוסף
+              </Button>
+            ) : (
+              <Button type="submit" disabled={submitting} className="flex-1">
+                {submitting ? <><Loader2 className="h-4 w-4 animate-spin" /> שומר...</> : <><Plus className="h-4 w-4" /> שמור עובד</>}
+              </Button>
+            )}
             <Button type="button" variant="outline" onClick={() => router.push('/corporation/workers')}>סיום</Button>
           </div>
         </form>

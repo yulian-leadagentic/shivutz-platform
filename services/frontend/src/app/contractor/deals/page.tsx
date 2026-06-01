@@ -568,8 +568,8 @@ function DealCard({
                         onClick={() => {
                           if (!canDelete) return;
                           const msg = cancellableForDelete.length === 0
-                            ? 'למחוק את הבקשה? לא ניתן יהיה לשחזר.'
-                            : `למחוק את הבקשה? ${cancellableForDelete.length} הצעות שטרם אושרו יבוטלו אוטומטית והעובדים והאשראי ישוחררו לתאגידים.`;
+                            ? 'למחוק את הבקשה לצמיתות? היא לא תוצג יותר ברשימת העסקאות שלך.'
+                            : `למחוק את הבקשה לצמיתות? ${cancellableForDelete.length} הצעות שטרם אושרו יבוטלו אוטומטית, העובדים והאשראי ישוחררו לתאגידים, והכרטיס יוסר מהרשימה שלך.`;
                           if (!confirm(msg)) return;
                           setMenuOpen(false);
                           onDeleteSearch(cancellableForDelete);
@@ -1359,48 +1359,55 @@ function ContractorDealsPageInner() {
     } finally { setDeletingSearchId(null); }
   }
 
+  // Searches the contractor has deleted are hidden from every view
+  // (filter pill, search, count). Backend keeps them soft-cancelled
+  // for audit, but to the contractor they read as permanently gone
+  // (QA-R3 #1).
+  const liveSearches = useMemo(
+    () => searches.filter((s) => s.status !== 'cancelled'),
+    [searches],
+  );
+
   // Count per filter pill — totals come from the deals list,
   // except "הכל" which counts unique searches (one card each).
   const counts = useMemo(() => {
     const out: Record<Filter, number> = {
       all: 0, awaiting_approval: 0, proposed: 0, active: 0, completed: 0, cancelled: 0,
     };
-    out.all = searches.length;
+    out.all = liveSearches.length;
+    // Only count deals tied to live searches — deals whose parent search
+    // was deleted by the contractor shouldn't pad the "בוטל" pill.
+    const liveSearchIds = new Set(liveSearches.map((s) => s.id));
     for (const d of deals) {
+      if (d.search_id && !liveSearchIds.has(d.search_id)) continue;
       if (contractorMatchesFilter(d.status, 'awaiting_approval')) out.awaiting_approval++;
       else if (contractorMatchesFilter(d.status, 'proposed'))     out.proposed++;
       else if (contractorMatchesFilter(d.status, 'completed'))    out.completed++;
       else if (contractorMatchesFilter(d.status, 'cancelled'))    out.cancelled++;
     }
-    // Cancelled searches (deleted by the contractor) also live
-    // under the "בוטל" pill — count them too.
-    out.cancelled += searches.filter((s) => s.status === 'cancelled').length;
     return out;
-  }, [deals, searches]);
+  }, [deals, liveSearches]);
 
-  // Compose the card list: one card per search, with its deals.
+  // Compose the card list: one card per (live) search, with its deals.
   const cards = useMemo(() => {
     const bySearch = deals.reduce<Record<string, EnrichedDeal[]>>((acc, d) => {
       const k = d.search_id || d.id;
       (acc[k] = acc[k] || []).push(d);
       return acc;
     }, {});
-    return searches.map((s) => ({
+    return liveSearches.map((s) => ({
       searchId: s.id,
       search:   s,
       deals:    bySearch[s.id] || [],
     }));
-  }, [deals, searches]);
+  }, [deals, liveSearches]);
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
     return cards.filter((c) => {
       if (filter !== 'all') {
-        const dealMatches   = c.deals.some((d) => contractorMatchesFilter(d.status, filter));
-        // A search the contractor deleted (search.status='cancelled')
-        // surfaces under the "בוטל" pill alongside cancelled deals.
-        const searchMatches = filter === 'cancelled' && c.search?.status === 'cancelled';
-        if (!dealMatches && !searchMatches) return false;
+        const dealMatches = c.deals.some((d) => contractorMatchesFilter(d.status, filter));
+        if (!dealMatches) return false;
       }
       if (q) {
         const profLabel = c.deals[0]?.profession_he
