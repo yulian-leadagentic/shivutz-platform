@@ -9,15 +9,24 @@ const heebo = Heebo({ subsets: ['hebrew', 'latin'], variable: '--font-heebo' });
 export const metadata: Metadata = {
   title: 'BuildUp — גיוס עובדים זרים לבנייה',
   description: 'BuildUp — מערכת מבוססת AI להתאמת עובדים זרים, שיבוץ וניהול תהליך הגיוס בענף הבנייה.',
+  applicationName: 'BuildUp',
   icons: {
-    icon: '/brand/buildup-logo.png',
-    apple: '/brand/buildup-logo.png',
+    icon: '/brand/buildup-icon.png',
+    apple: '/brand/buildup-icon.png',
+  },
+  appleWebApp: {
+    capable: true,
+    title: 'BuildUp',
+    statusBarStyle: 'default',
   },
 };
 
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
+  // Matches the manifest theme_color so the mobile chrome bar tints
+  // brand-orange when the app is launched from the home screen.
+  themeColor: '#F78203',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
