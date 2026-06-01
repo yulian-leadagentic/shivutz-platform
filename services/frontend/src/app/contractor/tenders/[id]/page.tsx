@@ -11,7 +11,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
   Loader2, Globe2, AlertCircle, Users, Check, Clock, ShieldCheck,
-  Building2, Phone, Mail, XCircle, Send, Pencil, Snowflake, Play, Trash2, ArrowRight,
+  Building2, Phone, Mail, XCircle, Send, Pencil, Snowflake, Play, Trash2, ArrowRight, Home,
 } from 'lucide-react';
 import { tenderApi, orgApi, type Tender } from '@/lib/api';
 import type { Corporation } from '@/types';
@@ -204,7 +204,11 @@ export default function ContractorTenderDetailPage() {
     const offers = liveBids.flatMap((b) =>
       b.items
         .filter((bi) => bi.tender_item_id === ti.id)
-        .map((bi) => ({ bi, corpAnon: b.corp_anon, corpId: b.corporation_id, arrival: b.arrival_date, bidStatus: b.status })),
+        .map((bi) => ({
+          bi, corpAnon: b.corp_anon, corpId: b.corporation_id, arrival: b.arrival_date, bidStatus: b.status,
+          includesHousing: b.includes_housing ?? null,
+          housingNotes: b.housing_notes ?? null,
+        })),
     );
     return { ti, offers };
   });
@@ -312,7 +316,7 @@ export default function ContractorTenderDetailPage() {
               <p className="px-4 py-4 text-sm text-slate-400 text-center">עדיין אין הצעות לשורה זו</p>
             ) : (
               <div className="divide-y divide-slate-100">
-                {offers.map(({ bi, corpAnon, corpId, arrival, bidStatus }) => {
+                {offers.map(({ bi, corpAnon, corpId, arrival, bidStatus, includesHousing, housingNotes }) => {
                   const isSel = selected.has(bi.id);
                   const corp = corpId ? corpById[corpId] : undefined;
                   const partial = bi.quantity_offered < ti.quantity;
@@ -330,12 +334,28 @@ export default function ContractorTenderDetailPage() {
                         <span className="h-6 w-6 rounded-md bg-emerald-500 text-white flex items-center justify-center shrink-0"><Check className="h-4 w-4" /></span>
                       ) : <span className="h-6 w-6 shrink-0" />}
 
-                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <div className="flex items-center gap-2 min-w-0 flex-1 flex-wrap">
                         <Building2 className="h-4 w-4 text-slate-400 shrink-0" />
                         <span className="font-semibold text-slate-900 truncate">
                           {revealed && corp ? (corp.company_name_he || corp.company_name) : (corpAnon || 'תאגיד')}
                         </span>
                         {confirmed && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-500 text-white">זוכה</span>}
+                        {/* Housing chip — at-a-glance "is this rate all-in"
+                            signal. Tooltip exposes the corp's caveat note
+                            when one was provided (QA-R3 #20). */}
+                        {includesHousing === true && (
+                          <span
+                            className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200"
+                            title={housingNotes || 'התאגיד הצהיר שהמגורים כלולים במחיר השעתי'}
+                          >
+                            <Home className="h-3 w-3" /> כולל מגורים
+                          </span>
+                        )}
+                        {includesHousing === false && (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
+                            <Home className="h-3 w-3" /> ללא מגורים
+                          </span>
+                        )}
                       </div>
 
                       <div className="text-end shrink-0">

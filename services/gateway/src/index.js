@@ -65,6 +65,13 @@ const PUBLIC_PREFIXES = [
   '/api/auth/invite/accept',     // Invitation acceptance — Phase 4
   '/api/enums',                  // profession/region enum lookups are public
   '/api/webhooks/vonage',        // Vonage webhooks — secured by Signature Secret JWT, not user JWT
+  // Uploaded files are served as static assets via the user-org service.
+  // Filenames are server-generated UUIDs, so the URL is itself the
+  // capability — `<a href>` clicks from the docs page don't carry an
+  // Authorization header, so 401-gating them broke file preview entirely
+  // (QA-R3 #22). Acceptable pre-launch; swap to signed short-lived URLs
+  // before opening up to real tenant data.
+  '/api/uploads',
 ];
 
 // Public only for specific HTTP methods (exact path → allowed methods)

@@ -3,6 +3,36 @@
 // which produced relative `/auth/...` fetches that 404'd on port 3008.
 export const BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api';
 
+/**
+ * Turn a server-stored file URL into something the browser can fetch.
+ *
+ * Uploaded-document rows store `file_url` as a path-only string starting
+ * with `/api/...` so the same DB rows work across dev/staging/prod. The
+ * browser however is sitting on the FRONTEND origin (e.g. localhost:3008
+ * in dev), not the gateway origin (localhost:3000). A raw `<a href>` with
+ * `/api/uploads/...` would 404 against the frontend dev server.
+ *
+ * Strategy: pull the origin off BASE (which already points at the gateway)
+ * and stitch it onto the stored path. URLs that are already absolute
+ * (http://, https://, blob:) are returned unchanged.
+ *
+ * Externally-hosted URLs the backend may store (e.g. Cloudinary or a
+ * "קישור חיצוני" the user pasted) come back as-is.
+ */
+export function fileHref(file_url: string | null | undefined): string {
+  if (!file_url) return '';
+  if (/^(https?:|blob:|data:)/i.test(file_url)) return file_url;
+  if (!file_url.startsWith('/')) return file_url;
+  try {
+    // BASE typically ends in `/api`; strip it to get the bare origin
+    // (the file_url itself already carries `/api/uploads/...`).
+    const origin = new URL(BASE).origin;
+    return `${origin}${file_url}`;
+  } catch {
+    return file_url;
+  }
+}
+
 export function getToken(): string | undefined {
   if (typeof document === 'undefined') return undefined;
   return document.cookie

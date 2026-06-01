@@ -36,6 +36,12 @@ export interface Bid {
   currency: string;
   arrival_date?: string | null;      // when workers reach Israel
   notes?: string | null;
+  /** QA-R3 #20 — does the quoted hourly rate include worker housing?
+   *  null = corp didn't answer (e.g. bid submitted before this column
+   *  existed); true/false otherwise. `housing_notes` is the free-text
+   *  caveat the corp can add when housing IS included. */
+  includes_housing?: boolean | null;
+  housing_notes?: string | null;
   status: 'pending_admin' | 'submitted' | 'selected' | 'confirmed' | 'rejected' | 'withdrawn';
   submitted_at: string;
   selected_at?: string | null;
@@ -80,6 +86,8 @@ export interface BidCreatePayload {
   arrival_date?: string;
   currency?: string;
   notes?: string;
+  includes_housing?: boolean;
+  housing_notes?: string;
   items: Array<{ tender_item_id: string; profession_type: string; quantity_offered: number; hourly_rate?: number }>;
 }
 

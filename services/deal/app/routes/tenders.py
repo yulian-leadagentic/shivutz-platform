@@ -76,6 +76,12 @@ class BidCreate(BaseModel):
     arrival_date: Optional[str] = None       # when workers reach Israel
     currency: str = "ILS"
     notes: Optional[str] = None
+    # QA-R3 #20: housing included in the hourly rate? `None` = corp didn't
+    # specify (older bids before this field existed); True/False after this
+    # change. `housing_notes` lets the corp add a caveat ("מגורים בחיפה
+    # בלבד", "כולל ארוחות בוקר", ...).
+    includes_housing: Optional[bool] = None
+    housing_notes: Optional[str] = None
     items: List[BidItemIn]
 
 
@@ -440,10 +446,15 @@ async def submit_bid(
         cur.execute(
             """INSERT INTO foreign_bids
                (id, tender_id, corporation_id, currency,
-                arrival_date, notes, status, created_by_user_id)
-               VALUES (%s,%s,%s,%s,%s,%s,'pending_admin',%s)""",
+                arrival_date, notes, includes_housing, housing_notes,
+                status, created_by_user_id)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'pending_admin',%s)""",
             (bid_id, tender_id, x_org_id, data.currency,
-             data.arrival_date or None, data.notes, x_user_id),
+             data.arrival_date or None, data.notes,
+             # MySQL TINYINT(1) accepts 0/1/NULL; cast for clarity.
+             None if data.includes_housing is None else int(data.includes_housing),
+             (data.housing_notes or None) if data.includes_housing is not None else None,
+             x_user_id),
         )
         for it in data.items:
             # unit_price column carries the per-line HOURLY rate.

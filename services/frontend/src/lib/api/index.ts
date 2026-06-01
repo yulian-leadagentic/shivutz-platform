@@ -1,7 +1,7 @@
 // Barrel — preserves `@/lib/api` imports after the split.
 // Prefer importing from the specific module (e.g. `@/lib/api/jobs`) in new code.
 
-export { apiFetch, BASE } from './client';
+export { apiFetch, BASE, fileHref } from './client';
 
 export { authApi, otpApi, inviteApi } from './auth';
 export type { Membership, InviteMetadata } from './auth';

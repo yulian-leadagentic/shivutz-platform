@@ -2,7 +2,7 @@
 
 import { useEffect, useState, FormEvent } from 'react';
 import { Loader2, FilePlus, FileCheck, FileX, ExternalLink, Trash2 } from 'lucide-react';
-import { documentApi, type OrgDocument, DOC_TYPE_LABELS } from '@/lib/api';
+import { documentApi, fileHref, type OrgDocument, DOC_TYPE_LABELS } from '@/lib/api';
 import { useAuth } from '@/lib/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -131,7 +131,7 @@ export default function CorporationDocumentsPage() {
                     {d.notes && <p className="text-xs text-slate-400 mt-0.5">{d.notes}</p>}
                   </div>
                   <div className="flex items-center gap-2 ms-3 shrink-0">
-                    <a href={d.file_url} target="_blank" rel="noopener noreferrer"
+                    <a href={fileHref(d.file_url)} target="_blank" rel="noopener noreferrer"
                       className="p-1.5 rounded hover:bg-slate-200 text-slate-500 hover:text-brand-600 transition-colors">
                       <ExternalLink className="h-4 w-4" />
                     </a>

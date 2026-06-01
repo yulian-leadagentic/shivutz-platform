@@ -9,7 +9,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
   Loader2, Globe2, AlertCircle, Users, Send, ShieldCheck, Clock,
-  Phone, Mail, Building2, XCircle,
+  Phone, Mail, Building2, XCircle, Home,
 } from 'lucide-react';
 import { tenderApi, orgApi, type Tender, type Bid } from '@/lib/api';
 import type { Corporation } from '@/types';
@@ -32,6 +32,10 @@ export default function CorpTenderDetailPage() {
   const [rates, setRates]     = useState<Record<string, number>>({});
   const [arrival, setArrival] = useState('');
   const [notes, setNotes]     = useState('');
+  // QA-R3 #20 — does the hourly rate include worker housing? null until
+  // the corp picks one. They must answer before submission.
+  const [includesHousing, setIncludesHousing] = useState<boolean | null>(null);
+  const [housingNotes, setHousingNotes]       = useState('');
   const [contractorCorp, setContractorCorp] = useState<Corporation | null>(null);
 
   const load = useCallback(() => {
@@ -53,6 +57,8 @@ export default function CorpTenderDetailPage() {
           setRates(seedRate);
           if (mine.arrival_date) setArrival(mine.arrival_date.slice(0, 10));
           if (mine.notes) setNotes(mine.notes);
+          if (mine.includes_housing != null) setIncludesHousing(!!mine.includes_housing);
+          if (mine.housing_notes) setHousingNotes(mine.housing_notes);
         }
       })
       .catch((e) => setError(e instanceof Error ? e.message : 'שגיאה'))
@@ -111,6 +117,13 @@ export default function CorpTenderDetailPage() {
       return;
     }
 
+    // QA-R3 #20 — housing answer is required so the contractor never has
+    // to wonder whether the quoted rate is all-in.
+    if (includesHousing === null) {
+      setError('יש לציין האם המגורים כלולים במחיר השעתי');
+      return;
+    }
+
     const items = offeredItems.map((it) => ({
       tender_item_id: it.id,
       profession_type: it.profession_type,
@@ -122,6 +135,9 @@ export default function CorpTenderDetailPage() {
       await tenderApi.submitBid(id, {
         arrival_date: arrival || undefined,
         notes: notes.trim() || undefined,
+        includes_housing: includesHousing,
+        // Caveats are only meaningful when housing IS included.
+        housing_notes: includesHousing ? (housingNotes.trim() || undefined) : undefined,
         items,
       });
       // Close the screen — back to the requests inbox where the bid
@@ -257,6 +273,43 @@ export default function CorpTenderDetailPage() {
           <Input label="מועד הגעה לארץ" type="date" disabled={!editable}
             value={arrival} onChange={(e) => setArrival(e.target.value)} />
         </div>
+
+        {/* QA-R3 #20 — housing is a yes/no the contractor needs to know
+            before comparing rates. Required for new submissions. */}
+        <div className="rounded-xl border border-slate-200 bg-slate-50/40 px-3 py-3 space-y-2">
+          <label className="text-sm font-bold text-slate-800 inline-flex items-center gap-2">
+            <Home className="h-4 w-4 text-brand-600" />
+            האם המגורים כלולים במחיר השעתי?
+          </label>
+          <div className="flex gap-2">
+            <button type="button" disabled={!editable}
+              onClick={() => setIncludesHousing(true)}
+              className={`flex-1 h-10 rounded-lg border text-sm font-bold transition-colors disabled:opacity-60 ${
+                includesHousing === true
+                  ? 'bg-emerald-600 border-emerald-600 text-white'
+                  : 'bg-white border-slate-300 text-slate-700 hover:border-emerald-400'
+              }`}>
+              כן, כולל מגורים
+            </button>
+            <button type="button" disabled={!editable}
+              onClick={() => { setIncludesHousing(false); setHousingNotes(''); }}
+              className={`flex-1 h-10 rounded-lg border text-sm font-bold transition-colors disabled:opacity-60 ${
+                includesHousing === false
+                  ? 'bg-slate-700 border-slate-700 text-white'
+                  : 'bg-white border-slate-300 text-slate-700 hover:border-slate-400'
+              }`}>
+              לא, לא כולל
+            </button>
+          </div>
+          {includesHousing === true && (
+            <Input label="פירוט מגורים (אופציונלי)"
+              placeholder="למשל: מגורים באזור חיפה בלבד, כולל ארוחת בוקר"
+              disabled={!editable}
+              value={housingNotes}
+              onChange={(e) => setHousingNotes(e.target.value)} />
+          )}
+        </div>
+
         <div>
           <label className="text-xs font-medium text-slate-600 block mb-1">הערות (אופציונלי)</label>
           <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} disabled={!editable}
