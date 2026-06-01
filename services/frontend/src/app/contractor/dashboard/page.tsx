@@ -108,58 +108,50 @@ export default function ContractorDashboardPage() {
           <div>
             <h3 className="font-semibold text-amber-900">החשבון ממתין לאישור</h3>
             <p className="text-sm text-amber-700 mt-0.5">
-              הבקשה שלך מטופלת — תקבל SMS עם קישור ישיר ברגע שהחשבון יאושר.
+              הבקשה שלך מטופלת — תקבל SMS / WhatsApp עם קישור ישיר ברגע שהחשבון יאושר.
             </p>
           </div>
         </div>
       )}
 
-      {/* Hero — recruitment CTA */}
-      <section className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-6 sm:p-10">
-        {/* Brand-orange glow */}
+      {/* Hero — recruitment CTA. White surface per QA-R3 #11 so the
+          contractor dashboard matches the landing's all-white look. */}
+      <section className="relative overflow-hidden rounded-2xl bg-white border border-slate-200 shadow-sm p-6 sm:p-10">
+        {/* Subtle brand-orange glow — reduced opacity for white surface */}
         <div
-          className="pointer-events-none absolute -top-24 end-0 h-72 w-72 rounded-full opacity-30"
+          className="pointer-events-none absolute -top-24 end-0 h-72 w-72 rounded-full opacity-[0.08]"
           style={{ background: 'radial-gradient(circle, #f78203 0%, transparent 70%)' }}
-        />
-        {/* Subtle dot texture */}
-        <div
-          className="pointer-events-none absolute inset-0 opacity-[0.04]"
-          style={{
-            backgroundImage: 'radial-gradient(circle, #fff 1px, transparent 1px)',
-            backgroundSize: '24px 24px',
-          }}
         />
 
         <div className="relative grid gap-6 lg:grid-cols-[1fr_auto] lg:items-center">
           <div className="space-y-4">
-            <div className="inline-flex items-center gap-2 rounded-full border border-amber-300/30 bg-amber-400/10 px-3 py-1 text-xs font-medium text-amber-200">
-              <span className="h-1.5 w-1.5 rounded-full bg-amber-300 animate-pulse" />
+            <div className="inline-flex items-center gap-2 rounded-full border border-brand-200 bg-brand-50 px-3 py-1 text-xs font-medium text-brand-700">
+              <span className="h-1.5 w-1.5 rounded-full bg-brand-500 animate-pulse" />
               הפסיקו לרדוף אחרי טלפונים ותיאומים
             </div>
-            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-white leading-[1.15] tracking-tight">
-              גיוס עובדים לבנייה — <span className="text-amber-300">פשוט ומהיר</span>
+            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-slate-900 leading-[1.15] tracking-tight">
+              גיוס עובדים לבנייה — <span className="text-brand-600">פשוט ומהיר</span>
             </h1>
-            <p className="text-sm sm:text-base text-slate-300 leading-relaxed max-w-2xl">
+            <p className="text-sm sm:text-base text-slate-600 leading-relaxed max-w-2xl">
               מאות עובדים זמינים לפי מקצוע, ניסיון וזמינות לעבודה.{' '}
-              <span className="text-white font-medium">מנוע AI לחיפוש התאמות.</span>
+              <span className="text-slate-900 font-medium">מנוע AI לחיפוש התאמות.</span>
             </p>
-            <p className="text-sm sm:text-base text-amber-200/90 font-medium">
+            <p className="text-sm sm:text-base text-brand-700 font-semibold">
               גיוס עובדים מהארץ וייבוא עובדים חדשים
             </p>
           </div>
 
           <div className="lg:shrink-0">
-            {/* Oversize CTA — per user feedback this is the primary
-                action on the page, so it should dwarf everything around
-                it. h-16 + text-xl + px-10 + animate-pulse-shadow ring. */}
+            {/* Oversize CTA — primary action, brand orange so it pops
+                on the white surface. */}
             <Link
               href="/contractor/find"
               className="group inline-flex items-center justify-center gap-3
                          h-16 px-10 rounded-2xl
-                         bg-amber-500 hover:bg-amber-400 active:bg-amber-600
-                         text-slate-900 font-extrabold text-xl tracking-tight
-                         shadow-2xl shadow-amber-500/40
-                         ring-4 ring-amber-300/30 hover:ring-amber-300/60
+                         bg-brand-600 hover:bg-brand-700 active:bg-brand-800
+                         text-white font-extrabold text-xl tracking-tight
+                         shadow-lg shadow-brand-500/30
+                         ring-4 ring-brand-200/50 hover:ring-brand-300
                          transition-all duration-200 hover:-translate-y-0.5"
             >
               <Zap className="h-7 w-7 group-hover:rotate-12 transition-transform" />

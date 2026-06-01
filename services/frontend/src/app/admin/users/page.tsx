@@ -56,7 +56,7 @@ export default function AdminUsersPage() {
     setAddingBusy(true);
     try {
       await adminApi.addAdminUser({ full_name: addForm.full_name.trim(), phone: addForm.phone.trim() });
-      pushToast('✓ מנהל חדש נוסף, נשלחה הודעת SMS');
+      pushToast('✓ מנהל חדש נוסף, נשלחה הודעת SMS / WhatsApp');
       setAddForm({ full_name: '', phone: '' });
       setAdding(false);
       load();
@@ -128,7 +128,7 @@ export default function AdminUsersPage() {
               <UserPlus className="h-4 w-4 text-brand-600" /> מנהל חדש
             </CardTitle>
             <CardDescription>
-              ייווצר משתמש עם הרשאת מנהל. הודעת SMS עם קישור לכניסה תישלח אוטומטית.
+              ייווצר משתמש עם הרשאת מנהל. הודעת SMS / WhatsApp עם קישור לכניסה תישלח אוטומטית.
             </CardDescription>
           </CardHeader>
           <CardContent>

@@ -326,7 +326,7 @@ export default function FindFormPage() {
                     : 'bg-white text-slate-700 border-slate-300 hover:border-brand-400'
                 }`}
               >
-                ללא הגבלה
+                ללא ניסיון
               </button>
               {EXPERIENCE_RANGES.map((r) => {
                 const active = expRanges.includes(r.code);
@@ -487,7 +487,7 @@ export default function FindFormPage() {
               </div>
 
               <div className="rounded-xl bg-emerald-50/95 border border-emerald-200 px-4 py-3 text-sm text-emerald-900 leading-relaxed backdrop-blur-sm">
-                <p>ברגע שיאשרו זמינות עובדים נעדכן אותך בהודעת SMS</p>
+                <p>ברגע שיאשרו זמינות עובדים נעדכן אותך בהודעת SMS / WhatsApp</p>
                 <p className="text-emerald-700/80 mt-0.5">למספר ששמור במערכת</p>
               </div>
 
@@ -510,7 +510,7 @@ export default function FindFormPage() {
               </div>
 
               <div className="rounded-xl bg-sky-50 border border-sky-200 px-4 py-3 text-sm text-sky-900 leading-relaxed">
-                <p>תקבל עדכון ב-SMS למספר ששמור במערכת ברגע שתימצא התאמה</p>
+                <p>תקבל עדכון ב-SMS / WhatsApp למספר ששמור במערכת ברגע שתימצא התאמה</p>
               </div>
             </div>
           )}

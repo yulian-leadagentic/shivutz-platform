@@ -259,7 +259,7 @@ export default function RegisterContractorPage() {
           <CheckCircle2 className="h-16 w-16 text-green-500" />
           <h2 className="text-xl font-bold text-slate-900">הבקשה התקבלה!</h2>
           <p className="text-slate-600">ממתין לאישור מנהל — עד 48 שעות</p>
-          <p className="text-slate-500 text-sm">נשלח אליך SMS לאחר האישור</p>
+          <p className="text-slate-500 text-sm">נשלח אליך SMS / WhatsApp לאחר האישור</p>
           <Link href="/login" className="text-brand-600 font-medium hover:underline text-sm">
             חזרה לכניסה
           </Link>
@@ -555,7 +555,7 @@ export default function RegisterContractorPage() {
                         {c.type === 'email' ? <Mail className="h-5 w-5 text-brand-600" /> : <Smartphone className="h-5 w-5 text-brand-600" />}
                         <div className="flex flex-col">
                           <span className="text-xs text-slate-500">
-                            {c.type === 'email' ? 'אימות במייל' : 'אימות ב-SMS'}
+                            {c.type === 'email' ? 'אימות במייל' : 'אימות ב-SMS / WhatsApp'}
                           </span>
                           <span className="font-medium text-slate-800" dir="ltr">{c.target}</span>
                         </div>

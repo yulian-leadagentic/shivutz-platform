@@ -21,8 +21,9 @@ INSERT INTO regions (code, name_he, name_en) VALUES
   ('national',   'כל הארץ', 'Nationwide');
 
 TRUNCATE TABLE origin_countries;
+-- Romania removed per QA round-3 #19 (not actively recruited right now).
+-- Re-add via the admin country-CRUD UI when needed.
 INSERT INTO origin_countries (code, name_he, name_en) VALUES
-  ('RO', 'רומניה',     'Romania'),
   ('UA', 'אוקראינה',   'Ukraine'),
   ('MD', 'מולדובה',    'Moldova'),
   ('LK', 'סרי לנקה',  'Sri Lanka'),

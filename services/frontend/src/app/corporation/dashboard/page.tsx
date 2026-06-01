@@ -109,7 +109,7 @@ export default function CorporationDashboard() {
           <div>
             <h3 className="font-semibold text-amber-900">החשבון ממתין לאישור</h3>
             <p className="text-sm text-amber-700 mt-0.5">
-              הבקשה שלך מטופלת — תקבל SMS ברגע שהחשבון יאושר.
+              הבקשה שלך מטופלת — תקבל SMS / WhatsApp ברגע שהחשבון יאושר.
             </p>
           </div>
         </div>

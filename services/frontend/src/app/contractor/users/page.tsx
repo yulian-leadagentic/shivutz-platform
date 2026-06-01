@@ -64,7 +64,7 @@ export default function ContractorUsersPage() {
       }]);
       setFirstName(''); setLastName(''); setPhone(''); setRole('admin'); setJobTitle('');
       setShowForm(false);
-      setSuccess('ההזמנה נשלחה ב-SMS');
+      setSuccess('ההזמנה נשלחה ב-SMS / WhatsApp');
       setTimeout(() => setSuccess(''), 4000);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'שגיאה';
@@ -105,7 +105,7 @@ export default function ContractorUsersPage() {
         <Card>
           <CardContent className="pt-4 space-y-3">
             <h3 className="font-semibold text-slate-800 text-sm">הזמנת חבר צוות חדש</h3>
-            <p className="text-xs text-slate-500">קוד הזמנה ישלח ב-SMS למספר הטלפון שתזין</p>
+            <p className="text-xs text-slate-500">קוד הזמנה ישלח ב-SMS / WhatsApp למספר הטלפון שתזין</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Input
                 label="שם פרטי"

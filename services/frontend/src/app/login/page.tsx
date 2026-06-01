@@ -24,7 +24,7 @@ function otpError(msg: string): string {
   if (msg === 'otp_expired_or_not_found')   return 'הקוד פג תוקף. שלח קוד חדש';
   if (msg === 'otp_expired')                return 'הקוד פג תוקף. שלח קוד חדש';
   if (msg === 'user_not_found')             return 'מספר הטלפון לא רשום במערכת';
-  if (msg === 'use_phone_login')            return 'חשבון זה מחייב כניסה עם SMS';
+  if (msg === 'use_phone_login')            return 'חשבון זה מחייב כניסה עם SMS / WhatsApp';
   // apiFetch's friendlyError already translates known codes — if the
   // message is already Hebrew, surface it as-is.
   if (/[֐-׿]/.test(msg))          return msg;
@@ -84,7 +84,7 @@ const COPY = {
   },
   generic: {
     title:           'כניסה למערכת',
-    description:    'נשלח קוד אימות ל-SMS',
+    description:    'נשלח קוד אימות ל-SMS / WhatsApp',
     existingLabel:  'שלח קוד',
     newLabel:       null,
     registerHref:   null,
@@ -253,7 +253,7 @@ function LoginPageInner() {
       redirectByRole(router, getRoleFromToken(tokens.access_token));
     } catch (err) {
       const msg = err instanceof Error ? err.message : '';
-      setError(msg === 'use_phone_login' ? 'חשבון זה מחייב כניסה עם SMS' : 'אימייל או סיסמה שגויים');
+      setError(msg === 'use_phone_login' ? 'חשבון זה מחייב כניסה עם SMS / WhatsApp' : 'אימייל או סיסמה שגויים');
     } finally { setLoading(false); }
   }
 
@@ -425,7 +425,7 @@ function LoginPageInner() {
                   onClick={() => switchMode('sms')}
                   className="text-xs text-slate-400 hover:text-slate-600 hover:underline"
                 >
-                  ← חזרה לכניסה ב-SMS
+                  ← חזרה לכניסה ב-SMS / WhatsApp
                 </button>
               )}
             </div>
