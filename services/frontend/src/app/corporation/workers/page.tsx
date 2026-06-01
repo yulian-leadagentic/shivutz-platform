@@ -13,10 +13,10 @@ import { useEnums } from '@/features/enums/EnumsContext';
 import { EXPERIENCE_LABEL } from '@/i18n/he';
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
-  available:   { label: 'זמין',     color: 'bg-green-100 text-green-700' },
-  assigned:    { label: 'משובץ',    color: 'bg-blue-100 text-blue-700' },
-  on_leave:    { label: 'בחופשה',   color: 'bg-amber-100 text-amber-700' },
-  deactivated: { label: 'לא פעיל', color: 'bg-slate-100 text-slate-500' },
+  available:   { label: 'עובדים זמינים לשיבוץ', color: 'bg-green-100 text-green-700' },
+  assigned:    { label: 'עובדים משובצים',       color: 'bg-blue-100 text-blue-700' },
+  on_leave:    { label: 'בחופשה',                color: 'bg-amber-100 text-amber-700' },
+  deactivated: { label: 'עובדים לא זמינים',     color: 'bg-slate-100 text-slate-500' },
 };
 
 const ROW_BG: Record<string, string> = {
@@ -412,7 +412,7 @@ export default function WorkersPage() {
     <div className="space-y-4 max-w-7xl">
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <h2 className="text-xl font-bold text-slate-900">ניהול עובדים</h2>
+        <h2 className="text-xl font-bold text-slate-900">עובדים פנויים למסירה מיידית</h2>
         <Button asChild>
           <Link href="/corporation/workers/new">
             <Plus className="h-4 w-4" />

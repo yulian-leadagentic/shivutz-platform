@@ -19,10 +19,9 @@ export default function LandingFooter() {
           <div>
             <h4 className="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-3">פלטפורמה</h4>
             <ul className="space-y-2 text-sm">
-              <li><Link href="/marketplace" className="hover:text-brand-600 transition-colors">שוק תאגידים</Link></li>
+              <li><Link href="/marketplace" className="hover:text-brand-600 transition-colors">שירותים נלווים</Link></li>
               <li><Link href="/register/contractor" className="hover:text-brand-600 transition-colors">הצטרף כקבלן</Link></li>
               <li><Link href="/register/corporation" className="hover:text-brand-600 transition-colors">הצטרף כתאגיד</Link></li>
-              <li><Link href="/login" className="hover:text-brand-600 transition-colors">התחבר</Link></li>
             </ul>
           </div>
 

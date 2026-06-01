@@ -156,7 +156,7 @@ export default function CorporationDashboard() {
               התחבר ישירות לקבלנים פעילים
             </div>
             <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-white leading-[1.15] tracking-tight">
-              פרסם עובדים זמינים — <span className="text-sky-300">עשרות קבלנים כבר מחפשים עובדים</span>
+              פרסם עובדים זמינים מיידית — <span className="text-sky-300">עשרות קבלנים כבר מחפשים עובדים</span>
             </h1>
             <p className="text-sm sm:text-base text-slate-300 leading-relaxed max-w-2xl">
               נהל את רשימת העובדים שלך, קבל פניות מקבלנים ואשר עסקאות בקליק במקום אחד.{' '}

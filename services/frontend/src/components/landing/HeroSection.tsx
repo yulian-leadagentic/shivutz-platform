@@ -229,7 +229,7 @@ export default function HeroSection(_: HeroSectionProps) {
               <div className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-brand-600 text-sm font-semibold text-white shadow-sm group-hover:bg-brand-700 transition-colors">
                 {switching === 'contractor'
                   ? <><Loader2 className="h-4 w-4 animate-spin" /> מעביר...</>
-                  : <>איתור עובדים<ArrowLeft className="h-4 w-4 group-hover:-translate-x-1 transition-transform" /></>}
+                  : <>חפש עובדים<ArrowLeft className="h-4 w-4 group-hover:-translate-x-1 transition-transform" /></>}
               </div>
             </Link>
 
@@ -257,7 +257,7 @@ export default function HeroSection(_: HeroSectionProps) {
               <div className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-navy-600 text-sm font-semibold text-white shadow-sm group-hover:bg-navy-700 transition-colors">
                 {switching === 'corporation'
                   ? <><Loader2 className="h-4 w-4 animate-spin" /> מעביר...</>
-                  : <>התחל לפרסם<ArrowLeft className="h-4 w-4 group-hover:-translate-x-1 transition-transform" /></>}
+                  : <>פרסם זמינות<ArrowLeft className="h-4 w-4 group-hover:-translate-x-1 transition-transform" /></>}
               </div>
             </Link>
           </div>
@@ -268,7 +268,7 @@ export default function HeroSection(_: HeroSectionProps) {
       <div className="relative border-t border-slate-200">
         <div className="max-w-7xl mx-auto px-6 py-6">
           <p className="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-4">
-            שוק תאגידים — גלוש ישירות לפי קטגוריה
+            שירותים נלווים — גלוש ישירות לפי קטגוריה
           </p>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {MARKET_CATS.map(({ icon: Icon, label, desc, href, accent, iconBg, iconColor, labelColor, descColor }) => (

@@ -83,7 +83,7 @@ export default function LandingNav(_: LandingNavProps) {
             איך זה עובד
           </a>
           <Link href="/marketplace" className={`text-sm font-medium transition-colors ${linkCls}`}>
-            שוק תאגידים
+            שירותים נלווים
           </Link>
         </nav>
 
@@ -165,7 +165,7 @@ export default function LandingNav(_: LandingNavProps) {
                 href="/register/contractor"
                 className="text-sm font-semibold bg-brand-600 hover:bg-brand-500 text-white px-4 py-2 rounded-lg transition-colors shadow-sm"
               >
-                הצטרף בחינם
+                הצטרף
               </Link>
             </>
           )}
@@ -184,7 +184,7 @@ export default function LandingNav(_: LandingNavProps) {
       {menuOpen && (
         <div className="md:hidden bg-white border-t border-slate-100 px-6 py-4 space-y-1 shadow-xl">
           <a href="#how-it-works" className="block text-sm font-medium text-slate-700 py-2.5 hover:text-brand-600" onClick={() => setMenuOpen(false)}>איך זה עובד</a>
-          <Link href="/marketplace" className="block text-sm font-medium text-slate-700 py-2.5 hover:text-brand-600" onClick={() => setMenuOpen(false)}>שוק תאגידים</Link>
+          <Link href="/marketplace" className="block text-sm font-medium text-slate-700 py-2.5 hover:text-brand-600" onClick={() => setMenuOpen(false)}>שירותים נלווים</Link>
           {/* "השאר פרטים" mobile entry removed — same de-dupe as desktop (R2 #5). */}
           <div className="pt-3 flex flex-col gap-2 border-t border-slate-100 mt-1">
             {isLoggedIn ? (
@@ -215,7 +215,7 @@ export default function LandingNav(_: LandingNavProps) {
             ) : (
               <>
                 <Link href="/login" className="w-full text-center text-sm font-medium text-slate-600 py-2.5 rounded-lg hover:bg-slate-50 border border-slate-200" onClick={() => setMenuOpen(false)}>משתמש רשום? לחץ כאן</Link>
-                <Link href="/register/contractor" className="w-full text-center text-sm font-semibold text-white bg-brand-600 hover:bg-brand-500 py-2.5 rounded-lg" onClick={() => setMenuOpen(false)}>הצטרף בחינם</Link>
+                <Link href="/register/contractor" className="w-full text-center text-sm font-semibold text-white bg-brand-600 hover:bg-brand-500 py-2.5 rounded-lg" onClick={() => setMenuOpen(false)}>הצטרף</Link>
               </>
             )}
           </div>

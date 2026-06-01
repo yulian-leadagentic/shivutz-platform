@@ -10,7 +10,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
-  Plus, Handshake, Settings as ManageIcon, Clock, Zap,
+  Plus, Handshake, Clock, Zap, Globe2,
 } from 'lucide-react';
 import { dealApi, orgApi } from '@/lib/api';
 import { getAccessToken, decodeJwtPayload } from '@/lib/auth';
@@ -143,6 +143,9 @@ export default function ContractorDashboardPage() {
               מאות עובדים זמינים לפי מקצוע, ניסיון וזמינות לעבודה.{' '}
               <span className="text-white font-medium">מנוע AI לחיפוש התאמות.</span>
             </p>
+            <p className="text-sm sm:text-base text-amber-200/90 font-medium">
+              גיוס עובדים מהארץ וייבוא עובדים חדשים
+            </p>
           </div>
 
           <div className="lg:shrink-0">
@@ -176,17 +179,17 @@ export default function ContractorDashboardPage() {
           accent="amber"
         />
         <Tile
-          href="/contractor/find"
+          href="/contractor/find/domestic"
           icon={<Plus className="h-9 w-9" />}
-          title="יצירת בקשת עובדים חדשה"
-          subtitle="חיפוש קליל לפי מקצוע — תוצאות מתאגידים בלחיצה"
+          title="גיוס עובדים מהארץ"
+          subtitle="עובדים שכבר נמצאים בישראל ומוכנים לעבודה"
           accent="brand"
         />
         <Tile
-          href="/contractor/manage"
-          icon={<ManageIcon className="h-9 w-9" />}
-          title="ניהול"
-          subtitle="צוות, מסמכים ונתוני בקרה"
+          href="/contractor/tenders/new"
+          icon={<Globe2 className="h-9 w-9" />}
+          title="ייבוא עובדים חדשים מחו״ל"
+          subtitle="פרסם בקשה לתאגידים — קבל הצעות והבא עובדים לישראל"
           accent="slate"
         />
       </div>

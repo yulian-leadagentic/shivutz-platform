@@ -6,7 +6,6 @@ import HeroSection from '@/components/landing/HeroSection';
 import TrustBar from '@/components/landing/TrustBar';
 import HowItWorksSection from '@/components/landing/HowItWorksSection';
 import MarketplacePreview from '@/components/landing/MarketplacePreview';
-import RegistrationCTASection from '@/components/landing/RegistrationCTASection';
 import LandingFooter from '@/components/landing/LandingFooter';
 import LeadCaptureModal from '@/components/landing/LeadCaptureModal';
 
@@ -35,8 +34,10 @@ export default function LandingPage() {
           {/* 4. Live marketplace preview */}
           <MarketplacePreview />
 
-          {/* 5. Registration CTA — contractor / corporation */}
-          <RegistrationCTASection onLeadCapture={() => setLeadModalOpen(true)} />
+          {/* The "מוכנים להתחיל?" / RegistrationCTA section was removed
+              per QA round-3 #34 — the role tiles in the hero are now
+              the single registration entry point, so the bullet-list
+              sell at the bottom was redundant. */}
         </main>
 
         {/* Footer */}

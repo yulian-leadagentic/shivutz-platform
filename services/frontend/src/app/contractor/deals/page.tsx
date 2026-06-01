@@ -133,7 +133,10 @@ type EnrichedDeal = Deal & {
 
 // ── Filter taxonomy ────────────────────────────────────────────
 
-const CONTRACTOR_FILTERS: Filter[] = ['all', 'awaiting_approval', 'proposed', 'completed', 'cancelled'];
+// Order per QA-R3 #2: "ממתינות לתאגיד" comes BEFORE "ממתינות לאישורך"
+// so the contractor's eye lands first on what they're waiting on the
+// corp to deliver, then on items needing their own action.
+const CONTRACTOR_FILTERS: Filter[] = ['all', 'proposed', 'awaiting_approval', 'completed', 'cancelled'];
 
 const CONTRACTOR_STATUS_GROUP: Record<Exclude<Filter, 'all' | 'active'>, string[]> = {
   awaiting_approval: ['corp_committed'],
