@@ -200,8 +200,13 @@ export default function TenderForm({ mode, initial, onSubmit, onCancel }: Props)
       <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4 sm:p-5 space-y-4">
         <h2 className="font-bold text-slate-900">פרטי הבקשה</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <Input label="כותרת (אופציונלי)" placeholder="לדוגמה: עובדים לפרויקט חדש"
-            value={title} onChange={(e) => setTitle(e.target.value)} />
+          <Input
+            label="כותרת (אופציונלי)"
+            placeholder="לדוגמה: ייבוא עובדים לפרויקט חדש בחיפה"
+            hint="כדי לזהות את הבקשה בקלות ברשימת הבקשות שלך"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+          />
           <Input label="תאריך הגעה לארץ מבוקש" type="date"
             value={startDate} onChange={(e) => setStart(e.target.value)} />
         </div>

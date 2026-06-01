@@ -212,24 +212,25 @@ export default function HeroSection(_: HeroSectionProps) {
               href={contractorCtaHref}
               onClick={(e) => { e.preventDefault(); enterRole('contractor'); }}
               aria-disabled={switching !== null}
-              className={`group flex flex-col items-center justify-center text-center bg-white hover:bg-brand-50/40 border border-slate-200 hover:border-brand-400 rounded-3xl p-7 md:p-9 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg ${switching === 'contractor' ? 'opacity-80' : ''} ${switching && switching !== 'contractor' ? 'pointer-events-none opacity-50' : ''}`}
+              className={`group flex flex-col items-center justify-center text-center bg-white hover:bg-brand-50/40 border border-slate-200 hover:border-brand-400 rounded-3xl p-4 md:p-9 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg ${switching === 'contractor' ? 'opacity-80' : ''} ${switching && switching !== 'contractor' ? 'pointer-events-none opacity-50' : ''}`}
             >
-              <div className="text-3xl md:text-4xl font-black text-brand-600 tracking-tight mb-4">
+              <div className="text-2xl md:text-4xl font-black text-brand-600 tracking-tight mb-2 md:mb-4">
                 קבלן
               </div>
-              <div className="h-12 w-12 rounded-2xl bg-brand-100 flex items-center justify-center mb-4">
-                <Users className="h-6 w-6 text-brand-600" />
+              <div className="h-9 w-9 md:h-12 md:w-12 rounded-2xl bg-brand-100 flex items-center justify-center mb-2 md:mb-4">
+                <Users className="h-5 w-5 md:h-6 md:w-6 text-brand-600" />
               </div>
-              <div className="text-4xl md:text-5xl font-extrabold text-slate-900 mb-1 group-hover:text-brand-700 transition-colors">
+              <div className="text-3xl md:text-5xl font-extrabold text-slate-900 mb-1 group-hover:text-brand-700 transition-colors">
                 {HERO_STAT.value}
               </div>
-              <div className="text-sm text-slate-500 mb-5">{HERO_STAT.label}</div>
-              {/* CTA styled as a pill button — affordance is obvious even
-                  though the entire tile is also clickable (R1 #5). */}
-              <div className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-brand-600 text-sm font-semibold text-white shadow-sm group-hover:bg-brand-700 transition-colors">
+              <div className="text-xs md:text-sm text-slate-500 mb-3 md:mb-5">{HERO_STAT.label}</div>
+              {/* CTA pill — bigger per QA-R3 #31 so the next step pops on
+                  the page; smaller padding on mobile (R3 #32) so the tile
+                  itself isn't too tall to scroll past. */}
+              <div className="inline-flex items-center gap-2 px-6 md:px-8 py-3 md:py-4 rounded-full bg-brand-600 text-base md:text-lg font-bold text-white shadow-md group-hover:bg-brand-700 transition-colors">
                 {switching === 'contractor'
-                  ? <><Loader2 className="h-4 w-4 animate-spin" /> מעביר...</>
-                  : <>חפש עובדים<ArrowLeft className="h-4 w-4 group-hover:-translate-x-1 transition-transform" /></>}
+                  ? <><Loader2 className="h-5 w-5 animate-spin" /> מעביר...</>
+                  : <>חפש עובדים<ArrowLeft className="h-5 w-5 group-hover:-translate-x-1 transition-transform" /></>}
               </div>
             </Link>
 
@@ -238,26 +239,24 @@ export default function HeroSection(_: HeroSectionProps) {
               href={corporationCtaHref}
               onClick={(e) => { e.preventDefault(); enterRole('corporation'); }}
               aria-disabled={switching !== null}
-              className={`group flex flex-col items-center justify-center text-center bg-white hover:bg-navy-50/40 border border-slate-200 hover:border-navy-400 rounded-3xl p-7 md:p-9 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg ${switching === 'corporation' ? 'opacity-80' : ''} ${switching && switching !== 'corporation' ? 'pointer-events-none opacity-50' : ''}`}
+              className={`group flex flex-col items-center justify-center text-center bg-white hover:bg-navy-50/40 border border-slate-200 hover:border-navy-400 rounded-3xl p-4 md:p-9 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg ${switching === 'corporation' ? 'opacity-80' : ''} ${switching && switching !== 'corporation' ? 'pointer-events-none opacity-50' : ''}`}
             >
-              <div className="text-3xl md:text-4xl font-black text-navy-600 tracking-tight mb-4">
+              <div className="text-2xl md:text-4xl font-black text-navy-600 tracking-tight mb-2 md:mb-4">
                 תאגיד
               </div>
-              <div className="h-12 w-12 rounded-2xl bg-navy-100 flex items-center justify-center mb-4">
-                <Building2 className="h-6 w-6 text-navy-600" />
+              <div className="h-9 w-9 md:h-12 md:w-12 rounded-2xl bg-navy-100 flex items-center justify-center mb-2 md:mb-4">
+                <Building2 className="h-5 w-5 md:h-6 md:w-6 text-navy-600" />
               </div>
-              <div className="text-base md:text-lg text-slate-900 font-semibold leading-snug mb-3 max-w-sm">
+              <div className="text-sm md:text-lg text-slate-900 font-semibold leading-snug mb-2 md:mb-3 max-w-sm">
                 עשרות קבלנים כבר מנויים לשירותים שלנו ומחפשים עובדים
               </div>
-              <div className="text-lg md:text-xl text-navy-600 font-bold leading-snug mb-5">
+              <div className="text-base md:text-xl text-navy-600 font-bold leading-snug mb-3 md:mb-5">
                 מנהל תאגיד — אל תישאר בחוץ
               </div>
-              {/* CTA styled as a pill button — affordance is obvious even
-                  though the entire tile is also clickable (R1 #5). */}
-              <div className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-navy-600 text-sm font-semibold text-white shadow-sm group-hover:bg-navy-700 transition-colors">
+              <div className="inline-flex items-center gap-2 px-6 md:px-8 py-3 md:py-4 rounded-full bg-navy-600 text-base md:text-lg font-bold text-white shadow-md group-hover:bg-navy-700 transition-colors">
                 {switching === 'corporation'
-                  ? <><Loader2 className="h-4 w-4 animate-spin" /> מעביר...</>
-                  : <>פרסם זמינות<ArrowLeft className="h-4 w-4 group-hover:-translate-x-1 transition-transform" /></>}
+                  ? <><Loader2 className="h-5 w-5 animate-spin" /> מעביר...</>
+                  : <>פרסם זמינות<ArrowLeft className="h-5 w-5 group-hover:-translate-x-1 transition-transform" /></>}
               </div>
             </Link>
           </div>
