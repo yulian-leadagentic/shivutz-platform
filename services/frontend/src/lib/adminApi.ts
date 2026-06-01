@@ -424,4 +424,54 @@ export const adminApi = {
       body: JSON.stringify({ commission_per_worker_nis }),
     }),
 
+  // ── Customer-service inbox (QA-R3 #24) ──────────────────────────────────
+  listSupportTickets: (status?: 'open' | 'in_progress' | 'resolved') =>
+    apiFetch<Array<{
+      id: string;
+      entity_type: 'contractor' | 'corporation' | 'admin' | null;
+      entity_id: string | null;
+      user_id: string | null;
+      subject: string;
+      body: string;
+      contact_phone: string | null;
+      status: 'open' | 'in_progress' | 'resolved';
+      created_at: string;
+      handled_at: string | null;
+      handled_by_user_id: string | null;
+      admin_notes: string | null;
+      // Enrichment from join (best-effort, may be missing for legacy rows)
+      org_name?: string | null;
+      org_phone?: string | null;
+      org_email?: string | null;
+      user_phone?: string | null;
+      user_name?: string | null;
+    }>>(`/admin/support-tickets${status ? `?status=${status}` : ''}`),
+  updateSupportTicket: (id: string, data: { status?: 'open' | 'in_progress' | 'resolved'; admin_notes?: string }) =>
+    apiFetch<{ id: string }>(`/admin/support-tickets/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+
+  // ── Country (origin) CRUD — QA-R3 #19b ──────────────────────────────────
+  // Read endpoint returns ALL countries (active + inactive) so the admin
+  // can toggle disabled rows back on. Public picker uses /api/enums/origins
+  // which filters to is_active=1.
+
+  listAllOrigins: () =>
+    apiFetch<Array<{ code: string; name_he: string; name_en: string; is_active: number | boolean }>>(
+      '/admin/enums/origins'
+    ),
+  addOrigin: (data: { code: string; name_he: string; name_en: string }) =>
+    apiFetch<{ code: string }>('/admin/enums/origins', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateOrigin: (code: string, data: { name_he?: string; name_en?: string; is_active?: boolean }) =>
+    apiFetch<{ code: string; updated_fields: string[] }>(`/admin/enums/origins/${code}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  deactivateOrigin: (code: string) =>
+    apiFetch<void>(`/admin/enums/origins/${code}`, { method: 'DELETE' }),
+
 };

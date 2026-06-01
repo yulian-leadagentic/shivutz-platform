@@ -22,3 +22,4 @@ export type { OrgDocument } from './documents';
 
 export { paymentApi } from './payments';
 export { marketplaceApi, leadsApi } from './marketplace';
+export { supportApi } from './support';

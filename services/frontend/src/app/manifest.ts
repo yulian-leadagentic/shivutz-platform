@@ -29,7 +29,13 @@ export default function manifest(): MetadataRoute.Manifest {
         src: '/brand/buildup-icon.png',
         sizes: '512x512',
         type: 'image/png',
-        purpose: 'any maskable',
+        purpose: 'maskable',
+      },
+      {
+        src: '/brand/buildup-icon.png',
+        sizes: '512x512',
+        type: 'image/png',
+        purpose: 'any',
       },
       {
         src: '/brand/buildup-logo.png',

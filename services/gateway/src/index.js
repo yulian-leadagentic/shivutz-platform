@@ -51,6 +51,7 @@ const services = {
   '/api/payments':      process.env.PAYMENT_SERVICE_URL       || 'http://payment:3009',
   '/api/marketplace':   process.env.USER_ORG_SERVICE_URL      || 'http://user-org:3002',
   '/api/uploads':       process.env.USER_ORG_SERVICE_URL      || 'http://user-org:3002',
+  '/api/support-tickets': process.env.USER_ORG_SERVICE_URL    || 'http://user-org:3002',
 };
 
 // Public routes (no auth required) — matched against req.originalUrl

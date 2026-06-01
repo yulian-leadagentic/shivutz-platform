@@ -6,7 +6,7 @@ import Logo from '@/components/Logo';
 import { usePathname, useRouter } from 'next/navigation';
 import {
   Home, LayoutDashboard, ClipboardList, Handshake,
-  LogOut, Plus, Users, FileText, Globe2,
+  LogOut, Plus, Users, FileText, Globe2, MessageCircle,
 } from 'lucide-react';
 import { clearTokens, getAccessToken, decodeJwtPayload } from '@/lib/auth';
 import { cn } from '@/lib/utils';
@@ -134,8 +134,20 @@ export default function Sidebar() {
         </ul>
       </nav>
 
-      {/* Divider + Logout */}
-      <div className="p-2 border-t border-slate-800">
+      {/* Divider + Support entry + Logout */}
+      <div className="p-2 border-t border-slate-800 space-y-0.5">
+        <Link
+          href="/support"
+          className={cn(
+            'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-150',
+            pathname.startsWith('/support')
+              ? 'bg-slate-800 text-white'
+              : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-200',
+          )}
+        >
+          <MessageCircle className="h-4 w-4 shrink-0" />
+          <span>פנייה לשירות לקוחות</span>
+        </Link>
         <button
           onClick={handleLogout}
           className="flex items-center gap-3 w-full rounded-lg px-3 py-2 text-sm font-medium text-slate-500 hover:bg-red-950/50 hover:text-red-400 transition-all duration-150"
