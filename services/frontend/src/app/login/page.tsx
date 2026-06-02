@@ -453,14 +453,17 @@ function LoginPageInner() {
               ) : (
                 <div className="flex flex-col gap-3 text-center">
                   <p className="text-sm text-slate-600 font-medium">אין לך עדיין חשבון?</p>
-                  <div className="flex gap-2">
-                    <Button asChild size="lg" className="flex-1 animate-brand-pulse">
+                  {/* Stacked vertically — the Button has whitespace-nowrap and
+                      the Hebrew labels are long enough that side-by-side blows
+                      past the card edge on every breakpoint. */}
+                  <div className="flex flex-col gap-2">
+                    <Button asChild size="lg" className="w-full animate-brand-pulse">
                       <Link href="/register/contractor">
                         <UserPlus className="h-4 w-4" />
                         קבלן חדש — הירשם כאן
                       </Link>
                     </Button>
-                    <Button asChild size="lg" variant="outline" className="flex-1">
+                    <Button asChild size="lg" variant="outline" className="w-full">
                       <Link href="/register/corporation">
                         <UserPlus className="h-4 w-4" />
                         תאגיד חדש — הירשם כאן
