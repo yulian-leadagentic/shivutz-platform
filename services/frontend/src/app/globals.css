@@ -63,19 +63,6 @@ body {
   to   { opacity: 1; }
 }
 
-/* Live-activity feed — card enter animation. The outgoing card unmounts
-   on key change; the incoming card runs this keyframe on mount so the
-   swap reads as a quick fade + tiny slide-in from the start side.
-   In RTL the start side is on the right, so positive translateX (which
-   moves right in screen space) feels like "coming in from the start". */
-@keyframes liveCardEnter {
-  from { opacity: 0; transform: translateX(8px); }
-  to   { opacity: 1; transform: translateX(0); }
-}
-.animate-live-card-enter {
-  animation: liveCardEnter 280ms ease-out;
-}
-
 /* Soft pulsing dot next to the word "Live". 1.6s cycle, gentle enough
    to read as "alive" without feeling frantic. */
 @keyframes livePulseDot {
@@ -85,9 +72,21 @@ body {
 .animate-live-dot {
   animation: livePulseDot 1.6s ease-in-out infinite;
 }
+
+/* Halo ring expanding outward from the Live dot — gives the badge a
+   second layer of life. Pairs with .animate-live-dot. */
+@keyframes liveDotHalo {
+  0%   { box-shadow: 0 0 0 0   rgba(244, 63, 94, 0.55); }
+  70%  { box-shadow: 0 0 0 8px rgba(244, 63, 94, 0);    }
+  100% { box-shadow: 0 0 0 0   rgba(244, 63, 94, 0);    }
+}
+.animate-live-dot-halo {
+  animation: liveDotHalo 2s ease-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .animate-live-card-enter,
-  .animate-live-dot { animation: none; }
+  .animate-live-dot,
+  .animate-live-dot-halo { animation: none; }
 }
 
 @keyframes slideUp {

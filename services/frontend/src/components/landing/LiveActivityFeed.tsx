@@ -1,27 +1,32 @@
 'use client';
 
-// Live-activity feed — landing-page strip that surfaces "what's
-// happening on the portal right now." Phase 1 is mock-only (see
-// ../../features/live-activity/mocks.ts); Phase 2 swaps the source for
-// GET /api/marketplace/activity-feed. The view doesn't care which.
+// Live-activity bubble — a floating notification that pops up from the
+// bottom corner, holds for a few seconds, slides away, then the next
+// one appears. Phase 1 uses local mock data (../../features/live-activity);
+// Phase 2 swaps the source to GET /api/marketplace/activity-feed without
+// touching this file.
 //
-// Layout:
-//   ┌──────────────────────────────────────────────────────────────┐
-//   │ ● Live · עכשיו בפלטפורמה                          ‹ ›       │
-//   ├──────────────────────────────────────────────────────────────┤
-//   │ [icon] <message text>                       [CTA]           │
-//   │        לפני N דק׳                                            │
-//   └──────────────────────────────────────────────────────────────┘
+// Lifecycle of a single bubble:
+//   idle (gap)
+//     ↓  picker.next() pulls a new item
+//   entering (350ms)  — slide up + fade in
+//     ↓
+//   shown (~6s, paused on hover or tab-hidden)
+//     ↓
+//   exiting (300ms) — slide down + fade out
+//     ↓
+//   idle (~3s gap)
+//     ↓ loop
 //
-// Auto-advances every ~5s (±0.5s jitter). Pauses on hover (desktop)
-// and when the tab is hidden. Honours prefers-reduced-motion: animation
-// is suppressed via globals.css.
+// Designed to be unobtrusive: bottom-corner, max-w-sm, glassy white,
+// close button for users who want to skip ahead. Auto-pauses on hover
+// so a curious user has time to read before the CTA disappears.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
-  ChevronLeft, ChevronRight, ArrowLeft, Users, Home,
-  Briefcase, Handshake, Sparkles, Building2, ClipboardList,
+  X, ArrowLeft, Users, Home, Briefcase, Handshake,
+  Sparkles, Building2, ClipboardList,
 } from 'lucide-react';
 import { ProfessionIcon } from '@/features/searches/ProfessionIcon';
 import { useAuth } from '@/lib/AuthContext';
@@ -30,15 +35,10 @@ import { MIX_BY_ROLE, MOCK_ITEMS } from '@/features/live-activity/mocks';
 import type { ActivityItem, AudienceRole } from '@/features/live-activity/types';
 import { resolveCta } from '@/features/live-activity/ctas';
 
-// Picks an audience bucket for the mix. Anonymous visitors are the
-// dominant landing-page audience; logged-in visitors get a feed slanted
-// to their role.
 function audienceFor(entityType: 'contractor' | 'corporation' | null): AudienceRole {
   return entityType ?? 'anon';
 }
 
-// Lucide fallback per category — used when an item has no profession
-// icon to anchor on (e.g. housing, services, platform pulse).
 const CATEGORY_ICON = {
   workers_available:  Users,
   requirement_new:    ClipboardList,
@@ -50,9 +50,22 @@ const CATEGORY_ICON = {
   platform_pulse:     Sparkles,
 } as const;
 
-// Relative time formatter. Recomputed on every render so the badge
-// quietly ages as the user lingers on the page. Bounded buckets so we
-// don't surface a misleading exact minute count.
+// Per-category accent — paints the icon backplate + the CTA so each
+// bubble's tone matches its content (housing reads green, requirements
+// read amber, etc.). Keeps the feed varied across rotations.
+const CATEGORY_ACCENT: Record<keyof typeof CATEGORY_ICON, {
+  iconBg: string; iconText: string; cta: string; rail: string;
+}> = {
+  workers_available: { iconBg: 'bg-brand-50',  iconText: 'text-brand-700',  cta: 'text-brand-700  hover:text-brand-800',  rail: 'bg-brand-500'  },
+  requirement_new:   { iconBg: 'bg-amber-50',  iconText: 'text-amber-700',  cta: 'text-amber-700  hover:text-amber-800',  rail: 'bg-amber-500'  },
+  housing_new:       { iconBg: 'bg-emerald-50',iconText: 'text-emerald-700',cta: 'text-emerald-700 hover:text-emerald-800',rail: 'bg-emerald-500'},
+  match_closed:      { iconBg: 'bg-emerald-50',iconText: 'text-emerald-700',cta: 'text-emerald-700 hover:text-emerald-800',rail: 'bg-emerald-500'},
+  service_new:       { iconBg: 'bg-sky-50',    iconText: 'text-sky-700',    cta: 'text-sky-700    hover:text-sky-800',    rail: 'bg-sky-500'    },
+  corp_active:       { iconBg: 'bg-navy-50',   iconText: 'text-navy-700',   cta: 'text-navy-700   hover:text-navy-800',   rail: 'bg-navy-500'   },
+  contractor_active: { iconBg: 'bg-brand-50',  iconText: 'text-brand-700',  cta: 'text-brand-700  hover:text-brand-800',  rail: 'bg-brand-500'  },
+  platform_pulse:    { iconBg: 'bg-slate-100', iconText: 'text-slate-700',  cta: 'text-slate-700  hover:text-slate-900',  rail: 'bg-slate-400'  },
+};
+
 function formatTimeAgo(iso: string): string {
   const ms = Date.now() - new Date(iso).getTime();
   const mins = Math.floor(ms / 60_000);
@@ -63,169 +76,183 @@ function formatTimeAgo(iso: string): string {
   return 'לפני יום';
 }
 
-// Default ~5s with ±0.5s jitter (so two visitors on the same machine
-// aren't perfectly synchronised). Caller can override.
-function nextInterval(baseMs: number): number {
-  const jitter = (Math.random() - 0.5) * 1000;  // [-500, +500] ms
-  return baseMs + jitter;
-}
+// Phase durations (ms). Tuned so the bubble feels alive but doesn't
+// pressure the visitor — 6s is long enough to read a Hebrew sentence
+// without rushing, and the 3s gap means the screen isn't constantly
+// flashing notifications.
+const ENTER_MS = 350;
+const SHOWN_MS = 6000;
+const EXIT_MS  = 300;
+const IDLE_MS  = 3000;
+const INITIAL_DELAY_MS = 1200;   // wait a beat after page load before first bubble
 
-interface Props {
-  /** Auto-advance interval in ms. Default 5000; clamped to [4000, 6000]
-   *  per spec but jitter is applied on top so the actual range is
-   *  ~[3.5s, 6.5s] per cycle. */
-  intervalMs?: number;
-}
+type Phase = 'idle' | 'entering' | 'shown' | 'exiting';
 
-export default function LiveActivityFeed({ intervalMs = 5000 }: Props) {
-  const auth     = useAuth();
-  const role     = audienceFor(auth.entityType);
+export default function LiveActivityFeed() {
+  const auth = useAuth();
+  const role = audienceFor(auth.entityType);
 
-  // Picker is created lazily once per mount. Re-created on role change
-  // so the rotation re-weights when the user logs in / switches entity.
+  // Picker is recreated when the audience role changes (login / entity
+  // switch) so weighting follows the user. Kept in a ref so re-renders
+  // don't reshuffle the rotation mid-cycle.
   const pickerRef = useRef<ReturnType<typeof createPicker> | null>(null);
-  if (!pickerRef.current) {
-    pickerRef.current = createPicker(MOCK_ITEMS, MIX_BY_ROLE[role]);
-  }
   const lastRoleRef = useRef<AudienceRole>(role);
-  if (lastRoleRef.current !== role) {
+  if (!pickerRef.current || lastRoleRef.current !== role) {
     pickerRef.current = createPicker(MOCK_ITEMS, MIX_BY_ROLE[role]);
     lastRoleRef.current = role;
   }
 
-  const [current, setCurrent] = useState<ActivityItem | null>(
-    () => pickerRef.current!.next(),
-  );
-  // `paused` covers BOTH user hover (desktop) and the document being
-  // hidden (visibilitychange). The interval restarts cleanly when paused
-  // flips back to false.
+  const [phase, setPhase] = useState<Phase>('idle');
+  const [current, setCurrent] = useState<ActivityItem | null>(null);
+  // `paused` covers BOTH hover and the document being hidden.
   const [paused, setPaused] = useState(false);
+  // Track whether we've completed the initial mount delay. Prevents the
+  // SSR markup from briefly flashing a bubble before the entrance
+  // animation has had a chance to play.
+  const [mounted, setMounted] = useState(false);
 
   const advance = useCallback(() => {
     const next = pickerRef.current?.next();
-    if (next) setCurrent(next);
+    if (next) {
+      setCurrent(next);
+      setPhase('entering');
+    }
   }, []);
 
-  // Rotation interval. The dependency on `paused` + `current` is fine:
-  // every state change cleans up the timer and re-schedules.
+  // First-bubble delay so it doesn't pop up the same instant the page
+  // paints — feels more natural to see it appear after the visitor's
+  // eye has settled on the hero.
   useEffect(() => {
-    if (paused || !current) return;
-    const t = setTimeout(advance, nextInterval(intervalMs));
+    const t = setTimeout(() => {
+      setMounted(true);
+      advance();
+    }, INITIAL_DELAY_MS);
     return () => clearTimeout(t);
-  }, [advance, current, intervalMs, paused]);
+  }, [advance]);
 
-  // Pause when the tab is hidden to avoid background timer drift +
-  // wasted re-renders on phones. visibilitychange covers both backgrounding
-  // the tab and locking the device screen.
+  // Phase machine. Each phase schedules its own transition; when paused
+  // (hover or tab hidden) the timer doesn't run, so the bubble stays on
+  // screen as long as the visitor's mouse is over it.
   useEffect(() => {
-    function onVisibility() { setPaused(document.visibilityState === 'hidden'); }
-    document.addEventListener('visibilitychange', onVisibility);
-    return () => document.removeEventListener('visibilitychange', onVisibility);
+    if (!mounted || paused) return;
+    let timer: ReturnType<typeof setTimeout>;
+    if (phase === 'entering') {
+      timer = setTimeout(() => setPhase('shown'), ENTER_MS);
+    } else if (phase === 'shown') {
+      timer = setTimeout(() => setPhase('exiting'), SHOWN_MS);
+    } else if (phase === 'exiting') {
+      timer = setTimeout(() => setPhase('idle'), EXIT_MS);
+    } else {
+      // idle → next bubble
+      timer = setTimeout(advance, IDLE_MS);
+    }
+    return () => clearTimeout(timer);
+  }, [advance, mounted, paused, phase]);
+
+  // Pause the rotation while the tab is in the background so we don't
+  // burn the visitor's first impression on a bubble they never saw.
+  useEffect(() => {
+    function onVis() { setPaused(document.visibilityState === 'hidden'); }
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
   }, []);
 
-  if (!current) return null;
+  function skipToNext() {
+    // Move straight to the exit animation; the phase machine handles
+    // the idle gap + next bubble on its own.
+    if (phase === 'shown' || phase === 'entering') setPhase('exiting');
+  }
 
+  // Render-time guards — render NOTHING until first bubble is ready so
+  // SSR output is empty and there's no hydration flash.
+  if (!mounted || !current) return null;
+
+  const accent = CATEGORY_ACCENT[current.category];
   const cta = resolveCta(current.cta_intent, role);
   const profCode = current.meta?.profession_code;
   const FallbackIcon = CATEGORY_ICON[current.category];
 
+  const visible = phase === 'entering' || phase === 'shown';
+
   return (
-    <section
-      aria-label="פעילות אחרונה בפלטפורמה"
-      className="bg-white border-y border-slate-100 py-8"
+    <div
+      role="status"
+      aria-live="polite"
+      aria-label="עדכון פעילות חי"
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+      // Positioned at the start-bottom corner (RTL: right-bottom).
+      // Wider z-index than LandingNav (z-30) but lower than modals.
+      // `pointer-events-none` while invisible so a hidden bubble doesn't
+      // eat clicks on whatever sits underneath it (e.g. footer links).
+      className={`
+        fixed z-40 bottom-4 sm:bottom-6 start-4 sm:start-6
+        w-[calc(100vw-2rem)] max-w-sm
+        transform-gpu transition-all ease-out
+        ${visible
+          ? 'opacity-100 translate-y-0 duration-300'
+          : 'opacity-0 translate-y-6 pointer-events-none duration-200'}
+      `}
     >
-      <div className="max-w-4xl mx-auto px-4 sm:px-6">
+      {/* The bubble itself. Solid white over a soft backdrop-blur so it
+          reads cleanly over photos/dark hero in any context. */}
+      <div className="relative rounded-2xl bg-white/95 backdrop-blur-sm shadow-2xl shadow-slate-900/10 ring-1 ring-slate-200 overflow-hidden">
 
-        {/* Header strip — Live label + manual chevrons */}
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2 text-sm">
-            <span
-              aria-hidden="true"
-              className="h-2 w-2 rounded-full bg-rose-500 animate-live-dot"
-            />
-            <span className="font-bold text-slate-700">Live</span>
-            <span className="text-slate-300">·</span>
-            <span className="text-slate-500">עכשיו בפלטפורמה</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={advance}
-              aria-label="הצעה קודמת"
-              className="h-7 w-7 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors inline-flex items-center justify-center"
-            >
-              {/* In RTL the "previous" chevron points to the start side */}
-              <ChevronRight className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
-              onClick={advance}
-              aria-label="הצעה הבאה"
-              className="h-7 w-7 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors inline-flex items-center justify-center"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
+        {/* Coloured accent rail along the top edge — picks up the
+            category accent so each bubble reads with its own tone
+            without painting the whole card. */}
+        <div className={`h-1 w-full ${accent.rail}`} aria-hidden="true" />
 
-        {/* Rotating card — key={current.id} forces a remount so the
-            enter animation runs on every swap. aria-live="polite" so
-            screen readers announce updates without interrupting. */}
-        <div
-          onMouseEnter={() => setPaused(true)}
-          onMouseLeave={() => setPaused(false)}
-          className="relative rounded-2xl border border-slate-200 bg-white/95 shadow-sm hover:shadow-md transition-shadow"
+        {/* Close (skip) button — top-end corner */}
+        <button
+          type="button"
+          onClick={skipToNext}
+          aria-label="הצג עדכון הבא"
+          className="absolute top-2 end-2 h-6 w-6 rounded-full text-slate-300 hover:text-slate-600 hover:bg-slate-100 transition-colors inline-flex items-center justify-center"
         >
-          <div
-            key={current.id}
-            aria-live="polite"
-            className="animate-live-card-enter p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-5"
-          >
-            {/* Icon — profession illustration if we have one, else a
-                category-themed Lucide glyph in a soft circle. */}
-            <div className="shrink-0 self-start sm:self-center">
+          <X className="h-3.5 w-3.5" />
+        </button>
+
+        <div className="px-4 pt-3 pb-4 sm:px-5 sm:pt-3.5 sm:pb-4">
+          {/* Header strip — Live dot + label */}
+          <div className="flex items-center gap-1.5 mb-2.5">
+            <span className="relative inline-flex h-2 w-2 items-center justify-center">
+              <span className="absolute inline-flex h-full w-full rounded-full bg-rose-500 animate-live-dot" />
+              <span className="absolute inline-flex h-full w-full rounded-full animate-live-dot-halo" />
+            </span>
+            <span className="text-[10px] font-extrabold uppercase tracking-[0.15em] text-slate-500">
+              Live
+            </span>
+            <span className="text-[10px] text-slate-300">·</span>
+            <span className="text-[10px] text-slate-400">{formatTimeAgo(current.occurred_at)}</span>
+          </div>
+
+          {/* Content row — icon + body */}
+          <div className="flex items-start gap-3">
+            <div className={`shrink-0 h-11 w-11 rounded-xl ${accent.iconBg} flex items-center justify-center`}>
               {profCode ? (
-                <div className="h-12 w-12 sm:h-14 sm:w-14 rounded-2xl bg-brand-50 flex items-center justify-center">
-                  <ProfessionIcon code={profCode} size={44} alt="" />
-                </div>
+                <ProfessionIcon code={profCode} size={36} alt="" />
               ) : (
-                <div className="h-12 w-12 sm:h-14 sm:w-14 rounded-2xl bg-brand-50 text-brand-600 flex items-center justify-center">
-                  <FallbackIcon className="h-6 w-6 sm:h-7 sm:w-7" strokeWidth={2.2} />
-                </div>
+                <FallbackIcon className={`h-5 w-5 ${accent.iconText}`} strokeWidth={2.2} />
               )}
             </div>
-
-            {/* Body — text + relative time */}
             <div className="flex-1 min-w-0">
-              <p className="text-sm sm:text-base font-semibold text-slate-900 leading-snug">
+              <p className="text-sm font-semibold text-slate-900 leading-snug">
                 {current.text}
               </p>
-              <p className="text-xs text-slate-400 mt-1">
-                {formatTimeAgo(current.occurred_at)}
-              </p>
+              {!cta.hidden && cta.label && (
+                <Link
+                  href={cta.href}
+                  className={`mt-1.5 inline-flex items-center gap-1 text-xs font-bold ${accent.cta} transition-colors`}
+                >
+                  {cta.label}
+                  <ArrowLeft className="h-3 w-3" />
+                </Link>
+              )}
             </div>
-
-            {/* CTA — hidden when the intent doesn't fit the user's role
-                (e.g. a corp user shouldn't see "post requirement"). */}
-            {!cta.hidden && cta.label && (
-              <Link
-                href={cta.href}
-                className="shrink-0 inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-brand-600 text-sm font-bold text-white shadow-sm hover:bg-brand-700 transition-colors self-start sm:self-center"
-              >
-                {cta.label}
-                <ArrowLeft className="h-4 w-4 transition-transform group-hover:-translate-x-0.5" />
-              </Link>
-            )}
           </div>
         </div>
-
-        {/* Quiet caption — sells the "you're seeing real activity" angle
-            without being shouty. */}
-        <p className="text-xs text-slate-400 text-center mt-3">
-          רואים פה דוגמה לפעילות שמתרחשת בפלטפורמה
-        </p>
-
       </div>
-    </section>
+    </div>
   );
 }

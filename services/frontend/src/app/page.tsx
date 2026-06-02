@@ -29,12 +29,7 @@ export default function LandingPage() {
           {/* 2. Trust/stats bar */}
           <TrustBar />
 
-          {/* 3. Live-activity strip — rotating sample of what's happening
-              on the portal "right now". Phase 1: mock data. Phase 2: real
-              data from /api/marketplace/activity-feed. */}
-          <LiveActivityFeed />
-
-          {/* 4. How it works — 3-step visual */}
+          {/* 3. How it works — 3-step visual */}
           <HowItWorksSection />
 
           {/* 4. Live marketplace preview */}
@@ -52,6 +47,11 @@ export default function LandingPage() {
 
       {/* Lead capture modal (portal-like, fixed) */}
       <LeadCaptureModal open={leadModalOpen} onClose={() => setLeadModalOpen(false)} />
+
+      {/* Floating live-activity bubble — pops up bottom-corner with a
+          new activity update every few seconds, then slides away. Pure
+          overlay; not part of document flow. Phase 1: mock data. */}
+      <LiveActivityFeed />
     </>
   );
 }
