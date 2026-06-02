@@ -31,7 +31,7 @@ import {
 import { ProfessionIcon } from '@/features/searches/ProfessionIcon';
 import { useAuth } from '@/lib/AuthContext';
 import { createPicker } from '@/features/live-activity/picker';
-import { MIX_BY_ROLE, MOCK_ITEMS } from '@/features/live-activity/mocks';
+import { MIX_BUBBLE_BY_ROLE, MOCK_ITEMS } from '@/features/live-activity/mocks';
 import type { ActivityItem, AudienceRole } from '@/features/live-activity/types';
 import { resolveCta } from '@/features/live-activity/ctas';
 
@@ -77,14 +77,18 @@ function formatTimeAgo(iso: string): string {
 }
 
 // Phase durations (ms). Tuned so the bubble feels alive but doesn't
-// pressure the visitor — 6s is long enough to read a Hebrew sentence
-// without rushing, and the 3s gap means the screen isn't constantly
-// flashing notifications.
+// pressure the visitor. Total cycle ≈ 20s — bubble visible for 6s,
+// then ~13s of idle silence before the next one. The longer idle is a
+// deliberate "don't overload the user" choice; the in-page showcase
+// in the hero handles the always-on activity signal so the bubble
+// only needs to pop in occasionally as a reminder.
 const ENTER_MS = 350;
 const SHOWN_MS = 6000;
 const EXIT_MS  = 300;
-const IDLE_MS  = 3000;
-const INITIAL_DELAY_MS = 1200;   // wait a beat after page load before first bubble
+const IDLE_MS  = 13350;          // 6000 + 350 + 300 + 13350 ≈ 20s cycle
+const INITIAL_DELAY_MS = 4000;   // hold off longer on first paint so
+                                 // the visitor's eye lands on the hero
+                                 // and showcase before the bubble appears
 
 type Phase = 'idle' | 'entering' | 'shown' | 'exiting';
 
@@ -98,7 +102,10 @@ export default function LiveActivityFeed() {
   const pickerRef = useRef<ReturnType<typeof createPicker> | null>(null);
   const lastRoleRef = useRef<AudienceRole>(role);
   if (!pickerRef.current || lastRoleRef.current !== role) {
-    pickerRef.current = createPicker(MOCK_ITEMS, MIX_BY_ROLE[role]);
+    // Bubble-specific weighting — pulls from urgency / activity
+    // categories so it doesn't echo the in-page showcase which
+    // emphasises platform breadth + opportunity.
+    pickerRef.current = createPicker(MOCK_ITEMS, MIX_BUBBLE_BY_ROLE[role]);
     lastRoleRef.current = role;
   }
 

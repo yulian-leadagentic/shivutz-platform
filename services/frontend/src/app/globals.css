@@ -89,6 +89,137 @@ body {
   .animate-live-dot-halo { animation: none; }
 }
 
+/* ─── HowItWorks (`.bu-how`) — responsive spec ──────────────────────
+   Single 560px breakpoint:
+     ≥560px (desktop)  — three cards in a row, circle protruding above
+                         each card, single horizontal dashed connector
+                         passes through all three circle centres.
+     <560px  (mobile)  — three card-rows stacked vertically, each row
+                         contains [circle][icon][label]; short vertical
+                         dashed connectors sit between the cards.
+   All tokens (#F7941D / #1A2B4A / #E5E7EB / #6B7280), sizes, and
+   typography are locked to the spec (CLAUDE.md §HowItWorks v2). */
+
+.bu-how                                { background:#fff; padding:1.5rem 1rem; box-sizing:border-box; }
+.bu-how *, .bu-how *::before, .bu-how *::after { box-sizing:border-box; }
+
+.bu-eyebrow  { text-align:center; font-size:12px; font-weight:500; color:#F7941D;
+               letter-spacing:.04em; margin:0 0 6px; }
+.bu-title    { text-align:center; font-size:24px; font-weight:500; color:#1A2B4A;
+               margin:0 0 6px; }
+.bu-subtitle { text-align:center; font-size:14px; color:#6B7280; margin:0 0 1.75rem; }
+
+.bu-track    { position:relative; max-width:880px; margin:0 auto; padding-top:28px; }
+.bu-grid     { display:grid; grid-template-columns:repeat(3,1fr); gap:16px;
+               position:relative; z-index:1; }
+
+.bu-card {
+  display:flex; flex-direction:column; align-items:center; text-align:center;
+  width:100%;
+  background:#fff;
+  border:1px solid #E5E7EB;
+  border-radius:14px;
+  padding:20px 16px;
+}
+
+.bu-circle {
+  width:56px; height:56px; border-radius:50%;
+  display:flex; align-items:center; justify-content:center;
+  color:#fff; font-size:24px; font-weight:500;
+  border:4px solid #fff;
+  /* Pull the circle ABOVE the card top so the connector line at
+     top:28px of .bu-track passes through the circle's centre. The
+     padding-top:28 on .bu-track makes room for this overflow. */
+  margin-top:-48px;
+  position:relative; z-index:2;
+  flex-shrink:0;
+}
+
+.bu-icon  { margin-top:14px; display:inline-flex; align-items:center; }
+.bu-icon svg { width:30px; height:30px; }
+.bu-label { margin-top:10px; font-size:17px; font-weight:500; color:#1A2B4A; }
+
+/* Per-step colouring via data attribute. Note step 3: navy circle but
+   orange accent border + orange icon, "closing" the orange→navy
+   gradient that runs along the horizontal connector. */
+.bu-step[data-step="1"] .bu-circle { background:#F7941D; }
+.bu-step[data-step="1"] .bu-card   { border-top:3px solid #F7941D; }
+.bu-step[data-step="1"] .bu-icon   { color:#F7941D; }
+.bu-step[data-step="2"] .bu-circle { background:#1A2B4A; }
+.bu-step[data-step="2"] .bu-card   { border-top:3px solid #1A2B4A; }
+.bu-step[data-step="2"] .bu-icon   { color:#1A2B4A; }
+.bu-step[data-step="3"] .bu-circle { background:#1A2B4A; }
+.bu-step[data-step="3"] .bu-card   { border-top:3px solid #F7941D; }
+.bu-step[data-step="3"] .bu-icon   { color:#F7941D; }
+
+.bu-connect-h { position:absolute; top:28px; left:0; right:0;
+                width:100%; height:2px; z-index:0; }
+.bu-connect-v { display:none; }
+
+.bu-summary {
+  display:flex; align-items:center; justify-content:center; gap:10px;
+  background:#1A2B4A; border-radius:14px; padding:14px 18px;
+  margin:1.75rem auto 0; max-width:560px;
+  color:#fff; font-size:15px; font-weight:500; text-align:center;
+}
+.bu-summary-icon { color:#F7941D; display:inline-flex; flex-shrink:0; }
+.bu-summary-icon svg { width:24px; height:24px; }
+
+/* ===== Mobile: vertical stack =================================== */
+@media (max-width:560px) {
+  .bu-eyebrow  { font-size:11px; }
+  .bu-title    { font-size:21px; }
+  .bu-subtitle { font-size:13px; margin-bottom:1rem; }
+
+  .bu-track     { padding-top:0; }
+  .bu-grid      { grid-template-columns:1fr; gap:0; }
+  .bu-connect-h { display:none; }
+
+  .bu-card {
+    flex-direction:row;
+    align-items:center;
+    text-align:start;
+    gap:10px;
+    padding:12px 14px;
+    border-top:1px solid #E5E7EB;          /* override the desktop coloured top border */
+  }
+  .bu-step[data-step="1"] .bu-card {
+    border-top:1px solid #E5E7EB; border-right:3px solid #F7941D;
+  }
+  .bu-step[data-step="2"] .bu-card {
+    border-top:1px solid #E5E7EB; border-right:3px solid #1A2B4A;
+  }
+  .bu-step[data-step="3"] .bu-card {
+    border-top:1px solid #E5E7EB; border-right:3px solid #F7941D;
+  }
+
+  .bu-circle {
+    width:38px; height:38px;
+    font-size:17px;
+    border:none;
+    margin-top:0;
+  }
+  .bu-icon  { margin-top:0; }
+  .bu-icon svg { width:22px; height:22px; }
+  .bu-label { margin-top:0; font-size:16px; flex:1; }
+
+  .bu-connect-v {
+    display:block;
+    width:6px; height:26px;
+    margin:8px auto;
+  }
+  .bu-step[data-step="1"] .bu-connect-v line { stroke:#F7941D; }
+  .bu-step[data-step="2"] .bu-connect-v line { stroke:#1A2B4A; }
+}
+
+/* Dashes flow along the connector line. Shared keyframe for both
+   the horizontal connector (desktop) and the vertical connectors
+   (mobile) so they animate at the same cadence. */
+@keyframes buFlow { to { stroke-dashoffset:-150; } }
+@media (prefers-reduced-motion: no-preference) {
+  .bu-line { animation: buFlow 4s linear infinite; }
+}
+
 @keyframes slideUp {
   from { opacity: 0; transform: translateY(6px); }
   to   { opacity: 1; transform: translateY(0); }

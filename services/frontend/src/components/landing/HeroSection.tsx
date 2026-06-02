@@ -4,10 +4,11 @@ import { useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Home, Wrench, Briefcase, Store, Users, Building2, Loader2 } from 'lucide-react';
+import { ArrowLeft, Users, Building2, Loader2 } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
 import { otpApi } from '@/lib/api';
 import { saveTokens } from '@/lib/auth';
+import LiveShowcase from './LiveShowcase';
 
 // Lead-capture button removed from the hero per user feedback —
 // the two role-specific tiles are clearer entry points and the
@@ -24,52 +25,11 @@ interface HeroSectionProps {
 // The tile itself is now a CTA — tap = login (or dashboard if logged in).
 const HERO_STAT = { value: '1,200+', label: 'עובדים פעילים' };
 
-const MARKET_CATS = [
-  {
-    icon: Home,
-    label: 'דיור לעובדים',
-    desc: 'דירות ומעונות לשיכון עובדים זרים',
-    href: '/marketplace?category=housing',
-    accent: 'bg-brand-500',
-    iconBg: 'bg-brand-100',
-    iconColor: 'text-brand-600',
-    labelColor: 'text-slate-900',
-    descColor: 'text-slate-500',
-  },
-  {
-    icon: Wrench,
-    label: 'ציוד ומכונות',
-    desc: 'השכרת ציוד בנייה וכלי עבודה',
-    href: '/marketplace?category=equipment',
-    accent: 'bg-brand-500',
-    iconBg: 'bg-brand-100',
-    iconColor: 'text-brand-600',
-    labelColor: 'text-slate-900',
-    descColor: 'text-slate-500',
-  },
-  {
-    icon: Briefcase,
-    label: 'שירותים',
-    desc: 'לוגיסטיקה, הסעות ושירותי תמיכה',
-    href: '/marketplace?category=services',
-    accent: 'bg-emerald-500',
-    iconBg: 'bg-emerald-100',
-    iconColor: 'text-emerald-600',
-    labelColor: 'text-slate-900',
-    descColor: 'text-slate-500',
-  },
-  {
-    icon: Store,
-    label: 'כל המודעות',
-    desc: 'עיון חופשי בכל הפרסומים',
-    href: '/marketplace',
-    accent: 'bg-navy-500',
-    iconBg: 'bg-navy-100',
-    iconColor: 'text-navy-600',
-    labelColor: 'text-slate-900',
-    descColor: 'text-slate-500',
-  },
-];
+// The fixed "שירותים נלווים — גלוש לפי קטגוריה" row that used to live
+// here was replaced by <LiveShowcase /> below — the dynamic showcase
+// covers the whole platform breadth (workers, requirements, housing,
+// services, matches) rather than just the marketplace categories, and
+// auto-rotates so the page feels alive on first scroll.
 
 export default function HeroSection(_: HeroSectionProps) {
   const router = useRouter();
@@ -194,10 +154,10 @@ export default function HeroSection(_: HeroSectionProps) {
               unoptimized
             />
 
-            <h1 className="text-3xl md:text-5xl font-extrabold leading-[1.15] tracking-tight text-slate-900 max-w-4xl mx-auto">
-              הדרך החכמה לגייס
+            <h1 className="text-2xl md:text-5xl font-extrabold leading-[1.2] tracking-tight text-slate-900 max-w-4xl mx-auto">
+              פלטפורמת השיבוץ הראשונה בישראל
               <br className="hidden sm:block" />
-              <span className="text-brand-600"> עובדים זרים</span>
+              <span className="text-brand-600"> לעובדים זרים בענף הבנייה</span>
             </h1>
 
             <p className="text-base md:text-lg text-slate-600 leading-relaxed max-w-2xl mx-auto">
@@ -205,32 +165,36 @@ export default function HeroSection(_: HeroSectionProps) {
             </p>
           </div>
 
-          {/* Two tiles SIDE-BY-SIDE — contractor (find workers) + corporation (publish workers) */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 max-w-5xl mx-auto">
+          {/* Two tiles SIDE-BY-SIDE on every breakpoint — mobile users
+              should see both choices at the same time so they can pick
+              which role they're entering without scrolling. The narrow
+              mobile width is absorbed by tighter padding + smaller
+              type; the CTA buttons drop their gap + wrap if necessary. */}
+          <div className="grid grid-cols-2 gap-3 md:gap-6 max-w-5xl mx-auto">
             {/* Contractor tile — anchored on the active-workers stat */}
             <Link
               href={contractorCtaHref}
               onClick={(e) => { e.preventDefault(); enterRole('contractor'); }}
               aria-disabled={switching !== null}
-              className={`group flex flex-col items-center justify-center text-center bg-white hover:bg-brand-50/40 border border-slate-200 hover:border-brand-400 rounded-3xl p-4 md:p-9 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg ${switching === 'contractor' ? 'opacity-80' : ''} ${switching && switching !== 'contractor' ? 'pointer-events-none opacity-50' : ''}`}
+              className={`group flex flex-col items-center justify-center text-center bg-white hover:bg-brand-50/40 border border-slate-200 hover:border-brand-400 rounded-2xl md:rounded-3xl p-3 md:p-9 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg ${switching === 'contractor' ? 'opacity-80' : ''} ${switching && switching !== 'contractor' ? 'pointer-events-none opacity-50' : ''}`}
             >
-              <div className="text-2xl md:text-4xl font-black text-brand-600 tracking-tight mb-2 md:mb-4">
+              <div className="text-xl md:text-4xl font-black text-brand-600 tracking-tight mb-1.5 md:mb-4">
                 קבלן
               </div>
-              <div className="h-9 w-9 md:h-12 md:w-12 rounded-2xl bg-brand-100 flex items-center justify-center mb-2 md:mb-4">
-                <Users className="h-5 w-5 md:h-6 md:w-6 text-brand-600" />
+              <div className="h-8 w-8 md:h-12 md:w-12 rounded-xl md:rounded-2xl bg-brand-100 flex items-center justify-center mb-1.5 md:mb-4">
+                <Users className="h-4 w-4 md:h-6 md:w-6 text-brand-600" />
               </div>
-              <div className="text-3xl md:text-5xl font-extrabold text-slate-900 mb-1 group-hover:text-brand-700 transition-colors">
+              <div className="text-2xl md:text-5xl font-extrabold text-slate-900 leading-none mb-1 group-hover:text-brand-700 transition-colors">
                 {HERO_STAT.value}
               </div>
-              <div className="text-xs md:text-sm text-slate-500 mb-3 md:mb-5">{HERO_STAT.label}</div>
+              <div className="text-[11px] md:text-sm text-slate-500 mb-2 md:mb-5">{HERO_STAT.label}</div>
               {/* CTA pill — bigger per QA-R3 #31 so the next step pops on
                   the page; smaller padding on mobile (R3 #32) so the tile
                   itself isn't too tall to scroll past. */}
-              <div className="inline-flex items-center gap-2 px-6 md:px-8 py-3 md:py-4 rounded-full bg-brand-600 text-base md:text-lg font-bold text-white shadow-md group-hover:bg-brand-700 transition-colors">
+              <div className="inline-flex items-center gap-1 md:gap-2 px-3 md:px-8 py-2 md:py-4 rounded-full bg-brand-600 text-sm md:text-lg font-bold text-white shadow-md group-hover:bg-brand-700 transition-colors">
                 {switching === 'contractor'
-                  ? <><Loader2 className="h-5 w-5 animate-spin" /> מעביר...</>
-                  : <>חפש עובדים<ArrowLeft className="h-5 w-5 group-hover:-translate-x-1 transition-transform" /></>}
+                  ? <><Loader2 className="h-4 w-4 md:h-5 md:w-5 animate-spin" /> מעביר...</>
+                  : <>חפש עובדים<ArrowLeft className="h-4 w-4 md:h-5 md:w-5 group-hover:-translate-x-1 transition-transform" /></>}
               </div>
             </Link>
 
@@ -239,63 +203,41 @@ export default function HeroSection(_: HeroSectionProps) {
               href={corporationCtaHref}
               onClick={(e) => { e.preventDefault(); enterRole('corporation'); }}
               aria-disabled={switching !== null}
-              className={`group flex flex-col items-center justify-center text-center bg-white hover:bg-navy-50/40 border border-slate-200 hover:border-navy-400 rounded-3xl p-4 md:p-9 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg ${switching === 'corporation' ? 'opacity-80' : ''} ${switching && switching !== 'corporation' ? 'pointer-events-none opacity-50' : ''}`}
+              className={`group flex flex-col items-center justify-center text-center bg-white hover:bg-navy-50/40 border border-slate-200 hover:border-navy-400 rounded-2xl md:rounded-3xl p-3 md:p-9 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg ${switching === 'corporation' ? 'opacity-80' : ''} ${switching && switching !== 'corporation' ? 'pointer-events-none opacity-50' : ''}`}
             >
-              <div className="text-2xl md:text-4xl font-black text-navy-600 tracking-tight mb-2 md:mb-4">
+              <div className="text-xl md:text-4xl font-black text-navy-600 tracking-tight mb-1.5 md:mb-4">
                 תאגיד
               </div>
-              <div className="h-9 w-9 md:h-12 md:w-12 rounded-2xl bg-navy-100 flex items-center justify-center mb-2 md:mb-4">
-                <Building2 className="h-5 w-5 md:h-6 md:w-6 text-navy-600" />
+              <div className="h-8 w-8 md:h-12 md:w-12 rounded-xl md:rounded-2xl bg-navy-100 flex items-center justify-center mb-1.5 md:mb-4">
+                <Building2 className="h-4 w-4 md:h-6 md:w-6 text-navy-600" />
               </div>
-              <div className="text-sm md:text-lg text-slate-900 font-semibold leading-snug mb-2 md:mb-3 max-w-sm">
-                עשרות קבלנים כבר מנויים לשירותים שלנו ומחפשים עובדים
+              {/* Description trimmed to one short line on mobile so the
+                  tile height roughly matches the contractor tile and
+                  both CTAs line up. The fuller copy stays on desktop. */}
+              <div className="text-xs md:text-lg text-slate-900 font-semibold leading-snug mb-1 md:mb-3 max-w-sm">
+                <span className="md:hidden">קבלנים פעילים מחפשים עובדים</span>
+                <span className="hidden md:inline">עשרות קבלנים כבר מנויים לשירותים שלנו ומחפשים עובדים</span>
               </div>
-              <div className="text-base md:text-xl text-navy-600 font-bold leading-snug mb-3 md:mb-5">
-                מנהל תאגיד — אל תישאר בחוץ
+              <div className="text-xs md:text-xl text-navy-600 font-bold leading-snug mb-2 md:mb-5">
+                <span className="md:hidden">אל תישאר בחוץ</span>
+                <span className="hidden md:inline">מנהל תאגיד — אל תישאר בחוץ</span>
               </div>
-              <div className="inline-flex items-center gap-2 px-6 md:px-8 py-3 md:py-4 rounded-full bg-navy-600 text-base md:text-lg font-bold text-white shadow-md group-hover:bg-navy-700 transition-colors">
+              <div className="inline-flex items-center gap-1 md:gap-2 px-3 md:px-8 py-2 md:py-4 rounded-full bg-navy-600 text-sm md:text-lg font-bold text-white shadow-md group-hover:bg-navy-700 transition-colors">
                 {switching === 'corporation'
-                  ? <><Loader2 className="h-5 w-5 animate-spin" /> מעביר...</>
-                  : <>פרסם זמינות<ArrowLeft className="h-5 w-5 group-hover:-translate-x-1 transition-transform" /></>}
+                  ? <><Loader2 className="h-4 w-4 md:h-5 md:w-5 animate-spin" /> מעביר...</>
+                  : <>פרסם זמינות<ArrowLeft className="h-4 w-4 md:h-5 md:w-5 group-hover:-translate-x-1 transition-transform" /></>}
               </div>
             </Link>
           </div>
         </div>
       </div>
 
-      {/* ── Marketplace quick-access bar ── */}
-      <div className="relative border-t border-slate-200">
-        <div className="max-w-7xl mx-auto px-6 py-6">
-          <p className="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-4">
-            שירותים נלווים — גלוש ישירות לפי קטגוריה
-          </p>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {MARKET_CATS.map(({ icon: Icon, label, desc, href, accent, iconBg, iconColor, labelColor, descColor }) => (
-              <Link
-                key={href}
-                href={href}
-                className="group flex flex-col bg-white hover:bg-slate-50 border border-slate-200 hover:border-slate-300 rounded-2xl overflow-hidden shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
-              >
-                {/* Color accent stripe */}
-                <div className={`h-1 w-full ${accent}`} />
-                <div className="flex items-center gap-3 p-4">
-                  <div className={`h-9 w-9 rounded-xl ${iconBg} flex items-center justify-center shrink-0`}>
-                    <Icon className={`h-4.5 w-4.5 ${iconColor}`} />
-                  </div>
-                  <div>
-                    <p className={`text-sm font-semibold ${labelColor}`}>{label}</p>
-                    <p className={`text-xs ${descColor} mt-0.5 leading-snug`}>{desc}</p>
-                  </div>
-                </div>
-              </Link>
-            ))}
-          </div>
-        </div>
-      </div>
+      {/* Inline live-activity showcase — replaces the previous static
+          "שירותים נלווים — גלוש לפי קטגוריה" row. Rotates every ~5s
+          (jittered to feel organic) and covers the platform breadth:
+          workers, requirements, housing, services, matches, etc. */}
+      <LiveShowcase />
 
-      {/* Scroll cue removed per QA — the marketplace category bar already
-          provides visible content below the fold, so the cue was sitting
-          mid-page without adding value (R1 #4). */}
     </section>
   );
 }

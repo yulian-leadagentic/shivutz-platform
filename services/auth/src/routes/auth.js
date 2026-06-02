@@ -228,7 +228,46 @@ router.post('/auth/login/otp', async (req, res) => {
     );
     const user = users[0];
     if (!user || !user.is_active) {
-      return res.status(401).json({ error: 'user_not_found' });
+      // Prospect path — phone has no user record (or the user is
+      // inactive). Instead of bouncing them with a 401, treat the
+      // OTP they just passed as ALSO satisfying the 'register'
+      // purpose: insert a verified sms_otp row so the contractor
+      // registration flow's check-recent-otp gate passes for the
+      // next 15 minutes (same TTL used everywhere else). The
+      // frontend then sends them through /try/contractor/* and on
+      // to /register/contractor?from=trial — skipping a redundant
+      // second OTP. See pm-flow spec for QA-R4 #X.
+      try {
+        await pool.query(
+          `INSERT INTO sms_otp
+             (otp_id, phone, code, purpose, expires_at, verified_at)
+           VALUES (?, ?, ?, 'register',
+                   DATE_ADD(NOW(), INTERVAL 15 MINUTE), NOW())`,
+          [
+            require('uuid').v4(),
+            normPhone,
+            // hasRecentVerifiedOtp doesn't read this column; using a
+            // sentinel string both documents intent in the DB and
+            // ensures no client OTP value could collide with it.
+            '__login_promoted_to_register__',
+          ],
+        );
+      } catch (e) {
+        console.error('[login/otp prospect promote]', e);
+        // If the promotion insert fails (DB hiccup), fall back to the
+        // legacy 401 — better the prospect re-OTPs through /register
+        // than that we silently lose the signal.
+        return res.status(401).json({ error: 'user_not_found' });
+      }
+      return res.json({
+        prospect: true,
+        phone: normPhone,
+        // intent isn't carried through the OTP flow today, so the
+        // caller passes it in the body if it wants role-aware routing
+        // post-prospect. Default to contractor since that's the only
+        // role the trial flow supports right now.
+        intent: req.body.intent || 'contractor',
+      });
     }
 
     // 3. Fetch entity memberships

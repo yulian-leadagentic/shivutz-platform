@@ -1,8 +1,24 @@
 import type { ActivityItem, AudienceRole, Mix } from './types';
 
 // Per-role mix weights — 0 = never shown to this audience, 3 = highly
-// favoured. Values are RELATIVE inside the picker. These reflect the
-// spec the PM signed off on (see chat thread).
+// favoured. Values are RELATIVE inside the picker.
+//
+// Two specialised flavours, one per surface, so the bubble and the
+// in-page showcase don't echo the same headline. The split is
+// conceptual:
+//
+//   SHOWCASE — "what the platform OFFERS":
+//      breadth + opportunity. Weighted toward inventory-like items
+//      (workers available, housing, services, platform pulse + the
+//      success-story closed-match category). Sells "there's a lot here".
+//
+//   BUBBLE — "what's HAPPENING right now":
+//      urgency + people doing things. Weighted toward activity-like
+//      items (new requirements, active corps/contractors, fresh worker
+//      drops). Sells "if you don't check, you might miss it".
+//
+// MIX_BY_ROLE stays as a generic default for any caller that doesn't
+// specify a surface; new code should pick one of the two below.
 
 export const MIX_BY_ROLE: Record<AudienceRole, Mix> = {
   anon: {
@@ -16,6 +32,36 @@ export const MIX_BY_ROLE: Record<AudienceRole, Mix> = {
   corporation: {
     requirement_new: 3, contractor_active: 2, housing_new: 2, match_closed: 2,
     service_new: 1, workers_available: 1, corp_active: 0, platform_pulse: 1,
+  },
+};
+
+export const MIX_SHOWCASE_BY_ROLE: Record<AudienceRole, Mix> = {
+  anon: {
+    workers_available: 3, housing_new: 3, service_new: 2, match_closed: 2,
+    platform_pulse: 2, requirement_new: 1, corp_active: 0, contractor_active: 0,
+  },
+  contractor: {
+    workers_available: 3, housing_new: 3, service_new: 2, match_closed: 2,
+    platform_pulse: 2, requirement_new: 0, corp_active: 0, contractor_active: 0,
+  },
+  corporation: {
+    requirement_new: 3, housing_new: 2, match_closed: 2, platform_pulse: 2,
+    service_new: 2, workers_available: 1, corp_active: 0, contractor_active: 0,
+  },
+};
+
+export const MIX_BUBBLE_BY_ROLE: Record<AudienceRole, Mix> = {
+  anon: {
+    requirement_new: 3, workers_available: 2, corp_active: 2, contractor_active: 2,
+    housing_new: 1, service_new: 0, match_closed: 1, platform_pulse: 1,
+  },
+  contractor: {
+    workers_available: 3, corp_active: 3, requirement_new: 1, contractor_active: 0,
+    housing_new: 1, service_new: 0, match_closed: 1, platform_pulse: 1,
+  },
+  corporation: {
+    requirement_new: 3, contractor_active: 3, workers_available: 1, corp_active: 0,
+    housing_new: 1, service_new: 0, match_closed: 1, platform_pulse: 1,
   },
 };
 

@@ -1,9 +1,11 @@
 'use client';
 
 import { useState, useRef, Suspense } from 'react';
-import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Loader2, ArrowLeft, UserPlus } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
+// Link / UserPlus / ArrowLeft were removed along with the inline
+// "register here" CTA inside ErrorBlock — see ErrorBlock's docstring
+// for why that CTA is no longer needed with the prospect flow.
 import { authApi, otpApi, type Membership } from '@/lib/api';
 import { saveTokens, getRoleFromToken } from '@/lib/auth';
 import { useAuth } from '@/lib/AuthContext';
@@ -23,37 +25,36 @@ function otpError(msg: string): string {
   if (msg === 'max_attempts')               return 'יותר מדי ניסיונות שגויים. בקש קוד חדש';
   if (msg === 'otp_expired_or_not_found')   return 'הקוד פג תוקף. שלח קוד חדש';
   if (msg === 'otp_expired')                return 'הקוד פג תוקף. שלח קוד חדש';
-  if (msg === 'user_not_found')             return 'מספר הטלפון לא רשום במערכת';
+  if (msg === 'invalid_phone'  || msg === 'phone_required')
+                                            return 'מספר טלפון לא תקין. יש להזין מספר ישראלי בפורמט 05XXXXXXXX';
   if (msg === 'use_phone_login')            return 'חשבון זה מחייב כניסה עם SMS / WhatsApp';
+  // user_not_found can't really happen any more — the backend now
+  // returns `{ prospect: true }` for unregistered phones and the
+  // /login flow routes those to /try/contractor before showing an
+  // error. Kept for legacy clients that haven't redeployed yet.
+  if (msg === 'user_not_found')             return 'מספר הטלפון לא רשום במערכת';
   // apiFetch's friendlyError already translates known codes — if the
   // message is already Hebrew, surface it as-is.
   if (/[֐-׿]/.test(msg))          return msg;
-  // At the login step, the dominant unmapped-failure cause is "phone
-  // not registered" — every other case has its own mapping above. So
-  // default to that copy + invite to register, rather than the generic
-  // "login error" which gave the user no path forward.
-  return 'מספר הטלפון לא רשום במערכת';
+  // Generic fallback. Previously this defaulted to "phone not
+  // registered" which sent prospects down a dead-end register path
+  // — misleading after the new prospect flow + unhelpful for every
+  // other failure mode (network, SMS gateway down, invalid format).
+  return 'שגיאה בשליחת הקוד. בדוק את המספר ונסה שוב';
 }
 
-/** Error block — if the error indicates "not registered," surfaces an
- *  inline register CTA right inside the alert so the user can act on it
- *  without hunting for the registration link at the bottom of the card. */
-function ErrorBlock({ error, copy }: { error: string; copy: typeof COPY[keyof typeof COPY] }) {
+/** Error block — plain red alert. The inline "register here" CTA that
+ *  used to live here was removed: with the new prospect flow, an
+ *  unregistered phone now passes OTP successfully and gets routed
+ *  to /try/contractor — so the "phone not registered" failure mode
+ *  is effectively retired. Errors here are now real failures (bad
+ *  phone format, SMS gateway down, rate limit) and a register link
+ *  would only mislead. */
+function ErrorBlock({ error }: { error: string }) {
   if (!error) return null;
-  const notRegistered = /לא רשום|לא קיים|אינו רשום|register/i.test(error);
   return (
-    <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2.5 text-start space-y-2">
+    <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2.5 text-start">
       <p>{error}</p>
-      {notRegistered && copy.registerHref && (
-        <Link
-          href={copy.registerHref}
-          className="inline-flex items-center gap-1.5 text-red-800 font-semibold hover:underline"
-        >
-          <UserPlus className="h-4 w-4" />
-          {copy.newLabel ?? 'הירשם עכשיו'}
-          <ArrowLeft className="h-3.5 w-3.5" />
-        </Link>
-      )}
     </div>
   );
 }
@@ -69,7 +70,10 @@ const COPY = {
   contractor: {
     title:           'כניסה כקבלן',
     description:    'מצא עובדים לפרויקטים שלך — בכמה לחיצות',
-    existingLabel:  'קבלן קיים — הכנס',
+    // Was "קבלן קיים — הכנס" — the role context is already conveyed by
+    // the title above ("כניסה כקבלן"), so the button just needs to read
+    // as the action verb.
+    existingLabel:  'התחבר',
     newLabel:       'קבלן חדש — הירשם כאן',
     registerHref:   '/register/contractor',
     noAccountHint:  'מספר זה אינו רשום כקבלן. רוצה להירשם?',
@@ -77,7 +81,7 @@ const COPY = {
   corporation: {
     title:           'כניסה כתאגיד',
     description:    'פרסם עובדים זמינים והגיע ישירות לקבלנים',
-    existingLabel:  'תאגיד קיים — הכנס',
+    existingLabel:  'התחבר',
     newLabel:       'תאגיד חדש — הירשמו כאן',
     registerHref:   '/register/corporation',
     noAccountHint:  'מספר זה אינו רשום כתאגיד. רוצה להירשם?',
@@ -231,7 +235,27 @@ function LoginPageInner() {
     if (code.length !== 6) { setError('קוד האימות חייב להכיל 6 ספרות'); return; }
     setLoading(true);
     try {
-      const res = await otpApi.loginOtp(normPhone, code);
+      const res = await otpApi.loginOtp(normPhone, code, intent || undefined);
+      // Prospect path — phone passed OTP but has no user record yet.
+      // Backend already marked the OTP as satisfying 'register' purpose,
+      // so we stash the phone in sessionStorage and route into the
+      // trial flow. The user never sees the "phone not registered" error
+      // any more; they go straight into "try the product, then register
+      // to save your work".
+      if ('prospect' in res && res.prospect) {
+        sessionStorage.setItem('prospect', JSON.stringify({
+          phone:  res.phone,
+          intent: res.intent,
+          // Wall-clock expiry so the trial pages can detect a stale
+          // session (e.g. the user navigated away for 20 minutes and
+          // came back) and bounce back to /login if needed.
+          expires_at: new Date(Date.now() + 15 * 60_000).toISOString(),
+        }));
+        // Today only the contractor trial flow exists; corporation
+        // prospects fall back to /login (existing CTA still works).
+        router.push(res.intent === 'contractor' ? '/try/contractor' : '/login');
+        return;
+      }
       await handlePostLogin(
         res.access_token, res.refresh_token, res.role,
         res.needs_entity_selection, res.memberships,
@@ -307,7 +331,7 @@ function LoginPageInner() {
                   autoComplete="tel"
                   dir="ltr"
                 />
-                <ErrorBlock error={error} copy={copy} />
+                <ErrorBlock error={error} />
                 <Button
                   type="button"
                   size="lg"
@@ -346,7 +370,7 @@ function LoginPageInner() {
                   dir="ltr"
                   className="text-center text-xl tracking-widest"
                 />
-                <ErrorBlock error={error} copy={copy} />
+                <ErrorBlock error={error} />
                 <Button
                   type="button"
                   size="lg"
@@ -394,7 +418,7 @@ function LoginPageInner() {
                   autoComplete="current-password"
                   dir="ltr"
                 />
-                <ErrorBlock error={error} copy={copy} />
+                <ErrorBlock error={error} />
                 <Button
                   type="button"
                   size="lg"
@@ -430,49 +454,17 @@ function LoginPageInner() {
               )}
             </div>
 
-            {/* "Don't have an account yet?" CTA — when intent is set,
-                this is a single prominent button matching the chosen
-                role. Without intent, fall back to the older two-link
-                pattern so non-CTA visitors (direct /login navs) still
-                see both registration paths. */}
-            <div className="mt-6 pt-5 border-t border-slate-100">
-              {intent ? (
-                <div className="flex flex-col gap-2 text-center">
-                  <p className="text-sm text-slate-600 font-medium">אין לך עדיין חשבון?</p>
-                  {/* Filled brand-orange + halo pulse — high-contrast attention
-                      grab for first-time users so the path to register is
-                      unmistakable. The pulse respects prefers-reduced-motion. */}
-                  <Button asChild size="lg" className="w-full animate-brand-pulse">
-                    <Link href={copy.registerHref!}>
-                      <UserPlus className="h-4 w-4" />
-                      {copy.newLabel}
-                      <ArrowLeft className="h-4 w-4" />
-                    </Link>
-                  </Button>
-                </div>
-              ) : (
-                <div className="flex flex-col gap-3 text-center">
-                  <p className="text-sm text-slate-600 font-medium">אין לך עדיין חשבון?</p>
-                  {/* Stacked vertically — the Button has whitespace-nowrap and
-                      the Hebrew labels are long enough that side-by-side blows
-                      past the card edge on every breakpoint. */}
-                  <div className="flex flex-col gap-2">
-                    <Button asChild size="lg" className="w-full animate-brand-pulse">
-                      <Link href="/register/contractor">
-                        <UserPlus className="h-4 w-4" />
-                        קבלן חדש — הירשם כאן
-                      </Link>
-                    </Button>
-                    <Button asChild size="lg" variant="outline" className="w-full">
-                      <Link href="/register/corporation">
-                        <UserPlus className="h-4 w-4" />
-                        תאגיד חדש — הירשם כאן
-                      </Link>
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </div>
+            {/* The "אין לך עדיין חשבון?" register CTA block was hidden
+                per user request — both on the phone-entry and OTP-code
+                screens. The new prospect flow (POST /auth/login/otp
+                returns prospect=true when the phone has no user) is now
+                the primary path for new visitors: enter phone → enter
+                OTP → drop into /try/contractor → register only when
+                they have a match they want to send. The legacy two-CTA
+                block was redundant with that flow.
+                Logic kept in COPY/ErrorBlock for the inline "register
+                now" prompt that still appears INSIDE the error banner
+                when a phone is recognised as wrong-role. */}
           </CardContent>
         </Card>
       </div>

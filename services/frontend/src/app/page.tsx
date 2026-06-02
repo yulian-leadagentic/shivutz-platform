@@ -6,7 +6,6 @@ import HeroSection from '@/components/landing/HeroSection';
 import TrustBar from '@/components/landing/TrustBar';
 import LiveActivityFeed from '@/components/landing/LiveActivityFeed';
 import HowItWorksSection from '@/components/landing/HowItWorksSection';
-import MarketplacePreview from '@/components/landing/MarketplacePreview';
 import LandingFooter from '@/components/landing/LandingFooter';
 import LeadCaptureModal from '@/components/landing/LeadCaptureModal';
 
@@ -32,13 +31,11 @@ export default function LandingPage() {
           {/* 3. How it works — 3-step visual */}
           <HowItWorksSection />
 
-          {/* 4. Live marketplace preview */}
-          <MarketplacePreview />
-
-          {/* The "מוכנים להתחיל?" / RegistrationCTA section was removed
-              per QA round-3 #34 — the role tiles in the hero are now
-              the single registration entry point, so the bullet-list
-              sell at the bottom was redundant. */}
+          {/* MarketplacePreview was removed — its "מה זמין עכשיו"
+              role was folded into the new LiveShowcase inside the hero,
+              which rotates through workers / requirements / housing /
+              services / matches every ~5s instead of showing a static
+              row of services-only category tiles. */}
         </main>
 
         {/* Footer */}

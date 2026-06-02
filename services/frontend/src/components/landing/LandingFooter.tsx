@@ -5,11 +5,12 @@ export default function LandingFooter() {
     <footer className="bg-white text-slate-600 py-12 border-t border-slate-200">
       <div className="max-w-7xl mx-auto px-6">
         <div className="grid sm:grid-cols-2 md:grid-cols-4 gap-8 mb-10">
-          {/* Brand */}
+          {/* Brand — the large "BuildUp" wordmark was removed per user
+              request; the description below now stands alone as the
+              brand block. The wordmark stays in the LandingNav at the
+              top of the page so the brand mark isn't disappearing
+              entirely from the experience. */}
           <div className="md:col-span-2">
-            <div className="mb-3" dir="ltr">
-              <span className="text-brand-600 text-2xl font-black tracking-tight leading-none">BuildUp</span>
-            </div>
             <p className="text-sm leading-relaxed max-w-xs">
               הפלטפורמה המובילה בישראל לשיבוץ עובדים זרים בענף הבנייה — מאמתת, מתאימה ומקלה.
             </p>

@@ -52,17 +52,32 @@ export const otpApi = {
       body: JSON.stringify({ phone, code, purpose }),
     }),
 
-  /** Full login: verify OTP + issue JWT. Returns entity context or needs_entity_selection. */
-  loginOtp: (phone: string, code: string) =>
-    apiFetch<{
-      access_token: string;
-      refresh_token: string;
-      role: string;
-      needs_entity_selection: boolean;
-      memberships?: Membership[];
-    }>('/auth/login/otp', {
+  /** Full login: verify OTP + issue JWT. Returns entity context or
+   *  needs_entity_selection on the registered-user path. When the
+   *  phone has NO user record, returns `{ prospect: true, phone, intent }`
+   *  instead — no JWT issued, but the backend has marked the OTP as
+   *  satisfying the 'register' purpose for the next 15 minutes so the
+   *  caller can drop the user into the trial → register flow without a
+   *  second OTP. The `intent` param lets us route them to the right
+   *  trial surface (today: contractor only). */
+  loginOtp: (phone: string, code: string, intent?: 'contractor' | 'corporation') =>
+    apiFetch<
+      | {
+          prospect?: undefined;
+          access_token: string;
+          refresh_token: string;
+          role: string;
+          needs_entity_selection: boolean;
+          memberships?: Membership[];
+        }
+      | {
+          prospect: true;
+          phone: string;
+          intent: 'contractor' | 'corporation';
+        }
+    >('/auth/login/otp', {
       method: 'POST',
-      body: JSON.stringify({ phone, code }),
+      body: JSON.stringify({ phone, code, intent }),
     }),
 
   /** Re-issue JWT scoped to a specific entity (called after needs_entity_selection=true). */

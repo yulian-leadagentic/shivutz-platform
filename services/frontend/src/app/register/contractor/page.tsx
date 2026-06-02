@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, FormEvent, useRef } from 'react';
+import { useEffect, useState, FormEvent, useRef, Suspense } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Loader2, CheckCircle2, AlertCircle, Mail, Smartphone, ShieldCheck } from 'lucide-react';
 import { orgApi, otpApi } from '@/lib/api';
 import { saveTokens } from '@/lib/auth';
@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { HomeLink } from '@/components/HomeLink';
 import Logo from '@/components/Logo';
+import { readProspect, readPendingSearch, clearProspect, clearPendingSearch } from '@/features/prospect/state';
 import type { RegistryChannel, RegistryLookupResult } from '@/types';
 
 const TOTAL_STEPS = 3;
@@ -66,8 +67,10 @@ function otpErrorMsg(msg: string): string {
   return 'שגיאה באימות. נסה שוב';
 }
 
-export default function RegisterContractorPage() {
+function RegisterContractorInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const fromTrial = searchParams?.get('from') === 'trial';
   const [step, setStep]       = useState<1 | 2 | 3 | 'verify'>(1);
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState('');
@@ -78,6 +81,29 @@ export default function RegisterContractorPage() {
     phone: '', normPhone: '', full_name: '',
     otpPhase: 'enter', code: '', otpVerified: false,
   });
+
+  // Trial bypass — when the user arrives here from /try/contractor/*,
+  // their phone has already passed OTP at /login. The backend marked
+  // that OTP as ALSO satisfying the 'register' purpose for 15 minutes,
+  // so we can skip Step 1 entirely. We seed step1 with the prospect's
+  // phone + `otpVerified: true` and jump straight to Step 2. The
+  // full-name input that used to live on Step 1 is rendered on Step 2
+  // instead (see Step 2 below). If the prospect session has expired
+  // or there's no prospect at all, the user falls back into the
+  // normal Step 1 flow — they'll re-OTP from there.
+  useEffect(() => {
+    if (!fromTrial) return;
+    const p = readProspect();
+    if (!p) return;          // expired / missing → fall back to normal flow
+    setStep1((s) => ({
+      ...s,
+      phone: p.phone,
+      normPhone: p.phone,
+      otpPhase: 'verify',    // skip the "enter phone" sub-step
+      otpVerified: true,     // skip the "enter code" sub-step too
+    }));
+    setStep(2);
+  }, [fromTrial]);
   const [step2, setStep2] = useState<Step2>({
     company_name_he: '', business_number: '', operating_regions: [],
   });
@@ -194,6 +220,30 @@ export default function RegisterContractorPage() {
         saveTokens(result.access_token, result.refresh_token);
       }
 
+      // Trial loop closure — if the prospect filled a search form at
+      // /try/contractor before being asked to register, replay it
+      // against the real /searches endpoint now that they're auth'd.
+      // We do this BEFORE any redirect so the search exists by the
+      // time the user lands on /contractor/deals.
+      const pending = fromTrial ? readPendingSearch() : null;
+      if (pending && result.access_token) {
+        try {
+          // Inline import — searchApi pulls the access token via the
+          // shared api client, which now sees the cookies we just
+          // saveTokens'd above. Failures are non-fatal: the user lands
+          // on the dashboard either way, and they can fill the form
+          // again from there.
+          const { searchApi } = await import('@/lib/api');
+          await searchApi.create(pending);
+        } catch {
+          // Swallow — see comment above.
+        }
+      }
+      // Cleanup — prospect session has served its purpose; the user
+      // is now a real registered contractor.
+      clearProspect();
+      clearPendingSearch();
+
       const channels = result.available_channels || [];
       if (channels.length > 0) {
         // Continue inline to channel-chooser → confirm.
@@ -205,6 +255,11 @@ export default function RegisterContractorPage() {
           sent: false,
         });
         setStep('verify');
+      } else if (pending) {
+        // Trial users with a replayed search land on /contractor/deals
+        // so they see the search they were promised on the preview
+        // screen, already broadcasting to corps.
+        router.push('/contractor/deals');
       } else {
         router.push('/contractor/dashboard');
       }
@@ -338,10 +393,13 @@ export default function RegisterContractorPage() {
                 <Button type="submit" disabled={loading} className="w-full">
                   {loading ? <><Loader2 className="h-4 w-4 animate-spin" /> שולח קוד...</> : 'שלח קוד אימות'}
                 </Button>
-                <p className="text-center text-sm text-slate-600">
-                  יש לך חשבון?{' '}
-                  <Link href="/login" className="text-brand-600 hover:underline">כניסה</Link>
-                </p>
+                {/* The "יש לך חשבון? כניסה" link was removed — the user
+                    is already inside the registration flow; the link
+                    only created confusion for first-time prospects. If
+                    a returning user lands here by mistake they'll see
+                    the "already registered" error from the backend
+                    after submitting, which is the natural place to
+                    point them at /login. */}
               </form>
             )}
 
@@ -385,6 +443,21 @@ export default function RegisterContractorPage() {
             {step === 2 && (
               <form onSubmit={handleNext} className="flex flex-col gap-4" noValidate>
                 <h3 className="font-semibold text-slate-800">פרטי חברה</h3>
+
+                {/* When the user arrived from the trial flow we skipped
+                    Step 1, so the full-name input never rendered. Show
+                    it here at the top of Step 2 so we still capture it
+                    before the final submit. */}
+                {fromTrial && (
+                  <Input
+                    label="שם מלא"
+                    placeholder="ישראל ישראלי"
+                    value={step1.full_name}
+                    onChange={(e) => setStep1((p) => ({ ...p, full_name: e.target.value }))}
+                    autoComplete="name"
+                  />
+                )}
+
                 <Input
                   label="מספר ע.מ / ח.פ (9 ספרות)"
                   placeholder="123456789"
@@ -619,5 +692,16 @@ export default function RegisterContractorPage() {
         </Card>
       </div>
     </div>
+  );
+}
+
+// useSearchParams (added for the trial-flow `?from=trial` query) must
+// be wrapped in a Suspense boundary or Next 16 fails the static-render
+// step for this page. Same pattern as /login.
+export default function RegisterContractorPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
+      <RegisterContractorInner />
+    </Suspense>
   );
 }
