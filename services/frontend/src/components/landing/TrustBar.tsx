@@ -90,32 +90,10 @@ const BADGES: Badge[] = [
   },
 ];
 
-// Small decorative laurel that sits at the bottom of each shield.
-// Sized down from the first pass — the badges were dominating the
-// page; the laurel needs to read as a finishing flourish, not its
-// own focal point.
-function Laurel({ color }: { color: string }) {
-  return (
-    <svg
-      viewBox="-30 -8 60 16"
-      width="36"
-      height="9"
-      aria-hidden="true"
-    >
-      <g stroke={color} strokeWidth="1" fill="none" strokeLinecap="round">
-        <path d="M -22 -2 Q -12 2 -2 0" />
-        <ellipse cx="-18" cy="-3" rx="1.8" ry="0.7" fill={color} stroke="none" />
-        <ellipse cx="-12" cy="-3.5" rx="2" ry="0.8" fill={color} stroke="none" />
-        <ellipse cx="-6" cy="-3" rx="1.8" ry="0.7" fill={color} stroke="none" />
-        <path d="M 22 -2 Q 12 2 2 0" />
-        <ellipse cx="18" cy="-3" rx="1.8" ry="0.7" fill={color} stroke="none" />
-        <ellipse cx="12" cy="-3.5" rx="2" ry="0.8" fill={color} stroke="none" />
-        <ellipse cx="6" cy="-3" rx="1.8" ry="0.7" fill={color} stroke="none" />
-        <path d="M 0 -3 L 1.2 0 L 0 3 L -1.2 0 Z" fill={color} stroke="none" />
-      </g>
-    </svg>
-  );
-}
+// Laurel was removed — it ate vertical space without earning its
+// keep visually, especially after the badges were shrunk down. The
+// trophy/award identity is now carried entirely by the shield shape
+// + emblem.
 
 function StatBadge({ badge }: { badge: Badge }) {
   const Icon = badge.icon;
@@ -126,59 +104,52 @@ function StatBadge({ badge }: { badge: Badge }) {
 
   return (
     <div className="relative flex flex-col items-center">
-      {/* Soft coloured glow behind the whole badge */}
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-x-[-8px] inset-y-[-6px] blur-xl"
-        style={{ background: badge.glow, borderRadius: '999px' }}
-      />
-
-      {/* Emblem (top circle) — sits half-on-top of the shield. Now
-          44px (was 52, originally 72). Each shrink iteration also
-          requires bumping the content-overlay top padding down to
-          keep the stat number visually centered in the shield. */}
+      {/* Emblem (top circle) — sits half-on-top of the shield. Shrunk
+          to 36px (was 44 → 52 → 72) so the medallion really reads as
+          a small finishing detail. Glow background was removed; with
+          the smaller shields the page no longer needs it for warmth. */}
       <div
         className="relative z-10 flex items-center justify-center"
         style={{
-          width: 44,
-          height: 44,
+          width: 36,
+          height: 36,
           borderRadius: '50%',
           background: badge.emblemBg,
           border: isFilledEmblem ? `2px solid ${badge.primary}` : `1.5px solid ${badge.primary}33`,
           boxShadow: isFilledEmblem
-            ? `0 5px 12px ${badge.glow}, inset 0 -2px 5px rgba(0,0,0,0.18)`
-            : `0 4px 10px ${badge.glow}`,
-          marginBottom: -20,
+            ? `0 3px 8px ${badge.glow}, inset 0 -2px 4px rgba(0,0,0,0.18)`
+            : `0 3px 8px ${badge.glow}`,
+          marginBottom: -16,
         }}
       >
-        <Icon size={18} color={badge.emblemIcon} strokeWidth={2.2} />
+        <Icon size={16} color={badge.emblemIcon} strokeWidth={2.2} />
       </div>
 
-      {/* Shield body — SVG so the shape (rounded top + tapered point) is
-          crisp and the stroke is consistent. The 100x130 viewBox is
-          stretched by width via preserveAspectRatio="none" so the badge
-          adapts to its column width without distorting the corner
-          radii noticeably. Content (stat + label + laurel) is layered
-          above with absolute positioning. */}
-      <div className="relative w-full" style={{ aspectRatio: '100 / 130' }}>
+      {/* Shield — squat aspect ratio (100×95, was 100×130) so the
+          card is wider than tall. The text overlay stays at its fixed
+          inline font-sizes, but with less vertical real estate to fill
+          the badge no longer feels oversized. Path tail is also
+          flatter to match the new ratio. */}
+      <div className="relative w-full" style={{ aspectRatio: '100 / 95' }}>
         <svg
-          viewBox="0 0 100 130"
+          viewBox="0 0 100 95"
           preserveAspectRatio="none"
           className="absolute inset-0 w-full h-full"
         >
           <path
-            d="M 22 0 H 78 Q 100 0 100 22 V 92 Q 100 106 90 112 L 56 127 Q 50 130 44 127 L 10 112 Q 0 106 0 92 V 22 Q 0 0 22 0 Z"
+            d="M 18 0 H 82 Q 100 0 100 18 V 70 Q 100 80 90 84 L 56 92 Q 50 94 44 92 L 10 84 Q 0 80 0 70 V 18 Q 0 0 18 0 Z"
             fill={badge.fill}
             stroke={badge.primary}
             strokeWidth="2"
           />
         </svg>
 
-        {/* Content overlay — sizes pulled in another step. Stat
-            24→20, label 12→11. Top padding shrinks with the emblem. */}
-        <div className="absolute inset-0 flex flex-col items-center justify-center pt-5 pb-4 px-2 text-center">
+        {/* Content overlay — text sizes preserved per user request
+            (stat 20px, label 11px). Inner padding tightened to the
+            new height. */}
+        <div className="absolute inset-0 flex flex-col items-center justify-center pt-4 pb-3 px-2 text-center">
           <div
-            style={{ color: badge.primary, fontSize: 20, fontWeight: 600, lineHeight: 1, marginBottom: 3 }}
+            style={{ color: badge.primary, fontSize: 20, fontWeight: 600, lineHeight: 1, marginBottom: 2 }}
           >
             {badge.value}
           </div>
@@ -186,9 +157,6 @@ function StatBadge({ badge }: { badge: Badge }) {
             style={{ color: '#1A2B4A', fontSize: 11, fontWeight: 500, lineHeight: 1.2 }}
           >
             {badge.label}
-          </div>
-          <div className="mt-1.5">
-            <Laurel color={badge.primary} />
           </div>
         </div>
       </div>
@@ -198,21 +166,21 @@ function StatBadge({ badge }: { badge: Badge }) {
 
 export default function TrustBar() {
   return (
-    // pt-4 (was py-16) crunches the gap to the LiveShowcase banner
-    // above; pb-10 keeps a comfortable gap before "איך זה עובד" below.
-    <section id="trust-bar" dir="rtl" className="bg-white pt-4 pb-10 relative overflow-hidden">
+    // Tightened further: pt-2 pb-8 (was pt-4 pb-10). The shrunk badges
+    // also let the corner glow blobs disappear without weakening the
+    // section — keeping them only as the subtle bottom-start one.
+    <section id="trust-bar" dir="rtl" className="bg-white pt-2 pb-8 relative overflow-hidden">
       {/* Decorative orange spark glints at the edges — gives the
           section that "premium / award" feel without forcing a hero
           background. Kept very subtle so they read as accents not
           content. */}
+      {/* Top corner glow removed — the smaller badges + smaller
+          headline don't need the extra ambient warmth. Bottom-start
+          glow kept (very subtle) so the section doesn't feel
+          completely flat against HowItWorks below. */}
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute -top-12 -end-12 h-64 w-64 rounded-full opacity-30"
-        style={{ background: 'radial-gradient(circle, rgba(247,148,29,0.25) 0%, transparent 70%)' }}
-      />
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute -bottom-12 -start-12 h-64 w-64 rounded-full opacity-20"
+        className="pointer-events-none absolute -bottom-12 -start-12 h-48 w-48 rounded-full opacity-20"
         style={{ background: 'radial-gradient(circle, rgba(247,148,29,0.20) 0%, transparent 70%)' }}
       />
 
@@ -236,7 +204,7 @@ export default function TrustBar() {
         {/* Badge row — 4 columns on md+, 2 columns on mobile. Container
             capped at max-w-3xl (down from 4xl/6xl) so the badges keep
             their reduced footprint on wide screens. */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 sm:gap-5 mt-8">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 mt-6">
           {BADGES.map((badge) => (
             <StatBadge key={badge.label} badge={badge} />
           ))}

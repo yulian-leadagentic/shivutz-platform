@@ -220,6 +220,53 @@ body {
   .bu-line { animation: buFlow 4s linear infinite; }
 }
 
+/* Click-to-expand explanation panel under the step grid. Uses the
+   grid-template-rows: 0fr → 1fr trick so the panel animates between
+   zero height and its natural content height — no fixed max-height,
+   no JS measurement. */
+.bu-card {
+  appearance: none;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  width: 100%;
+  text-align: inherit;
+  transition: box-shadow 200ms ease, transform 200ms ease;
+}
+.bu-card[data-active="true"] {
+  box-shadow: 0 6px 22px rgba(26, 43, 74, 0.08);
+  transform: translateY(-1px);
+}
+
+.bu-explain {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 320ms ease, margin-top 320ms ease;
+  margin-top: 0;
+}
+.bu-explain.is-open {
+  grid-template-rows: 1fr;
+  margin-top: 16px;
+}
+.bu-explain-content { overflow: hidden; }
+.bu-explain-inner {
+  background: #fff;
+  border: 1px solid #E5E7EB;
+  border-top: 3px solid #F7941D;
+  border-radius: 12px;
+  padding: 14px 18px;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.55;
+  color: #1A2B4A;
+  text-align: start;
+}
+.bu-explain-inner[data-accent="navy"] { border-top-color: #1A2B4A; }
+@media (prefers-reduced-motion: reduce) {
+  .bu-explain { transition: none; }
+  .bu-card    { transition: none; }
+}
+
 @keyframes slideUp {
   from { opacity: 0; transform: translateY(6px); }
   to   { opacity: 1; transform: translateY(0); }

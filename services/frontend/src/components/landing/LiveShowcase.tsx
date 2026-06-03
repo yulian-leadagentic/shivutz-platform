@@ -184,19 +184,21 @@ export default function LiveShowcase({ intervalMs = 5000 }: Props) {
           <div
             key={current.id}
             aria-live="polite"
-            className="animate-live-card-enter p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center gap-4"
+            className="animate-live-card-enter p-3 sm:p-5 flex flex-row items-center gap-3 sm:gap-4"
           >
-            {/* Big illustration — profession PNG if available, else a
-                category-tinted Lucide glyph on a soft circle. Larger
-                than the bubble so the showcase feels substantial. */}
-            <div className="shrink-0 self-start sm:self-center">
+            {/* Illustration — profession PNG if available, else a
+                category-tinted Lucide glyph on a soft circle. Stays
+                inline with the body on mobile (was stacked above the
+                text, which made the icon dominate the small card). */}
+            <div className="shrink-0">
               {profCode ? (
-                <div className={`h-16 w-16 sm:h-20 sm:w-20 rounded-2xl ${accent.iconBg} flex items-center justify-center`}>
-                  <ProfessionIcon code={profCode} size={68} alt="" />
+                <div className={`h-12 w-12 sm:h-20 sm:w-20 rounded-xl sm:rounded-2xl ${accent.iconBg} flex items-center justify-center`}>
+                  <ProfessionIcon code={profCode} size={44} alt="" className="sm:hidden" />
+                  <ProfessionIcon code={profCode} size={68} alt="" className="hidden sm:block" />
                 </div>
               ) : (
-                <div className={`h-16 w-16 sm:h-20 sm:w-20 rounded-2xl ${accent.iconBg} ${accent.iconText} flex items-center justify-center`}>
-                  <FallbackIcon className="h-8 w-8 sm:h-10 sm:w-10" strokeWidth={2} />
+                <div className={`h-12 w-12 sm:h-20 sm:w-20 rounded-xl sm:rounded-2xl ${accent.iconBg} ${accent.iconText} flex items-center justify-center`}>
+                  <FallbackIcon className="h-6 w-6 sm:h-10 sm:w-10" strokeWidth={2} />
                 </div>
               )}
             </div>

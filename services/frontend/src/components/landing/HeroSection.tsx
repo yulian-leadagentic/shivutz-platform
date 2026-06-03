@@ -131,36 +131,32 @@ export default function HeroSection(_: HeroSectionProps) {
       />
 
       {/* ── Main hero content ── */}
-      {/* Logged-in strip previously rendered here was redundant
-          with LandingNav (which already shows name + admin link +
-          logout when isLoggedIn). The duplicate buttons were
-          stacking visually on the dark hero. LandingNav stays
-          fixed-top across the whole page so it's the only place
-          we need these controls. */}
+      {/* Sized down per QA: the lockup + headline were eating 50%+ of
+          the above-the-fold real estate before the role tiles got a
+          chance to be seen. Logo halved (h-40 → h-20), H1 dropped a
+          tier (md:text-5xl → md:text-3xl), subtitle shrunk + max-width
+          tightened. Top padding pulled in too. */}
       <div className="relative">
-        <div className="max-w-6xl mx-auto px-6 w-full pt-28 pb-12">
+        <div className="max-w-6xl mx-auto px-6 w-full pt-20 md:pt-24 pb-8 md:pb-12">
           {/* Top: brand + headline + subtitle, centered */}
-          <div className="text-center space-y-3 md:space-y-4 mb-10">
-            {/* Brand lockup — single transparent asset (icon + wordmark
-                in one image). Acts as both the visual brand mark and
-                the H1 ranking signal via the alt text. */}
+          <div className="text-center space-y-2 md:space-y-3 mb-6 md:mb-8">
             <Image
               src="/brand/buildup-lockup.png?v=3"
               alt="BuildUp"
               width={500}
               height={400}
-              className="mx-auto object-contain h-40 md:h-56 w-auto"
+              className="mx-auto object-contain h-20 md:h-28 w-auto"
               priority
               unoptimized
             />
 
-            <h1 className="text-2xl md:text-5xl font-extrabold leading-[1.2] tracking-tight text-slate-900 max-w-4xl mx-auto">
+            <h1 className="text-lg md:text-3xl font-extrabold leading-[1.25] tracking-tight text-slate-900 max-w-3xl mx-auto">
               פלטפורמת השיבוץ הראשונה בישראל
               <br className="hidden sm:block" />
               <span className="text-brand-600"> לעובדים זרים בענף הבנייה</span>
             </h1>
 
-            <p className="text-base md:text-lg text-slate-600 leading-relaxed max-w-2xl mx-auto">
+            <p className="text-xs md:text-sm text-slate-600 leading-relaxed max-w-xl mx-auto">
               מערכת מבוססת AI להתאמת עובדים, שיבוץ וניהול תהליך הגיוס — במהירות, בפשטות ובזמן אמת.
             </p>
           </div>

@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { UserCheck, Search, Handshake, ShieldCheck, type LucideIcon } from 'lucide-react';
 
 // "How it works" — responsive three-step infographic. Implemented per
@@ -18,8 +19,10 @@ import { UserCheck, Search, Handshake, ShieldCheck, type LucideIcon } from 'luci
 // natural Grid/Flex layout that scales correctly from 360px through
 // 1920px, with all styling lifted to globals.css under `.bu-*` classes.
 
+type StepNum = 1 | 2 | 3;
+
 interface Step {
-  num: 1 | 2 | 3;
+  num: StepNum;
   label: string;
   icon: LucideIcon;
 }
@@ -30,7 +33,29 @@ const STEPS: Step[] = [
   { num: 3, label: 'סגירת עסקה',    icon: Handshake },
 ];
 
+// Long-form explanation for each step. Surfaced inside the expanding
+// panel that opens when a card is clicked. Text comes from the
+// product-owner brief (verbatim, with light typography polish so the
+// punctuation reads cleanly).
+const EXPLANATIONS: Record<StepNum, string> = {
+  1: 'המערכת בודקת ומאמתת את הקבלנים והתאגידים הפעילים. לשם כך — רק מי שנרשם ואומת יוכל לצפות, לחפש ולהגיש הצעות.',
+  2: 'המערכת פותחה כך שבמקום שתבזבז זמן בחיפושים עבור ההתאמה שביקשת — אנו נעשה זאת בשבילך מתוך מאגר עצום של מידע, ונציג לך את ההתאמה הטובה ביותר.',
+  3: 'לאחר בדיקת רישיון קבלן ורישיון תאגיד כחוק — אנו נקשר בין הצדדים לצורך סגירת העסקה.',
+};
+
+// Accent colour key for the panel border. Step 2 uses navy; 1 and 3
+// share the orange accent (matching the badge colour rule in the
+// spec).
+const STEP_ACCENT: Record<StepNum, 'orange' | 'navy'> = {
+  1: 'orange',
+  2: 'navy',
+  3: 'orange',
+};
+
 export default function HowItWorksSection() {
+  // Accordion behaviour: clicking a step toggles its panel. Only one
+  // panel is open at a time; clicking the active card closes it.
+  const [openStep, setOpenStep] = useState<StepNum | null>(null);
   return (
     <section
       id="how-it-works"
@@ -73,18 +98,26 @@ export default function HowItWorksSection() {
           {STEPS.map((step, idx) => {
             const Icon = step.icon;
             const isLast = idx === STEPS.length - 1;
+            const isOpen = openStep === step.num;
             return (
               <div key={step.num} className="bu-step" data-step={step.num}>
-                {/* Card contains all three children always — keeping the
-                    DOM stable across breakpoints removes the need to
-                    reorder elements on mobile. Per spec §6 note. */}
-                <div className="bu-card">
+                {/* Card is now a button — clicking toggles the
+                    explanation panel below the grid. aria-expanded +
+                    aria-controls wire screen readers to the panel. */}
+                <button
+                  type="button"
+                  className="bu-card"
+                  data-active={isOpen ? 'true' : undefined}
+                  aria-expanded={isOpen}
+                  aria-controls="bu-explain-panel"
+                  onClick={() => setOpenStep(isOpen ? null : step.num)}
+                >
                   <div className="bu-circle">{step.num}</div>
                   <span className="bu-icon" aria-hidden="true">
                     <Icon />
                   </span>
                   <span className="bu-label">{step.label}</span>
-                </div>
+                </button>
 
                 {/* Vertical dashed connector — between cards on mobile.
                     Hidden on desktop via CSS, and never rendered after
@@ -107,6 +140,26 @@ export default function HowItWorksSection() {
               </div>
             );
           })}
+        </div>
+
+        {/* Expansion panel — one shared region below the grid. Slides
+            down via grid-template-rows 0fr → 1fr (no JS measurement).
+            The inner content keeps the previously-open text rendered
+            during the close animation so the slide-up isn't blank;
+            we only swap when openStep changes to a new step. */}
+        <div
+          id="bu-explain-panel"
+          className={`bu-explain ${openStep ? 'is-open' : ''}`}
+          aria-live="polite"
+        >
+          <div className="bu-explain-content">
+            <div
+              className="bu-explain-inner"
+              data-accent={openStep ? STEP_ACCENT[openStep] : 'orange'}
+            >
+              {openStep ? EXPLANATIONS[openStep] : null}
+            </div>
+          </div>
         </div>
       </div>
 
