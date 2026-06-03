@@ -117,16 +117,30 @@ export default function NewWorkerPage() {
           className="text-sm text-slate-500 hover:text-slate-700 underline">חזרה לרשימה</button>
       </div>
 
-      {/* Mode tabs — single vs Excel only (bulk-add removed in Wave 1) */}
-      <div className="flex gap-1 p-1 bg-slate-100 rounded-lg w-fit">
-        {([['single', 'עובד בודד', User], ['excel', 'ייבוא אקסל', FileSpreadsheet]] as const).map(([m, label, Icon]) => (
-          <button key={m} onClick={() => { setMode(m as Mode); setError(''); }}
-            className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-              mode === m ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-            }`}>
-            <Icon className="h-4 w-4" /> {label}
-          </button>
-        ))}
+      {/* Mode tabs — single vs Excel. QA-R4 R8: the inactive tab used to
+          render as muted text on a grey panel which read as "disabled".
+          Both states are now clearly buttons; the active tab carries
+          brand accent + shadow, the inactive carries a white surface +
+          slate border so it reads as "tap me too". */}
+      <div className="inline-flex gap-2 p-1 bg-slate-100 rounded-lg">
+        {([['single', 'עובד בודד', User], ['excel', 'ייבוא מאקסל', FileSpreadsheet]] as const).map(([m, label, Icon]) => {
+          const isActive = mode === m;
+          return (
+            <button
+              key={m}
+              type="button"
+              onClick={() => { setMode(m as Mode); setError(''); }}
+              aria-pressed={isActive}
+              className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-bold transition-all ${
+                isActive
+                  ? 'bg-brand-600 text-white shadow-sm'
+                  : 'bg-white text-slate-800 border border-slate-300 hover:border-brand-400 hover:bg-brand-50/40'
+              }`}
+            >
+              <Icon className="h-4 w-4" /> {label}
+            </button>
+          );
+        })}
       </div>
 
       {/* ── Single mode ── */}

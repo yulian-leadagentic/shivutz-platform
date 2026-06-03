@@ -53,11 +53,19 @@ async def create_low_profile(
     return_url: str,
     webhook_url: str,
     amount: float = 1.0,
+    invoice_email: str | None = None,
 ) -> dict:
     """
     Create a LowProfile page for card tokenization.
     entity_id should be formatted as "corporation:{uuid}" or "contractor:{uuid}"
     so the webhook handler can parse the entity type.
+
+    `invoice_email` (optional) is the address that future captured charges
+    will send their Cardcom mas-kabala receipts to. Cardcom stores it on
+    the InvoiceHead block of the LowProfile page; the GetLpResult webhook
+    then exposes it back to us so we can persist it on the payment_method
+    row.
+
     Returns: { "low_profile_id": str, "url": str }
     """
     payload = {
@@ -78,12 +86,41 @@ async def create_low_profile(
             "ApiPassword":    CARDCOM_API_PASS,
         },
     }
+    if invoice_email:
+        # The LowProfile flow itself doesn't issue an invoice (it's a
+        # tokenization page — no charge happens here), but Cardcom carries
+        # InvoiceHead.EmailAddress forward to subsequent token charges so
+        # captured-charge mas-kabala receipts go to the right address.
+        payload["InvoiceHead"] = {
+            "EmailAddress": invoice_email,
+            "SendByEmail":  True,
+            "Language":     "he",
+            "CoinID":       1,
+        }
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.post(
                 f"{CARDCOM_BASE_URL}/api/v11/LowProfile/Create",
                 json=payload,
             )
+            # Explicit auth-failure handling — when Cardcom rejects the
+            # terminal/API creds we get a flat 401 with a HTML error page,
+            # not a JSON body. The previous `raise_for_status() →
+            # httpx.HTTPError → "HTTP error: 401 Client Error"` path
+            # buried the credential mismatch behind a generic network
+            # error message (QA-R4 #D5).
+            if resp.status_code == 401:
+                logger.error(
+                    "[cardcom] AUTH FAILED — check CARDCOM_TERMINAL_NUMBER / "
+                    "CARDCOM_API_NAME / CARDCOM_API_PASSWORD (got terminal=%s api=%s)",
+                    CARDCOM_TERMINAL, CARDCOM_API_NAME,
+                )
+                raise CardcomApiError(
+                    "Cardcom rejected our terminal credentials (HTTP 401). "
+                    "Verify CARDCOM_TERMINAL_NUMBER, CARDCOM_API_NAME and "
+                    "CARDCOM_API_PASSWORD in the payment service environment.",
+                    code="401",
+                )
             resp.raise_for_status()
             data = resp.json()
             logger.info("[cardcom] LowProfile created entity=%s code=%s", entity_id, data.get("ResponseCode"))
@@ -96,6 +133,8 @@ async def create_low_profile(
                 "low_profile_id": data["LowProfileId"],
                 "url":            data["Url"],
             }
+    except CardcomApiError:
+        raise
     except httpx.TimeoutException as e:
         raise CardcomNetworkError(f"Timeout creating LowProfile: {e}")
     except httpx.HTTPError as e:

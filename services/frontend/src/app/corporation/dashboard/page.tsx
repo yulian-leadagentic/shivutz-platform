@@ -1,21 +1,25 @@
 'use client';
 
-// Wave-5 — corporation dashboard rebuilt around the same tile pattern
-// as the contractor dashboard. Three primary tiles + a pending-deals
-// banner. KPI strip and inline tables removed — they live one click
-// away on /corporation/deals and /corporation/workers.
+// QA-R4 #C4 — corp dashboard restructured around the three inbound
+// streams the corp actually triages:
+//   1. Immediate-availability requests (contractor needs workers now)
+//   2. Foreign-import requests          (contractor needs workers from abroad)
+//   3. Deals (full lifecycle / history)
+// Workers + Manage live in the sidebar; this surface is "what needs
+// my attention today". Tile badges carry the urgency that used to be
+// duplicated in a separate amber strip — that strip is gone now.
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
-  Plus, Handshake, Users as UsersIcon, Settings as ManageIcon, Clock, AlertCircle,
+  Plus, Settings as ManageIcon, Zap, Globe2, Clock,
 } from 'lucide-react';
-import { dealApi, workerApi, orgApi } from '@/lib/api';
+import { dealApi, orgApi } from '@/lib/api';
+import { tenderApi } from '@/lib/api/tenders';
 import { getAccessToken, decodeJwtPayload } from '@/lib/auth';
-import type { Deal, Worker } from '@/types';
+import type { Deal } from '@/types';
 
 const PENDING_DEAL_STATUSES = new Set(['proposed', 'counter_proposed']);
-const ACTIVE_DEAL_STATUSES  = new Set(['accepted', 'active', 'reporting', 'corp_committed']);
 
 function Tile({
   href, icon, title, subtitle, badge, accent = 'brand',
@@ -67,8 +71,7 @@ function Tile({
 
 export default function CorporationDashboard() {
   const [pendingDeals, setPendingDeals] = useState<number | null>(null);
-  const [activeDeals, setActiveDeals]   = useState<number | null>(null);
-  const [workerCount, setWorkerCount]   = useState<number | null>(null);
+  const [openTenders, setOpenTenders]   = useState<number | null>(null);
   const [approvalStatus, setApprovalStatus] = useState<string | null>(null);
 
   useEffect(() => {
@@ -89,13 +92,17 @@ export default function CorporationDashboard() {
     dealApi.list({ page_size: 200 })
       .then((res) => {
         setPendingDeals(res.items.filter((d: Deal) => PENDING_DEAL_STATUSES.has(d.status)).length);
-        setActiveDeals(res.items.filter((d: Deal) => ACTIVE_DEAL_STATUSES.has(d.status)).length);
       })
-      .catch(() => { setPendingDeals(0); setActiveDeals(0); });
+      .catch(() => { setPendingDeals(0); });
 
-    workerApi.list()
-      .then((rows: Worker[]) => setWorkerCount(rows.length))
-      .catch(() => setWorkerCount(0));
+    // Foreign-import tenders the corp can still bid on — same filter
+    // /corporation/tenders uses (no bid yet, or only withdrawn).
+    tenderApi.listOpen()
+      .then((open) => {
+        const biddable = open.filter((t) => !t.my_bid || t.my_bid.status === 'withdrawn');
+        setOpenTenders(biddable.length);
+      })
+      .catch(() => setOpenTenders(0));
   }, []);
 
   return (
@@ -113,27 +120,6 @@ export default function CorporationDashboard() {
             </p>
           </div>
         </div>
-      )}
-
-      {/* Pending proposals strip — appears only when there's something
-          urgent. A persistent affordance on top so the corp doesn't
-          miss a contractor inquiry buried inside the deals page. */}
-      {pendingDeals != null && pendingDeals > 0 && (
-        <Link
-          href="/corporation/deals?filter=proposed"
-          className="flex items-center justify-between bg-amber-50 border border-amber-300 rounded-2xl px-4 py-3 hover:bg-amber-100 transition-colors shadow-sm"
-        >
-          <div className="flex items-center gap-3">
-            <AlertCircle className="h-5 w-5 text-amber-600 shrink-0" />
-            <div>
-              <p className="font-semibold text-amber-900 text-sm">
-                יש לך {pendingDeals} {pendingDeals === 1 ? 'הצעה' : 'הצעות'} שממתינות לתגובה שלך
-              </p>
-              <p className="text-amber-700 text-xs mt-0.5">לחץ לצפייה ולאישור</p>
-            </div>
-          </div>
-          <span className="text-amber-700 text-sm font-medium whitespace-nowrap">לצפייה ←</span>
-        </Link>
       )}
 
       {/* Hero — recruitment-side pitch for the corporation */}
@@ -176,33 +162,37 @@ export default function CorporationDashboard() {
         </div>
       </section>
 
-      {/* Three primary tiles */}
+      {/* Three primary tiles — ordered to match the corp's mental
+          model from QA-R4 R5 feedback:
+            1. ניהול                              → /corporation/manage
+            2. דרישה לעובדים בזמינות מיידית      → /corporation/deals?filter=proposed
+            3. בקשת ייבוא של עובדים חדשים       → /corporation/tenders
+          Tile labels mirror the prospect-side /try/corporation entry
+          page so the same vocabulary (דרישה / בקשת ייבוא) carries
+          through registration into the working dashboard. */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <Tile
-          href="/corporation/deals"
-          icon={<Handshake className="h-9 w-9" />}
-          title="עסקאות"
-          subtitle="הצעות מקבלנים, עסקאות פעילות והיסטוריה"
-          badge={(pendingDeals ?? 0) + (activeDeals ?? 0)}
-          accent="amber"
-        />
-        <Tile
-          href="/corporation/workers"
-          icon={<UsersIcon className="h-9 w-9" />}
-          title="עובדים"
-          subtitle={
-            workerCount == null
-              ? 'נהל את רשימת העובדים, ויזות וזמינות'
-              : `${workerCount} עובדים — נהל ויזות וזמינות`
-          }
-          accent="sky"
-        />
         <Tile
           href="/corporation/manage"
           icon={<ManageIcon className="h-9 w-9" />}
           title="ניהול"
           subtitle="צוות, מסמכים, מנוי שירותים נלווים והגדרות"
           accent="slate"
+        />
+        <Tile
+          href="/corporation/deals"
+          icon={<Zap className="h-9 w-9" />}
+          title="דרישה לעובדים בזמינות מיידית"
+          subtitle="כל הדרישות הפעילות של קבלנים + העסקאות שלך — במקום אחד"
+          badge={pendingDeals}
+          accent="amber"
+        />
+        <Tile
+          href="/corporation/tenders"
+          icon={<Globe2 className="h-9 w-9" />}
+          title="בקשת ייבוא של עובדים חדשים"
+          subtitle="קבלנים שמבקשים עובדים מחו״ל — אפשר להגיש הצעה"
+          badge={openTenders}
+          accent="sky"
         />
       </div>
     </div>

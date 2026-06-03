@@ -62,6 +62,11 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       <Comp
         className={cn(buttonVariants({ variant, size, className }))}
         ref={ref}
+        // Same reasoning as Input.tsx — password-manager / autofill
+        // extensions stamp `fdprocessedid` on buttons too, and the
+        // resulting hydration mismatch can break the click handler
+        // binding on the very first interaction.
+        suppressHydrationWarning
         {...props}
       />
     );

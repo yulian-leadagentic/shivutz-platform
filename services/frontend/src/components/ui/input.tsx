@@ -38,6 +38,14 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
           id={inputId}
           type={type}
           onFocus={handleFocus}
+          // Password managers / autofill extensions (Edge, LastPass,
+          // 1Password) inject attributes like `fdprocessedid` into
+          // form inputs before React hydrates. The DOM no longer
+          // matches what was server-rendered → hydration aborts →
+          // event handlers may not re-attach cleanly, so the user's
+          // first click does nothing. Tell React to tolerate this
+          // specific element diverging from SSR output.
+          suppressHydrationWarning
           className={cn(
             'flex h-9 w-full rounded-lg border bg-white px-3 py-2 text-sm text-start',
             'border-slate-200 text-slate-900',

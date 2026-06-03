@@ -57,6 +57,14 @@ export const dealApi = {
   workers: (id: string) =>
     apiFetch<Worker[]>(`/deals/${id}/workers`),
 
+  /** Corp-initiated proposal — create (or reuse) a 'proposed' deal for
+   *  the (acting corp, search_id) pair. Idempotent on the server: if a
+   *  deal already exists for this pair, returns its id with reused=true. */
+  fromSearch: (searchId: string) =>
+    apiFetch<{ id: string; status: string; reused: boolean }>(
+      `/deals/from-search/${searchId}`, { method: 'POST' }
+    ),
+
   // ── New deal lifecycle (replaces updateStatus + updateWorkers) ──────────
   commit: (id: string, workerIds: string[]) =>
     apiFetch<{ id: string; status: string; expires_at: string; commission_amount: number }>(

@@ -325,6 +325,90 @@ async def create_deal(
         conn.close()
 
 
+# ── POST /deals/from-search/{search_id} — corp-initiated proposal ──────────
+#
+# Corp browses /corporation/requests and clicks "השב לדרישה" on a search
+# it wasn't auto-matched to. We create (or reuse) a 'proposed' deal row
+# for (this corp, this search) and return the deal_id so the FE can
+# navigate straight into the existing /corporation/deals/{id} allocation
+# flow. The contractor_id is resolved from the search itself — the corp
+# never sees it on the browse surface (anonymized "קבלן N").
+#
+# Idempotent: if a deal already exists for this (corp, search), we
+# return it instead of creating a duplicate.
+@router.post("/from-search/{search_id}", status_code=201)
+async def create_deal_from_search(
+    search_id: str,
+    x_org_id: Optional[str] = Header(default=None),
+    x_user_id: Optional[str] = Header(default=None),
+    x_user_role: Optional[str] = Header(default=None),
+):
+    if x_user_role not in ("corporation", "admin"):
+        raise HTTPException(status_code=403, detail="corp_only")
+    if not x_org_id:
+        raise HTTPException(status_code=400, detail="entity_context_required")
+
+    corporation_id = x_org_id
+    proposed_by    = x_user_id or "unknown"
+
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+
+        # Idempotency — reuse existing deal if one exists for this (corp, search).
+        cur.execute(
+            """SELECT id, status FROM deals
+               WHERE search_id=%s AND corporation_id=%s AND deleted_at IS NULL
+               LIMIT 1""",
+            (search_id, corporation_id),
+        )
+        existing = cur.fetchone()
+        if existing:
+            return {"id": existing["id"], "status": existing["status"], "reused": True}
+
+        # Resolve contractor_id from the search (cross-db query to job_db).
+        cur.execute(
+            "SELECT contractor_id, status FROM job_db.worker_searches WHERE id=%s",
+            (search_id,),
+        )
+        srow = cur.fetchone()
+        if not srow:
+            raise HTTPException(status_code=404, detail="search_not_found")
+        if srow["status"] not in ("open", "partially_matched"):
+            raise HTTPException(status_code=409, detail="search_not_active")
+        contractor_id = srow["contractor_id"]
+
+        deal_id = str(uuid.uuid4())
+        cur.execute(
+            """INSERT INTO deals
+               (id, search_id, contractor_id, corporation_id, proposed_by, notes)
+               VALUES (%s,%s,%s,%s,%s,%s)""",
+            (deal_id, search_id, contractor_id, corporation_id, proposed_by, None),
+        )
+        conn.commit()
+
+        audit.log("deal", deal_id, "created_from_browse", proposed_by,
+                  new_value={"contractor_id": contractor_id,
+                             "corporation_id": corporation_id,
+                             "search_id": search_id})
+
+        await publish_event("deal.proposed", {
+            "deal_id": deal_id,
+            "contractor_id": contractor_id,
+            "corporation_id": corporation_id,
+            "corp_initiated": True,
+        })
+
+        return {"id": deal_id, "status": "proposed", "reused": False}
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+
 # ── Deal lifecycle endpoints (replaces the old /status PATCH) ───────────────
 
 @router.post("/{deal_id}/commit")

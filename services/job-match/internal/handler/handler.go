@@ -224,6 +224,98 @@ func (h *Handler) CreateSearch(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 201, map[string]any{"id": id, "status": "open"})
 }
 
+// ── GET /searches/open — list active searches across all contractors ──
+//
+// Corp-facing browse surface. Returns every worker_search currently in
+// an active state (open / partially_matched) with the contractor
+// identity stripped to an anonymous "קבלן N" label. The index is
+// assigned in created_at order so the same caller sees a stable list
+// during a session; on the wire the response is reversed to newest-
+// first for natural top-of-feed reading.
+//
+// Different corps may see different N for the same contractor in this
+// version — the mapping is per-response, not per-caller. Acceptable for
+// a browse view; if/when we add per-corp accept history this will need
+// to become stable per (caller_corp, contractor) pair.
+func (h *Handler) ListOpenSearches(w http.ResponseWriter, r *http.Request) {
+	// R12 — drop searches the contractor already settled with another
+	// corp. Once a deal moves into accepted/active/reporting/completed
+	// for a given search, that search is "spoken for" and shouldn't
+	// keep showing up on other corps' browse list. corp_committed deals
+	// don't disqualify the search (the contractor may still pick a
+	// different corp's proposal), so they're intentionally excluded
+	// from the NOT EXISTS list.
+	rows, err := h.db.Query(
+		`SELECT ws.id, ws.contractor_id, ws.recruitment_type,
+		        COALESCE(ws.region,'') AS region,
+		        ws.profession_type, ws.quantity,
+		        DATE_FORMAT(ws.start_date,'%Y-%m-%d') AS start_date,
+		        COALESCE(DATE_FORMAT(ws.end_date,'%Y-%m-%d'),'') AS end_date,
+		        COALESCE(ws.origin_preference,'[]') AS origin_preference,
+		        ws.status, ws.created_at
+		   FROM worker_searches ws
+		  WHERE ws.status IN ('open','partially_matched')
+		    AND NOT EXISTS (
+		      SELECT 1 FROM deal_db.deals d
+		       WHERE d.search_id = ws.id
+		         AND d.status IN ('accepted','active','reporting','completed')
+		         AND d.deleted_at IS NULL
+		    )
+		  ORDER BY ws.created_at ASC
+		  LIMIT 200`,
+	)
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
+	defer rows.Close()
+
+	type row struct {
+		ID               string    `json:"id"`
+		AnonLabel        string    `json:"anon_label"`
+		RecruitmentType  string    `json:"recruitment_type"`
+		Region           string    `json:"region"`
+		ProfessionType   string    `json:"profession_type"`
+		Quantity         int       `json:"quantity"`
+		StartDate        string    `json:"start_date"`
+		EndDate          string    `json:"end_date"`
+		OriginPreference []string  `json:"origin_preference"`
+		Status           string    `json:"status"`
+		CreatedAt        time.Time `json:"created_at"`
+	}
+	result := []row{}
+	anonMap := map[string]int{}
+	nextIdx := 1
+	for rows.Next() {
+		var x row
+		var contractorID, originsJSON string
+		if err := rows.Scan(&x.ID, &contractorID, &x.RecruitmentType,
+			&x.Region, &x.ProfessionType, &x.Quantity,
+			&x.StartDate, &x.EndDate, &originsJSON, &x.Status, &x.CreatedAt); err != nil {
+			continue
+		}
+		idx, ok := anonMap[contractorID]
+		if !ok {
+			idx = nextIdx
+			anonMap[contractorID] = idx
+			nextIdx++
+		}
+		x.AnonLabel = fmt.Sprintf("קבלן %d", idx)
+		if originsJSON != "" {
+			_ = json.Unmarshal([]byte(originsJSON), &x.OriginPreference)
+		}
+		if x.OriginPreference == nil {
+			x.OriginPreference = []string{}
+		}
+		result = append(result, x)
+	}
+	// Reverse to newest-first for display.
+	for i, j := 0, len(result)-1; i < j; i, j = i+1, j-1 {
+		result[i], result[j] = result[j], result[i]
+	}
+	writeJSON(w, 200, result)
+}
+
 // ── GET /searches/{id} ────────────────────────────────────────────────
 func (h *Handler) GetSearch(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")

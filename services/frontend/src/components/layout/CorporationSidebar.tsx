@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import Logo from '@/components/Logo';
-import { Home, LayoutDashboard, Users, Handshake, LogOut, UserCog, CreditCard, Store, Globe2 } from 'lucide-react';
+import { Home, LayoutDashboard, Users, LogOut, UserCog, CreditCard, Store, Globe2, MessageCircle, Zap } from 'lucide-react';
 import { clearTokens } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 
@@ -19,12 +19,13 @@ const navItems = [
     icon: Users,
   },
   {
-    // Renamed from "עסקאות" — the page is fundamentally about responding
-    // to contractor requests for workers available right now, so the
-    // corp-facing label leads with that framing.
-    label: 'עובדים בזמינות מיידית',
+    // R9 merge — single surface for the corp's "what's in my inbox"
+    // view. Hosts the open-search browse + the deal lifecycle in one
+    // page. /corporation/requests redirects here for any in-flight
+    // bookmarks.
+    label: 'דרישה לעובדים בזמינות מיידית',
     href: '/corporation/deals',
-    icon: Handshake,
+    icon: Zap,
   },
   {
     label: 'בקשות ייבוא',
@@ -112,8 +113,22 @@ export default function CorporationSidebar() {
         </ul>
       </nav>
 
-      {/* Logout */}
-      <div className="p-3 border-t border-slate-200">
+      {/* Customer service entry + Logout. Mirrors the contractor
+          sidebar — corp users were missing a clear path to the
+          support form (QA-R4 #C7). */}
+      <div className="p-3 border-t border-slate-200 space-y-1">
+        <Link
+          href="/support"
+          className={cn(
+            'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
+            pathname.startsWith('/support')
+              ? 'bg-brand-50 text-brand-700'
+              : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900',
+          )}
+        >
+          <MessageCircle className="h-5 w-5 shrink-0" />
+          <span>פנייה לשירות לקוחות</span>
+        </Link>
         <button
           onClick={handleLogout}
           className="flex items-center gap-3 w-full rounded-lg px-3 py-2.5 text-sm font-medium text-slate-600 hover:bg-red-50 hover:text-red-600 transition-colors"

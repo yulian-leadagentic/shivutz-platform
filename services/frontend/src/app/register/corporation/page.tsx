@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, FormEvent, useRef } from 'react';
+import { useEffect, useState, FormEvent, useRef, Suspense } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Loader2, ShieldCheck, AlertCircle, Info } from 'lucide-react';
 import { orgApi, otpApi } from '@/lib/api';
 import { saveTokens } from '@/lib/auth';
@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { HomeLink } from '@/components/HomeLink';
 import Logo from '@/components/Logo';
+import { readProspect, clearProspect } from '@/features/prospect/state';
 import type { CorporationLookupResult } from '@/types';
 
 const TOTAL_STEPS = 3;
@@ -97,8 +98,10 @@ function otpErrorMsg(msg: string): string {
   return 'שגיאה באימות. נסה שוב';
 }
 
-export default function RegisterCorporationPage() {
+function RegisterCorporationInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const fromTrial = searchParams?.get('from') === 'trial';
   const [step, setStep]       = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState('');
@@ -107,6 +110,25 @@ export default function RegisterCorporationPage() {
     phone: '', normPhone: '', full_name: '',
     otpPhase: 'enter', code: '', otpVerified: false,
   });
+
+  // Trial bypass — when the user arrives here from /try/corporation/*,
+  // their phone has already passed OTP at /login. The backend marked
+  // that OTP as ALSO satisfying the 'register' purpose for 15 minutes,
+  // so we can skip Step 1 entirely. Same shape as the contractor
+  // register page — see comment there for the full reasoning.
+  useEffect(() => {
+    if (!fromTrial) return;
+    const p = readProspect();
+    if (!p) return;          // expired / missing → fall back to normal flow
+    setStep1((s) => ({
+      ...s,
+      phone: p.phone,
+      normPhone: p.phone,
+      otpPhase: 'verify',
+      otpVerified: true,
+    }));
+    setStep(2);
+  }, [fromTrial]);
   const [step2, setStep2] = useState<Step2>({
     company_name_he: '', business_number: '', countries_of_origin: [], minimum_contract_months: 3,
   });
@@ -209,6 +231,11 @@ export default function RegisterCorporationPage() {
       if (result.access_token && result.refresh_token) {
         saveTokens(result.access_token, result.refresh_token);
       }
+      // Trial loop closure — the prospect session has served its
+      // purpose now that the user is a real registered corporation.
+      // (No pending_search to replay on the corp side; corps don't
+      // submit searches, they respond to them.)
+      clearProspect();
       router.push('/corporation/dashboard');
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'שגיאה בהרשמה';
@@ -336,6 +363,21 @@ export default function RegisterCorporationPage() {
             {step === 2 && (
               <form onSubmit={handleNext} className="flex flex-col gap-4" noValidate>
                 <h3 className="font-semibold text-slate-800">פרטי תאגיד</h3>
+
+                {/* When the user arrived from the trial flow we skipped
+                    Step 1, so the full-name input never rendered. Show
+                    it here at the top of Step 2 so we still capture
+                    contact_name before the final submit. */}
+                {fromTrial && (
+                  <Input
+                    label="שם מלא"
+                    placeholder="ישראל ישראלי"
+                    value={step1.full_name}
+                    onChange={(e) => setStep1((p) => ({ ...p, full_name: e.target.value }))}
+                    autoComplete="name"
+                  />
+                )}
+
                 <Input
                   label="מספר ח.פ (9 ספרות)"
                   placeholder="123456789"
@@ -523,5 +565,16 @@ export default function RegisterCorporationPage() {
         </p>
       </div>
     </div>
+  );
+}
+
+// useSearchParams (added for the trial-flow `?from=trial` query) must
+// be wrapped in a Suspense boundary or Next 16 fails the static-render
+// step for this page. Same pattern as /login and /register/contractor.
+export default function RegisterCorporationPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
+      <RegisterCorporationInner />
+    </Suspense>
   );
 }

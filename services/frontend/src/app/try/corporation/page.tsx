@@ -17,8 +17,8 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
-import { Globe2, Zap, Lock } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Globe2, Zap, Lock, AlertCircle, UserPlus, ArrowLeft } from 'lucide-react';
 import { useProspect } from '@/features/prospect/state';
 import { HomeLink } from '@/components/HomeLink';
 
@@ -41,10 +41,10 @@ const CATEGORIES: Category[] = [
   },
   {
     slug: 'foreign',
-    // Foreign-import tenders are part of the registered-only flow —
-    // there's no way to publish a tender anonymously, so we send the
-    // prospect straight to registration. The query string signals to
-    // the register page which path they came from.
+    // Foreign-import tenders are registered-only — there's no
+    // anonymous-preview surface for them like there is for the
+    // immediate-availability feed. Clicking the tile pops a gate
+    // modal that links into the same trial-aware register flow.
     href: '/register/corporation?from=trial&recruitment=foreign',
     title: 'דרישה לעובדים חדשים מחו"ל',
     subtitle: 'דורש הרשמה — קבלת בקשות מקבלנים לייבוא עובדים מחו"ל',
@@ -56,6 +56,10 @@ const CATEGORIES: Category[] = [
 export default function TryCorporationEntryPage() {
   const prospect = useProspect();
   const router = useRouter();
+  // Locked-tile click pops this modal — the foreign-import flow has
+  // no anonymous preview, so we don't deep-link straight to the
+  // register form; we explain why first.
+  const [lockedOpen, setLockedOpen] = useState<Category | null>(null);
 
   // Stale-tab guard — same pattern as /try/contractor. If someone
   // deep-links here without a valid prospect session, bounce to the
@@ -88,13 +92,10 @@ export default function TryCorporationEntryPage() {
             const Icon = cat.icon;
             const baseClass =
               'group relative flex flex-col items-center justify-center text-center ' +
-              'rounded-2xl border border-slate-200 bg-white px-6 py-10 shadow-sm transition';
-            return (
-              <Link
-                key={cat.slug}
-                href={cat.href}
-                className={`${baseClass} hover:border-brand-500 hover:bg-brand-50/30 hover:shadow-md active:scale-[0.99]`}
-              >
+              'rounded-2xl border border-slate-200 bg-white px-6 py-10 shadow-sm transition ' +
+              'hover:border-brand-500 hover:bg-brand-50/30 hover:shadow-md active:scale-[0.99]';
+            const inner = (
+              <>
                 {cat.locked && (
                   <span className="absolute top-3 end-3 inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider bg-slate-900 text-white px-2 py-0.5 rounded-full">
                     <Lock className="h-3 w-3" />
@@ -106,11 +107,72 @@ export default function TryCorporationEntryPage() {
                 </div>
                 <div className="text-lg font-bold text-slate-900">{cat.title}</div>
                 <div className="text-sm mt-1 text-slate-600">{cat.subtitle}</div>
+              </>
+            );
+            return cat.locked ? (
+              <button
+                key={cat.slug}
+                type="button"
+                onClick={() => setLockedOpen(cat)}
+                className={`${baseClass} text-start`}
+              >
+                {inner}
+              </button>
+            ) : (
+              <Link key={cat.slug} href={cat.href} className={baseClass}>
+                {inner}
               </Link>
             );
           })}
         </div>
       </main>
+
+      {/* Registration gate modal — fires when the prospect clicks a
+          locked category (foreign-import). The CTA preserves the
+          recruitment-source param so the register page can branch on
+          it later; `from=trial` triggers the OTP-bypass effect on
+          the corp register page (same as the contractor flow). */}
+      {lockedOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-900/40 backdrop-blur-sm px-4"
+          onClick={() => setLockedOpen(null)}
+        >
+          <div
+            className="bg-white rounded-t-2xl sm:rounded-2xl w-full max-w-md shadow-2xl p-5 space-y-3"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-3">
+              <div className="h-10 w-10 rounded-xl bg-brand-100 text-brand-700 flex items-center justify-center shrink-0">
+                <AlertCircle className="h-5 w-5" />
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-slate-900">
+                  זמין רק למשתמשים רשומים
+                </h2>
+                <p className="text-sm text-slate-700 mt-1 leading-relaxed">
+                  קבלת בקשות לייבוא עובדים מחו״ל מצריכה תאגיד מאומת.
+                  הרישום מהיר — הטלפון שלך כבר אומת.
+                </p>
+              </div>
+            </div>
+            <Link
+              href={lockedOpen.href}
+              className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-bold text-base shadow-md transition-colors"
+            >
+              <UserPlus className="h-5 w-5" />
+              המשך להרשמה
+              <ArrowLeft className="h-5 w-5" />
+            </Link>
+            <button
+              type="button"
+              onClick={() => setLockedOpen(null)}
+              className="w-full text-center text-sm text-slate-500 hover:text-slate-700 py-1"
+            >
+              לא כרגע
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

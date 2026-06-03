@@ -285,6 +285,16 @@ function CorporationDealPageInner() {
   const searchParams  = useSearchParams();
 
   const [deal, setDeal]         = useState<Deal | null>(null);
+  // R15 — contractor identity, fetched only after the deal hits a state
+  // where the contractor has approved (accepted / active / reporting /
+  // completed). Before that the corp sees an anonymous "the contractor"
+  // and only the request meta (profession, region, quantity).
+  const [contractor, setContractor] = useState<{
+    company_name_he?: string | null;
+    company_name?: string | null;
+    contact_name?: string | null;
+    contact_phone?: string | null;
+  } | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [allWorkers, setAllWorkers] = useState<Worker[]>([]);
   // Workers actually attached to this deal (from /deals/{id}/workers).
@@ -345,6 +355,27 @@ function CorporationDealPageInner() {
       .finally(() => setPmLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // R15 — reveal contractor identity to the corp once the contractor
+  // has approved the proposal. Fires whenever `deal.status` changes; the
+  // status check + the contractor ref dependency keep this from firing
+  // before there's anything to fetch.
+  useEffect(() => {
+    if (!deal) return;
+    const REVEAL = new Set(['accepted', 'active', 'reporting', 'completed', 'closed']);
+    if (!REVEAL.has(deal.status)) return;
+    if (contractor) return; // already loaded
+    const cid = (deal as unknown as { contractor_id?: string }).contractor_id;
+    if (!cid) return;
+    orgApi.getContractor(cid)
+      .then((c) => setContractor({
+        company_name_he: c.company_name_he,
+        company_name: c.company_name,
+        contact_name: c.contact_name,
+        contact_phone: c.contact_phone,
+      }))
+      .catch((e) => console.error('[corp/deal] getContractor failed:', e));
+  }, [deal, contractor]);
 
   useEffect(() => {
     async function init() {
@@ -737,6 +768,50 @@ function CorporationDealPageInner() {
           <p className="text-sm text-slate-500 mt-0.5">נוצרה: {fmtDate(deal.created_at)}</p>
         </div>
       </div>
+
+      {/* R15 — contractor identity reveal. Renders only after the deal
+          is accepted (or any downstream state) — before that the corp
+          sees the request anonymously. Phone is the headline detail so
+          the corp can call directly. */}
+      {contractor && (
+        <div className="rounded-2xl border-2 border-emerald-200 bg-emerald-50/50 p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <UserCheck className="h-5 w-5 text-emerald-700" />
+            <h3 className="text-base font-bold text-emerald-900">פרטי הקבלן</h3>
+            <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-emerald-200 text-emerald-900 px-2 py-0.5 rounded-full">
+              <CheckCircle className="h-3 w-3" /> נחשפו לאחר אישור
+            </span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+              <p className="text-xs text-slate-500 mb-0.5">תאגיד הקבלן</p>
+              <p className="text-base font-bold text-slate-900">
+                {contractor.company_name_he || contractor.company_name || '—'}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-500 mb-0.5">איש קשר</p>
+              <p className="text-base font-bold text-slate-900">
+                {contractor.contact_name || '—'}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-500 mb-0.5">טלפון</p>
+              {contractor.contact_phone ? (
+                <a
+                  href={`tel:${contractor.contact_phone}`}
+                  className="text-base font-bold text-emerald-700 hover:text-emerald-800 underline underline-offset-2"
+                  dir="ltr"
+                >
+                  {contractor.contact_phone}
+                </a>
+              ) : (
+                <p className="text-base font-bold text-slate-900">—</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Request summary — what the contractor is asking for, anonymized ── */}
       <div className="rounded-2xl border-2 border-brand-200 bg-brand-50/40 p-4 grid grid-cols-2 sm:grid-cols-4 gap-4">

@@ -9,8 +9,29 @@ import type {
   WorkerSearchUpdate,
 } from '@/types';
 
+// Public-browse row shape for /searches/open — the contractor identity
+// is replaced by an anonymous label so corps can browse without seeing
+// who's behind the request until they engage.
+export interface OpenSearchRow {
+  id: string;
+  anon_label: string;            // "קבלן N"
+  recruitment_type: string;
+  region: string;
+  profession_type: string;
+  quantity: number;
+  start_date: string;
+  end_date: string;
+  origin_preference: string[];
+  status: string;
+  created_at: string;
+}
+
 export const searchApi = {
   list: () => apiFetch<WorkerSearch[]>('/searches'),
+
+  /** Corp-facing browse — every active worker_search across all
+   *  contractors, with the contractor identity anonymized. */
+  listOpen: () => apiFetch<OpenSearchRow[]>('/searches/open'),
 
   get: (id: string) => apiFetch<WorkerSearch>(`/searches/${id}`),
 

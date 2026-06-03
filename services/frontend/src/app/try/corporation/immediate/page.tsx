@@ -102,7 +102,7 @@ export default function TryCorporationImmediatePage() {
           </Link>
           <h1 className="text-2xl font-bold text-slate-900">דרישות פתוחות לעובדים</h1>
           <p className="text-sm text-slate-600">
-            קבלנים שמחפשים עובדים זמינים — מסתתרים מאחורי "קבלן N" עד שתשיב על דרישה והרישום יושלם.
+            קבלנים שמחפשים עובדים זמינים.
           </p>
         </header>
 
@@ -187,8 +187,8 @@ export default function TryCorporationImmediatePage() {
                   כדי להשיב לדרישה — צריך להירשם
                 </h2>
                 <p className="text-sm text-slate-700 mt-1 leading-relaxed">
-                  הרישום מהיר — הטלפון שלך כבר אומת. לאחר ההרשמה תראה
-                  את פרטי הקבלן ותוכל לשלוח הצעת עובדים לבקשה הזו.
+                  לאחר הרשמה תוכל להעלות למערכת את העובדים הזמינים שלך
+                  ולשלוח הצעות לקבלנים.
                 </p>
               </div>
             </div>

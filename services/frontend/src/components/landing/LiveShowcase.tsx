@@ -119,10 +119,22 @@ export default function LiveShowcase({ intervalMs = 5000 }: Props) {
     lastRoleRef.current = role;
   }
 
-  const [current, setCurrent] = useState<ActivityItem | null>(
-    () => pickerRef.current!.next(),
-  );
+  // SSR/CSR hydration defense — initialising `current` from
+  // pickerRef.current.next() runs the random pick once on the server
+  // and a SECOND time on the client, returning different items each
+  // call. React then aborts hydration because the rendered HTML
+  // diverges (different profession icon / fallback svg), and the
+  // recovery pass that regenerates the tree client-side can drop
+  // event handlers from other forms on the same page — that's been
+  // the silent breakage behind "click does nothing on /login".
+  // Defer the first pick to a useEffect so hydration sees `null`
+  // on both sides; the `if (!current) return null;` guard below
+  // hides the card until the client mounts and the picker resolves.
+  const [current, setCurrent] = useState<ActivityItem | null>(null);
   const [paused, setPaused] = useState(false);
+  useEffect(() => {
+    if (pickerRef.current) setCurrent(pickerRef.current.next());
+  }, []);
 
   const advance = useCallback(() => {
     const next = pickerRef.current?.next();

@@ -21,9 +21,21 @@ export const paymentApi = {
       { method: 'PATCH' }
     ),
 
-  /** Get a Cardcom LowProfile tokenization URL to redirect the user to. */
-  cardcomInit: () =>
-    apiFetch<{ url: string; low_profile_id: string }>('/payments/cardcom-init'),
+  /**
+   * Get a Cardcom LowProfile tokenization URL to redirect the user to.
+   *
+   * `invoice_email` (optional) is the address where future invoices for
+   * captured charges should be sent. Pre-launch, Cardcom invoices were
+   * being issued with no `To` address — the email goes through to
+   * Cardcom's InvoiceHead so the receipt actually reaches the corp.
+   */
+  cardcomInit: (invoice_email?: string) =>
+    apiFetch<{ url: string; low_profile_id: string }>(
+      '/payments/cardcom-init',
+      invoice_email
+        ? { method: 'POST', body: JSON.stringify({ invoice_email }) }
+        : { method: 'GET' },
+    ),
 
   /**
    * Initiate the J5 pre-authorization for a deal.

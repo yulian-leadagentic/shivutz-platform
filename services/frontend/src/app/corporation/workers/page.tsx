@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, useRef } from 'react';
 import Link from 'next/link';
-import { Loader2, Search, Plus, AlertTriangle, Check, X, Pencil, Clock } from 'lucide-react';
+import { Loader2, Search, Plus, AlertTriangle, Check, X, Pencil, Clock, Trash2 } from 'lucide-react';
 import { workerApi, orgApi } from '@/lib/api';
 import { getAccessToken, decodeJwtPayload } from '@/lib/auth';
 import { useAuth } from '@/lib/AuthContext';
@@ -390,6 +390,28 @@ export default function WorkersPage() {
     }));
   }
 
+  // ── Delete-worker flow ──────────────────────────────────────────────
+  // Only allowed when the worker isn't currently on an active deal —
+  // proxied here as `status !== 'assigned'`. The UI hides the delete
+  // button for assigned workers; this state guards the confirm modal.
+  const [pendingDelete, setPendingDelete] = useState<Worker | null>(null);
+  const [deleting, setDeleting]           = useState(false);
+  const [deleteError, setDeleteError]     = useState('');
+
+  async function confirmDelete() {
+    if (!pendingDelete) return;
+    setDeleting(true); setDeleteError('');
+    try {
+      await workerApi.delete(pendingDelete.id);
+      setWorkers((prev) => prev.filter((w) => w.id !== pendingDelete.id));
+      setPendingDelete(null);
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : 'מחיקה נכשלה');
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   const filtered = workers.filter((w) => {
     const matchStatus = statusFilter === 'all' || w.status === statusFilter;
     const profLabel = professionMap[w.profession_type] ?? w.profession_type;
@@ -497,6 +519,7 @@ export default function WorkersPage() {
                 <th className="px-3 py-2.5 text-start font-medium whitespace-nowrap">ויזה</th>
                 <th className="px-3 py-2.5 text-start font-medium whitespace-nowrap">סטטוס</th>
                 <th className="px-3 py-2.5 text-start font-medium whitespace-nowrap">מס׳ עובד</th>
+                <th className="px-3 py-2.5 text-end font-medium whitespace-nowrap w-12" aria-label="פעולות" />
               </tr>
             </thead>
             <tbody>
@@ -572,11 +595,80 @@ export default function WorkersPage() {
                       <EmpNumCell workerId={w.id} value={empNum}
                         onSaved={(v) => handleEmpNumSaved(w.id, v)} />
                     </td>
+                    <td className="px-3 py-2.5 align-top text-end">
+                      {/* Delete is gated: workers in 'assigned' status
+                          are on an active deal and shouldn't be removed
+                          mid-flight. Other statuses (available, on_leave,
+                          deactivated) are safe to delete. */}
+                      {w.status !== 'assigned' && (
+                        <button
+                          onClick={() => setPendingDelete(w)}
+                          title="מחק עובד"
+                          aria-label={`מחק את ${w.first_name} ${w.last_name}`}
+                          className="inline-flex items-center justify-center h-7 w-7 rounded-full text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition-colors"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Delete confirmation modal — soft-deletes on the server and
+          drops the row from local state. Cancel restores nothing
+          because the worker is removed from the list optimistically
+          only on success. */}
+      {pendingDelete && (
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-900/40 backdrop-blur-sm px-4"
+          onClick={() => !deleting && setPendingDelete(null)}
+        >
+          <div
+            className="bg-white rounded-t-2xl sm:rounded-2xl w-full max-w-md shadow-2xl p-5 space-y-3"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-3">
+              <div className="h-10 w-10 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0">
+                <Trash2 className="h-5 w-5" />
+              </div>
+              <div className="flex-1">
+                <h2 className="text-lg font-bold text-slate-900">
+                  למחוק את {pendingDelete.first_name} {pendingDelete.last_name}?
+                </h2>
+                <p className="text-sm text-slate-700 mt-1 leading-relaxed">
+                  העובד יוסר מרשימת העובדים שלך ולא יופיע יותר בחיפושי קבלנים.
+                  הפעולה ניתנת לשחזור ע״י פנייה לתמיכה.
+                </p>
+                {deleteError && (
+                  <p className="text-sm text-rose-600 mt-2 font-medium">{deleteError}</p>
+                )}
+              </div>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setPendingDelete(null)}
+                disabled={deleting}
+                className="flex-1 px-4 py-2.5 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-50 font-medium text-sm disabled:opacity-50"
+              >
+                ביטול
+              </button>
+              <button
+                type="button"
+                onClick={confirmDelete}
+                disabled={deleting}
+                className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-sm shadow-sm disabled:opacity-50"
+              >
+                {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                מחק עובד
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

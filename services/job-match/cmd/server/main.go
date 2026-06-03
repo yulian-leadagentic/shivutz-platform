@@ -55,6 +55,9 @@ func main() {
 	// Wave 3 (2026-05-06) — projects collapsed into standalone searches.
 	mux.HandleFunc("GET /searches", h.ListSearches)
 	mux.HandleFunc("POST /searches", h.CreateSearch)
+	// Corp-facing browse — must be registered BEFORE the {id} catch-all
+	// or "open" gets matched as a search ID.
+	mux.HandleFunc("GET /searches/open", h.ListOpenSearches)
 	mux.HandleFunc("GET /searches/{id}", h.GetSearch)
 	mux.HandleFunc("PATCH /searches/{id}", h.UpdateSearch)
 	mux.HandleFunc("DELETE /searches/{id}", h.DeleteSearch)
