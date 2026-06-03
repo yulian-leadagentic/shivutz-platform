@@ -35,33 +35,47 @@ export const MIX_BY_ROLE: Record<AudienceRole, Mix> = {
   },
 };
 
+// Both showcase + bubble mixes now zero out housing_new and service_new
+// — at this stage of the rollout the live surfaces should focus the
+// visitor's attention on the contractor / corporation activity, not on
+// ancillary inventory (housing, services). The other categories that
+// remain — workers_available, requirement_new, match_closed,
+// corp_active, contractor_active, platform_pulse — all describe
+// activity ON the contractor / corporation side of the platform.
+
 export const MIX_SHOWCASE_BY_ROLE: Record<AudienceRole, Mix> = {
   anon: {
-    workers_available: 3, housing_new: 3, service_new: 2, match_closed: 2,
-    platform_pulse: 2, requirement_new: 1, corp_active: 0, contractor_active: 0,
+    workers_available: 3, requirement_new: 3, match_closed: 2, platform_pulse: 2,
+    corp_active: 1, contractor_active: 1,
+    housing_new: 0, service_new: 0,
   },
   contractor: {
-    workers_available: 3, housing_new: 3, service_new: 2, match_closed: 2,
-    platform_pulse: 2, requirement_new: 0, corp_active: 0, contractor_active: 0,
+    workers_available: 3, corp_active: 2, match_closed: 2, platform_pulse: 2,
+    requirement_new: 0, contractor_active: 0,
+    housing_new: 0, service_new: 0,
   },
   corporation: {
-    requirement_new: 3, housing_new: 2, match_closed: 2, platform_pulse: 2,
-    service_new: 2, workers_available: 1, corp_active: 0, contractor_active: 0,
+    requirement_new: 3, contractor_active: 2, match_closed: 2, platform_pulse: 2,
+    workers_available: 1,
+    corp_active: 0, housing_new: 0, service_new: 0,
   },
 };
 
 export const MIX_BUBBLE_BY_ROLE: Record<AudienceRole, Mix> = {
   anon: {
     requirement_new: 3, workers_available: 2, corp_active: 2, contractor_active: 2,
-    housing_new: 1, service_new: 0, match_closed: 1, platform_pulse: 1,
+    match_closed: 1, platform_pulse: 1,
+    housing_new: 0, service_new: 0,
   },
   contractor: {
-    workers_available: 3, corp_active: 3, requirement_new: 1, contractor_active: 0,
-    housing_new: 1, service_new: 0, match_closed: 1, platform_pulse: 1,
+    workers_available: 3, corp_active: 3, requirement_new: 1,
+    match_closed: 1, platform_pulse: 1,
+    contractor_active: 0, housing_new: 0, service_new: 0,
   },
   corporation: {
-    requirement_new: 3, contractor_active: 3, workers_available: 1, corp_active: 0,
-    housing_new: 1, service_new: 0, match_closed: 1, platform_pulse: 1,
+    requirement_new: 3, contractor_active: 3, workers_available: 1,
+    match_closed: 1, platform_pulse: 1,
+    corp_active: 0, housing_new: 0, service_new: 0,
   },
 };
 

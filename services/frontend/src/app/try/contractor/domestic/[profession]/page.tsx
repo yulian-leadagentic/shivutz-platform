@@ -21,6 +21,7 @@ import { enumApi } from '@/lib/api/enums';
 import { ProfessionIcon } from '@/features/searches/ProfessionIcon';
 import { EXPERIENCE_RANGES, EXPERIENCE_LOWER_MONTHS } from '@/i18n/he';
 import { readProspect, writePendingSearch } from '@/features/prospect/state';
+import { HomeLink } from '@/components/HomeLink';
 import type { Profession } from '@/types';
 
 const DURATIONS = [
@@ -122,6 +123,9 @@ export default function TryProfessionFormPage() {
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-6 space-y-5" dir="rtl">
+      <div className="flex justify-end">
+        <HomeLink />
+      </div>
       <header className="space-y-1">
         <Link
           href="/try/contractor/domestic"

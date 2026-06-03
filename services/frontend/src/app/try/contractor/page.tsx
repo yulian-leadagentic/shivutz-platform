@@ -11,6 +11,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import { Globe2, MapPin } from 'lucide-react';
 import { useProspect } from '@/features/prospect/state';
+import { HomeLink } from '@/components/HomeLink';
 
 interface Category {
   slug: 'domestic' | 'foreign';
@@ -64,6 +65,13 @@ export default function TryContractorEntryPage() {
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
       <main className="flex-1 max-w-3xl mx-auto w-full px-4 py-8 space-y-6">
+        {/* "Back to landing" escape — every page that lives outside
+            the role-shell needs one so a confused prospect can bail
+            cleanly without using the browser back button. */}
+        <div className="flex justify-end">
+          <HomeLink />
+        </div>
+
         {/* The "מצב התנסות" expectations banner was removed per user
             request — the trial intent is clear enough from the
             recruitment-choice tiles below, and the banner was eating

@@ -10,6 +10,7 @@ import { Loader2, Send, CheckCircle2, AlertCircle, ArrowRight, MessageCircle } f
 import { supportApi } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { HomeLink } from '@/components/HomeLink';
 
 export default function SupportPage() {
   const router = useRouter();
@@ -57,10 +58,16 @@ export default function SupportPage() {
 
   return (
     <div className="max-w-xl mx-auto px-4 py-6 space-y-5">
-      <button type="button" onClick={() => router.back()}
-        className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800 transition-colors">
-        <ArrowRight className="h-4 w-4" /> חזרה
-      </button>
+      {/* Two escape hatches — "חזרה" steps back one route in history,
+          HomeLink goes straight to the public landing. Different
+          intents, both useful. */}
+      <div className="flex items-center justify-between">
+        <button type="button" onClick={() => router.back()}
+          className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800 transition-colors">
+          <ArrowRight className="h-4 w-4" /> חזרה
+        </button>
+        <HomeLink />
+      </div>
 
       <header className="flex items-center gap-2">
         <MessageCircle className="h-6 w-6 text-brand-600" />

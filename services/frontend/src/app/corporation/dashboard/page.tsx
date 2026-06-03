@@ -201,7 +201,7 @@ export default function CorporationDashboard() {
           href="/corporation/manage"
           icon={<ManageIcon className="h-9 w-9" />}
           title="ניהול"
-          subtitle="צוות, מסמכים, מנוי שוק והגדרות"
+          subtitle="צוות, מסמכים, מנוי שירותים נלווים והגדרות"
           accent="slate"
         />
       </div>

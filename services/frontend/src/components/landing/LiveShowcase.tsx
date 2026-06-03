@@ -28,7 +28,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
   ArrowLeft, Users, Home, Briefcase, Handshake,
-  Sparkles, Building2, ClipboardList, UserPlus,
+  Sparkles, Building2, ClipboardList,
 } from 'lucide-react';
 import { ProfessionIcon } from '@/features/searches/ProfessionIcon';
 import { useAuth } from '@/lib/AuthContext';
@@ -157,7 +157,9 @@ export default function LiveShowcase({ intervalMs = 5000 }: Props) {
     >
       <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
 
-        {/* Header — Live label + tagline */}
+        {/* Header — Live label + tagline. The tagline drops the
+            "מגורים, שירותים" wording since the showcase now filters
+            those categories out (see MIX_SHOWCASE_BY_ROLE in mocks). */}
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
           <div className="flex items-center gap-2">
             <span
@@ -169,7 +171,7 @@ export default function LiveShowcase({ intervalMs = 5000 }: Props) {
             <span className="text-sm text-slate-600">מה קורה עכשיו ב-BuildUp</span>
           </div>
           <p className="text-xs text-slate-500 leading-snug">
-            עובדים, דרישות, מגורים, שירותים והתאמות — הכל בזמן אמת
+            דרישות קבלנים, תאגידים פעילים, עובדים והתאמות — הכל בזמן אמת
           </p>
         </div>
 
@@ -184,75 +186,86 @@ export default function LiveShowcase({ intervalMs = 5000 }: Props) {
           <div
             key={current.id}
             aria-live="polite"
-            className="animate-live-card-enter p-3 sm:p-5 flex flex-row items-center gap-3 sm:gap-4"
+            className="animate-live-card-enter p-3 sm:p-5"
           >
-            {/* Illustration — profession PNG if available, else a
-                category-tinted Lucide glyph on a soft circle. Stays
-                inline with the body on mobile (was stacked above the
-                text, which made the icon dominate the small card). */}
-            <div className="shrink-0">
-              {profCode ? (
-                <div className={`h-12 w-12 sm:h-20 sm:w-20 rounded-xl sm:rounded-2xl ${accent.iconBg} flex items-center justify-center`}>
-                  <ProfessionIcon code={profCode} size={44} alt="" className="sm:hidden" />
-                  <ProfessionIcon code={profCode} size={68} alt="" className="hidden sm:block" />
+            {/*
+              Layout:
+                Mobile  — vertical stack:
+                            [icon | body]            ← one row, icon inline
+                            [CTA pill, start-aligned]   ← own row below
+                Desktop — flat horizontal row:
+                            [icon | body | CTA]
+              On mobile, dropping the CTA to its own row gives the
+              headline text the full width to breathe (it was wrapping
+              awkwardly while a giant orange pill ate the end of the
+              card). The CTA also shrinks on mobile (px-3 / text-xs)
+              so it reads as a button, not a billboard.
+            */}
+            <div className="flex flex-row items-center gap-3 sm:gap-4">
+              <div className="shrink-0">
+                {profCode ? (
+                  <div className={`h-12 w-12 sm:h-20 sm:w-20 rounded-xl sm:rounded-2xl ${accent.iconBg} flex items-center justify-center`}>
+                    <ProfessionIcon code={profCode} size={44} alt="" className="sm:hidden" />
+                    <ProfessionIcon code={profCode} size={68} alt="" className="hidden sm:block" />
+                  </div>
+                ) : (
+                  <div className={`h-12 w-12 sm:h-20 sm:w-20 rounded-xl sm:rounded-2xl ${accent.iconBg} ${accent.iconText} flex items-center justify-center`}>
+                    <FallbackIcon className="h-6 w-6 sm:h-10 sm:w-10" strokeWidth={2} />
+                  </div>
+                )}
+              </div>
+
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap mb-1.5">
+                  <span className={`inline-flex items-center text-[11px] font-bold px-2 py-0.5 rounded-full ${accent.chip}`}>
+                    {categoryLabel}
+                  </span>
                 </div>
-              ) : (
-                <div className={`h-12 w-12 sm:h-20 sm:w-20 rounded-xl sm:rounded-2xl ${accent.iconBg} ${accent.iconText} flex items-center justify-center`}>
-                  <FallbackIcon className="h-6 w-6 sm:h-10 sm:w-10" strokeWidth={2} />
-                </div>
+                <p className="text-sm sm:text-lg font-bold text-slate-900 leading-snug">
+                  {current.text}
+                </p>
+                <p className="text-xs sm:text-sm text-slate-500 leading-snug mt-1.5">
+                  {categoryTagline}
+                </p>
+              </div>
+
+              {/* CTA — only renders inline (on the right of the row)
+                  on desktop. On mobile it sits in the separate row
+                  below; rendered there. */}
+              {!cta.hidden && cta.label && (
+                <Link
+                  href={cta.href}
+                  className="hidden sm:inline-flex shrink-0 items-center gap-1.5 px-5 py-2.5 rounded-full bg-brand-600 text-sm font-bold text-white shadow-sm hover:bg-brand-700 transition-colors self-center"
+                >
+                  {cta.label}
+                  <ArrowLeft className="h-4 w-4" />
+                </Link>
               )}
             </div>
 
-            {/* Body — chip + headline + informative tagline. We
-                intentionally DON'T show a "X minutes ago" line here;
-                that's the bubble's job. The showcase is a feature
-                highlight, not a notification echo. */}
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 flex-wrap mb-1.5">
-                <span className={`inline-flex items-center text-[11px] font-bold px-2 py-0.5 rounded-full ${accent.chip}`}>
-                  {categoryLabel}
-                </span>
-              </div>
-              <p className="text-base sm:text-lg font-bold text-slate-900 leading-snug">
-                {current.text}
-              </p>
-              <p className="text-xs sm:text-sm text-slate-500 leading-snug mt-1.5">
-                {categoryTagline}
-              </p>
-            </div>
-
-            {/* CTA — hidden when the intent doesn't fit the audience's
-                role; otherwise routes per ctas.ts resolver. */}
+            {/* Mobile CTA row — only renders below sm. The CTA is a
+                small pill with reduced padding so it no longer
+                dominates the card. */}
             {!cta.hidden && cta.label && (
-              <Link
-                href={cta.href}
-                className="shrink-0 inline-flex items-center gap-1.5 px-5 py-2.5 rounded-full bg-brand-600 text-sm font-bold text-white shadow-sm hover:bg-brand-700 transition-colors self-start sm:self-center"
-              >
-                {cta.label}
-                <ArrowLeft className="h-4 w-4" />
-              </Link>
+              <div className="mt-3 sm:hidden">
+                <Link
+                  href={cta.href}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-brand-600 text-xs font-bold text-white shadow-sm hover:bg-brand-700 transition-colors"
+                >
+                  {cta.label}
+                  <ArrowLeft className="h-3.5 w-3.5" />
+                </Link>
+              </div>
             )}
           </div>
         </div>
 
-        {/* Conversion strip — only for anonymous visitors. Logged-in
-            users already converted; serving them the "open a free
-            account" CTA again would be noise. */}
-        {role === 'anon' && (
-          <div className="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-2">
-            <p className="text-sm text-slate-600">
-              הצטרף כדי לראות הכל בזמן אמת
-            </p>
-            <Link
-              href="/login?intent=contractor"
-              className="inline-flex items-center justify-center gap-1.5 px-5 py-2 rounded-full bg-slate-900 hover:bg-slate-800 text-white text-sm font-bold transition-colors"
-            >
-              <UserPlus className="h-4 w-4" />
-              פתח חשבון בחינם
-              <ArrowLeft className="h-4 w-4" />
-            </Link>
-          </div>
-        )}
+        {/* The "פתח חשבון בחינם" conversion strip was removed — the
+            role-tiles in the hero just above already handle the
+            "create an account" signal, and the per-card CTA inside
+            the showcase already routes anonymous visitors through
+            /login. A second sign-up nudge here was duplicating that
+            ask without adding value at this stage. */}
 
       </div>
     </section>

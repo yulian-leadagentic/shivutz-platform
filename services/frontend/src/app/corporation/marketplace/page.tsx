@@ -82,7 +82,7 @@ export default function CorporationMarketplacePage() {
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">המודעות שלי</h1>
-          <p className="text-sm text-slate-500 mt-1">ניהול פרסומים בשוק — דיור, ציוד ושירותים</p>
+          <p className="text-sm text-slate-500 mt-1">ניהול פרסומים בשירותים נלווים — דיור, ציוד ושירותים</p>
         </div>
         <div className="flex gap-2">
           <Link href="/corporation/marketplace/subscribe">
@@ -118,7 +118,7 @@ export default function CorporationMarketplacePage() {
             </div>
           ) : activeSubs.length === 0 ? (
             <div className="text-center py-4 space-y-2">
-              <p className="text-sm text-slate-600">אין מנוי פעיל. רכוש מנוי כדי לפרסם מודעות בשוק.</p>
+              <p className="text-sm text-slate-600">אין מנוי פעיל. רכוש מנוי כדי לפרסם מודעות בשירותים נלווים.</p>
               <Link href="/corporation/marketplace/subscribe">
                 <Button size="sm">
                   <CreditCard className="h-3.5 w-3.5 me-1" />רכוש מנוי

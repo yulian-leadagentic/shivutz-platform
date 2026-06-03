@@ -19,7 +19,10 @@ const navItems = [
     icon: Users,
   },
   {
-    label: 'עסקאות',
+    // Renamed from "עסקאות" — the page is fundamentally about responding
+    // to contractor requests for workers available right now, so the
+    // corp-facing label leads with that framing.
+    label: 'עובדים בזמינות מיידית',
     href: '/corporation/deals',
     icon: Handshake,
   },
@@ -29,12 +32,17 @@ const navItems = [
     icon: Globe2,
   },
   {
-    label: 'שוק',
+    // Renamed from "שוק" — the marketplace surfaces ancillary services
+    // (housing, equipment, logistics) and the term "שירותים נלווים"
+    // reflects that more accurately to users.
+    label: 'שירותים נלווים',
     href: '/corporation/marketplace',
     icon: Store,
   },
   {
-    label: 'ניהול משתמשים',
+    // QA-R4 #C8: the corp users page is renamed to "צוות התאגיד" to
+    // mirror the page H1 (also being renamed).
+    label: 'צוות התאגיד',
     href: '/corporation/users',
     icon: UserCog,
   },

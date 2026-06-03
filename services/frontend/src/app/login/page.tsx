@@ -251,9 +251,17 @@ function LoginPageInner() {
           // came back) and bounce back to /login if needed.
           expires_at: new Date(Date.now() + 15 * 60_000).toISOString(),
         }));
-        // Today only the contractor trial flow exists; corporation
-        // prospects fall back to /login (existing CTA still works).
-        router.push(res.intent === 'contractor' ? '/try/contractor' : '/login');
+        // Both contractor + corporation now have trial surfaces:
+        //   /try/contractor   — domestic vs foreign tiles + search form
+        //   /try/corporation  — immediate vs foreign tiles + req list
+        // Anything else falls back to the landing (defensive — no
+        // intent string outside these two should reach here, but a
+        // hard /login is the safest landing).
+        router.push(
+          res.intent === 'corporation' ? '/try/corporation' :
+          res.intent === 'contractor'  ? '/try/contractor' :
+          '/',
+        );
         return;
       }
       await handlePostLogin(

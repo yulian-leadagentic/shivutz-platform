@@ -221,7 +221,7 @@ export default function HeroSection(_: HeroSectionProps) {
               <div className="inline-flex items-center gap-1 md:gap-2 px-3 md:px-8 py-2 md:py-4 rounded-full bg-navy-600 text-sm md:text-lg font-bold text-white shadow-md group-hover:bg-navy-700 transition-colors">
                 {switching === 'corporation'
                   ? <><Loader2 className="h-4 w-4 md:h-5 md:w-5 animate-spin" /> מעביר...</>
-                  : <>פרסם זמינות<ArrowLeft className="h-4 w-4 md:h-5 md:w-5 group-hover:-translate-x-1 transition-transform" /></>}
+                  : <>פרסם עובדים<ArrowLeft className="h-4 w-4 md:h-5 md:w-5 group-hover:-translate-x-1 transition-transform" /></>}
               </div>
             </Link>
           </div>

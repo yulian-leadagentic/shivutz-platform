@@ -106,7 +106,7 @@ export default function MarketplacePage() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
         {/* Page header */}
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-slate-900">שוק לעובדים זרים</h1>
+          <h1 className="text-2xl font-bold text-slate-900">שירותים נלווים לעובדים זרים</h1>
           <p className="text-slate-500 mt-1 text-sm">דיור, ציוד ושירותים לתאגידי כוח אדם וקבלנים</p>
         </div>
 

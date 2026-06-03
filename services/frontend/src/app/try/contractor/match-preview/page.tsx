@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { ProfessionIcon } from '@/features/searches/ProfessionIcon';
 import { readPendingSearch, readProspect } from '@/features/prospect/state';
+import { HomeLink } from '@/components/HomeLink';
 import type { PendingSearch } from '@/features/prospect/state';
 
 type Outcome =
@@ -83,6 +84,10 @@ export default function MatchPreviewPage() {
   return (
     <div className="min-h-screen bg-slate-50 px-4 py-8" dir="rtl">
       <div className="max-w-2xl mx-auto space-y-5">
+
+        <div className="flex justify-end">
+          <HomeLink />
+        </div>
 
         {/* Hero — varies by outcome */}
         {outcome.kind === 'matched' ? (

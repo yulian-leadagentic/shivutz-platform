@@ -104,7 +104,7 @@ function SubscribePageInner() {
   return (
     <div className="space-y-6 max-w-5xl">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">רכישת מנוי לשוק</h1>
+        <h1 className="text-2xl font-bold text-slate-900">רכישת מנוי לשירותים נלווים</h1>
         <p className="text-sm text-slate-500 mt-1">
           בחר קטגוריה ומסלול. כל מסלול מאפשר מספר מודעות פעילות בו-זמנית למשך תקופה מוגדרת.
           ברירת המחדל היא חידוש אוטומטי בתום התקופה — אפשר לבטל מאוחר יותר מהגדרות החשבון.

@@ -13,6 +13,7 @@ import { enumApi } from '@/lib/api/enums';
 import { ProfessionIcon } from '@/features/searches/ProfessionIcon';
 import { Button } from '@/components/ui/button';
 import { readProspect } from '@/features/prospect/state';
+import { HomeLink } from '@/components/HomeLink';
 import type { Profession } from '@/types';
 
 export default function TryProfessionTilesPage() {
@@ -40,6 +41,13 @@ export default function TryProfessionTilesPage() {
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-6 space-y-5">
+      {/* Top-row escape hatch — "back to landing" sits separately from
+          the contextual "חזרה" link below (which only steps back one
+          level inside the trial flow). */}
+      <div className="flex justify-end">
+        <HomeLink />
+      </div>
+
       <header className="space-y-1">
         <Link href="/try/contractor" className="inline-flex items-center text-xs text-slate-500 hover:text-slate-700">
           <ChevronRight className="w-3 h-3 ml-1" /> חזרה

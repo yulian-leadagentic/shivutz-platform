@@ -116,7 +116,7 @@ export default function CorporationManagePage() {
 
       <div className="space-y-1">
         <h1 className="text-2xl font-bold text-slate-900">ניהול</h1>
-        <p className="text-sm text-slate-600">צוות, מסמכים, מנוי שוק והגדרות</p>
+        <p className="text-sm text-slate-600">צוות, מסמכים, מנוי שירותים נלווים והגדרות</p>
       </div>
 
       {/* KPI strip — every tile is a deep-link into the relevant list */}
@@ -130,7 +130,7 @@ export default function CorporationManagePage() {
         />
         <StatCard
           icon={<FolderOpen className="h-5 w-5" />}
-          label="עובדים זמינים"
+          label="עובדים זמינים לשיבוץ מיידי"
           value={availWorkers}
           loading={loading}
           href="/corporation/workers"
@@ -168,14 +168,14 @@ export default function CorporationManagePage() {
         <ManageTile
           href="/corporation/marketplace"
           icon={<Store className="h-7 w-7" />}
-          title="שוק התאגידים"
+          title="שירותים נלווים"
           subtitle="פרסומי דיור, ציוד ושירותים"
         />
         <ManageTile
           href="/corporation/settings/billing"
           icon={<CreditCard className="h-7 w-7" />}
           title="חיוב ומנוי"
-          subtitle="פרטי תשלום ורמת מנוי בשוק"
+          subtitle="פרטי תשלום ורמת מנוי בשירותים נלווים"
         />
       </div>
     </div>
