@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef, FormEvent } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { Loader2, CheckCircle2, HardHat, Building2 } from 'lucide-react';
+import { Loader2, CheckCircle2, HardHat, Building2, User, Phone } from 'lucide-react';
 import { inviteApi, otpApi, type InviteMetadata } from '@/lib/api';
 import { saveTokens } from '@/lib/auth';
 import { useAuth } from '@/lib/AuthContext';
@@ -16,7 +16,7 @@ const ROLE_LABELS: Record<string, string> = {
   owner: 'בעלים', admin: 'מנהל', operator: 'מפעיל', viewer: 'צופה',
 };
 
-type Phase = 'loading' | 'error' | 'enter' | 'verify' | 'done';
+type Phase = 'loading' | 'error' | 'confirm' | 'verify' | 'done';
 
 function otpErr(msg: string): string {
   if (msg === 'rate_limited')             return 'יותר מדי ניסיונות. נסה שוב מאוחר יותר';
@@ -25,6 +25,7 @@ function otpErr(msg: string): string {
   if (msg === 'otp_expired_or_not_found') return 'הקוד פג תוקף. שלח קוד חדש';
   if (msg === 'invite_not_found_or_used') return 'ההזמנה לא נמצאה או כבר נוצלה';
   if (msg === 'invite_expired')           return 'ההזמנה פגה תוקף (תקפה 7 ימים)';
+  if (msg === 'phone_mismatch')           return 'מספר הטלפון אינו תואם להזמנה. פנה למזמין כדי שיעדכן את המספר.';
   return 'שגיאה. נסה שוב';
 }
 
@@ -39,31 +40,40 @@ export default function InviteAcceptPage() {
   const [loading, setLoading]     = useState(false);
   const [error, setError]         = useState('');
 
-  // form state
-  const [phone, setPhone]       = useState('');
+  // OTP state
   const [normPhone, setNorm]    = useState('');
   const [code, setCode]         = useState('');
-  const [fullName, setFullName] = useState('');
-  const [isNew, setIsNew]       = useState(false); // show full_name field?
+  // Legacy fallback: meta.invited_phone is NULL on pre-040 rows. Then
+  // we still let the user type a phone — and full_name — like before.
+  const [legacyPhone, setLegacyPhone] = useState('');
+  const [legacyName, setLegacyName]   = useState('');
+  const [needsLegacyName, setNeedsLegacyName] = useState(false);
 
   // ── Load invite metadata ──────────────────────────────────────────────────
   useEffect(() => {
     if (!token) return;
     inviteApi.validate(token as string)
-      .then((m) => { setMeta(m); setPhase('enter'); })
+      .then((m) => { setMeta(m); setPhase('confirm'); })
       .catch((err) => {
         setError(otpErr(err instanceof Error ? err.message : ''));
         setPhase('error');
       });
   }, [token]);
 
+  // Combined display name from the invite. May be empty for legacy rows.
+  const invitedFullName = meta
+    ? [meta.invited_first_name, meta.invited_last_name].filter(Boolean).join(' ').trim() || null
+    : null;
+  const isLegacy = meta ? !meta.invited_phone : false;
+
   // ── Send OTP ──────────────────────────────────────────────────────────────
   async function handleSend(e: FormEvent) {
     e.preventDefault(); setError('');
-    if (!phone.trim()) { setError('יש להזין מספר טלפון'); return; }
+    const target = (meta?.invited_phone || legacyPhone).trim();
+    if (!target) { setError('יש להזין מספר טלפון'); return; }
     setLoading(true);
     try {
-      const res = await otpApi.sendOtp(phone.trim(), 'invite_accept');
+      const res = await otpApi.sendOtp(target, 'invite_accept');
       setNorm(res.phone);
       setPhase('verify');
       setTimeout(() => codeRef.current?.focus(), 50);
@@ -75,11 +85,16 @@ export default function InviteAcceptPage() {
   // ── Accept invite ─────────────────────────────────────────────────────────
   async function handleAccept(e: FormEvent) {
     e.preventDefault(); setError('');
-    if (code.length !== 6)       { setError('קוד האימות חייב להכיל 6 ספרות'); return; }
-    if (isNew && !fullName.trim()) { setError('יש להזין שם מלא'); return; }
+    if (code.length !== 6) { setError('קוד האימות חייב להכיל 6 ספרות'); return; }
+    if (needsLegacyName && !legacyName.trim()) { setError('יש להזין שם מלא'); return; }
     setLoading(true);
     try {
-      const res = await inviteApi.accept(token as string, normPhone, code, isNew ? fullName : undefined);
+      const res = await inviteApi.accept(
+        token as string,
+        normPhone,
+        code,
+        needsLegacyName ? legacyName.trim() : undefined,
+      );
       saveTokens(res.access_token, res.refresh_token);
       refreshAuth();
       setPhase('done');
@@ -88,9 +103,11 @@ export default function InviteAcceptPage() {
       }, 2000);
     } catch (err) {
       const msg = err instanceof Error ? err.message : '';
-      // If user doesn't exist yet, show full_name field
+      // Legacy backstop: if backend says we need a name (pre-022 invite
+      // with no invited_first_name persisted, AND no existing users row),
+      // surface the field. Modern invites never reach this branch.
       if (msg === 'full_name required for new users') {
-        setIsNew(true);
+        setNeedsLegacyName(true);
         setError('נראה שזה הפעם הראשונה שלך — יש להזין שם מלא');
       } else {
         setError(otpErr(msg));
@@ -131,11 +148,11 @@ export default function InviteAcceptPage() {
               </div>
             )}
 
-            {/* Enter phone */}
-            {(phase === 'enter' || phase === 'verify') && meta && (
+            {/* Confirm + Verify share the entity banner */}
+            {(phase === 'confirm' || phase === 'verify') && meta && (
               <>
-                {/* Invite info banner */}
-                <div className="flex items-center gap-3 p-4 rounded-lg bg-brand-50 border border-brand-100 mb-5">
+                {/* Invite info banner — entity + role + inviter */}
+                <div className="flex items-center gap-3 p-4 rounded-lg bg-brand-50 border border-brand-100 mb-4">
                   <EntityIcon className="h-8 w-8 text-brand-600 shrink-0" />
                   <div>
                     <p className="font-semibold text-slate-900">
@@ -151,20 +168,55 @@ export default function InviteAcceptPage() {
                   </div>
                 </div>
 
-                {phase === 'enter' && (
-                  <form onSubmit={handleSend} className="flex flex-col gap-4" noValidate>
-                    <CardDescription className="text-center">
-                      הזן את מספר הטלפון שלך לאימות ואישור ההזמנה
-                    </CardDescription>
-                    <Input
-                      label="מספר טלפון נייד"
-                      type="tel"
-                      placeholder="050-0000000"
-                      value={phone}
-                      onChange={(e) => setPhone(e.target.value)}
-                      autoComplete="tel"
-                      dir="ltr"
-                    />
+                {/* CONFIRM: read-only summary of who the invite is for + send button */}
+                {phase === 'confirm' && (
+                  <form onSubmit={handleSend} className="flex flex-col gap-3" noValidate>
+                    {/* Read-only summary tiles */}
+                    {(invitedFullName || meta.invited_phone) && (
+                      <div className="rounded-lg border border-slate-200 divide-y divide-slate-100 bg-white">
+                        {invitedFullName && (
+                          <div className="flex items-center gap-3 px-3 py-2.5">
+                            <User className="h-4 w-4 text-slate-400 shrink-0" />
+                            <div className="text-xs text-slate-500">שם</div>
+                            <div className="font-medium text-slate-900 text-sm ms-auto">{invitedFullName}</div>
+                          </div>
+                        )}
+                        {meta.invited_phone && (
+                          <div className="flex items-center gap-3 px-3 py-2.5">
+                            <Phone className="h-4 w-4 text-slate-400 shrink-0" />
+                            <div className="text-xs text-slate-500">טלפון</div>
+                            <div className="font-medium text-slate-900 text-sm ms-auto" dir="ltr">
+                              {meta.invited_phone}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Legacy fallback: no invited_phone → ask for it */}
+                    {isLegacy && (
+                      <>
+                        <CardDescription className="text-center">
+                          הזן את מספר הטלפון שלך לאימות ואישור ההזמנה
+                        </CardDescription>
+                        <Input
+                          label="מספר טלפון נייד"
+                          type="tel"
+                          placeholder="050-0000000"
+                          value={legacyPhone}
+                          onChange={(e) => setLegacyPhone(e.target.value)}
+                          autoComplete="tel"
+                          dir="ltr"
+                        />
+                      </>
+                    )}
+
+                    {!isLegacy && (
+                      <p className="text-xs text-slate-500 text-center">
+                        קוד אימות בן 6 ספרות יישלח ב-SMS למספר זה. אם הפרטים שגויים — פנה למזמין.
+                      </p>
+                    )}
+
                     {error && (
                       <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">{error}</p>
                     )}
@@ -174,17 +226,18 @@ export default function InviteAcceptPage() {
                   </form>
                 )}
 
+                {/* VERIFY: just OTP. Name + phone are already locked in. */}
                 {phase === 'verify' && (
                   <form onSubmit={handleAccept} className="flex flex-col gap-4" noValidate>
                     <p className="text-sm text-slate-600 text-center">
                       קוד אימות נשלח אל <span className="font-medium" dir="ltr">{normPhone}</span>
                     </p>
-                    {isNew && (
+                    {needsLegacyName && (
                       <Input
                         label="שם מלא"
                         placeholder="ישראל ישראלי"
-                        value={fullName}
-                        onChange={(e) => setFullName(e.target.value)}
+                        value={legacyName}
+                        onChange={(e) => setLegacyName(e.target.value)}
                         autoComplete="name"
                       />
                     )}
@@ -210,10 +263,10 @@ export default function InviteAcceptPage() {
                     </Button>
                     <button
                       type="button"
-                      onClick={() => { setPhase('enter'); setCode(''); setError(''); }}
+                      onClick={() => { setPhase('confirm'); setCode(''); setError(''); }}
                       className="text-sm text-brand-600 hover:underline text-center"
                     >
-                      ← שנה מספר / שלח שוב
+                      ← שלח שוב
                     </button>
                   </form>
                 )}

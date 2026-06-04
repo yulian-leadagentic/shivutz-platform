@@ -412,6 +412,13 @@ router.post('/auth/invite/validate', async (req, res) => {
     job_title:    membership.job_title,
     inviter_name: membership.inviter_name || null,
     membership_id: membership.membership_id,
+    // Pre-fill data: invitee sees what the inviter typed. Read-only on
+    // the accept page so the team list stays consistent with what the
+    // inviter saw when they invited. NULLs surface on legacy rows
+    // (pre-022 / pre-040 migrations) — frontend falls back to free input.
+    invited_phone:      membership.invited_phone      || null,
+    invited_first_name: membership.invited_first_name || null,
+    invited_last_name:  membership.invited_last_name  || null,
   });
 });
 
@@ -443,6 +450,16 @@ router.post('/auth/invite/accept', async (req, res) => {
     // 2. Verify OTP
     const { normPhone } = await verifyOtp(phone, code, 'invite_accept');
 
+    // 2b. Hard phone-match: the invitee must accept on the phone the
+    // inviter typed. Closes the "anyone with the URL" loophole. Skipped
+    // for legacy rows where invited_phone wasn't captured (pre-040).
+    if (membership.invited_phone) {
+      const invitedNorm = normalisePhone(membership.invited_phone);
+      if (invitedNorm !== normPhone) {
+        return res.status(403).json({ error: 'phone_mismatch' });
+      }
+    }
+
     // 3. Find or create user
     let [users] = await pool.query(
       'SELECT * FROM users WHERE phone = ? AND deleted_at IS NULL LIMIT 1',
@@ -451,13 +468,23 @@ router.post('/auth/invite/accept', async (req, res) => {
     let user = users[0];
 
     if (!user) {
-      if (!full_name) return res.status(400).json({ error: 'full_name required for new users' });
+      // Authoritative name comes from what the inviter typed — the
+      // invitee no longer chooses. Legacy rows (no invited_first_name)
+      // fall back to the client-supplied full_name so old links still
+      // resolve.
+      const invitedFull = [membership.invited_first_name, membership.invited_last_name]
+        .filter((s) => s && s.trim())
+        .join(' ')
+        .trim();
+      const resolvedName = invitedFull || (full_name && full_name.trim());
+      if (!resolvedName) return res.status(400).json({ error: 'full_name required for new users' });
+
       const newId = uuidv4();
       const orgRole = membership.entity_type === 'contractor' ? 'contractor' : 'corporation';
       await pool.query(
         `INSERT INTO users (id, phone, full_name, role, auth_method)
          VALUES (?, ?, ?, ?, 'sms')`,
-        [newId, normPhone, full_name, orgRole]
+        [newId, normPhone, resolvedName, orgRole]
       );
       [users] = await pool.query('SELECT * FROM users WHERE id = ?', [newId]);
       user = users[0];

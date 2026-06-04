@@ -21,6 +21,12 @@ export interface InviteMetadata {
   job_title: string | null;
   inviter_name: string | null;
   membership_id: string;
+  /** Pre-fill values for the accept screen. NULL on legacy rows that
+   *  predate the invited_phone / invited_*_name columns — UI falls back
+   *  to free input in that case. */
+  invited_phone:      string | null;
+  invited_first_name: string | null;
+  invited_last_name:  string | null;
 }
 
 export const authApi = {
@@ -105,6 +111,10 @@ export const inviteApi = {
       body: JSON.stringify({ token }),
     }),
 
+  /** Accept the invitation. `phone` must match the invited_phone the
+   *  inviter typed (server enforces hard match). `fullName` is only
+   *  used as a fallback for legacy rows where invited_first/last_name
+   *  weren't captured — modern invites ignore it entirely. */
   accept: (token: string, phone: string, code: string, fullName?: string) =>
     apiFetch<{ access_token: string; refresh_token: string; role: string }>(
       '/auth/invite/accept',
