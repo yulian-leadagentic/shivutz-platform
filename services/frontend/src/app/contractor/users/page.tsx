@@ -1,13 +1,14 @@
 'use client';
 
 import { useEffect, useState, FormEvent } from 'react';
-import { Loader2, UserPlus, Clock, CheckCircle2, Trash2, AlertCircle } from 'lucide-react';
+import { Loader2, UserPlus, Clock, CheckCircle2, Trash2, AlertCircle, Pencil } from 'lucide-react';
 import { memberApi, type TeamMember } from '@/lib/api';
 import { useAuth } from '@/lib/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { NotificationRecipientsSection } from '@/features/notification-recipients/NotificationRecipientsSection';
+import { EditMemberModal } from '@/components/team/EditMemberModal';
 
 // Wave 2: 'operator' dropped — three roles cover the cases.
 const ROLE_LABELS: Record<string, string> = {
@@ -34,6 +35,7 @@ export default function ContractorUsersPage() {
   const [success, setSuccess]     = useState('');
   const [pendingDelete, setPendingDelete] = useState<TeamMember | null>(null);
   const [deleting, setDeleting]   = useState(false);
+  const [editing, setEditing]     = useState<TeamMember | null>(null);
 
   async function handleDelete() {
     if (!entityId || !pendingDelete) return;
@@ -100,7 +102,7 @@ export default function ContractorUsersPage() {
   const pending = members.filter((m) => m.pending);
 
   return (
-    <div className="space-y-4 max-w-2xl">
+    <div className="space-y-4 max-w-4xl">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-bold text-slate-900">ניהול צוות</h2>
         <Button
@@ -185,10 +187,13 @@ export default function ContractorUsersPage() {
           ) : active.length === 0 ? (
             <p className="text-center text-slate-400 py-6 text-sm">אין חברי צוות</p>
           ) : (
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-100 text-slate-500">
-                  <th className="px-4 py-3 text-start font-medium">שם / טלפון</th>
+                  <th className="px-4 py-3 text-start font-medium">שם</th>
+                  <th className="px-4 py-3 text-start font-medium">תפקיד</th>
+                  <th className="px-4 py-3 text-start font-medium">טלפון</th>
                   <th className="px-4 py-3 text-start font-medium">הרשאה</th>
                   <th className="px-4 py-3 text-start font-medium">הצטרף</th>
                   <th className="px-4 py-3 text-end font-medium w-12" aria-label="פעולות" />
@@ -197,31 +202,40 @@ export default function ContractorUsersPage() {
               <tbody>
                 {active.map((m) => (
                   <tr key={m.membership_id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50">
-                    <td className="px-4 py-3">
-                      <div className="font-medium text-slate-900">{m.full_name ?? '—'}</div>
-                      {m.phone && <div className="text-xs text-slate-400" dir="ltr">{m.phone}</div>}
-                      {m.job_title && <div className="text-xs text-slate-400">{m.job_title}</div>}
-                    </td>
+                    <td className="px-4 py-3 font-medium text-slate-900 whitespace-nowrap">{m.full_name ?? '—'}</td>
+                    <td className="px-4 py-3 text-slate-600">{m.job_title || '—'}</td>
+                    <td className="px-4 py-3 text-slate-600 whitespace-nowrap" dir="ltr">{m.phone || '—'}</td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${ROLE_COLORS[m.role] ?? 'bg-slate-100 text-slate-600'}`}>
                         {ROLE_LABELS[m.role] ?? m.role}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-slate-500">{fmt(m.invitation_accepted_at)}</td>
-                    <td className="px-3 py-3 text-end">
-                      <button
-                        onClick={() => setPendingDelete(m)}
-                        title="הסר משתמש"
-                        aria-label={`הסר את ${m.full_name ?? 'המשתמש'}`}
-                        className="inline-flex items-center justify-center h-7 w-7 rounded-full text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition-colors"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
+                    <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{fmt(m.invitation_accepted_at)}</td>
+                    <td className="px-3 py-3 text-end whitespace-nowrap">
+                      <div className="inline-flex items-center gap-1">
+                        <button
+                          onClick={() => setEditing(m)}
+                          title="ערוך משתמש"
+                          aria-label={`ערוך את ${m.full_name ?? 'המשתמש'}`}
+                          className="inline-flex items-center justify-center h-7 w-7 rounded-full text-slate-400 hover:bg-brand-50 hover:text-brand-600 transition-colors"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => setPendingDelete(m)}
+                          title="הסר משתמש"
+                          aria-label={`הסר את ${m.full_name ?? 'המשתמש'}`}
+                          className="inline-flex items-center justify-center h-7 w-7 rounded-full text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition-colors"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </CardContent>
       </Card>
@@ -239,10 +253,13 @@ export default function ContractorUsersPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="p-0">
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-100 text-slate-500">
-                  <th className="px-4 py-3 text-start font-medium">שם / טלפון</th>
+                  <th className="px-4 py-3 text-start font-medium">שם</th>
+                  <th className="px-4 py-3 text-start font-medium">תפקיד</th>
+                  <th className="px-4 py-3 text-start font-medium">טלפון</th>
                   <th className="px-4 py-3 text-start font-medium">הרשאה</th>
                   <th className="px-4 py-3 text-start font-medium">נשלח</th>
                   <th className="px-4 py-3 text-end font-medium w-12" aria-label="פעולות" />
@@ -251,33 +268,58 @@ export default function ContractorUsersPage() {
               <tbody>
                 {pending.map((m) => (
                   <tr key={m.membership_id} className="border-b border-slate-50 last:border-0">
-                    <td className="px-4 py-3">
-                      <div className="font-medium text-slate-900">{m.full_name ?? '—'}</div>
-                      {m.phone && <div className="text-xs text-slate-400" dir="ltr">{m.phone}</div>}
-                      {m.job_title && <div className="text-xs text-slate-400">{m.job_title}</div>}
-                    </td>
+                    <td className="px-4 py-3 font-medium text-slate-900 whitespace-nowrap">{m.full_name ?? '—'}</td>
+                    <td className="px-4 py-3 text-slate-600">{m.job_title || '—'}</td>
+                    <td className="px-4 py-3 text-slate-600 whitespace-nowrap" dir="ltr">{m.phone || '—'}</td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${ROLE_COLORS[m.role] ?? 'bg-slate-100 text-slate-600'}`}>
                         {ROLE_LABELS[m.role] ?? m.role}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-slate-400 text-xs">{fmt(m.created_at)}</td>
-                    <td className="px-3 py-3 text-end">
-                      <button
-                        onClick={() => setPendingDelete(m)}
-                        title="בטל הזמנה"
-                        aria-label="בטל הזמנה"
-                        className="inline-flex items-center justify-center h-7 w-7 rounded-full text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition-colors"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
+                    <td className="px-4 py-3 text-slate-400 text-xs whitespace-nowrap">{fmt(m.created_at)}</td>
+                    <td className="px-3 py-3 text-end whitespace-nowrap">
+                      <div className="inline-flex items-center gap-1">
+                        <button
+                          onClick={() => setEditing(m)}
+                          title="ערוך הזמנה"
+                          aria-label="ערוך הזמנה"
+                          className="inline-flex items-center justify-center h-7 w-7 rounded-full text-slate-400 hover:bg-brand-50 hover:text-brand-600 transition-colors"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => setPendingDelete(m)}
+                          title="בטל הזמנה"
+                          aria-label="בטל הזמנה"
+                          className="inline-flex items-center justify-center h-7 w-7 rounded-full text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition-colors"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+            </div>
           </CardContent>
         </Card>
+      )}
+
+      {/* Edit modal — shared by active + pending rows. */}
+      {editing && entityId && (
+        <EditMemberModal
+          orgType="contractors"
+          orgId={entityId}
+          member={editing}
+          onClose={() => setEditing(null)}
+          onSaved={(next) => {
+            setMembers((prev) => prev.map((x) => x.membership_id === next.membership_id ? next : x));
+            setEditing(null);
+            setSuccess('פרטי חבר הצוות עודכנו');
+            setTimeout(() => setSuccess(''), 4000);
+          }}
+        />
       )}
 
       {/* Delete confirmation modal — shared by active + pending rows. */}

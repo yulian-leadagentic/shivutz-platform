@@ -442,6 +442,50 @@ def delete_corporation_user(
     )
 
 
+class TeamMemberPatch(BaseModel):
+    role:               Optional[str] = None      # owner | admin | viewer
+    job_title:          Optional[str] = None      # "" → clear
+    # Pending-only — silently ignored on active rows (user_id IS NOT NULL).
+    invited_first_name: Optional[str] = None
+    invited_last_name:  Optional[str] = None
+    invited_phone:      Optional[str] = None
+
+
+@router.patch("/{org_id}/users/{membership_id}")
+async def update_corporation_user(
+    org_id: str,
+    membership_id: str,
+    data: TeamMemberPatch,
+    x_user_id:   Optional[str] = Header(default=None),
+    x_user_role: Optional[str] = Header(default=None),
+):
+    """Edit role / job title (active or pending) and — for pending rows
+    only — the invited name + phone. Phone change resends the SMS to
+    the new number with the same invitation_token."""
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT company_name_he FROM corporations WHERE id = %s AND deleted_at IS NULL",
+            (org_id,),
+        )
+        org = cur.fetchone()
+    finally:
+        conn.close()
+    if not org:
+        raise HTTPException(status_code=404, detail="Corporation not found")
+
+    return await team_mgmt.update_membership(
+        entity_type="corporation",
+        entity_id=org_id,
+        membership_id=membership_id,
+        patch=data.dict(exclude_unset=True),
+        caller_user_id=x_user_id,
+        caller_role=x_user_role,
+        entity_name=org.get("company_name_he"),
+    )
+
+
 # ── Notification recipients ──────────────────────────────────────────
 @router.get("/{org_id}/notification-recipients")
 def list_corporation_notification_recipients(org_id: str):

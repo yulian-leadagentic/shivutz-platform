@@ -460,6 +460,47 @@ def delete_contractor_user(
     )
 
 
+class TeamMemberPatch(BaseModel):
+    role:               Optional[str] = None
+    job_title:          Optional[str] = None
+    invited_first_name: Optional[str] = None
+    invited_last_name:  Optional[str] = None
+    invited_phone:      Optional[str] = None
+
+
+@router.patch("/{org_id}/users/{membership_id}")
+async def update_contractor_user(
+    org_id: str,
+    membership_id: str,
+    data: TeamMemberPatch,
+    x_user_id:   Optional[str] = Header(default=None),
+    x_user_role: Optional[str] = Header(default=None),
+):
+    """Mirror of the corp PATCH endpoint."""
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT company_name_he FROM contractors WHERE id = %s AND deleted_at IS NULL",
+            (org_id,),
+        )
+        org = cur.fetchone()
+    finally:
+        conn.close()
+    if not org:
+        raise HTTPException(status_code=404, detail="Contractor not found")
+
+    return await team_mgmt.update_membership(
+        entity_type="contractor",
+        entity_id=org_id,
+        membership_id=membership_id,
+        patch=data.dict(exclude_unset=True),
+        caller_user_id=x_user_id,
+        caller_role=x_user_role,
+        entity_name=org.get("company_name_he"),
+    )
+
+
 # ── Notification recipients ──────────────────────────────────────────
 @router.get("/{org_id}/notification-recipients")
 def list_contractor_notification_recipients(org_id: str):

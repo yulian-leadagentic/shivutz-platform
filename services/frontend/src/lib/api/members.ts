@@ -54,4 +54,32 @@ export const memberApi = {
       `/organizations/${orgType}/${orgId}/users/${membershipId}`,
       { method: 'DELETE' },
     ),
+
+  /** Patch a membership in place.
+   *
+   *  Active rows (already accepted): only `role` + `job_title` are honored.
+   *  Pending rows: also accepts `invited_first_name`, `invited_last_name`,
+   *  `invited_phone`. Changing `invited_phone` triggers a fresh SMS to
+   *  the new number using the same invitation_token.
+   *
+   *  Returns the updated member row (same shape as the list endpoint)
+   *  so the caller can replace it without a full refetch.
+   *
+   *  409 = sole-owner demotion attempt. */
+  update: (
+    orgType: 'contractors' | 'corporations',
+    orgId: string,
+    membershipId: string,
+    patch: Partial<{
+      role: string;
+      job_title: string | null;
+      invited_first_name: string | null;
+      invited_last_name:  string | null;
+      invited_phone:      string;
+    }>,
+  ) =>
+    apiFetch<TeamMember>(
+      `/organizations/${orgType}/${orgId}/users/${membershipId}`,
+      { method: 'PATCH', body: JSON.stringify(patch) },
+    ),
 };
