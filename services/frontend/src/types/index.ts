@@ -22,7 +22,12 @@ export interface Contractor {
   gov_branch?: string | null;
   gov_company_status?: string | null;
   verification_tier: 'tier_0' | 'tier_1' | 'tier_2';
-  verification_method?: 'email' | 'sms' | 'manual' | 'none' | null;
+  verification_method?: 'email' | 'sms' | 'manual' | 'none' | 'kablan_match' | null;
+  /** Set when the contractor typed their kablan_number and it matched
+   *  פנקס הקבלנים. Distinct from `verified_at` (which records ANY
+   *  path to tier_2) so we can banner contractors who got tier_2 via
+   *  the older email/SMS flow but never proved kablan ownership. */
+  kablan_verified_at?: string | null;
   operating_regions: string[];
   approval_status: 'pending' | 'approved' | 'rejected';
   contact_name: string;
@@ -334,6 +339,11 @@ export interface PaginatedResponse<T> {
 export interface ContractorRegistration {
   company_name_he: string;
   business_number: string;
+  /** מספר רישיון קבלן — required. Backend cross-checks against
+   *  פנקס הקבלנים for the same business_number. On mismatch the row
+   *  is created but lands in admin queue (status='pending') instead of
+   *  the user getting automatic tier_2. */
+  kablan_number: string;
   operating_regions: string[];
   contact_name: string;
   contact_phone: string;
@@ -377,10 +387,17 @@ export interface CorporationRegistration {
 
 export interface RegistrationResult {
   id: string;
+  /** 'approved' when kablan matched (auto-promoted to tier_2);
+   *  'pending' when the typed kablan didn't match and the row needs
+   *  an admin to confirm. */
   status: string;
   org_type: string;
   verification_tier?: 'tier_0' | 'tier_1' | 'tier_2';
   registry_found?: boolean;
+  /** True when the typed kablan_number matched פנקס הקבלנים. The UI
+   *  branches on this: matched → straight to dashboard with a success
+   *  toast; mismatched → 'ממתין לאישור מנהל' screen. */
+  kablan_matched?: boolean;
   available_channels?: RegistryChannel[];
   access_token?: string;
   refresh_token?: string;

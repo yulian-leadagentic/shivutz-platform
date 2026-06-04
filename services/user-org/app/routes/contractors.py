@@ -32,6 +32,12 @@ class ContractorCreate(BaseModel):
     contact_phone: str                          # owner mobile (used as user.phone for SMS login)
     contact_email: Optional[EmailStr] = None    # optional business email
     # No classification — pulled live from פנקס הקבלנים (kvutza + sivug).
+    # מספר רישיון קבלן — REQUIRED. Cross-checked against MISPAR_KABLAN
+    # in פנקס הקבלנים for the same business_number. On mismatch the
+    # registration still completes but lands in the admin-approval
+    # queue with verification_method='kablan_mismatch_pending' instead
+    # of getting automatic tier_2.
+    kablan_number: str
 
 
 class LookupRequest(BaseModel):
@@ -47,6 +53,10 @@ class VerifyStart(BaseModel):
 class VerifyConfirm(BaseModel):
     channel: Literal["email", "sms"]
     secret: str                                 # code (6 digits) or magic-link token
+
+
+class VerifyKablan(BaseModel):
+    kablan_number: str   # the מספר רישיון קבלן the user is claiming
 
 
 class TeamInvite(BaseModel):
@@ -153,8 +163,33 @@ async def register_contractor(data: ContractorCreate):
         company_active=company_active,
     )
 
+    # Cross-check the user-typed kablan_number against פנקס הקבלנים.
+    # Outcomes:
+    #   match=True  → fast-path to tier_2 (stronger proof than email/SMS).
+    #   match=False → registration completes but lands in admin queue
+    #                 (approval_status='pending'). Admin can override.
+    #   ok=False    → data.gov.il was unreachable; treat as mismatch
+    #                 (pending) rather than blocking the user.
+    kablan_check = await verification.verify_kablan_match(
+        data.business_number, data.kablan_number,
+    )
+    kablan_matched = bool(kablan_check.get("match"))
+    now = datetime.utcnow()
+
     org_id = str(uuid.uuid4())
-    sla_deadline = datetime.utcnow() + timedelta(hours=48)
+    sla_deadline = now + timedelta(hours=48)
+
+    # Tier + approval state are driven by the kablan match:
+    #   match  → tier_2, approved, verification_method='kablan_match'
+    #   no     → keep the initial_tier from registry presence, stay
+    #            pending for admin review (default approval_status).
+    final_tier = "tier_2" if kablan_matched else initial_tier
+    verification_method = "kablan_match" if kablan_matched else "none"
+    verified_at = now if kablan_matched else None
+    kablan_verified_at = now if kablan_matched else None
+    revalidate_at = (now + verification.REVALIDATE_PERIOD) if kablan_matched else None
+    approval_status = "approved" if kablan_matched else "pending"
+    approved_at = now if kablan_matched else None
 
     conn = get_db()
     try:
@@ -164,18 +199,25 @@ async def register_contractor(data: ContractorCreate):
                (id, user_owner_id, company_name, company_name_he, business_number,
                 kablan_number, kvutza, sivug, gov_branch, gov_company_status,
                 operating_regions, contact_name, contact_phone, contact_email,
-                verification_tier, approval_sla_deadline)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                verification_tier, verification_method, verified_at,
+                kablan_verified_at, revalidate_at,
+                approval_status, approved_at, approval_sla_deadline)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (org_id, "PENDING", company_name, company_name_he,
              data.business_number,
-             prefill.get("kablan_number"),
+             # Always store what the USER TYPED, not the registry value.
+             # On match these are equal modulo formatting; on mismatch
+             # the admin queue surfaces both for comparison.
+             data.kablan_number.strip(),
              prefill.get("kvutza"),
              prefill.get("sivug"),
              prefill.get("gov_branch"),
              lookup.get("gov_company_status"),
              json.dumps(data.operating_regions), data.contact_name,
              data.contact_phone, data.contact_email,
-             initial_tier, sla_deadline)
+             final_tier, verification_method, verified_at,
+             kablan_verified_at, revalidate_at,
+             approval_status, approved_at, sla_deadline)
         )
 
         # Phone-first registration — auth service verifies OTP was confirmed recently
@@ -230,10 +272,17 @@ async def register_contractor(data: ContractorCreate):
 
         return {
             "id":                  org_id,
-            "status":              "pending",
+            # 'approved' when kablan matched + auto-promoted; 'pending'
+            # when we need an admin to review the mismatch.
+            "status":              approval_status,
             "org_type":            "contractor",
-            "verification_tier":   initial_tier,
+            "verification_tier":   final_tier,
             "registry_found":      lookup.get("pinkash_found", False),
+            "kablan_matched":      kablan_matched,
+            # available_channels stays for the legacy email/SMS flow —
+            # if kablan matched we don't NEED it, but exposing it lets
+            # the contractor optionally also verify via a contact
+            # channel for the audit trail.
             "available_channels":  lookup.get("channels", []),
             "access_token":        user.get("access_token"),
             "refresh_token":       user.get("refresh_token"),
@@ -311,6 +360,115 @@ async def verify_confirm(org_id: str, data: VerifyConfirm):
         "verification_method": data.channel,
     })
     return result
+
+
+@router.post("/{org_id}/verify-kablan")
+async def verify_kablan(
+    org_id: str,
+    data: VerifyKablan,
+    x_user_id:   Optional[str] = Header(default=None),
+    x_user_role: Optional[str] = Header(default=None),
+):
+    """Backfill flow — existing contractors who registered before the
+    kablan match was required (or whose first attempt mismatched and
+    they're back to retry with the correct number) submit their
+    kablan_number here.
+
+    Behaviour mirrors registration's match logic:
+      - match  → bump to tier_2 via kablan_match_approve()
+      - no     → store the typed value, stay pending, return mismatch
+                 so the UI can prompt the user to contact support.
+      - lookup unreachable → treat as mismatch (no upgrade) but with
+                 reason='registry_unreachable' so the UI can offer
+                 'try again later'.
+
+    Auth: requires that the caller is owner/admin of THIS contractor
+    (platform admin can call from anywhere). Same role gate as the
+    PATCH /users endpoint."""
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        # Confirm the contractor exists + grab business_number for the lookup.
+        cur.execute(
+            "SELECT business_number, kablan_verified_at FROM contractors WHERE id = %s AND deleted_at IS NULL",
+            (org_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="contractor_not_found")
+        business_number = row["business_number"]
+
+        # Role gate (skip if platform admin)
+        if x_user_role != "admin":
+            if not x_user_id:
+                raise HTTPException(status_code=401, detail="auth_required")
+            cur.execute(
+                """SELECT role FROM auth_db.entity_memberships
+                   WHERE entity_type='contractor' AND entity_id=%s
+                     AND user_id=%s AND is_active=TRUE LIMIT 1""",
+                (org_id, x_user_id),
+            )
+            mem = cur.fetchone()
+            if not mem or mem["role"] not in ("owner", "admin"):
+                raise HTTPException(
+                    status_code=403,
+                    detail={
+                        "code":    "forbidden_kablan_verify",
+                        "message": "רק בעלים או מנהל של הקבלן רשאי לאמת מספר רישיון.",
+                    },
+                )
+    finally:
+        conn.close()
+
+    check = await verification.verify_kablan_match(business_number, data.kablan_number)
+    matched = bool(check.get("match"))
+
+    # Always store the typed value so admin/support can see what the
+    # contractor claimed even on a mismatch.
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE contractors SET kablan_number=%s WHERE id=%s",
+            (data.kablan_number.strip(), org_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    if matched:
+        result = verification.kablan_match_approve(org_id)
+        # Fire the same success event the email/SMS path fires so the
+        # contractor gets the standard "you're verified" SMS/email.
+        conn = get_db()
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                """SELECT contact_name, contact_email, contact_phone, company_name_he
+                   FROM contractors WHERE id=%s""",
+                (org_id,),
+            )
+            c = cur.fetchone() or {}
+        finally:
+            conn.close()
+        await publish_event("contractor.verified", {
+            "contractor_id":       org_id,
+            "company_name":        c.get("company_name_he") or "",
+            "contact_name":        c.get("contact_name") or "",
+            "contact_email":       c.get("contact_email") or "",
+            "contact_phone":       c.get("contact_phone") or "",
+            "verification_method": "kablan_match",
+        })
+        return {"ok": True, "matched": True, "tier": result["tier"]}
+
+    # Mismatch (or registry unreachable). Keep the row pending; the
+    # admin queue already lists it. Surface the reason to the UI so
+    # the user gets the right message ("we'll review" vs "try again").
+    return {
+        "ok": True,
+        "matched": False,
+        "reason": check.get("reason") or "kablan_mismatch",
+    }
 
 
 @router.get("/{org_id}")

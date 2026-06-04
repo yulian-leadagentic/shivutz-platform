@@ -97,6 +97,63 @@ async def quick_lookup(business_number: str) -> dict[str, Any]:
     }
 
 
+def _digits_only(s: Optional[str]) -> str:
+    """Strip everything but digits. Used for kablan-number comparison so
+    leading zeros, dashes, or stray whitespace don't cause false misses
+    (registry returns '03842', user might type '3842' or '03842' or
+    '03-842')."""
+    if not s:
+        return ""
+    return "".join(c for c in str(s) if c.isdigit())
+
+
+async def verify_kablan_match(business_number: str, entered_kablan: str) -> dict[str, Any]:
+    """Check whether the kablan_number the user typed matches what
+    פנקס הקבלנים has on file for their business_number.
+
+    Uses the same lookup() helper as registration so a freshly-cached
+    row is reused; if no cache exists or it's stale, a live data.gov.il
+    call is made. Both sides are normalised to digits-only before
+    comparison so '03842' / '3842' / '03-842' all match.
+
+    Returns:
+        {
+          ok: True if the lookup ran (cache hit or live call),
+          match: True only if both numbers compared equal,
+          registry_kablan: the digits-only value from פנקס הקבלנים
+                           (None if the contractor isn't in the registry),
+        }
+
+    Network failures bubble up as ok=False with a reason — callers
+    should route to manual approval in that case rather than refusing
+    the registration.
+    """
+    entered_norm = _digits_only(entered_kablan)
+    if not entered_norm:
+        return {"ok": True, "match": False, "registry_kablan": None, "reason": "empty_input"}
+
+    try:
+        result = await data_gov_il.lookup(business_number)
+    except Exception as e:
+        log.warning("verify_kablan_match: data.gov.il lookup failed for %s: %s", business_number, e)
+        return {"ok": False, "match": False, "registry_kablan": None, "reason": "registry_unreachable"}
+
+    if not result["pinkash_found"] or not result["pinkash"]:
+        # Business number isn't in פנקס הקבלנים at all — there's nothing
+        # to match against, so the kablan can't be confirmed by this
+        # channel. Still ok=True (the lookup ran), match=False.
+        return {"ok": True, "match": False, "registry_kablan": None, "reason": "not_in_registry"}
+
+    fields = data_gov_il.extract_pinkash_fields(result["pinkash"])
+    registry_norm = _digits_only(fields.get("kablan_number"))
+
+    return {
+        "ok": True,
+        "match": bool(registry_norm) and registry_norm == entered_norm,
+        "registry_kablan": fields.get("kablan_number"),
+    }
+
+
 def initial_tier_for(pinkash_found: bool, ica_found: bool, company_active: Optional[bool]) -> str:
     """Tier the contractor row gets at creation time, before any channel verification."""
     if pinkash_found and (company_active is None or company_active):
@@ -231,6 +288,36 @@ def confirm_verification(
         )
         conn.commit()
         return {"ok": True, "tier": "tier_2", "method": channel}
+    finally:
+        conn.close()
+
+
+def kablan_match_approve(contractor_id: str) -> dict[str, Any]:
+    """Self-serve path — bumps to tier_2 with method='kablan_match'.
+
+    Called from POST /contractors (registration with matching kablan)
+    and POST /contractors/{id}/verify-kablan (backfill flow). Same
+    side-effects as manual_approve except we record HOW the contractor
+    proved their identity (kablan_match vs admin click).
+    """
+    now = datetime.utcnow()
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """UPDATE contractors
+               SET verification_tier   = 'tier_2',
+                   verification_method = 'kablan_match',
+                   verified_at         = COALESCE(verified_at, %s),
+                   kablan_verified_at  = %s,
+                   revalidate_at       = %s,
+                   approval_status     = 'approved',
+                   approved_at         = COALESCE(approved_at, %s)
+               WHERE id = %s""",
+            (now, now, now + REVALIDATE_PERIOD, now, contractor_id),
+        )
+        conn.commit()
+        return {"ok": True, "tier": "tier_2", "method": "kablan_match"}
     finally:
         conn.close()
 

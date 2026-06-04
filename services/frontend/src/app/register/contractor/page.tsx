@@ -44,6 +44,10 @@ interface Step1 {
 interface Step2 {
   company_name_he: string;
   business_number: string;
+  /** מספר רישיון קבלן — required. Backend cross-checks against
+   *  פנקס הקבלנים for the same business_number. Mismatch → admin
+   *  approval queue; the registration still completes. */
+  kablan_number: string;
   operating_regions: string[];
 }
 // Step 3 — optional contact email
@@ -105,7 +109,7 @@ function RegisterContractorInner() {
     setStep(2);
   }, [fromTrial]);
   const [step2, setStep2] = useState<Step2>({
-    company_name_he: '', business_number: '', operating_regions: [],
+    company_name_he: '', business_number: '', kablan_number: '', operating_regions: [],
   });
   const [step3, setStep3] = useState<Step3>({ contact_email: '' });
 
@@ -196,6 +200,9 @@ function RegisterContractorInner() {
     if (lookup?.blocked) {
       setError(`לא ניתן לרשום חברה במצב "${lookup.block_reason}".`); return;
     }
+    if (!step2.kablan_number.trim()) {
+      setError('יש להזין את מספר רישיון הקבלן'); return;
+    }
     if (step2.operating_regions.length === 0) {
       setError('יש לבחור לפחות אזור פעילות אחד'); return;
     }
@@ -210,6 +217,7 @@ function RegisterContractorInner() {
       const result = await orgApi.registerContractor({
         company_name_he:    step2.company_name_he,
         business_number:    step2.business_number,
+        kablan_number:      step2.kablan_number.trim(),
         operating_regions:  step2.operating_regions,
         contact_name:       step1.full_name,
         contact_phone:      step1.normPhone,
@@ -244,24 +252,23 @@ function RegisterContractorInner() {
       clearProspect();
       clearPendingSearch();
 
-      const channels = result.available_channels || [];
-      if (channels.length > 0) {
-        // Continue inline to channel-chooser → confirm.
-        setVerify({
-          contractor_id: result.id,
-          channels,
-          picked: null,
-          code: '',
-          sent: false,
-        });
-        setStep('verify');
-      } else if (pending) {
-        // Trial users with a replayed search land on /contractor/deals
-        // so they see the search they were promised on the preview
-        // screen, already broadcasting to corps.
-        router.push('/contractor/deals');
+      // Branching on the kablan match result:
+      //   matched  → already tier_2; straight to dashboard (or deals if
+      //              they came from a trial-flow with a pending search).
+      //   mismatch → row is pending admin review; show the "ממתין לאישור"
+      //              screen so the user knows it's not a silent failure.
+      // The legacy email/SMS verify path is only reached on the explicit
+      // fallback for old kablan-less rows (not possible from this flow).
+      if (result.kablan_matched) {
+        if (pending) {
+          router.push('/contractor/deals');
+        } else {
+          router.push('/contractor/dashboard');
+        }
       } else {
-        router.push('/contractor/dashboard');
+        // Mismatch — pending admin queue. Surface the success-screen
+        // copy with the "ממתין לאישור" message.
+        setSuccess(true);
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'שגיאה בהרשמה';
@@ -533,6 +540,20 @@ function RegisterContractorInner() {
                   onChange={(e) => setStep2((p) => ({ ...p, company_name_he: e.target.value }))}
                   readOnly={namePrefilledFromRegistry}
                   className={namePrefilledFromRegistry ? 'bg-slate-100 cursor-not-allowed' : ''}
+                />
+
+                {/* מספר רישיון קבלן — required. Backend verifies against
+                    פנקס הקבלנים for the same business_number. We don't
+                    pre-fill from the registry response (that would
+                    defeat the verification — the whole point is that
+                    the user proves they know their own license number). */}
+                <Input
+                  label="מספר רישיון קבלן"
+                  placeholder="לדוגמה: 3842"
+                  value={step2.kablan_number}
+                  onChange={(e) => setStep2((p) => ({ ...p, kablan_number: e.target.value.replace(/\D/g, '') }))}
+                  inputMode="numeric"
+                  dir="ltr"
                 />
 
                 <div className="flex flex-col gap-2">
