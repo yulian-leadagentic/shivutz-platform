@@ -3,7 +3,7 @@
 import { useEffect, useState, FormEvent, useRef, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Loader2, ShieldCheck, AlertCircle, Info } from 'lucide-react';
+import { Loader2, ShieldCheck, AlertCircle, Info, CheckCircle2 } from 'lucide-react';
 import { orgApi, otpApi } from '@/lib/api';
 import { saveTokens } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
@@ -105,6 +105,12 @@ function RegisterCorporationInner() {
   const [step, setStep]       = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState('');
+  // ── Duplicate-ח.פ outcome ────────────────────────────────────────
+  // When the backend reports the ח.פ is already on file, we land the
+  // user on a "we SMS'd the existing owner" success screen instead
+  // of a red error. The string here is the existing corp's company
+  // name (used in the copy); null means "no duplicate detected".
+  const [duplicateExistingName, setDuplicateExistingName] = useState<string | null>(null);
 
   const [step1, setStep1] = useState<Step1>({
     phone: '', normPhone: '', full_name: '',
@@ -239,6 +245,17 @@ function RegisterCorporationInner() {
       router.push('/corporation/dashboard');
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'שגיאה בהרשמה';
+      // Backend returns the duplicate-ח.פ case as a structured detail
+      // object ({ code, message, existing_company_name }). apiFetch
+      // wraps the response body in the Error message, so we sniff the
+      // string for the code and branch to the 'pending request' screen
+      // rather than rendering as a red error.
+      if (msg.includes('corporation_already_registered')) {
+        // Try to extract the existing company name for the screen.
+        const m = msg.match(/"existing_company_name"\s*:\s*"([^"]+)"/);
+        setDuplicateExistingName(m ? m[1] : null);
+        return;
+      }
       setError(
         msg === 'phone_not_verified' ? 'אימות הטלפון פג תוקף. חזור לשלב הראשון' :
         msg === 'already_registered' ? 'מספר הטלפון כבר רשום. אנא התחבר' :
@@ -250,6 +267,38 @@ function RegisterCorporationInner() {
 
   const progressStep = step === 1 && step1.otpPhase === 'verify' ? 1 : step;
   const namePrefilledFromRegistry = !!(lookup?.ok && lookup.prefill?.company_name_he);
+
+  if (duplicateExistingName !== null) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 px-4 py-8">
+        <div className="w-full max-w-lg mb-3 flex justify-end">
+          <HomeLink />
+        </div>
+        <div className="w-full max-w-lg bg-white border-2 border-emerald-300 rounded-2xl shadow-lg p-6 text-center space-y-3">
+          <div className="mx-auto h-14 w-14 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center">
+            <CheckCircle2 className="h-8 w-8" />
+          </div>
+          <h1 className="text-xl font-bold text-slate-900">הבקשה נשלחה</h1>
+          <p className="text-sm text-slate-700 leading-relaxed">
+            התאגיד <strong>{duplicateExistingName || 'עם ח.פ זה'}</strong> כבר רשום במערכת.
+            <br />
+            שלחנו לבעלים הקיים הודעת SMS עם קישור לאישור הוספתך כחבר צוות.
+          </p>
+          <p className="text-xs text-slate-500">
+            לאחר אישור, נשלח לך SMS עם פרטי הכניסה. אם הבעלים לא יאשר בזמן סביר, פנה לתמיכה.
+          </p>
+          <div className="pt-2 flex gap-2 justify-center">
+            <Link href="/login" className="px-4 py-2 rounded-lg border border-slate-300 text-sm font-medium text-slate-700 hover:bg-slate-50">
+              חזרה לכניסה
+            </Link>
+            <Link href="/" className="px-4 py-2 rounded-lg bg-brand-600 text-sm font-medium text-white hover:bg-brand-700">
+              חזרה לדף הבית
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 px-4 py-8">

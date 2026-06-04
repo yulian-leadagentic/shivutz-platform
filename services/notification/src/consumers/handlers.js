@@ -383,6 +383,46 @@ async function handle(routingKey, payload, sendEmail) {
       break;
     }
 
+    // Inverted-invite flow — a NEW user tried to register a corp/
+    // contractor whose ח.פ already has an active org. We capture them
+    // as a membership_request and SMS the existing owner a magic link
+    // to one-click approve adding them as a team member.
+    case 'team.membership_request.created': {
+      if (!payload.owner_phone) break;
+      const approveUrl = `${FRONTEND_URL}/membership-request/accept/${payload.approval_token}`;
+      const entityKindHe = payload.entity_type === 'contractor' ? 'הקבלן' : 'התאגיד';
+      const ownerName    = (payload.owner_name || '').split(' ')[0] || 'שלום';
+      const message =
+        `BuildUp — ${ownerName}, ${payload.requester_name} (${payload.requester_phone}) מבקש להצטרף לצוות ${entityKindHe} "${payload.entity_name}".\n` +
+        `לאישור בלחיצה אחת:\n${approveUrl}`;
+      await sendSmsInternal(payload.owner_phone, message);
+      break;
+    }
+
+    case 'team.membership_request.approved': {
+      if (!payload.requester_phone) break;
+      const entityKindHe = payload.entity_type === 'contractor' ? 'הקבלן' : 'התאגיד';
+      const firstName = (payload.requester_name || '').split(' ')[0] || 'שלום';
+      const message =
+        `BuildUp — ${firstName}, בקשתך להצטרף לצוות ${entityKindHe} אושרה. תוכל להיכנס למערכת עם מספר הטלפון שלך.\n` +
+        `${FRONTEND_URL}/login`;
+      await sendSmsInternal(payload.requester_phone, message);
+      break;
+    }
+
+    case 'team.membership_request.rejected': {
+      if (!payload.requester_phone) break;
+      const entityKindHe = payload.entity_type === 'contractor' ? 'הקבלן' : 'התאגיד';
+      const firstName = (payload.requester_name || '').split(' ')[0] || 'שלום';
+      const reasonSuffix = payload.reason ? `\nהערה: ${payload.reason}` : '';
+      const message =
+        `BuildUp — ${firstName}, בקשתך להצטרף לצוות ${entityKindHe} נדחתה על ידי הבעלים.` +
+        reasonSuffix +
+        '\nלשאלות, פנה לתמיכה.';
+      await sendSmsInternal(payload.requester_phone, message);
+      break;
+    }
+
     case 'contractor.verify.email_link':
       await sendEmail('contractor.verify.email_link', payload.recipient_email, null, {
         contact_name:       payload.contact_name || '',

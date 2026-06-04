@@ -9,6 +9,7 @@ from app.publisher import publish_event
 from app.services import rate_limit
 from app.services import notification_recipients as notif_recipients
 from app.services import team_membership as team_mgmt
+from app.services import membership_requests as mreq
 from app.integrations import data_gov_il
 from app.integrations.israeli_id import is_valid_israeli_id
 
@@ -142,9 +143,51 @@ async def register_corporation(data: CorporationCreate):
     if not is_valid_israeli_id(data.business_number):
         raise HTTPException(status_code=400, detail="invalid_business_number")
 
+    # ── Duplicate ח.פ guard ────────────────────────────────────────
+    # If a corp with this business_number is already on file (and not
+    # soft-deleted), don't create a parallel org row. Instead capture
+    # the new user's typed name + phone as a membership_request and
+    # SMS the existing owner(s) a one-click approve link. The 409
+    # below tells the frontend to land the user on a 'בעלים קיבל
+    # בקשה' screen.
+    existing = mreq.find_existing_active_org(data.business_number, "corporation")
+    if existing:
+        owners = mreq.owners_for("corporation", existing["id"])
+        request = mreq.create_request(
+            entity_type="corporation",
+            entity_id=existing["id"],
+            requester_phone=data.contact_phone,
+            requester_name=data.contact_name,
+            requester_email=data.contact_email,
+            requested_role="admin",
+        )
+        # One SMS per owner. The notification service unpacks each
+        # event and dispatches via SMS/WhatsApp.
+        for owner in owners:
+            await publish_event("team.membership_request.created", {
+                "owner_phone":     owner.get("phone"),
+                "owner_name":      owner.get("full_name") or "",
+                "entity_type":     "corporation",
+                "entity_name":     existing.get("company_name_he") or existing.get("company_name") or "",
+                "requester_name":  data.contact_name,
+                "requester_phone": data.contact_phone,
+                "approval_token":  request["approval_token"],
+                "expires_at":      request["expires_at"],
+            })
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "corporation_already_registered",
+                "message": "תאגיד עם ח.פ זה כבר רשום במערכת. שלחנו לבעלים הקיים הודעת SMS ובה קישור לאישור הוספתך כחבר צוות.",
+                "existing_company_name": existing.get("company_name_he") or existing.get("company_name"),
+                "request_token": request["approval_token"],
+            },
+        )
+
     # Block duplicate corporation registration for the same phone.
-    # Same reasoning as the contractor route — without this the same
-    # phone accumulates extra corporation memberships in the picker.
+    # (Reached only when the ח.פ check above didn't fire — e.g. the
+    # user is trying to register a SECOND corp under a phone that
+    # already owns a different corp.)
     conn = get_db()
     with conn.cursor() as cur:
         cur.execute(

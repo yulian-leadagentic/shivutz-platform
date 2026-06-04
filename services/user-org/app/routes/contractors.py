@@ -9,6 +9,7 @@ from app.publisher import publish_event
 from app.services import verification, rate_limit
 from app.services import notification_recipients as notif_recipients
 from app.services import team_membership as team_mgmt
+from app.services import membership_requests as mreq
 from app.integrations import data_gov_il
 from app.integrations.israeli_id import is_valid_israeli_id
 
@@ -102,6 +103,42 @@ async def lookup_business_number(data: LookupRequest):
 async def register_contractor(data: ContractorCreate):
     if not is_valid_israeli_id(data.business_number):
         raise HTTPException(status_code=400, detail="invalid_business_number")
+
+    # ── Duplicate ח.פ guard ────────────────────────────────────────
+    # Same pattern as the corp register endpoint — if a contractor
+    # with this business_number is already on file, capture the new
+    # user as a membership_request and SMS the existing owner(s).
+    existing = mreq.find_existing_active_org(data.business_number, "contractor")
+    if existing:
+        owners = mreq.owners_for("contractor", existing["id"])
+        request = mreq.create_request(
+            entity_type="contractor",
+            entity_id=existing["id"],
+            requester_phone=data.contact_phone,
+            requester_name=data.contact_name,
+            requester_email=data.contact_email,
+            requested_role="admin",
+        )
+        for owner in owners:
+            await publish_event("team.membership_request.created", {
+                "owner_phone":     owner.get("phone"),
+                "owner_name":      owner.get("full_name") or "",
+                "entity_type":     "contractor",
+                "entity_name":     existing.get("company_name_he") or existing.get("company_name") or "",
+                "requester_name":  data.contact_name,
+                "requester_phone": data.contact_phone,
+                "approval_token":  request["approval_token"],
+                "expires_at":      request["expires_at"],
+            })
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "contractor_already_registered",
+                "message": "קבלן עם ח.פ זה כבר רשום במערכת. שלחנו לבעלים הקיים הודעת SMS ובה קישור לאישור הוספתך כחבר צוות.",
+                "existing_company_name": existing.get("company_name_he") or existing.get("company_name"),
+                "request_token": request["approval_token"],
+            },
+        )
 
     # Block duplicate contractor registration for the same phone. The
     # unique constraint on entity_memberships only catches re-using the

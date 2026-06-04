@@ -1,7 +1,7 @@
 import os
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
-from app.routes import contractors, corporations, users, admin_approvals, marketplace, marketplace_admin, marketplace_subscriptions, marketplace_uploads, support
+from app.routes import contractors, corporations, users, admin_approvals, marketplace, marketplace_admin, marketplace_subscriptions, marketplace_uploads, support, membership_requests
 from app.db import get_db, init_db
 from app.errors import register_error_handlers
 
@@ -48,4 +48,5 @@ app.include_router(marketplace_admin.router, prefix="/marketplace/admin", tags=[
 app.include_router(marketplace_subscriptions.router, prefix="/marketplace", tags=["marketplace-subscriptions"])
 app.include_router(marketplace_uploads.router, prefix="/marketplace/uploads", tags=["marketplace-uploads"])
 app.include_router(support.router, prefix="/support-tickets", tags=["support"])
+app.include_router(membership_requests.router, prefix="", tags=["membership-requests"])
 # deploy probe — 2026-05-29 (boot runs migrations 031 + 032 on staging)

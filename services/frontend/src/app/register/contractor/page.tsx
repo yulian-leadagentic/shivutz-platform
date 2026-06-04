@@ -79,6 +79,8 @@ function RegisterContractorInner() {
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState('');
   const [success, setSuccess] = useState(false);
+  // Duplicate ח.פ outcome — see corp register for the same pattern.
+  const [duplicateExistingName, setDuplicateExistingName] = useState<string | null>(null);
   const { regions } = useEnums();
 
   const [step1, setStep1] = useState<Step1>({
@@ -272,6 +274,13 @@ function RegisterContractorInner() {
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'שגיאה בהרשמה';
+      // Duplicate ח.פ → inverted-invite flow. Backend already SMS'd
+      // the existing owner; land the user on the 'we asked' screen.
+      if (msg.includes('contractor_already_registered')) {
+        const m = msg.match(/"existing_company_name"\s*:\s*"([^"]+)"/);
+        setDuplicateExistingName(m ? m[1] : null);
+        return;
+      }
       setError(
         msg === 'phone_not_verified' ? 'אימות הטלפון פג תוקף. חזור לשלב הראשון' :
         msg === 'already_registered' ? 'מספר הטלפון כבר רשום. אנא התחבר' :
@@ -312,6 +321,29 @@ function RegisterContractorInner() {
   function skipVerification() {
     router.push('/contractor/dashboard');
   }
+
+  // Duplicate ח.פ → 'we asked the owner' screen
+  if (duplicateExistingName !== null) return (
+    <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
+      <Card className="w-full max-w-md shadow-md text-center border-2 border-emerald-300">
+        <CardContent className="pt-8 pb-8 flex flex-col items-center gap-3">
+          <CheckCircle2 className="h-16 w-16 text-emerald-500" />
+          <h2 className="text-xl font-bold text-slate-900">הבקשה נשלחה</h2>
+          <p className="text-slate-700 text-sm leading-relaxed">
+            הקבלן <strong>{duplicateExistingName || 'עם ח.פ זה'}</strong> כבר רשום במערכת.
+            <br />
+            שלחנו לבעלים הקיים הודעת SMS עם קישור לאישור הוספתך כחבר צוות.
+          </p>
+          <p className="text-slate-500 text-xs">
+            לאחר אישור, נשלח לך SMS עם פרטי הכניסה.
+          </p>
+          <Link href="/login" className="text-brand-600 font-medium hover:underline text-sm pt-1">
+            חזרה לכניסה
+          </Link>
+        </CardContent>
+      </Card>
+    </div>
+  );
 
   // ── Success screen (only when no tokens were returned — fallback) ────────
   if (success) return (

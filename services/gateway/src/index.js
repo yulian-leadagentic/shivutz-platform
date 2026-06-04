@@ -52,6 +52,7 @@ const services = {
   '/api/marketplace':   process.env.USER_ORG_SERVICE_URL      || 'http://user-org:3002',
   '/api/uploads':       process.env.USER_ORG_SERVICE_URL      || 'http://user-org:3002',
   '/api/support-tickets': process.env.USER_ORG_SERVICE_URL    || 'http://user-org:3002',
+  '/api/membership-requests': process.env.USER_ORG_SERVICE_URL || 'http://user-org:3002',
 };
 
 // Public routes (no auth required) — matched against req.originalUrl
@@ -88,6 +89,11 @@ const PUBLIC_METHOD_ROUTES = {
 const PUBLIC_METHOD_PREFIXES = [
   { prefix: '/api/marketplace/leads', methods: new Set(['POST']) }, // lead capture — no auth
   { prefix: '/api/marketplace',       methods: new Set(['GET']) },  // public browse
+  // Membership-request GET is hit by the owner BEFORE they log in (the
+  // SMS magic link lands them on /membership-request/accept/{token}
+  // which fetches the request to render before any auth). The mutating
+  // approve/reject endpoints still require JWT, enforced by user-org.
+  { prefix: '/api/membership-requests', methods: new Set(['GET']) },
 ];
 
 // Public only for specific HTTP methods matched by suffix on a prefix
