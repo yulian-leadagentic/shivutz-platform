@@ -4,11 +4,13 @@
 //   1. Open tenders available to bid on (contractor anonymized).
 //   2. My bids — status across all tenders.
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Loader2, Globe2, Users, AlertCircle, ArrowLeft } from 'lucide-react';
 import { tenderApi, type Tender, type Bid } from '@/lib/api';
 import { useEnums } from '@/features/enums/EnumsContext';
+import { TableToolbar } from '@/components/table/TableToolbar';
+import { useTableState } from '@/components/table/useTableState';
 
 const BID_STATUS: Record<string, { cls: string; label: string }> = {
   pending_admin: { cls: 'bg-slate-200 text-slate-700', label: 'ממתין לאישור מנהל' },
@@ -42,6 +44,45 @@ export default function CorpTendersPage() {
 
   // Open tenders this corp hasn't bid on yet (or only withdrawn).
   const biddableOpen = open.filter((t) => !t.my_bid || t.my_bid.status === 'withdrawn');
+
+  // ── Filter + sort for the "my bids" section ───────────────────
+  const [bidStatusFilter, setBidStatusFilter] = useState<'all' | 'pending' | 'won' | 'lost'>('all');
+  const [bidSearch, setBidSearch] = useState('');
+
+  const bidFilter = useCallback((b: Bid) => {
+    if (bidStatusFilter !== 'all') {
+      if (bidStatusFilter === 'pending' && !['pending_admin', 'submitted', 'selected'].includes(b.status)) return false;
+      if (bidStatusFilter === 'won' && b.status !== 'confirmed') return false;
+      if (bidStatusFilter === 'lost' && !['rejected', 'withdrawn'].includes(b.status)) return false;
+    }
+    if (bidSearch) {
+      const q = bidSearch.toLowerCase();
+      const ref = (b.tender?.ref_no != null ? String(b.tender.ref_no) : '').toLowerCase();
+      if (!ref.includes(q) && !b.tender_id.toLowerCase().includes(q)) return false;
+    }
+    return true;
+  }, [bidStatusFilter, bidSearch]);
+
+  type BidSortKey = 'submitted' | 'status' | 'workers';
+  const bidSortBy = useCallback((b: Bid, key: BidSortKey) => {
+    switch (key) {
+      case 'submitted': return b.submitted_at ? new Date(b.submitted_at) : null;
+      case 'status':    return b.status || '';
+      case 'workers':   return b.items.reduce((s, i) => s + i.quantity_offered, 0);
+    }
+  }, []);
+
+  const { visible: visibleBids, sortKey, sortDir, setSortKey, flipSortDir } =
+    useTableState<Bid, BidSortKey>({
+      rows: bids,
+      initialSortKey: 'submitted',
+      initialSortDir: 'desc',
+      filter: bidFilter,
+      sortBy: bidSortBy,
+    });
+
+  const hasActiveBidFilter = bidStatusFilter !== 'all' || bidSearch.trim() !== '';
+  function clearBidFilters() { setBidStatusFilter('all'); setBidSearch(''); }
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-6 space-y-6">
@@ -101,11 +142,43 @@ export default function CorpTendersPage() {
             <h2 className="font-bold text-slate-900">
               ההצעות שלי {bids.length > 0 && <span className="text-slate-400 font-normal">({bids.length})</span>}
             </h2>
+            {bids.length > 0 && (
+              <TableToolbar
+                pills={{
+                  options: [
+                    { key: 'all',     label: 'הכל',     count: bids.length,                                                                          tone: 'bg-slate-900 text-white' },
+                    { key: 'pending', label: 'ממתינות', count: bids.filter((b) => ['pending_admin','submitted','selected'].includes(b.status)).length, tone: 'bg-sky-500 text-white' },
+                    { key: 'won',     label: 'זכיות',   count: bids.filter((b) => b.status === 'confirmed').length,                                    tone: 'bg-emerald-600 text-white' },
+                    { key: 'lost',    label: 'הפסדים',  count: bids.filter((b) => ['rejected','withdrawn'].includes(b.status)).length,                 tone: 'bg-slate-500 text-white' },
+                  ],
+                  active: bidStatusFilter,
+                  onChange: setBidStatusFilter,
+                }}
+                searchValue={bidSearch}
+                onSearchChange={setBidSearch}
+                searchPlaceholder="חיפוש: מס׳ בקשה / מזהה"
+                sortOptions={[
+                  { key: 'submitted', label: 'תאריך הגשה' },
+                  { key: 'status',    label: 'סטטוס' },
+                  { key: 'workers',   label: 'מספר עובדים' },
+                ]}
+                sortKey={sortKey}
+                sortDir={sortDir}
+                onSortKeyChange={setSortKey}
+                onSortDirToggle={flipSortDir}
+                hasActiveFilter={hasActiveBidFilter}
+                onClear={clearBidFilters}
+              />
+            )}
             {bids.length === 0 ? (
               <div className="bg-white border border-slate-200 rounded-2xl py-8 text-center text-slate-500 text-sm">
                 עדיין לא הגשת הצעות.
               </div>
-            ) : bids.map((b) => {
+            ) : visibleBids.length === 0 ? (
+              <div className="bg-white border border-slate-200 rounded-2xl py-8 text-center text-slate-500 text-sm">
+                אין הצעות תואמות לסינון.
+              </div>
+            ) : visibleBids.map((b) => {
               const pill = BID_STATUS[b.status] ?? { cls: 'bg-slate-100 text-slate-700', label: b.status };
               const t = b.tender;
               const total = t?.items.reduce((s, i) => s + i.quantity, 0) ?? 0;

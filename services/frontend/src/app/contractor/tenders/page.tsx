@@ -2,12 +2,14 @@
 
 // Contractor's foreign-import tenders list.
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Loader2, Globe2, Plus, AlertCircle, ArrowLeft } from 'lucide-react';
 import { tenderApi, type Tender } from '@/lib/api';
 import { useEnums } from '@/features/enums/EnumsContext';
 import { Button } from '@/components/ui/button';
+import { TableToolbar } from '@/components/table/TableToolbar';
+import { useTableState } from '@/components/table/useTableState';
 
 const STATUS_PILL: Record<string, { cls: string; label: string }> = {
   pending_admin:  { cls: 'bg-slate-200 text-slate-700 border-slate-300',     label: 'ממתין לאישור פרסום' },
@@ -39,6 +41,47 @@ export default function ContractorTendersPage() {
       .catch(() => setError(true))
       .finally(() => setLoading(false));
   }, []);
+
+  // ── Filter + sort ───────────────────────────────────────────────
+  type TenderStatus = 'all' | 'active' | 'in_progress' | 'closed' | 'cancelled';
+  const [statusFilter, setStatusFilter] = useState<TenderStatus>('all');
+  const [search, setSearch] = useState('');
+
+  const tenderFilter = useCallback((t: Tender) => {
+    if (statusFilter !== 'all') {
+      if (statusFilter === 'active' && !['pending_admin', 'open', 'awaiting_admin'].includes(t.status)) return false;
+      if (statusFilter === 'in_progress' && t.status !== 'in_progress') return false;
+      if (statusFilter === 'closed' && t.status !== 'closed') return false;
+      if (statusFilter === 'cancelled' && !['cancelled', 'rejected', 'frozen'].includes(t.status)) return false;
+    }
+    if (search) {
+      const q = search.toLowerCase();
+      const title = (t.title || '').toLowerCase();
+      if (!title.includes(q) && !t.id.toLowerCase().includes(q)) return false;
+    }
+    return true;
+  }, [statusFilter, search]);
+
+  type TenderSortKey = 'created' | 'bids' | 'status';
+  const tenderSortBy = useCallback((t: Tender, key: TenderSortKey) => {
+    switch (key) {
+      case 'created': return t.created_at ? new Date(t.created_at) : null;
+      case 'bids':    return t.bid_count ?? 0;
+      case 'status':  return t.status || '';
+    }
+  }, []);
+
+  const { visible: visibleTenders, sortKey, sortDir, setSortKey, flipSortDir } =
+    useTableState<Tender, TenderSortKey>({
+      rows: tenders,
+      initialSortKey: 'created',
+      initialSortDir: 'desc',
+      filter: tenderFilter,
+      sortBy: tenderSortBy,
+    });
+
+  const hasActiveFilter = statusFilter !== 'all' || search.trim() !== '';
+  function clearFilters() { setStatusFilter('all'); setSearch(''); }
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-6 space-y-5">
@@ -75,8 +118,44 @@ export default function ContractorTendersPage() {
       )}
 
       {!loading && !error && tenders.length > 0 && (
+        <TableToolbar
+          pills={{
+            options: [
+              { key: 'all',         label: 'הכל',     count: tenders.length,                                                                                  tone: 'bg-slate-900 text-white' },
+              { key: 'active',      label: 'פעילות',  count: tenders.filter((t) => ['pending_admin','open','awaiting_admin'].includes(t.status)).length,         tone: 'bg-sky-500 text-white' },
+              { key: 'in_progress', label: 'בתהליך',  count: tenders.filter((t) => t.status === 'in_progress').length,                                           tone: 'bg-emerald-500 text-white' },
+              { key: 'closed',      label: 'הושלמו',  count: tenders.filter((t) => t.status === 'closed').length,                                                tone: 'bg-slate-600 text-white' },
+              { key: 'cancelled',   label: 'בוטלו',   count: tenders.filter((t) => ['cancelled','rejected','frozen'].includes(t.status)).length,                 tone: 'bg-rose-500 text-white' },
+            ],
+            active: statusFilter,
+            onChange: setStatusFilter,
+          }}
+          searchValue={search}
+          onSearchChange={setSearch}
+          searchPlaceholder="חיפוש: כותרת / מזהה"
+          sortOptions={[
+            { key: 'created', label: 'תאריך פתיחה' },
+            { key: 'bids',    label: 'מספר הצעות' },
+            { key: 'status',  label: 'סטטוס' },
+          ]}
+          sortKey={sortKey}
+          sortDir={sortDir}
+          onSortKeyChange={setSortKey}
+          onSortDirToggle={flipSortDir}
+          hasActiveFilter={hasActiveFilter}
+          onClear={clearFilters}
+        />
+      )}
+
+      {!loading && !error && tenders.length > 0 && visibleTenders.length === 0 && (
+        <div className="bg-white border border-slate-200 rounded-2xl py-12 text-center text-slate-500">
+          אין בקשות תואמות לסינון
+        </div>
+      )}
+
+      {!loading && !error && visibleTenders.length > 0 && (
         <div className="space-y-3">
-          {tenders.map((t) => {
+          {visibleTenders.map((t) => {
             const pill = STATUS_PILL[t.status] ?? { cls: 'bg-slate-100 text-slate-700 border-slate-200', label: t.status };
             const totalWorkers = t.items.reduce((s, i) => s + i.quantity, 0);
             return (
