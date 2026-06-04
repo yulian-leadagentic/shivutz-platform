@@ -130,22 +130,20 @@ export default function HeroSection(_: HeroSectionProps) {
         style={{ backgroundImage: 'radial-gradient(circle, #0f172a 1px, transparent 1px)', backgroundSize: '32px 32px' }}
       />
 
-      {/* ── Main hero content ── */}
-      {/* Sized down per QA: the lockup + headline were eating 50%+ of
-          the above-the-fold real estate before the role tiles got a
-          chance to be seen. Logo halved (h-40 → h-20), H1 dropped a
-          tier (md:text-5xl → md:text-3xl), subtitle shrunk + max-width
-          tightened. Top padding pulled in too. */}
+      {/* ── Header: logo + headline + subtitle ── */}
+      {/* Top padding trimmed (pt-20→pt-14, md:pt-24→pt-16) so the live
+          showcase + role tiles can fit in one viewport on common
+          phones. Bottom padding gone — LiveShowcase below carries its
+          own band. */}
       <div className="relative">
-        <div className="max-w-6xl mx-auto px-6 w-full pt-20 md:pt-24 pb-8 md:pb-12">
-          {/* Top: brand + headline + subtitle, centered */}
-          <div className="text-center space-y-2 md:space-y-3 mb-6 md:mb-8">
+        <div className="max-w-6xl mx-auto px-6 w-full pt-14 md:pt-16 pb-3 md:pb-4">
+          <div className="text-center space-y-1.5 md:space-y-2">
             <Image
               src="/brand/buildup-lockup.png?v=3"
               alt="BuildUp"
               width={500}
               height={400}
-              className="mx-auto object-contain h-20 md:h-28 w-auto"
+              className="mx-auto object-contain h-16 md:h-24 w-auto"
               priority
               unoptimized
             />
@@ -160,37 +158,44 @@ export default function HeroSection(_: HeroSectionProps) {
               מערכת מבוססת AI להתאמת עובדים, שיבוץ וניהול תהליך הגיוס — במהירות, בפשטות ובזמן אמת.
             </p>
           </div>
+        </div>
+      </div>
 
+      {/* ── Live showcase ── moved from below the tiles to above them so
+          the social-proof signal lands BEFORE the user has to pick a
+          role. Renders as a slate-50 band breaking up the white hero. */}
+      <LiveShowcase />
+
+      {/* ── Role tiles ── */}
+      <div className="relative">
+        <div className="max-w-6xl mx-auto px-6 w-full pt-3 md:pt-4 pb-6 md:pb-10">
           {/* Two tiles SIDE-BY-SIDE on every breakpoint — mobile users
               should see both choices at the same time so they can pick
-              which role they're entering without scrolling. The narrow
-              mobile width is absorbed by tighter padding + smaller
-              type; the CTA buttons drop their gap + wrap if necessary. */}
+              which role they're entering without scrolling. Heights
+              tightened (p-9→p-5, mb's trimmed, CTA py-4→py-2.5) so the
+              hero fits in one viewport alongside the live band. */}
           <div className="grid grid-cols-2 gap-3 md:gap-6 max-w-5xl mx-auto">
             {/* Contractor tile — anchored on the active-workers stat */}
             <Link
               href={contractorCtaHref}
               onClick={(e) => { e.preventDefault(); enterRole('contractor'); }}
               aria-disabled={switching !== null}
-              className={`group flex flex-col items-center justify-center text-center bg-white hover:bg-brand-50/40 border border-slate-200 hover:border-brand-400 rounded-2xl md:rounded-3xl p-3 md:p-9 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg ${switching === 'contractor' ? 'opacity-80' : ''} ${switching && switching !== 'contractor' ? 'pointer-events-none opacity-50' : ''}`}
+              className={`group flex flex-col items-center justify-center text-center bg-white hover:bg-brand-50/40 border border-slate-200 hover:border-brand-400 rounded-2xl md:rounded-3xl p-2.5 md:p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg ${switching === 'contractor' ? 'opacity-80' : ''} ${switching && switching !== 'contractor' ? 'pointer-events-none opacity-50' : ''}`}
             >
-              <div className="text-xl md:text-4xl font-black text-brand-600 tracking-tight mb-1.5 md:mb-4">
+              <div className="text-lg md:text-3xl font-black text-brand-600 tracking-tight mb-1 md:mb-2">
                 קבלן
               </div>
-              <div className="h-8 w-8 md:h-12 md:w-12 rounded-xl md:rounded-2xl bg-brand-100 flex items-center justify-center mb-1.5 md:mb-4">
-                <Users className="h-4 w-4 md:h-6 md:w-6 text-brand-600" />
+              <div className="h-7 w-7 md:h-10 md:w-10 rounded-xl bg-brand-100 flex items-center justify-center mb-1 md:mb-2">
+                <Users className="h-3.5 w-3.5 md:h-5 md:w-5 text-brand-600" />
               </div>
-              <div className="text-2xl md:text-5xl font-extrabold text-slate-900 leading-none mb-1 group-hover:text-brand-700 transition-colors">
+              <div className="text-xl md:text-4xl font-extrabold text-slate-900 leading-none mb-0.5 group-hover:text-brand-700 transition-colors">
                 {HERO_STAT.value}
               </div>
-              <div className="text-[11px] md:text-sm text-slate-500 mb-2 md:mb-5">{HERO_STAT.label}</div>
-              {/* CTA pill — bigger per QA-R3 #31 so the next step pops on
-                  the page; smaller padding on mobile (R3 #32) so the tile
-                  itself isn't too tall to scroll past. */}
-              <div className="inline-flex items-center gap-1 md:gap-2 px-3 md:px-8 py-2 md:py-4 rounded-full bg-brand-600 text-sm md:text-lg font-bold text-white shadow-md group-hover:bg-brand-700 transition-colors">
+              <div className="text-[11px] md:text-sm text-slate-500 mb-1.5 md:mb-3">{HERO_STAT.label}</div>
+              <div className="inline-flex items-center gap-1 md:gap-2 px-3 md:px-6 py-1.5 md:py-2.5 rounded-full bg-brand-600 text-xs md:text-base font-bold text-white shadow-md group-hover:bg-brand-700 transition-colors">
                 {switching === 'contractor'
-                  ? <><Loader2 className="h-4 w-4 md:h-5 md:w-5 animate-spin" /> מעביר...</>
-                  : <>חפש עובדים<ArrowLeft className="h-4 w-4 md:h-5 md:w-5 group-hover:-translate-x-1 transition-transform" /></>}
+                  ? <><Loader2 className="h-3.5 w-3.5 md:h-4 md:w-4 animate-spin" /> מעביר...</>
+                  : <>חפש עובדים<ArrowLeft className="h-3.5 w-3.5 md:h-4 md:w-4 group-hover:-translate-x-1 transition-transform" /></>}
               </div>
             </Link>
 
@@ -199,40 +204,34 @@ export default function HeroSection(_: HeroSectionProps) {
               href={corporationCtaHref}
               onClick={(e) => { e.preventDefault(); enterRole('corporation'); }}
               aria-disabled={switching !== null}
-              className={`group flex flex-col items-center justify-center text-center bg-white hover:bg-navy-50/40 border border-slate-200 hover:border-navy-400 rounded-2xl md:rounded-3xl p-3 md:p-9 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg ${switching === 'corporation' ? 'opacity-80' : ''} ${switching && switching !== 'corporation' ? 'pointer-events-none opacity-50' : ''}`}
+              className={`group flex flex-col items-center justify-center text-center bg-white hover:bg-navy-50/40 border border-slate-200 hover:border-navy-400 rounded-2xl md:rounded-3xl p-2.5 md:p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg ${switching === 'corporation' ? 'opacity-80' : ''} ${switching && switching !== 'corporation' ? 'pointer-events-none opacity-50' : ''}`}
             >
-              <div className="text-xl md:text-4xl font-black text-navy-600 tracking-tight mb-1.5 md:mb-4">
+              <div className="text-lg md:text-3xl font-black text-navy-600 tracking-tight mb-1 md:mb-2">
                 תאגיד
               </div>
-              <div className="h-8 w-8 md:h-12 md:w-12 rounded-xl md:rounded-2xl bg-navy-100 flex items-center justify-center mb-1.5 md:mb-4">
-                <Building2 className="h-4 w-4 md:h-6 md:w-6 text-navy-600" />
+              <div className="h-7 w-7 md:h-10 md:w-10 rounded-xl bg-navy-100 flex items-center justify-center mb-1 md:mb-2">
+                <Building2 className="h-3.5 w-3.5 md:h-5 md:w-5 text-navy-600" />
               </div>
               {/* Description trimmed to one short line on mobile so the
                   tile height roughly matches the contractor tile and
                   both CTAs line up. The fuller copy stays on desktop. */}
-              <div className="text-xs md:text-lg text-slate-900 font-semibold leading-snug mb-1 md:mb-3 max-w-sm">
+              <div className="text-xs md:text-base text-slate-900 font-semibold leading-snug mb-0.5 md:mb-1.5 max-w-sm">
                 <span className="md:hidden">קבלנים פעילים מחפשים עובדים</span>
                 <span className="hidden md:inline">עשרות קבלנים כבר מנויים לשירותים שלנו ומחפשים עובדים</span>
               </div>
-              <div className="text-xs md:text-xl text-navy-600 font-bold leading-snug mb-2 md:mb-5">
+              <div className="text-xs md:text-lg text-navy-600 font-bold leading-snug mb-1.5 md:mb-3">
                 <span className="md:hidden">אל תישאר בחוץ</span>
                 <span className="hidden md:inline">מנהל תאגיד — אל תישאר בחוץ</span>
               </div>
-              <div className="inline-flex items-center gap-1 md:gap-2 px-3 md:px-8 py-2 md:py-4 rounded-full bg-navy-600 text-sm md:text-lg font-bold text-white shadow-md group-hover:bg-navy-700 transition-colors">
+              <div className="inline-flex items-center gap-1 md:gap-2 px-3 md:px-6 py-1.5 md:py-2.5 rounded-full bg-navy-600 text-xs md:text-base font-bold text-white shadow-md group-hover:bg-navy-700 transition-colors">
                 {switching === 'corporation'
-                  ? <><Loader2 className="h-4 w-4 md:h-5 md:w-5 animate-spin" /> מעביר...</>
-                  : <>פרסם עובדים<ArrowLeft className="h-4 w-4 md:h-5 md:w-5 group-hover:-translate-x-1 transition-transform" /></>}
+                  ? <><Loader2 className="h-3.5 w-3.5 md:h-4 md:w-4 animate-spin" /> מעביר...</>
+                  : <>פרסם עובדים<ArrowLeft className="h-3.5 w-3.5 md:h-4 md:w-4 group-hover:-translate-x-1 transition-transform" /></>}
               </div>
             </Link>
           </div>
         </div>
       </div>
-
-      {/* Inline live-activity showcase — replaces the previous static
-          "שירותים נלווים — גלוש לפי קטגוריה" row. Rotates every ~5s
-          (jittered to feel organic) and covers the platform breadth:
-          workers, requirements, housing, services, matches, etc. */}
-      <LiveShowcase />
 
     </section>
   );

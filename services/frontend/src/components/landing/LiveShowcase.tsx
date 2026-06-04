@@ -167,12 +167,16 @@ export default function LiveShowcase({ intervalMs = 5000 }: Props) {
       aria-label="פעילות חיה בפלטפורמה"
       className="relative bg-slate-50/60"
     >
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+      {/* Vertical padding tightened (py-6 sm:py-8 → py-3 sm:py-4) and
+          the header→card gap halved so the showcase doesn't blow out
+          the hero's single-viewport budget now that it sits between
+          the headline and the role tiles. */}
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-3 sm:py-4">
 
         {/* Header — Live label + tagline. The tagline drops the
             "מגורים, שירותים" wording since the showcase now filters
             those categories out (see MIX_SHOWCASE_BY_ROLE in mocks). */}
-        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+        <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
           <div className="flex items-center gap-2">
             <span
               aria-hidden="true"
@@ -198,7 +202,7 @@ export default function LiveShowcase({ intervalMs = 5000 }: Props) {
           <div
             key={current.id}
             aria-live="polite"
-            className="animate-live-card-enter p-3 sm:p-5"
+            className="animate-live-card-enter p-2.5 sm:p-3.5"
           >
             {/*
               Layout:
