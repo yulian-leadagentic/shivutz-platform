@@ -43,13 +43,19 @@ const EXPLANATIONS: Record<StepNum, string> = {
   3: 'לאחר בדיקת רישיון קבלן ורישיון תאגיד כחוק — אנו נקשר בין הצדדים לצורך סגירת העסקה.',
 };
 
-// Accent colour key for the panel border. Step 2 uses navy; 1 and 3
-// share the orange accent (matching the badge colour rule in the
-// spec).
-const STEP_ACCENT: Record<StepNum, 'orange' | 'navy'> = {
+// Accent colour key — each step now owns its own colour so the
+// infographic reads as a clear left-to-right progression rather than
+// an orange/navy alternation:
+//   1 הרשמה ואימות  — orange  (#F7941D, brand entry colour)
+//   2 חיפוש והתאמה  — navy    (#1A2B4A, neutral process)
+//   3 סגירת עסקה    — emerald (#10B981, success/closed)
+// Affects circle background, card top accent, icon colour, mobile
+// right-border, panel border-top, and the horizontal connector
+// gradient (defined inline in the SVG below).
+const STEP_ACCENT: Record<StepNum, 'orange' | 'navy' | 'emerald'> = {
   1: 'orange',
   2: 'navy',
-  3: 'orange',
+  3: 'emerald',
 };
 
 export default function HowItWorksSection() {
@@ -79,9 +85,12 @@ export default function HowItWorksSection() {
           aria-hidden="true"
         >
           <defs>
+            {/* Gradient flows step1→step2→step3 colours so the connector
+                reads as a journey through the three accents. */}
             <linearGradient id="buGradH" x1="0" y1="0" x2="1" y2="0">
               <stop offset="0%"   stopColor="#F7941D" />
-              <stop offset="100%" stopColor="#1A2B4A" />
+              <stop offset="50%"  stopColor="#1A2B4A" />
+              <stop offset="100%" stopColor="#10B981" />
             </linearGradient>
           </defs>
           <line
@@ -119,6 +128,26 @@ export default function HowItWorksSection() {
                   <span className="bu-label">{step.label}</span>
                 </button>
 
+                {/* Per-step inline explanation — MOBILE only. Renders
+                    directly below the tapped card so the user sees
+                    context next to what they touched, instead of
+                    having to look at the bottom of the section to
+                    find a single shared panel. Hidden on desktop via
+                    CSS (.bu-explain-mobile). */}
+                <div
+                  className={`bu-explain bu-explain-mobile ${isOpen ? 'is-open' : ''}`}
+                  aria-live="polite"
+                >
+                  <div className="bu-explain-content">
+                    <div
+                      className="bu-explain-inner"
+                      data-accent={STEP_ACCENT[step.num]}
+                    >
+                      {isOpen ? EXPLANATIONS[step.num] : null}
+                    </div>
+                  </div>
+                </div>
+
                 {/* Vertical dashed connector — between cards on mobile.
                     Hidden on desktop via CSS, and never rendered after
                     the last step. */}
@@ -142,14 +171,13 @@ export default function HowItWorksSection() {
           })}
         </div>
 
-        {/* Expansion panel — one shared region below the grid. Slides
-            down via grid-template-rows 0fr → 1fr (no JS measurement).
-            The inner content keeps the previously-open text rendered
-            during the close animation so the slide-up isn't blank;
-            we only swap when openStep changes to a new step. */}
+        {/* Shared expansion panel — DESKTOP only. Sits below the grid
+            and slides down via grid-template-rows 0fr → 1fr. Hidden on
+            mobile via CSS (.bu-explain-desktop) — mobile uses the
+            per-step inline panel above instead. */}
         <div
           id="bu-explain-panel"
-          className={`bu-explain ${openStep ? 'is-open' : ''}`}
+          className={`bu-explain bu-explain-desktop ${openStep ? 'is-open' : ''}`}
           aria-live="polite"
         >
           <div className="bu-explain-content">
