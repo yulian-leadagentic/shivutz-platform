@@ -33,7 +33,7 @@ export default function VerifyKablanPage() {
   // someone deep-linked to a path that doesn't apply to their role.
   if (entityType !== 'contractor') {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
+      <div className="flex items-start justify-center pt-6 sm:pt-12 px-4">
         <Card className="w-full max-w-md shadow-md text-center">
           <CardContent className="pt-8 pb-8 flex flex-col items-center gap-3">
             <AlertCircle className="h-12 w-12 text-amber-500" />
@@ -69,7 +69,7 @@ export default function VerifyKablanPage() {
   // ── Success screens ─────────────────────────────────────────────────
   if (done?.matched === true) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
+      <div className="flex items-start justify-center pt-6 sm:pt-12 px-4">
         <Card className="w-full max-w-md shadow-md text-center">
           <CardContent className="pt-8 pb-8 flex flex-col items-center gap-3">
             <CheckCircle2 className="h-14 w-14 text-emerald-500" />
@@ -85,7 +85,7 @@ export default function VerifyKablanPage() {
   if (done?.matched === false) {
     const isUnreachable = done.reason === 'registry_unreachable';
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
+      <div className="flex items-start justify-center pt-6 sm:pt-12 px-4">
         <Card className="w-full max-w-md shadow-md text-center">
           <CardContent className="pt-8 pb-8 flex flex-col items-center gap-3">
             <AlertCircle className="h-14 w-14 text-amber-500" />
@@ -114,7 +114,7 @@ export default function VerifyKablanPage() {
 
   // ── Form ────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4 py-8">
+    <div className="flex items-start justify-center pt-6 sm:pt-12 px-4">
       <Card className="w-full max-w-md shadow-md">
         <CardHeader className="text-center pb-2">
           <div className="flex justify-center mb-3">
