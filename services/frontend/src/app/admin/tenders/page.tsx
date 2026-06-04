@@ -17,6 +17,8 @@ import { useEnums } from '@/features/enums/EnumsContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { TableToolbar } from '@/components/table/TableToolbar';
+import { useTableState } from '@/components/table/useTableState';
 
 const STATUS: Record<string, { cls: string; label: string }> = {
   pending_admin:  { cls: 'bg-slate-800 text-white',        label: 'ממתין לאישור פרסום' },
@@ -156,16 +158,74 @@ export default function AdminTendersPage() {
 
   const pendingBidCount = (t: Tender) => (t.bids ?? []).filter((b) => b.status === 'pending_admin').length;
 
-  // Action queue order: pending publish first, then tenders with bids
-  // awaiting approval, then contact requests, then in-progress, the rest.
-  const sorted = [...tenders].sort((a, b) => {
-    const pr = (t: Tender) =>
-      t.status === 'pending_admin' ? 0
-      : pendingBidCount(t) > 0 ? 0.5
-      : t.status === 'awaiting_admin' ? 1
-      : t.status === 'in_progress' ? 2 : 3;
-    return pr(a) - pr(b);
-  });
+  // ── Filter + sort state ─────────────────────────────────────────
+  type TenderStatusFilter = 'all' | 'needs_action' | 'open' | 'in_progress' | 'closed' | 'cancelled';
+  const [statusFilter, setStatusFilter] = useState<TenderStatusFilter>('all');
+  const [search, setSearch] = useState('');
+
+  const NEEDS_ACTION = (t: Tender) =>
+    t.status === 'pending_admin' ||
+    t.status === 'awaiting_admin' ||
+    pendingBidCount(t) > 0;
+
+  const filterPredicate = useCallback((t: Tender) => {
+    if (statusFilter !== 'all') {
+      if (statusFilter === 'needs_action') {
+        if (!NEEDS_ACTION(t)) return false;
+      } else if (statusFilter === 'cancelled') {
+        if (!['cancelled', 'rejected'].includes(t.status)) return false;
+      } else if (t.status !== statusFilter) return false;
+    }
+    if (search) {
+      const q = search.toLowerCase();
+      const title = (t.title || '').toLowerCase();
+      // Resolve party name from cached lookup for searchability.
+      const cname = t.contractor_id ? (names[t.contractor_id] || '').toLowerCase() : '';
+      // Match against the tender id itself too — admins sometimes copy
+      // an id from a notification and paste here to find the row.
+      const id = (t.id || '').toLowerCase();
+      if (!title.includes(q) && !cname.includes(q) && !id.includes(q)) return false;
+    }
+    return true;
+    // names is intentionally not in deps — it's a cache that fills async;
+    // a row that becomes searchable after the name resolves will be
+    // matched on the next render after the user types again.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statusFilter, search, names]);
+
+  // Action-priority sort key — same as the previous default, exposed
+  // as an explicit option in the sort dropdown.
+  type TenderSortKey = 'priority' | 'created' | 'updated';
+  const sortBy = useCallback((t: Tender, key: TenderSortKey) => {
+    switch (key) {
+      case 'priority': {
+        // Lower number = higher priority. Bake into a negative so the
+        // default sort direction (desc) reads as "most urgent first".
+        const pr = t.status === 'pending_admin' ? 0
+                 : pendingBidCount(t) > 0 ? 0.5
+                 : t.status === 'awaiting_admin' ? 1
+                 : t.status === 'in_progress' ? 2 : 3;
+        return -pr;
+      }
+      case 'created': return (t as unknown as { created_at?: string }).created_at
+        ? new Date((t as unknown as { created_at: string }).created_at) : null;
+      case 'updated': return (t as unknown as { updated_at?: string }).updated_at
+        ? new Date((t as unknown as { updated_at: string }).updated_at) : null;
+    }
+  }, []);
+
+  const { visible: sorted, sortKey, sortDir, setSortKey, flipSortDir } =
+    useTableState<Tender, TenderSortKey>({
+      rows: tenders,
+      initialSortKey: 'priority',
+      initialSortDir: 'desc',
+      filter: filterPredicate,
+      sortBy,
+    });
+
+  const needsActionCount = tenders.filter(NEEDS_ACTION).length;
+  const hasActiveFilter = statusFilter !== 'all' || search.trim() !== '';
+  function clearFilters() { setStatusFilter('all'); setSearch(''); }
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-6 space-y-5">
@@ -173,6 +233,35 @@ export default function AdminTendersPage() {
         <Globe2 className="h-6 w-6 text-brand-600" />
         <h1 className="text-2xl font-bold text-slate-900">בקשות ייבוא עובדים</h1>
       </header>
+
+      <TableToolbar
+        pills={{
+          options: [
+            { key: 'all',          label: 'הכל',                count: tenders.length,                                          tone: 'bg-slate-900 text-white' },
+            { key: 'needs_action', label: 'דורש טיפול',          count: needsActionCount,                                         tone: 'bg-amber-500 text-white' },
+            { key: 'open',         label: 'פתוח להצעות',         count: tenders.filter((t) => t.status === 'open').length,        tone: 'bg-sky-500 text-white' },
+            { key: 'in_progress',  label: 'בתהליך',              count: tenders.filter((t) => t.status === 'in_progress').length, tone: 'bg-emerald-500 text-white' },
+            { key: 'closed',       label: 'הושלם',               count: tenders.filter((t) => t.status === 'closed').length,      tone: 'bg-slate-600 text-white' },
+            { key: 'cancelled',    label: 'בוטל / נדחה',         count: tenders.filter((t) => ['cancelled','rejected'].includes(t.status)).length, tone: 'bg-rose-500 text-white' },
+          ],
+          active: statusFilter,
+          onChange: setStatusFilter,
+        }}
+        searchValue={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="חיפוש: כותרת / שם קבלן / מזהה"
+        sortOptions={[
+          { key: 'priority', label: 'דחיפות (טיפול)' },
+          { key: 'created',  label: 'תאריך פתיחה' },
+          { key: 'updated',  label: 'עדכון אחרון' },
+        ]}
+        sortKey={sortKey}
+        sortDir={sortDir}
+        onSortKeyChange={setSortKey}
+        onSortDirToggle={flipSortDir}
+        hasActiveFilter={hasActiveFilter}
+        onClear={clearFilters}
+      />
 
       {loading && <div className="flex justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-slate-400" /></div>}
       {error && !loading && (

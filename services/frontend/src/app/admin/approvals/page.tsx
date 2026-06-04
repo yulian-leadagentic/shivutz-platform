@@ -10,6 +10,8 @@ import { adminApi, type PendingOrg, type OrgEditPayload, type OrgAuditEntry } fr
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { TableToolbar } from '@/components/table/TableToolbar';
+import { useTableState } from '@/components/table/useTableState';
 
 const DEFAULT_COMMISSION = 500;
 
@@ -351,6 +353,42 @@ function ApprovalsContent() {
   const [orgs, setOrgs] = useState<PendingOrg[]>([]);
   const [loading, setLoading] = useState(true);
   const [toasts, setToasts] = useState<string[]>([]);
+  const [typeFilter, setTypeFilter] = useState<'all' | 'contractor' | 'corporation'>('all');
+  const [search, setSearch] = useState('');
+
+  const filterPredicate = useCallback((o: PendingOrg) => {
+    if (typeFilter !== 'all' && o.org_type !== typeFilter) return false;
+    if (search) {
+      const q = search.toLowerCase();
+      if (
+        !(o.company_name || '').toLowerCase().includes(q) &&
+        !(o.contact_email || '').toLowerCase().includes(q) &&
+        !(o.business_number || '').includes(search)
+      ) return false;
+    }
+    return true;
+  }, [typeFilter, search]);
+
+  type ApprovalSortKey = 'sla' | 'created' | 'name';
+  const sortBy = useCallback((o: PendingOrg, key: ApprovalSortKey) => {
+    switch (key) {
+      case 'sla':     return new Date(o.approval_sla_deadline);
+      case 'created': return o.created_at ? new Date(o.created_at) : null;
+      case 'name':    return o.company_name || '';
+    }
+  }, []);
+
+  const { visible: visibleOrgs, sortKey, sortDir, setSortKey, flipSortDir } =
+    useTableState<PendingOrg, ApprovalSortKey>({
+      rows: orgs,
+      initialSortKey: 'sla',
+      initialSortDir: 'asc',   // closest SLA deadline first
+      filter: filterPredicate,
+      sortBy,
+    });
+
+  const hasActiveFilter = typeFilter !== 'all' || search.trim() !== '';
+  function clearFilters() { setTypeFilter('all'); setSearch(''); }
 
   const load = useCallback(() => {
     setLoading(true);
@@ -397,22 +435,50 @@ function ApprovalsContent() {
         </Button>
       </div>
 
+      <TableToolbar
+        pills={{
+          options: [
+            { key: 'all',         label: 'הכל',     count: orgs.length,                                            tone: 'bg-slate-900 text-white' },
+            { key: 'contractor',  label: 'קבלנים',  count: orgs.filter((o) => o.org_type === 'contractor').length, tone: 'bg-brand-600 text-white' },
+            { key: 'corporation', label: 'תאגידים', count: orgs.filter((o) => o.org_type === 'corporation').length, tone: 'bg-navy-600 text-white' },
+          ],
+          active: typeFilter,
+          onChange: setTypeFilter,
+        }}
+        searchValue={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="חיפוש: שם / אימייל / ע.מ"
+        sortOptions={[
+          { key: 'sla',     label: 'SLA (דחיפות)' },
+          { key: 'created', label: 'תאריך רישום' },
+          { key: 'name',    label: 'שם' },
+        ]}
+        sortKey={sortKey}
+        sortDir={sortDir}
+        onSortKeyChange={setSortKey}
+        onSortDirToggle={flipSortDir}
+        hasActiveFilter={hasActiveFilter}
+        onClear={clearFilters}
+      />
+
       {loading ? (
         <div className="space-y-3">
           {[1, 2, 3].map(i => (
             <div key={i} className="h-24 bg-slate-200 rounded-xl animate-pulse" />
           ))}
         </div>
-      ) : orgs.length === 0 ? (
+      ) : visibleOrgs.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center text-slate-500">
             <CheckCircle className="h-10 w-10 mx-auto text-green-500 mb-3" />
-            אין ארגונים הממתינים לאישור
+            {hasActiveFilter
+              ? 'אין ארגונים תואמים לסינון'
+              : 'אין ארגונים הממתינים לאישור'}
           </CardContent>
         </Card>
       ) : (
         <div className="space-y-3">
-          {orgs.map(org => (
+          {visibleOrgs.map(org => (
             <OrgRow
               key={org.id}
               org={org}
