@@ -329,14 +329,7 @@ function ExpandedDetail({
           <DetailRow
             icon={<ShieldCheck className="h-3.5 w-3.5" />}
             label="רמת אימות"
-            value={
-              <span>
-                <code dir="ltr" className="font-mono text-slate-700">{org.verification_tier || '—'}</code>
-                {org.verification_method && (
-                  <span className="text-xs text-slate-400 ms-2" dir="ltr">{org.verification_method}</span>
-                )}
-              </span>
-            }
+            value={<VerificationCell tier={org.verification_tier} method={org.verification_method} />}
           />
           {org.commission_per_worker_amount != null && (
             <DetailRow
@@ -400,15 +393,66 @@ function DetailRow({
   value: React.ReactNode;
   ltr?: boolean;
 }) {
+  // Strings/numbers render in a truncating <p>; node values render in
+  // a flex container that allows wrapping (eg the verification badges).
+  const isText = typeof value === 'string' || typeof value === 'number';
   return (
     <div className="min-w-0">
       <p className="flex items-center gap-1.5 text-xs text-slate-400 mb-0.5">
         {icon}
         <span>{label}</span>
       </p>
-      <p className="text-slate-700 font-medium truncate" dir={ltr ? 'ltr' : undefined}>
-        {value}
-      </p>
+      {isText ? (
+        <p className="text-slate-700 font-medium truncate" dir={ltr ? 'ltr' : undefined}>
+          {value}
+        </p>
+      ) : (
+        <div className="text-slate-700 font-medium" dir={ltr ? 'ltr' : undefined}>
+          {value}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Verification tier + method rendered as readable Hebrew badges ────
+// Replaces the raw 'tier_2manual' string with a colored tier pill plus
+// a method label, both translated to Hebrew so the admin doesn't have
+// to remember what each enum value means.
+
+const TIER_LABEL: Record<string, { he: string; cls: string }> = {
+  tier_0: { he: 'לא מאומת',        cls: 'bg-slate-100 text-slate-700 border-slate-200' },
+  tier_1: { he: 'נמצא ברשם',       cls: 'bg-amber-50 text-amber-800 border-amber-200' },
+  tier_2: { he: 'מאומת מלא',       cls: 'bg-emerald-50 text-emerald-800 border-emerald-200' },
+};
+
+const METHOD_LABEL: Record<string, string> = {
+  kablan_match:   'מספר רישיון תאם פנקס הקבלנים',
+  gov_list_match: 'נמצא ברשימת רשות האוכלוסין',
+  email:          'אימות בקישור מייל',
+  sms:            'אימות בקוד SMS',
+  manual:         'אושר ידנית על ידי מנהל',
+  none:           'ללא אימות',
+};
+
+function VerificationCell({ tier, method }: {
+  tier?: string | null;
+  method?: string | null;
+}) {
+  const t = tier ? TIER_LABEL[tier] : undefined;
+  // Flag the suspicious combination "מאומת מלא" + "אושר ידנית" so the
+  // admin sees that the upgrade wasn't backed by a registry match.
+  const isManualTier2 = tier === 'tier_2' && method === 'manual';
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <span className={`inline-flex items-center text-xs font-medium px-2 py-0.5 rounded border ${t?.cls ?? 'bg-slate-100 text-slate-500 border-slate-200'}`}>
+        {t?.he ?? tier ?? '—'}
+      </span>
+      {method && (
+        <span className={`text-xs ${isManualTier2 ? 'text-amber-700' : 'text-slate-500'}`}>
+          {METHOD_LABEL[method] ?? method}
+        </span>
+      )}
     </div>
   );
 }
