@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useMemo, useState, useRef } from 'react';
+import { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import Link from 'next/link';
-import { Loader2, Search, Plus, AlertTriangle, Check, X, Pencil, Clock, Trash2 } from 'lucide-react';
+import { Loader2, Plus, AlertTriangle, Check, X, Pencil, Clock, Trash2 } from 'lucide-react';
 import { workerApi, orgApi } from '@/lib/api';
 import { getAccessToken, decodeJwtPayload } from '@/lib/auth';
 import { useAuth } from '@/lib/AuthContext';
@@ -11,6 +11,8 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useEnums } from '@/features/enums/EnumsContext';
 import { EXPERIENCE_LABEL } from '@/i18n/he';
+import { TableToolbar, type PillOption } from '@/components/table/TableToolbar';
+import { useTableState } from '@/components/table/useTableState';
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   available:   { label: 'עובדים זמינים לשיבוץ', color: 'bg-green-100 text-green-700' },
@@ -310,7 +312,17 @@ export default function WorkersPage() {
   const [workers, setWorkers]             = useState<Worker[]>([]);
   const [loading, setLoading]             = useState(true);
   const [search, setSearch]               = useState('');
-  const [statusFilter, setStatusFilter]   = useState<'all' | 'available' | 'assigned' | 'deactivated'>('all');
+  type StatusFilter = 'all' | 'available' | 'assigned' | 'on_leave' | 'deactivated';
+  const [statusFilter, setStatusFilter]   = useState<StatusFilter>('all');
+  const [professionFilter, setProfessionFilter] = useState('all');
+  const [originFilter, setOriginFilter]         = useState('all');
+  const [experienceFilter, setExperienceFilter] = useState('all');
+  // Visa-expiring quick filter — operational maintenance lens. Options:
+  //   all      → no filter
+  //   expired  → visa_valid_until in the past
+  //   30 / 60 / 90 → visa expires within that many days from today
+  type VisaFilter = 'all' | 'expired' | '30' | '60' | '90';
+  const [visaFilter, setVisaFilter] = useState<VisaFilter>('all');
   // Surface "תאגיד עדיין לא אושר — העובדים שלך לא יופיעו לקבלנים" so
   // the corp knows uploads are saved but invisible until admin
   // approval. We pull the verification_tier and approval_status off
@@ -412,18 +424,115 @@ export default function WorkersPage() {
     }
   }
 
-  const filtered = workers.filter((w) => {
-    const matchStatus = statusFilter === 'all' || w.status === statusFilter;
-    const profLabel = professionMap[w.profession_type] ?? w.profession_type;
-    const originLabel = originMap[w.origin_country] ?? w.origin_country;
-    const q = search.toLowerCase();
-    const matchSearch =
-      !q ||
-      `${w.first_name} ${w.last_name}`.toLowerCase().includes(q) ||
-      profLabel.toLowerCase().includes(q) ||
-      originLabel.toLowerCase().includes(q);
-    return matchStatus && matchSearch;
-  });
+  // Visa-window helper: returns the number of days until expiry, or
+  // -1 if already expired. Used by both the visa quick-filter and the
+  // 'visa expiry' sort key. Cheap, no memoisation needed (called once
+  // per row per render).
+  function daysUntilVisa(w: Worker): number {
+    if (!w.visa_valid_until) return Number.POSITIVE_INFINITY;
+    return (new Date(w.visa_valid_until).getTime() - Date.now()) / 86_400_000;
+  }
+
+  // Build the predicate fresh per filter-state change so useTableState
+  // can re-run filter+sort on dependency change. Wrapped in useCallback
+  // so reference stability matches the dependency list.
+  const filterPredicate = useCallback((w: Worker) => {
+    if (statusFilter !== 'all' && w.status !== statusFilter) return false;
+    if (professionFilter !== 'all' && w.profession_type !== professionFilter) return false;
+    if (originFilter !== 'all' && w.origin_country !== originFilter) return false;
+    if (experienceFilter !== 'all' && (w.experience_range ?? '') !== experienceFilter) return false;
+    if (visaFilter !== 'all') {
+      const d = daysUntilVisa(w);
+      if (visaFilter === 'expired' && d >= 0) return false;
+      if (visaFilter === '30' && (d < 0 || d > 30)) return false;
+      if (visaFilter === '60' && (d < 0 || d > 60)) return false;
+      if (visaFilter === '90' && (d < 0 || d > 90)) return false;
+    }
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      const profLabel = (professionMap[w.profession_type] ?? w.profession_type).toLowerCase();
+      const originLabel = (originMap[w.origin_country] ?? w.origin_country).toLowerCase();
+      const fullName = `${w.first_name} ${w.last_name}`.toLowerCase();
+      // Look for the term across name, profession, origin, passport,
+      // internal_id and employee_number — the fields someone is most
+      // likely to search by.
+      const internalId = ((w as unknown as { internal_id?: string }).internal_id || '').toLowerCase();
+      const passport   = ((w as unknown as { passport_number?: string }).passport_number || '').toLowerCase();
+      const empNum     = String((w.extra_fields as Record<string, unknown> | undefined)?.employee_number ?? '').toLowerCase();
+      if (
+        !fullName.includes(q) &&
+        !profLabel.includes(q) &&
+        !originLabel.includes(q) &&
+        !internalId.includes(q) &&
+        !passport.includes(q) &&
+        !empNum.includes(q)
+      ) return false;
+    }
+    return true;
+  }, [statusFilter, professionFilter, originFilter, experienceFilter, visaFilter, search, professionMap, originMap]);
+
+  type WorkerSortKey = 'name' | 'profession' | 'visa' | 'experience' | 'created';
+  const sortBy = useCallback((w: Worker, key: WorkerSortKey) => {
+    switch (key) {
+      case 'name':       return `${w.first_name} ${w.last_name}`.trim();
+      case 'profession': return professionMap[w.profession_type] ?? w.profession_type;
+      case 'visa':       return w.visa_valid_until ? new Date(w.visa_valid_until) : null;
+      case 'experience': {
+        // experience_range is encoded like '6-12' / '36+' — sort by the
+        // lower bound of months so the order reads "more experience first"
+        // when desc and "less first" when asc.
+        const raw = w.experience_range ?? '';
+        const m = raw.match(/^(\d+)/);
+        return m ? parseInt(m[1], 10) : null;
+      }
+      case 'created':    return (w as unknown as { created_at?: string }).created_at
+        ? new Date((w as unknown as { created_at: string }).created_at) : null;
+    }
+  }, [professionMap]);
+
+  const { visible: filtered, sortKey, sortDir, setSortKey, flipSortDir } =
+    useTableState<Worker, WorkerSortKey>({
+      rows: workers,
+      initialSortKey: 'visa',
+      initialSortDir: 'asc',   // soonest visa expiry first by default
+      filter: filterPredicate,
+      sortBy,
+    });
+
+  const hasActiveFilter =
+    statusFilter !== 'all' ||
+    professionFilter !== 'all' ||
+    originFilter !== 'all' ||
+    experienceFilter !== 'all' ||
+    visaFilter !== 'all' ||
+    search.trim() !== '';
+
+  function clearFilters() {
+    setStatusFilter('all');
+    setProfessionFilter('all');
+    setOriginFilter('all');
+    setExperienceFilter('all');
+    setVisaFilter('all');
+    setSearch('');
+  }
+
+  // Per-status counts feed the pill badges so the corp sees at a
+  // glance how many workers are in each bucket without clicking
+  // through. Computed off the unfiltered list (the pills change
+  // the filter — counting from filtered would be circular).
+  const statusCounts = useMemo(() => {
+    const c: Record<string, number> = {};
+    for (const w of workers) c[w.status] = (c[w.status] || 0) + 1;
+    return c;
+  }, [workers]);
+
+  const STATUS_PILLS: PillOption<StatusFilter>[] = [
+    { key: 'all',         label: 'הכל',        count: workers.length,           tone: 'bg-slate-900 text-white' },
+    { key: 'available',   label: 'זמינים',     count: statusCounts.available  || 0, tone: 'bg-emerald-500 text-white' },
+    { key: 'assigned',    label: 'משובצים',    count: statusCounts.assigned   || 0, tone: 'bg-blue-500 text-white' },
+    { key: 'on_leave',    label: 'בחופשה',     count: statusCounts.on_leave   || 0, tone: 'bg-amber-500 text-white' },
+    { key: 'deactivated', label: 'לא פעילים',  count: statusCounts.deactivated|| 0, tone: 'bg-slate-500 text-white' },
+  ];
 
   const expiringSoon = workers.filter((w) => {
     const days = (new Date(w.visa_valid_until).getTime() - Date.now()) / 86_400_000;
@@ -469,27 +578,77 @@ export default function WorkersPage() {
         </div>
       )}
 
-      {/* Filters */}
-      <div className="flex gap-2 flex-wrap">
-        {(['all', 'available', 'assigned', 'deactivated'] as const).map((f) => (
-          <button key={f} onClick={() => setStatusFilter(f)}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-              statusFilter === f
-                ? 'bg-brand-600 text-white'
-                : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-50'
-            }`}>
-            {f === 'all' ? 'הכל' : STATUS_LABELS[f]?.label ?? f}
-          </button>
-        ))}
-      </div>
-
-      {/* Search */}
-      <div className="relative">
-        <Search className="absolute start-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-        <input type="text" placeholder="חפש לפי שם, מקצוע, מדינה..." value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="w-full ps-9 pe-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
-      </div>
+      {/* Filter + sort toolbar — status pills + profession / origin /
+          experience / visa-window dropdowns + free-text search +
+          sort dropdown. Same pattern as /admin/deals. */}
+      <TableToolbar
+        pills={{
+          options: STATUS_PILLS,
+          active: statusFilter,
+          onChange: setStatusFilter,
+        }}
+        selects={[
+          {
+            key: 'profession',
+            ariaLabel: 'מקצוע',
+            value: professionFilter,
+            onChange: setProfessionFilter,
+            options: [
+              { value: 'all', label: 'כל המקצועות' },
+              ...professionOptions.map((p) => ({ value: p.value, label: p.label })),
+            ],
+          },
+          {
+            key: 'origin',
+            ariaLabel: 'מדינת מוצא',
+            value: originFilter,
+            onChange: setOriginFilter,
+            options: [
+              { value: 'all', label: 'כל המדינות' },
+              ...originOptions.map((o) => ({ value: o.value, label: o.label })),
+            ],
+          },
+          {
+            key: 'experience',
+            ariaLabel: 'ניסיון',
+            value: experienceFilter,
+            onChange: setExperienceFilter,
+            options: [
+              { value: 'all', label: 'כל הניסיון' },
+              ...EXP_RANGE_OPTIONS.map((r) => ({ value: r.code, label: r.label })),
+            ],
+          },
+          {
+            key: 'visa',
+            ariaLabel: 'ויזה',
+            value: visaFilter,
+            onChange: (v) => setVisaFilter(v as VisaFilter),
+            options: [
+              { value: 'all',     label: 'כל הויזות' },
+              { value: 'expired', label: 'ויזה פגה' },
+              { value: '30',      label: 'פגה תוך 30 יום' },
+              { value: '60',      label: 'פגה תוך 60 יום' },
+              { value: '90',      label: 'פגה תוך 90 יום' },
+            ],
+          },
+        ]}
+        searchValue={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="חיפוש: שם / מקצוע / מדינה / דרכון / מס׳ עובד"
+        sortOptions={[
+          { key: 'visa',       label: 'תוקף ויזה' },
+          { key: 'name',       label: 'שם' },
+          { key: 'profession', label: 'מקצוע' },
+          { key: 'experience', label: 'ניסיון' },
+          { key: 'created',    label: 'תאריך הוספה' },
+        ]}
+        sortKey={sortKey}
+        sortDir={sortDir}
+        onSortKeyChange={setSortKey}
+        onSortDirToggle={flipSortDir}
+        hasActiveFilter={hasActiveFilter}
+        onClear={clearFilters}
+      />
 
       {/* Result count strip */}
       <div className="text-sm font-medium text-slate-500">
