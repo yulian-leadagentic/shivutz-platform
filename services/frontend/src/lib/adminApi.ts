@@ -280,11 +280,22 @@ export const adminApi = {
         status: string;
         contractor_id: string;
         corporation_id: string;
-        worker_count: number | null;
+        workers_count: number | null;
         commission_amount: number | null;
         created_at: string;
         updated_at: string;
+        corp_committed_at: string | null;
+        approved_at: string | null;
         dw_count: number;
+        search_id: string | null;
+        /** Derived: 'corp'|'contractor'|'system'|'admin'|'neither'|'unknown' */
+        stuck_on: string;
+        /** The OTHER party's name (corp's name on a contractor's page
+         *  and vice versa). The admin already knows whose page they're on. */
+        other_party_name: string | null;
+        profession_type: string | null;
+        profession_he:   string | null;
+        region:          string | null;
       }>;
       gov: {
         contractor?: {

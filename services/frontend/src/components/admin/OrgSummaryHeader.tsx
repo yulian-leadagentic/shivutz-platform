@@ -304,13 +304,45 @@ function CorporationGovPanel({ gov, businessNumber }: {
 }
 
 // ── Recent deals ───────────────────────────────────────────────────────────
+// "Waiting on whom" — the most operationally meaningful column for an
+// admin reviewing one org's deal history. Mirrors the STUCK_OWNER map
+// in services/admin/app/routes/deals.py + org_summary.py. The label
+// + tone is the admin shortcut for "where is this stuck right now."
+const STUCK_LABEL: Record<string, string> = {
+  corp:       'אצל התאגיד',
+  contractor: 'אצל הקבלן',
+  system:     'אצל המערכת',
+  admin:      'דורש אדמין',
+  neither:    'סגור',
+  unknown:    '?',
+};
+const STUCK_TONE: Record<string, string> = {
+  corp:       'bg-amber-100 text-amber-800 border-amber-200',
+  contractor: 'bg-sky-100 text-sky-800 border-sky-200',
+  system:     'bg-navy-100 text-navy-800 border-navy-200',
+  admin:      'bg-rose-100 text-rose-800 border-rose-200',
+  neither:    'bg-slate-100 text-slate-600 border-slate-200',
+  unknown:    'bg-slate-100 text-slate-500 border-slate-200',
+};
+
+function StuckBadge({ on }: { on: string }) {
+  const tone = STUCK_TONE[on] || STUCK_TONE.unknown;
+  return (
+    <span className={`inline-flex items-center text-[11px] font-medium px-1.5 py-0.5 rounded border ${tone} whitespace-nowrap`}>
+      {STUCK_LABEL[on] || on}
+    </span>
+  );
+}
+
 function RecentDealsTable({ deals, orgType }: {
   deals: Summary['recent_deals'];
   orgType: OrgType;
 }) {
-  // For each deal we link to the right detail page based on the
-  // current admin context. Admin actually views deals via /admin/deals
-  // — link there with a hash so the right row scrolls into view.
+  // The admin already knows whose page they're on, so we show the
+  // OTHER party's name on each row — "with this contractor" / "with
+  // this corp." Plus profession + stuck-on so the admin can see at a
+  // glance where each deal is sitting.
+  const otherSide = orgType === 'contractor' ? 'תאגיד' : 'קבלן';
   return (
     <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
       <header className="px-4 py-2.5 border-b border-slate-100 flex items-center justify-between">
@@ -318,19 +350,19 @@ function RecentDealsTable({ deals, orgType }: {
           <Handshake className="h-4 w-4 text-slate-500" />
           עסקאות אחרונות
         </h3>
-        <Link
-          href={`/admin/deals?${orgType === 'contractor' ? 'contractor_id' : 'corp_id'}=${''}`}
-          className="text-xs text-brand-600 hover:underline"
-        >
+        <Link href="/admin/deals" className="text-xs text-brand-600 hover:underline">
           ראה הכל
         </Link>
       </header>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-slate-100 text-slate-500 text-xs">
+            <tr className="border-b border-slate-100 text-slate-500 text-xs bg-slate-50/60">
               <th className="px-3 py-2 text-start font-medium">עסקה</th>
               <th className="px-3 py-2 text-start font-medium">סטטוס</th>
+              <th className="px-3 py-2 text-start font-medium">ממתין ל</th>
+              <th className="px-3 py-2 text-start font-medium">{otherSide}</th>
+              <th className="px-3 py-2 text-start font-medium">מקצוע</th>
               <th className="px-3 py-2 text-start font-medium">עובדים</th>
               <th className="px-3 py-2 text-start font-medium">סכום</th>
               <th className="px-3 py-2 text-start font-medium">עדכון אחרון</th>
@@ -340,17 +372,24 @@ function RecentDealsTable({ deals, orgType }: {
           <tbody>
             {deals.map((d) => (
               <tr key={d.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50">
-                <td className="px-3 py-2 font-mono text-xs" dir="ltr">{dealRef(d.id)}</td>
+                <td className="px-3 py-2 font-mono text-xs whitespace-nowrap" dir="ltr">{dealRef(d.id)}</td>
                 <td className="px-3 py-2"><StatusBadge status={d.status} /></td>
-                <td className="px-3 py-2 text-slate-700">{fmtNumberOrDash(d.worker_count ?? d.dw_count)}</td>
-                <td className="px-3 py-2 text-slate-700">
+                <td className="px-3 py-2"><StuckBadge on={d.stuck_on} /></td>
+                <td className="px-3 py-2 text-slate-700 max-w-[180px] truncate" title={d.other_party_name ?? ''}>
+                  {d.other_party_name ?? '—'}
+                </td>
+                <td className="px-3 py-2 text-slate-700">{d.profession_he ?? d.profession_type ?? '—'}</td>
+                <td className="px-3 py-2 text-slate-700">{fmtNumberOrDash(d.workers_count ?? d.dw_count)}</td>
+                <td className="px-3 py-2 text-slate-700 whitespace-nowrap">
                   {d.commission_amount != null ? `₪${Number(d.commission_amount).toLocaleString('he-IL')}` : '—'}
                 </td>
-                <td className="px-3 py-2 text-slate-500 text-xs whitespace-nowrap inline-flex items-center gap-1">
-                  <CalendarDays className="h-3 w-3 text-slate-400" />
-                  {fmtDate(d.updated_at)}
+                <td className="px-3 py-2 text-slate-500 text-xs whitespace-nowrap">
+                  <span className="inline-flex items-center gap-1">
+                    <CalendarDays className="h-3 w-3 text-slate-400" />
+                    {fmtDate(d.updated_at)}
+                  </span>
                 </td>
-                <td className="px-3 py-2 text-slate-500 text-xs">{fmtDate(d.created_at)}</td>
+                <td className="px-3 py-2 text-slate-500 text-xs whitespace-nowrap">{fmtDate(d.created_at)}</td>
               </tr>
             ))}
           </tbody>

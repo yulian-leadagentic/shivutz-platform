@@ -42,6 +42,30 @@ def _serialize(row: dict) -> dict:
     return out
 
 
+# Which party is blocking the deal moving forward, keyed by status.
+# Mirrors STUCK_OWNER in admin/app/routes/deals.py — if the canonical
+# map there changes, update both. We re-declare it here instead of
+# importing because the two files live under the same service so the
+# circular-import risk is low but the explicit duplication is clearer.
+STUCK_OWNER = {
+    "proposed":                 "corp",
+    "corp_committed":           "contractor",
+    "counter_proposed":         "contractor",
+    "approved":                 "system",
+    "accepted":                 "system",
+    "active":                   "neither",
+    "reporting":                "neither",
+    "closed":                   "neither",
+    "completed":                "neither",
+    "cancelled":                "neither",
+    "cancelled_by_corp":        "neither",
+    "cancelled_by_contractor":  "neither",
+    "rejected":                 "neither",
+    "expired":                  "neither",
+    "disputed":                 "admin",
+}
+
+
 def _deal_counts(deal_cur, org_id: str, org_type: str) -> dict:
     """Count deals grouped by status for this org."""
     col = "contractor_id" if org_type == "contractor" else "corporation_id"
@@ -58,13 +82,18 @@ def _deal_counts(deal_cur, org_id: str, org_type: str) -> dict:
 
 
 def _recent_deals(deal_cur, org_id: str, org_type: str, limit: int = 10) -> list:
-    """Last N deals for this org with the key fields the admin sees in
-    the org-detail summary table."""
+    """Last N deals for this org. Includes the bits the admin scans
+    on each row: status, party ids, workers_count, commission, key
+    dates, and a derived stuck_on tag so the table shows 'waiting
+    for whom' inline. Party-NAME enrichment happens in the calling
+    route (it pulls from org_db)."""
     col = "contractor_id" if org_type == "contractor" else "corporation_id"
     deal_cur.execute(
         f"""SELECT d.id, d.status, d.contractor_id, d.corporation_id,
-                   d.worker_count, d.commission_amount,
+                   d.workers_count, d.commission_amount,
+                   d.request_line_item_id AS search_id,
                    d.created_at, d.updated_at,
+                   d.corp_committed_at, d.approved_at,
                    (SELECT COUNT(*) FROM deal_workers dw WHERE dw.deal_id = d.id) AS dw_count
             FROM deals d
             WHERE d.{col} = %s AND d.deleted_at IS NULL
@@ -72,7 +101,79 @@ def _recent_deals(deal_cur, org_id: str, org_type: str, limit: int = 10) -> list
             LIMIT %s""",
         (org_id, limit),
     )
-    return [_serialize(r) for r in deal_cur.fetchall()]
+    rows = [_serialize(r) for r in deal_cur.fetchall()]
+    for r in rows:
+        r["stuck_on"] = STUCK_OWNER.get(r.get("status") or "", "unknown")
+    return rows
+
+
+def _enrich_recent_deals(rows: list, org_conn, org_id: str, org_type: str) -> None:
+    """Add the OTHER party's name to each recent_deals row.
+
+    For a contractor's org-detail page we already know the contractor
+    is this org — what's interesting on each row is the corp on the
+    other side (and vice versa). Mutates `rows` in place.
+    """
+    if not rows:
+        return
+    if org_type == "contractor":
+        ids = list({r["corporation_id"] for r in rows if r.get("corporation_id")})
+        table = "corporations"
+        field = "corporation_id"
+    else:
+        ids = list({r["contractor_id"] for r in rows if r.get("contractor_id")})
+        table = "contractors"
+        field = "contractor_id"
+    if not ids:
+        return
+    placeholders = ",".join(["%s"] * len(ids))
+    cur = org_conn.cursor()
+    cur.execute(
+        f"""SELECT id, company_name_he, company_name
+              FROM {table} WHERE id IN ({placeholders})""",
+        ids,
+    )
+    name_by_id = {
+        r["id"]: (r.get("company_name_he") or r.get("company_name") or "")
+        for r in cur.fetchall()
+    }
+    for r in rows:
+        oid = r.get(field)
+        r["other_party_name"] = name_by_id.get(oid) or None
+
+
+def _enrich_recent_deals_profession(rows: list, deal_conn, worker_conn) -> None:
+    """Pull profession_type + Hebrew label off the worker_searches
+    behind each deal. Two-step lookup (deal_db → worker_db) but the
+    admin sees 'מקצוע' on every row so the trade-off is worth it."""
+    search_ids = list({r["search_id"] for r in rows if r.get("search_id")})
+    if not search_ids:
+        return
+    ph = ",".join(["%s"] * len(search_ids))
+    deal_cur = deal_conn.cursor()
+    deal_cur.execute(
+        f"""SELECT id, profession_type, region
+              FROM worker_searches WHERE id IN ({ph})""",
+        search_ids,
+    )
+    search_by_id = {r["id"]: r for r in deal_cur.fetchall()}
+
+    prof_codes = list({s.get("profession_type") for s in search_by_id.values() if s.get("profession_type")})
+    prof_he: dict = {}
+    if prof_codes:
+        wp = ",".join(["%s"] * len(prof_codes))
+        w_cur = worker_conn.cursor()
+        w_cur.execute(
+            f"SELECT code, name_he FROM profession_types WHERE code IN ({wp})",
+            prof_codes,
+        )
+        prof_he = {r["code"]: r["name_he"] for r in w_cur.fetchall()}
+
+    for r in rows:
+        s = search_by_id.get(r.get("search_id")) if r.get("search_id") else None
+        r["profession_type"] = (s or {}).get("profession_type")
+        r["profession_he"]   = prof_he.get((s or {}).get("profession_type"))
+        r["region"]          = (s or {}).get("region")
 
 
 def _team_member_count(auth_cur, org_id: str, org_type: str) -> int:
@@ -249,8 +350,23 @@ def get_org_summary(
             _open_searches_count(deal_cur, org_id)
             if org_type == "contractor" else 0
         )
+        # Enrich recent_deals with profession (worker_db) — keep the
+        # connection open for the lookup.
+        worker_conn = get_db("worker_db")
+        try:
+            _enrich_recent_deals_profession(recent_deals, deal_conn, worker_conn)
+        finally:
+            worker_conn.close()
     finally:
         deal_conn.close()
+
+    # Other-party name lookup hits org_db; do it after the deal block
+    # so the deal_conn can close first.
+    org_conn = get_db("org_db")
+    try:
+        _enrich_recent_deals(recent_deals, org_conn, org_id, org_type)
+    finally:
+        org_conn.close()
 
     # Team-member count (active accepted memberships only).
     auth_conn = get_db("auth_db")
