@@ -90,10 +90,11 @@ def _recent_deals(deal_cur, org_id: str, org_type: str, limit: int = 10) -> list
     enrichment happens in the calling route (it pulls from org_db).
     """
     col = "contractor_id" if org_type == "contractor" else "corporation_id"
+    # Migration 024 renamed deals.request_line_item_id → search_id.
     deal_cur.execute(
         f"""SELECT d.id, d.status, d.contractor_id, d.corporation_id,
                    d.commission_amount,
-                   d.request_line_item_id AS search_id,
+                   d.search_id,
                    d.created_at, d.updated_at,
                    d.corp_committed_at, d.approved_at,
                    (SELECT COUNT(*) FROM deal_workers dw
@@ -226,6 +227,26 @@ def _open_searches_count(deal_cur, contractor_id: str) -> int:
     )
     row = deal_cur.fetchone()
     return int(row["n"]) if row else 0
+
+
+def _canonical_il_phone(raw) -> Optional[str]:
+    """Mirror of canonical_il_phone in user-org's data_gov_il integration.
+
+    Reduce any Israeli phone format to its 9-digit subscriber number
+    so '0542031484' / '+972542031484' / '542031484' all compare equal.
+    Kept here (not imported) because admin and user-org are separate
+    services — if the upstream helper changes, sync this manually.
+    """
+    if raw is None:
+        return None
+    digits = "".join(c for c in str(raw) if c.isdigit())
+    if not digits:
+        return None
+    if digits.startswith("972"):
+        digits = digits[3:]
+    if digits.startswith("0"):
+        digits = digits[1:]
+    return digits if len(digits) == 9 else None
 
 
 def _gov_contractor(org_cur, business_number: str) -> Optional[dict]:
@@ -394,12 +415,98 @@ def get_org_summary(
         finally:
             worker_conn.close()
 
+    # Verification-status block (contractor only) — single source of
+    # truth for the admin UI's "is this org actually who they claim
+    # to be?" banner. Computes phone/email-match against the
+    # captured registry snapshot, so the admin doesn't have to eyeball
+    # the columns and figure out whether the contractor self-verified
+    # or got manual-approved without proof.
+    verification_status = None
+    if org_type == "contractor":
+        verification_status = _contractor_verification_status(org, gov)
+
     return {
-        "org":            {**org, "org_type": org_type},
-        "deal_counts":    deal_counts,
-        "team_count":     team_count,
-        "workers":        workers,            # null for contractors
-        "open_searches":  open_searches,      # 0 for corps
-        "recent_deals":   recent_deals,
-        "gov":            gov_payload,
+        "org":                 {**org, "org_type": org_type},
+        "deal_counts":         deal_counts,
+        "team_count":          team_count,
+        "workers":             workers,            # null for contractors
+        "open_searches":       open_searches,      # 0 for corps
+        "recent_deals":        recent_deals,
+        "gov":                 gov_payload,
+        "verification_status": verification_status,
+    }
+
+
+def _contractor_verification_status(org: dict, gov: Optional[dict]) -> dict:
+    """How strongly the contractor is identity-verified, and which
+    channels match the registry.
+
+    The admin UI uses this to render a banner / badge so reviewers see
+    at a glance:
+      - 'verified'        — kablan-match (phone or email or ח.פ aligned)
+      - 'manual'          — admin clicked approve; no automatic proof
+      - 'pending'         — never reached tier_2
+      - 'unverified'      — tier_2 but via a now-deprecated path (no kablan match recorded)
+
+    Plus per-channel match flags so the UI can highlight which field
+    is suspicious. Comparison sources:
+      - contractors.contact_phone vs registry_phone (column captured at
+        registration) — falls back to the live gov pinkash row when
+        the snapshot is empty (old rows).
+      - contractors.contact_email vs registry_email (same fallback).
+      - contractors.business_number vs the kablan-record MISPAR_YESHUT
+        is implicit; if the row was matched on path B (sole prop),
+        kablan_verified_at is set and registry_yeshut may be blank.
+    """
+    method   = (org.get("verification_method") or "").strip()
+    tier     = org.get("verification_tier")
+    approved = org.get("approval_status") == "approved"
+
+    # Resolve registry phone/email — prefer the snapshot captured at
+    # registration (migration 045 columns), fall back to whatever the
+    # live gov pinkash cache currently has.
+    registry_phone = org.get("registry_phone")
+    registry_email = org.get("registry_email")
+    if not registry_phone and gov and gov.get("pinkash"):
+        registry_phone = gov["pinkash"].get("phone")
+    if not registry_email and gov and gov.get("pinkash"):
+        registry_email = gov["pinkash"].get("email")
+
+    user_phone = org.get("contact_phone")
+    user_email = org.get("contact_email")
+
+    # Canonical compare for phone; case-insensitive for email.
+    phone_match: Optional[bool] = None
+    if registry_phone and user_phone:
+        rp = _canonical_il_phone(registry_phone)
+        up = _canonical_il_phone(user_phone)
+        phone_match = bool(rp and up and rp == up)
+    email_match: Optional[bool] = None
+    if registry_email and user_email:
+        email_match = registry_email.strip().lower() == user_email.strip().lower()
+
+    # Overall verdict.
+    if not approved or tier != "tier_2":
+        verdict = "pending"
+    elif method == "kablan_match":
+        verdict = "verified"
+    elif method == "manual":
+        verdict = "manual"
+    else:
+        # tier_2 via 'email' / 'sms' / 'none' — pre-kablan-match era.
+        verdict = "unverified" if method in ("none", "") else "legacy"
+
+    return {
+        "verdict":         verdict,
+        "tier":            tier,
+        "method":          method or None,
+        "approval_status": org.get("approval_status"),
+        "kablan_verified_at":       org.get("kablan_verified_at"),
+        "gov_registry_fetched_at":  org.get("gov_registry_fetched_at"),
+        "registry_phone":  registry_phone,
+        "registry_email":  registry_email,
+        "user_phone":      user_phone,
+        "user_email":      user_email,
+        "phone_match":     phone_match,      # None when comparison impossible
+        "email_match":     email_match,
     }

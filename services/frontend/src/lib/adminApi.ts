@@ -317,6 +317,25 @@ export const adminApi = {
           imported_at: string;
         } | null;
       };
+      /** Contractor-only verification verdict. Null for corporations. */
+      verification_status: {
+        /** 'verified' = kablan-match; 'manual' = admin override;
+         *  'unverified' = tier_2 with no proof; 'legacy' = tier_2 via
+         *  email/sms (pre-kablan-match era); 'pending' = not approved. */
+        verdict: 'verified' | 'manual' | 'unverified' | 'legacy' | 'pending';
+        tier:               string | null;
+        method:             string | null;
+        approval_status:    string | null;
+        kablan_verified_at: string | null;
+        gov_registry_fetched_at: string | null;
+        registry_phone:     string | null;
+        registry_email:     string | null;
+        user_phone:         string | null;
+        user_email:         string | null;
+        /** True / false / null (when comparison impossible — eg no registry value). */
+        phone_match:        boolean | null;
+        email_match:        boolean | null;
+      } | null;
     }>(`/admin/orgs/${id}/summary?org_type=${orgType}`),
 
   decide: (id: string, orgType: string, approved: boolean, reason?: string,

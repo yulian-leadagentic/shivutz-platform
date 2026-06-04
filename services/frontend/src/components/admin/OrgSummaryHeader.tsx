@@ -85,6 +85,13 @@ export function OrgSummaryHeader({ orgId, orgType, refreshKey }: {
 
   return (
     <div className="space-y-4">
+      {/* Verification verdict — admin sees at a glance whether this
+          contractor self-verified vs. was admin-approved, and whether
+          their contact info matches what פנקס הקבלנים has on file. */}
+      {orgType === 'contractor' && data.verification_status && (
+        <ContractorVerificationBanner status={data.verification_status} />
+      )}
+
       {/* KPI strip — deal status counts + team + workers / searches */}
       <DealStatusStrip
         counts={data.deal_counts}
@@ -106,6 +113,131 @@ export function OrgSummaryHeader({ orgId, orgType, refreshKey }: {
       {data.recent_deals.length > 0 && (
         <RecentDealsTable deals={data.recent_deals} orgType={orgType} />
       )}
+    </div>
+  );
+}
+
+// ── Contractor verification verdict banner ────────────────────────────────
+function ContractorVerificationBanner({ status }: {
+  status: NonNullable<Summary['verification_status']>;
+}) {
+  const verdict = status.verdict;
+  const phoneMatch = status.phone_match;
+  const emailMatch = status.email_match;
+  const anyMismatch = phoneMatch === false || emailMatch === false;
+
+  // Tone is picked by verdict, then escalated if any contact channel
+  // mismatches the registry — a 'verified' verdict with a mismatched
+  // phone is a real warning sign worth surfacing.
+  let tone: 'good' | 'warn' | 'danger';
+  let icon: React.ReactNode;
+  let title: string;
+  let body: string;
+
+  if (verdict === 'verified' && !anyMismatch) {
+    tone = 'good';
+    icon = <ShieldCheck className="h-5 w-5" />;
+    title = 'מאומת מול פנקס הקבלנים';
+    body  = status.method === 'phone_match'
+      ? 'אומת לפי התאמת מספר טלפון'
+      : status.method === 'email_match'
+        ? 'אומת לפי התאמת כתובת אימייל'
+        : 'אומת לפי התאמת ח.פ';
+  } else if (verdict === 'manual') {
+    tone = anyMismatch ? 'danger' : 'warn';
+    icon = <AlertTriangle className="h-5 w-5" />;
+    title = 'אושר ידנית — ללא אימות אוטומטי';
+    body  = anyMismatch
+      ? 'מנהל אישר ידנית, אך פרטי הקשר שהוזנו אינם תואמים את הרשום בפנקס הקבלנים. ראה פירוט למטה.'
+      : 'הקבלן לא עבר אימות מול פנקס הקבלנים — אישור ניתן ידנית על ידי מנהל המערכת.';
+  } else if (verdict === 'unverified' || verdict === 'legacy') {
+    tone = anyMismatch ? 'danger' : 'warn';
+    icon = <AlertTriangle className="h-5 w-5" />;
+    title = 'לא אומת מול פנקס הקבלנים';
+    body  = verdict === 'legacy'
+      ? 'הקבלן הגיע ל-tier_2 דרך מסלול ישן (אימות מייל/SMS לפני שהוטמע אימות מספר רישיון). מומלץ לבקש מהקבלן לחזור ולאמת מספר רישיון.'
+      : 'הקבלן ב-tier_2 ללא הוכחה של זהות מול הרשם.';
+  } else { // pending
+    tone = 'warn';
+    icon = <AlertTriangle className="h-5 w-5" />;
+    title = 'ממתין לאישור מנהל';
+    body  = 'הקבלן לא במצב מאושר.';
+  }
+
+  const toneCls = tone === 'good'
+    ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+    : tone === 'warn'
+      ? 'bg-amber-50 border-amber-200 text-amber-900'
+      : 'bg-rose-50 border-rose-200 text-rose-900';
+  const iconCls = tone === 'good' ? 'text-emerald-600'
+    : tone === 'warn' ? 'text-amber-600'
+    : 'text-rose-600';
+
+  return (
+    <div className={`rounded-lg border ${toneCls} px-4 py-3 flex flex-col gap-2`}>
+      <div className="flex items-start gap-3">
+        <div className={`shrink-0 ${iconCls}`}>{icon}</div>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold">{title}</p>
+          <p className="text-xs mt-0.5">{body}</p>
+        </div>
+      </div>
+
+      {/* Channel-match grid — only show when we have something to compare. */}
+      {(status.registry_phone || status.registry_email) && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1 text-xs">
+          {status.registry_phone && (
+            <ChannelMatchRow
+              label="טלפון"
+              userValue={status.user_phone}
+              registryValue={status.registry_phone}
+              match={status.phone_match}
+            />
+          )}
+          {status.registry_email && (
+            <ChannelMatchRow
+              label="אימייל"
+              userValue={status.user_email}
+              registryValue={status.registry_email}
+              match={status.email_match}
+            />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ChannelMatchRow({ label, userValue, registryValue, match }: {
+  label: string;
+  userValue: string | null;
+  registryValue: string | null;
+  match: boolean | null;
+}) {
+  // Three-state visual: green/red dot, or grey if comparison wasn't possible.
+  const dot = match === true ? 'bg-emerald-500'
+    : match === false ? 'bg-rose-500'
+    : 'bg-slate-300';
+  const matchLabel = match === true ? 'תואם'
+    : match === false ? 'לא תואם'
+    : '—';
+  return (
+    <div className="rounded-md bg-white/70 border border-current/20 px-2.5 py-1.5">
+      <div className="flex items-center gap-2 mb-0.5">
+        <span className={`inline-block h-2 w-2 rounded-full ${dot}`} aria-hidden />
+        <span className="font-medium">{label}</span>
+        <span className="text-xs opacity-70 ms-auto">{matchLabel}</span>
+      </div>
+      <div className="grid grid-cols-2 gap-2 text-[11px] opacity-80">
+        <div>
+          <p className="opacity-60">שהוזן</p>
+          <p dir="ltr" className="font-mono truncate">{userValue || '—'}</p>
+        </div>
+        <div>
+          <p className="opacity-60">בפנקס הקבלנים</p>
+          <p dir="ltr" className="font-mono truncate">{registryValue || '—'}</p>
+        </div>
+      </div>
     </div>
   );
 }
