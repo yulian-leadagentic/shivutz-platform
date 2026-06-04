@@ -83,18 +83,22 @@ def _deal_counts(deal_cur, org_id: str, org_type: str) -> dict:
 
 def _recent_deals(deal_cur, org_id: str, org_type: str, limit: int = 10) -> list:
     """Last N deals for this org. Includes the bits the admin scans
-    on each row: status, party ids, workers_count, commission, key
-    dates, and a derived stuck_on tag so the table shows 'waiting
-    for whom' inline. Party-NAME enrichment happens in the calling
-    route (it pulls from org_db)."""
+    on each row: status, party ids, worker count (from deal_workers
+    subquery — the old deals.workers_count column was dropped in
+    migration 014), commission, key dates, and a derived stuck_on
+    tag so the table shows 'waiting for whom' inline. Party-NAME
+    enrichment happens in the calling route (it pulls from org_db).
+    """
     col = "contractor_id" if org_type == "contractor" else "corporation_id"
     deal_cur.execute(
         f"""SELECT d.id, d.status, d.contractor_id, d.corporation_id,
-                   d.workers_count, d.commission_amount,
+                   d.commission_amount,
                    d.request_line_item_id AS search_id,
                    d.created_at, d.updated_at,
                    d.corp_committed_at, d.approved_at,
-                   (SELECT COUNT(*) FROM deal_workers dw WHERE dw.deal_id = d.id) AS dw_count
+                   (SELECT COUNT(*) FROM deal_workers dw
+                     WHERE dw.deal_id = d.id
+                       AND dw.removed_at IS NULL) AS dw_count
             FROM deals d
             WHERE d.{col} = %s AND d.deleted_at IS NULL
             ORDER BY d.updated_at DESC, d.created_at DESC
@@ -104,6 +108,10 @@ def _recent_deals(deal_cur, org_id: str, org_type: str, limit: int = 10) -> list
     rows = [_serialize(r) for r in deal_cur.fetchall()]
     for r in rows:
         r["stuck_on"] = STUCK_OWNER.get(r.get("status") or "", "unknown")
+        # Expose dw_count as workers_count so the frontend type stays
+        # stable (the table column is labelled 'עובדים' and reads from
+        # whichever number is non-null).
+        r["workers_count"] = r.get("dw_count")
     return rows
 
 
