@@ -548,6 +548,29 @@ export const adminApi = {
       `/admin/gov-corps-registry/${year}`,
     ),
 
+  /** Add a single row to gov_corporations_registry without uploading
+   *  a PDF. Handy when the official PDF missed a corp, or to backfill
+   *  manually before the file is published. Replaces any existing
+   *  row for the same (year, business_number) pair. */
+  addManualGovCorp: (data: {
+    source_year:      number;
+    business_number:  string;
+    company_name_he?: string;
+    address?:         string;
+    phone_mobile_1?:  string;
+    phone_mobile_2?:  string;
+    phone_landline_1?: string;
+    phone_landline_2?: string;
+    serial_no?:       number;
+  }) =>
+    apiFetch<{ ok: true; id: string; promoted: number; renewed: number }>(
+      '/admin/gov-corps-registry/manual',
+      { method: 'POST', body: JSON.stringify(data) },
+    ),
+
+  deleteGovCorpEntry: (rowId: string) =>
+    apiFetch<void>(`/admin/gov-corps-registry/${rowId}`, { method: 'DELETE' }),
+
   /** Upload the gov PDF + year. Backend parses, replaces all rows for
    *  that year, and re-promotes existing corps whose ח.פ is in the
    *  file to tier_2 with verification_method='gov_list_match'.
@@ -563,14 +586,37 @@ export const adminApi = {
     fd.append('source_year', String(year));
     fd.append('file', file);
     const token = (typeof window !== 'undefined') ? window.localStorage.getItem('access_token') : null;
-    const res = await fetch(`${BASE}/admin/gov-corps-registry/import`, {
-      method: 'POST',
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-      body: fd,
-    });
+    // Wrap in a try/catch so the browser's vague 'Failed to fetch'
+    // (which can mean DNS / CORS / service-down) gets re-thrown with
+    // a more helpful message pointing at the admin service.
+    let res: Response;
+    try {
+      res = await fetch(`${BASE}/admin/gov-corps-registry/import`, {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: fd,
+      });
+    } catch (err) {
+      // Real network failure: admin service unreachable, CORS, or
+      // (most often on Railway) the service was crashed because the
+      // pdfplumber install failed and the container is in restart loop.
+      throw new Error(
+        `שירות מנהל לא זמין כרגע. ייתכן שהשירות עוד לא הסתיים בעדכון. נסה שוב בעוד דקה. (${err instanceof Error ? err.message : 'fetch_failed'})`,
+      );
+    }
     if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(text || `upload_failed: ${res.status}`);
+      let body = '';
+      try {
+        body = await res.text();
+      } catch { /* ignore */ }
+      // Try to parse FastAPI's { detail: ... } payload for a readable
+      // message; fall back to raw text or status code.
+      let msg = body;
+      try {
+        const parsed = JSON.parse(body);
+        msg = typeof parsed.detail === 'string' ? parsed.detail : JSON.stringify(parsed.detail || parsed);
+      } catch { /* keep raw */ }
+      throw new Error(msg || `upload_failed_http_${res.status}`);
     }
     return res.json() as Promise<{
       ok: true;

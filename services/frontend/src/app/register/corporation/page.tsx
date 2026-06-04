@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Loader2, ShieldCheck, AlertCircle, Info, CheckCircle2 } from 'lucide-react';
 import { orgApi, otpApi } from '@/lib/api';
 import { saveTokens } from '@/lib/auth';
+import { useEnums } from '@/features/enums/EnumsContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -15,21 +16,11 @@ import { readProspect, clearProspect } from '@/features/prospect/state';
 import type { CorporationLookupResult } from '@/types';
 
 const TOTAL_STEPS = 3;
-// TODO: switch to fetching /api/enums/origins so this stays in sync
-// with the DB. For now we mirror the DB seed (001_initial_schema.sql)
-// + a couple of extras (NP, VN) the corp form already had.
-const ORIGIN_COUNTRIES = [
-  { value: 'PH', label: 'פיליפינים' },
-  { value: 'TH', label: 'תאילנד' },
-  { value: 'CN', label: 'סין' },
-  { value: 'MD', label: 'מולדובה' },
-  { value: 'RO', label: 'רומניה' },
-  { value: 'UA', label: 'אוקראינה' },
-  { value: 'IN', label: 'הודו' },
-  { value: 'NP', label: 'נפאל' },
-  { value: 'LK', label: 'סרי לנקה' },
-  { value: 'VN', label: 'וייטנאם' },
-];
+// Origin list comes from useEnums().origins so admin-deactivated
+// countries (managed via /admin/origins) don't appear here. The
+// previous hardcoded list let corps mark themselves as bringing
+// workers from countries we'd already disabled (Romania was the
+// reported case).
 
 // Israeli ID checksum (mirrors backend israeli_id.py)
 function isValidIsraeliId(value: string): boolean {
@@ -64,7 +55,7 @@ interface Step3 {
   tc_accepted: boolean;
 }
 
-const TC_VERSION = '2026-04-27.v1';
+const TC_VERSION = '2026-06-04.v2';
 const TC_TEXT = `
 תנאי שימוש ופלטפורמת BuildUp — גרסה ${TC_VERSION}
 
@@ -72,10 +63,10 @@ const TC_TEXT = `
 המערכת פתוחה לתאגיד מיד עם הרישום. פרסום עובדים והגשת הצעות מחייבים אישור ידני של מנהל המערכת ("תאגיד מאושר").
 
 2. עמלות פלטפורמה
-על כל עובד שאוייש בעסקה ייגבה תעריף עמלה אחיד מהקבלן (לפי הגדרת מנהל המערכת). התאגיד אינו משלם עמלה בעסקה זו.
+על כל עובד שאוייש בעסקה ייגבה תעריף עמלה אחיד מהתאגיד (לפי הגדרת מנהל המערכת). הקבלן אינו משלם עמלה בעסקה זו.
 
 3. תהליך החיוב
-חיוב הקבלן מתבצע 48 שעות לאחר אישור רשימת העובדים על ידו. בחלון הזמן הזה התאגיד רשאי לבטל את העסקה במערכת ולמנוע חיוב.
+חיוב התאגיד מתבצע 48 שעות לאחר אישור רשימת העובדים על ידי הקבלן. בחלון הזמן הזה התאגיד רשאי לבטל את העסקה במערכת ולמנוע חיוב.
 
 4. נעילת עובדים
 ברגע שהתאגיד מגיש רשימת עובדים בעסקה, אותם עובדים ננעלים ואינם זמינים להצעות אחרות עד סגירת העסקה או ביטולה.
@@ -86,8 +77,11 @@ const TC_TEXT = `
 6. הסתרת פרטים עד אישור
 הקבלן והתאגיד רואים זה את פרטי זה רק לאחר שהעסקה אושרה. בשלב הראשון התאגיד רואה רק מקצוע, כמות, ואזור.
 
-7. אחריות
+7. אחריות לפרטי העובדים
 פרטי העובדים שמסופקים על ידי התאגיד נכונים למיטב ידיעתו ובאחריותו. תיאום ההצבה בפועל מתבצע ישירות מול הקבלן לאחר אישור העסקה.
+
+8. אימות צד נגדי והגבלת אחריות
+BuildUp עושה כמיטב יכולתה לאמת קבלנים ומשתמשים בפלטפורמה (פנקס הקבלנים, רשם החברות, אימות טלפון ועוד), אולם האחריות הסופית לבדיקת הקבלן שמולו פועל התאגיד — לרבות יכולת התשלום, רישיונותיו, ועמידה בחוקי העבודה — חלה על התאגיד עצמו. BuildUp לא תישא בכל הוצאה או נזק, ישיר או עקיף, הנובע מהתקשרות בין התאגיד לקבלן.
 `.trim();
 
 function otpErrorMsg(msg: string): string {
@@ -102,6 +96,9 @@ function RegisterCorporationInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const fromTrial = searchParams?.get('from') === 'trial';
+  // Live origin list — backend already filters to is_active=TRUE so
+  // admin-deactivated countries never reach this dropdown.
+  const { origins } = useEnums();
   const [step, setStep]       = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState('');
@@ -515,15 +512,17 @@ function RegisterCorporationInner() {
                 <div className="flex flex-col gap-2">
                   <label className="text-sm font-medium text-slate-700">מדינות מוצא עובדים</label>
                   <div className="grid grid-cols-2 gap-2 border border-slate-200 rounded-md p-3">
-                    {ORIGIN_COUNTRIES.map((c) => (
-                      <label key={c.value} className="flex items-center gap-2 text-sm cursor-pointer">
+                    {origins.length === 0 ? (
+                      <p className="text-sm text-slate-400 col-span-2">טוען מדינות...</p>
+                    ) : origins.map((o) => (
+                      <label key={o.code} className="flex items-center gap-2 text-sm cursor-pointer">
                         <input
                           type="checkbox"
-                          checked={step2.countries_of_origin.includes(c.value)}
-                          onChange={() => toggleCountry(c.value)}
+                          checked={step2.countries_of_origin.includes(o.code)}
+                          onChange={() => toggleCountry(o.code)}
                           className="rounded"
                         />
-                        {c.label}
+                        {o.name_he}
                       </label>
                     ))}
                   </div>

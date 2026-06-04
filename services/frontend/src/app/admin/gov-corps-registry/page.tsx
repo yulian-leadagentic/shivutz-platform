@@ -5,7 +5,7 @@
 // auto-promoted to tier_2 (verification_method='gov_list_match').
 
 import { useEffect, useState, FormEvent } from 'react';
-import { Loader2, FilePlus, FileText, CheckCircle2, AlertCircle, CalendarDays, RefreshCw } from 'lucide-react';
+import { Loader2, FilePlus, FileText, CheckCircle2, AlertCircle, CalendarDays, RefreshCw, Plus } from 'lucide-react';
 import { adminApi } from '@/lib/adminApi';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -153,6 +153,9 @@ export default function AdminGovCorpsPage() {
         </CardContent>
       </Card>
 
+      {/* Manual entry — for corps the PDF missed */}
+      <ManualEntryCard onAdded={loadYears} defaultYear={sourceYear} />
+
       {/* Years on file */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -201,5 +204,158 @@ export default function AdminGovCorpsPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+// ── Manual entry card — bypass the PDF parser ──────────────────────────────
+function ManualEntryCard({ onAdded, defaultYear }: {
+  onAdded: () => void;
+  defaultYear: number;
+}) {
+  const [open, setOpen]       = useState(false);
+  const [busy, setBusy]       = useState(false);
+  const [error, setError]     = useState('');
+  const [result, setResult]   = useState<{ promoted: number; renewed: number } | null>(null);
+
+  const [year, setYear]                       = useState(defaultYear);
+  const [businessNumber, setBusinessNumber]   = useState('');
+  const [companyName, setCompanyName]         = useState('');
+  const [address, setAddress]                 = useState('');
+  const [mobile1, setMobile1]                 = useState('');
+  const [mobile2, setMobile2]                 = useState('');
+  const [landline1, setLandline1]             = useState('');
+  const [landline2, setLandline2]             = useState('');
+
+  function reset() {
+    setBusinessNumber(''); setCompanyName(''); setAddress('');
+    setMobile1(''); setMobile2(''); setLandline1(''); setLandline2('');
+    setError(''); setResult(null);
+  }
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    setError(''); setResult(null);
+    if (!businessNumber.trim() || businessNumber.trim().length !== 9 || !/^\d{9}$/.test(businessNumber.trim())) {
+      setError('יש להזין מס׳ ח.פ תקין (9 ספרות)'); return;
+    }
+    setBusy(true);
+    try {
+      const res = await adminApi.addManualGovCorp({
+        source_year:     year,
+        business_number: businessNumber.trim(),
+        company_name_he: companyName.trim() || undefined,
+        address:         address.trim() || undefined,
+        phone_mobile_1:  mobile1.trim() || undefined,
+        phone_mobile_2:  mobile2.trim() || undefined,
+        phone_landline_1: landline1.trim() || undefined,
+        phone_landline_2: landline2.trim() || undefined,
+      });
+      setResult({ promoted: res.promoted, renewed: res.renewed });
+      reset();
+      onAdded();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'שגיאה בהוספה');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between">
+        <CardTitle className="text-base flex items-center gap-2">
+          <Plus className="h-4 w-4 text-brand-600" />
+          הוספה ידנית של תאגיד לרשימה
+        </CardTitle>
+        <Button
+          variant={open ? 'outline' : 'default'}
+          size="sm"
+          onClick={() => { setOpen(!open); setError(''); }}
+        >
+          {open ? 'סגור' : 'פתח טופס'}
+        </Button>
+      </CardHeader>
+      {open && (
+        <CardContent>
+          <CardDescription className="mb-3">
+            לתאגיד שאינו מופיע ב-PDF של רשות האוכלוסין — הוסף אותו ידנית. אם התאגיד כבר רשום במערכת, נעדכן אותו אוטומטית ל-tier_2.
+          </CardDescription>
+          <form onSubmit={submit} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Input
+              label="שנה"
+              type="number"
+              min={2020}
+              max={2100}
+              value={year}
+              onChange={(e) => setYear(parseInt(e.target.value, 10) || defaultYear)}
+            />
+            <Input
+              label="מס׳ ח.פ (9 ספרות)"
+              dir="ltr"
+              maxLength={9}
+              value={businessNumber}
+              onChange={(e) => setBusinessNumber(e.target.value.replace(/\D/g, ''))}
+            />
+            <div className="sm:col-span-2">
+              <Input
+                label="שם התאגיד"
+                value={companyName}
+                onChange={(e) => setCompanyName(e.target.value)}
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <Input
+                label="כתובת"
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+              />
+            </div>
+            <Input
+              label="טלפון נייד"
+              type="tel"
+              dir="ltr"
+              value={mobile1}
+              onChange={(e) => setMobile1(e.target.value)}
+            />
+            <Input
+              label="טלפון נייד נוסף"
+              type="tel"
+              dir="ltr"
+              value={mobile2}
+              onChange={(e) => setMobile2(e.target.value)}
+            />
+            <Input
+              label="טלפון משרד"
+              type="tel"
+              dir="ltr"
+              value={landline1}
+              onChange={(e) => setLandline1(e.target.value)}
+            />
+            <Input
+              label="טלפון משרד נוסף"
+              type="tel"
+              dir="ltr"
+              value={landline2}
+              onChange={(e) => setLandline2(e.target.value)}
+            />
+            {error && (
+              <p className="sm:col-span-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">{error}</p>
+            )}
+            {result && (
+              <p className="sm:col-span-2 text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md px-3 py-2 inline-flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4" />
+                התאגיד נוסף לרשימה. תאגידים קיימים שעודכנו: {result.promoted + result.renewed}.
+              </p>
+            )}
+            <div className="sm:col-span-2 flex justify-end">
+              <Button type="submit" disabled={busy}>
+                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                הוסף לרשימה
+              </Button>
+            </div>
+          </form>
+        </CardContent>
+      )}
+    </Card>
   );
 }

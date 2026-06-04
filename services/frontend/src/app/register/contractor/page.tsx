@@ -50,10 +50,37 @@ interface Step2 {
   kablan_number: string;
   operating_regions: string[];
 }
-// Step 3 — optional contact email
+// Step 3 — optional contact email + T&C accept
 interface Step3 {
   contact_email: string;
+  tc_accepted: boolean;
 }
+
+const CONTRACTOR_TC_VERSION = '2026-06-04.v1';
+const CONTRACTOR_TC_TEXT = `
+תנאי שימוש בפלטפורמת BuildUp לקבלנים — גרסה ${CONTRACTOR_TC_VERSION}
+
+1. אישור והפעלה
+המערכת פתוחה לקבלן מיד עם הרישום. הגשת בקשות לעובדים וקבלת הצעות מתאגידים מותנית באימות הקבלן (מספר רישיון קבלן מול פנקס הקבלנים) או אישור ידני של מנהל המערכת.
+
+2. עמלות פלטפורמה
+הקבלן אינו משלם עמלת פלטפורמה לפי עסקה. עמלות הפלטפורמה נגבות מהתאגיד שמספק את העובדים, לפי הגדרת מנהל המערכת.
+
+3. תהליך החיוב והאישור
+לאחר שהקבלן רואה את רשימת העובדים שהתאגיד הציע, יש לו חלון של 48 שעות לאשר או לבטל את העסקה. במהלך החלון הזה תיאום פרטים מתבצע ישירות מול התאגיד.
+
+4. הסתרת פרטים עד אישור
+הקבלן והתאגיד רואים זה את פרטי זה רק לאחר שהעסקה אושרה. בשלב הראשון הקבלן רואה רק מקצוע, כמות, מדינת מוצא ואזור — שם התאגיד נחשף רק עם אישור העסקה.
+
+5. אחריות לבקשת העובדים
+פרטי הבקשה שמסופקים על ידי הקבלן (מקצוע, כמות, אזור, תאריכי תחילה) נכונים למיטב ידיעתו ובאחריותו. שינויים בבקשה לאחר פרסומה מחייבים יידוע התאגידים שהציעו הצעה.
+
+6. אימות צד נגדי והגבלת אחריות
+BuildUp עושה כמיטב יכולתה לאמת תאגידים ומשתמשים בפלטפורמה (רשם החברות, רשימת תאגידי כוח אדם מורשים של רשות האוכלוסין וההגירה, אימות טלפון ועוד), אולם האחריות הסופית לבדיקת התאגיד שמולו פועל הקבלן — לרבות רישיון העסקת עובדים זרים, יכולת אספקה, ועמידה בחוקי העבודה — חלה על הקבלן עצמו. BuildUp לא תישא בכל הוצאה או נזק, ישיר או עקיף, הנובע מהתקשרות בין הקבלן לתאגיד.
+
+7. תקשורת ויידוע
+על ידי הרישום הקבלן מסכים לקבל הודעות SMS, WhatsApp ואימייל הקשורות לעסקאות, אישורים ושינויי סטטוס.
+`.trim();
 // Verify — post-registration channel verification
 interface VerifyState {
   contractor_id: string;
@@ -113,7 +140,7 @@ function RegisterContractorInner() {
   const [step2, setStep2] = useState<Step2>({
     company_name_he: '', business_number: '', kablan_number: '', operating_regions: [],
   });
-  const [step3, setStep3] = useState<Step3>({ contact_email: '' });
+  const [step3, setStep3] = useState<Step3>({ contact_email: '', tc_accepted: false });
 
   const [lookup, setLookup]           = useState<RegistryLookupResult | null>(null);
   const [lookupLoading, setLookupLoading] = useState(false);
@@ -214,6 +241,10 @@ function RegisterContractorInner() {
   // ── Step 3: final submit ──────────────────────────────────────────────────
   async function handleSubmit(e: FormEvent) {
     e.preventDefault(); setError('');
+    if (!step3.tc_accepted) {
+      setError('יש לאשר את תנאי השימוש כדי להמשיך');
+      return;
+    }
     setLoading(true);
     try {
       const result = await orgApi.registerContractor({
@@ -637,9 +668,33 @@ function RegisterContractorInner() {
                   placeholder="info@company.co.il"
                   dir="ltr"
                   value={step3.contact_email}
-                  onChange={(e) => setStep3({ contact_email: e.target.value })}
+                  onChange={(e) => setStep3((p) => ({ ...p, contact_email: e.target.value }))}
                   autoComplete="email"
                 />
+
+                {/* T&C — scroll box + accept checkbox. BuildUp can't
+                    accept a contractor onto the platform without
+                    explicit consent to the liability + verification
+                    sections. */}
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-sm font-medium text-slate-700">תנאי שימוש</label>
+                  <div
+                    className="max-h-44 overflow-y-auto rounded-md border border-slate-300 bg-slate-50 px-3 py-2 text-xs text-slate-700 whitespace-pre-wrap leading-relaxed"
+                    dir="rtl"
+                  >
+                    {CONTRACTOR_TC_TEXT}
+                  </div>
+                  <label className="flex items-start gap-2 text-sm cursor-pointer mt-1">
+                    <input
+                      type="checkbox"
+                      checked={step3.tc_accepted}
+                      onChange={(e) => setStep3((p) => ({ ...p, tc_accepted: e.target.checked }))}
+                      className="rounded mt-0.5"
+                    />
+                    <span>קראתי ואני מאשר את תנאי השימוש (גרסה {CONTRACTOR_TC_VERSION})</span>
+                  </label>
+                </div>
+
                 {error && (
                   <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">{error}</p>
                 )}
@@ -652,7 +707,7 @@ function RegisterContractorInner() {
                   >
                     חזור
                   </Button>
-                  <Button type="submit" disabled={loading} className="flex-1">
+                  <Button type="submit" disabled={loading || !step3.tc_accepted} className="flex-1">
                     {loading ? <><Loader2 className="h-4 w-4 animate-spin" /> שולח...</> : 'הירשם'}
                   </Button>
                 </div>

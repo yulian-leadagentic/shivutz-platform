@@ -191,25 +191,28 @@ function OrgRow({
             ))}
           </div>
 
-          {/* Commission input — defaults to 500₪ per worker, editable per entity */}
+          {/* Commission input — defaults to 500₪ per worker, editable per entity.
+              Layout note: label sits ABOVE the input (block), default-hint
+              sits BELOW the input (separate line) — used to be flex-end
+              + side-by-side which caused the label to overlap the input
+              on narrow widths in RTL. Also dropped the redundant '(₪)'
+              from the label since the input already shows a ₪ icon. */}
           {!editing && (
-            <div className="flex items-end gap-3">
-              <div className="flex-1 max-w-xs">
-                <label className="text-xs text-slate-500 block mb-1">עמלת פלטפורמה לעובד (₪)</label>
-                <div className="relative">
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={commission}
-                    onChange={e => setCommission(e.target.value)}
-                    dir="ltr"
-                    className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 pe-8 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                  />
-                  <span className="absolute end-3 top-1/2 -translate-y-1/2 text-xs text-slate-400">₪</span>
-                </div>
+            <div className="max-w-xs">
+              <label className="text-xs text-slate-500 block mb-1">עמלת פלטפורמה לעובד</label>
+              <div className="relative">
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={commission}
+                  onChange={e => setCommission(e.target.value)}
+                  dir="ltr"
+                  className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 pe-8 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                />
+                <span className="absolute end-3 top-1/2 -translate-y-1/2 text-xs text-slate-400">₪</span>
               </div>
-              <p className="text-xs text-slate-400 pb-2">ברירת מחדל: ₪{DEFAULT_COMMISSION}</p>
+              <p className="text-xs text-slate-400 mt-1">ברירת מחדל: ₪{DEFAULT_COMMISSION}</p>
             </div>
           )}
 

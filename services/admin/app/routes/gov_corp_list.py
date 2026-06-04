@@ -12,12 +12,127 @@ from __future__ import annotations
 
 from typing import Optional
 
+import uuid
+
 from fastapi import APIRouter, File, Form, Header, HTTPException, UploadFile
+from pydantic import BaseModel
 
 from app.db import get_db
 from app.services import gov_corp_list
 
 router = APIRouter()
+
+
+class ManualEntry(BaseModel):
+    """Admin-typed row added directly to gov_corporations_registry
+    without uploading a PDF — useful when a corp the gov list missed
+    needs to be marked as approved for the current year."""
+    source_year:      int
+    business_number:  str
+    company_name_he:  str | None = None
+    address:          str | None = None
+    phone_mobile_1:   str | None = None
+    phone_mobile_2:   str | None = None
+    phone_landline_1: str | None = None
+    phone_landline_2: str | None = None
+    serial_no:        int | None = None
+
+
+@router.post("/gov-corps-registry/manual")
+async def add_manual_entry(
+    data: ManualEntry,
+    x_user_id: str | None = Header(default=None),
+):
+    """Insert a single row into gov_corporations_registry. If a row for
+    the same (business_number, source_year) already exists it's
+    replaced. Side-effect identical to the bulk import: any matching
+    existing corp gets bumped to tier_2 + verification_method=
+    'gov_list_match'."""
+    if data.source_year < 2020 or data.source_year > 2100:
+        raise HTTPException(status_code=400, detail="invalid_source_year")
+    bn = (data.business_number or "").strip()
+    if not bn or not bn.isdigit() or len(bn) != 9:
+        raise HTTPException(status_code=400, detail="invalid_business_number")
+
+    conn = get_db("org_db")
+    try:
+        cur = conn.cursor()
+        # Remove any existing row for this (bn, year) so we always end
+        # up with one row per business_number per year.
+        cur.execute(
+            """DELETE FROM gov_corporations_registry
+               WHERE source_year = %s AND business_number = %s""",
+            (data.source_year, bn),
+        )
+        new_id = str(uuid.uuid4())
+        cur.execute(
+            """INSERT INTO gov_corporations_registry
+                 (id, source_year, serial_no, business_number,
+                  company_name_he, address,
+                  phone_mobile_1, phone_mobile_2,
+                  phone_landline_1, phone_landline_2,
+                  raw_row, imported_by)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            (new_id, data.source_year, data.serial_no, bn,
+             data.company_name_he, data.address,
+             data.phone_mobile_1, data.phone_mobile_2,
+             data.phone_landline_1, data.phone_landline_2,
+             '{"source":"manual_admin_entry"}', x_user_id),
+        )
+
+        # Promote / renew any existing corp with this business_number.
+        # Same logic as the bulk-import endpoint.
+        cur.execute(
+            """UPDATE org_db.corporations
+                  SET verification_tier        = 'tier_2',
+                      verification_method      = 'gov_list_match',
+                      verified_at              = COALESCE(verified_at, NOW()),
+                      gov_registry_source_year = %s,
+                      gov_registry_matched_at  = NOW(),
+                      approval_status          = 'approved',
+                      approved_at              = COALESCE(approved_at, NOW())
+                WHERE business_number = %s
+                  AND deleted_at IS NULL
+                  AND verification_tier IN ('tier_0', 'tier_1')""",
+            (data.source_year, bn),
+        )
+        promoted = cur.rowcount
+        cur.execute(
+            """UPDATE org_db.corporations
+                  SET gov_registry_source_year = %s,
+                      gov_registry_matched_at  = NOW()
+                WHERE business_number = %s
+                  AND deleted_at IS NULL
+                  AND verification_tier = 'tier_2'""",
+            (data.source_year, bn),
+        )
+        renewed = cur.rowcount
+        conn.commit()
+        return {
+            "ok": True,
+            "id": new_id,
+            "promoted": promoted,
+            "renewed": renewed,
+        }
+    finally:
+        conn.close()
+
+
+@router.delete("/gov-corps-registry/{row_id}", status_code=204)
+def delete_entry(row_id: str):
+    """Hard-delete a registry row. Doesn't roll back any corp's tier
+    that was previously promoted via this row — admin can demote
+    manually if needed."""
+    conn = get_db("org_db")
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "DELETE FROM gov_corporations_registry WHERE id = %s",
+            (row_id,),
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 @router.post("/gov-corps-registry/import")
@@ -108,6 +223,25 @@ async def import_gov_pdf(
         "rows_inserted": inserted,
         "existing_corps_promoted_or_renewed": promoted,
     }
+
+
+@router.get("/gov-corps-registry/_diagnostic")
+def diagnostic():
+    """Quick health check — does the admin service have the deps it
+    needs to parse the PDF? Use this if the upload returns a vague
+    error to see if pdfplumber actually loaded."""
+    out = {"service": "admin"}
+    try:
+        import pdfplumber  # noqa: F401
+        out["pdfplumber"] = "ok"
+    except Exception as e:
+        out["pdfplumber"] = f"missing: {e}"
+    try:
+        import multipart  # python-multipart  # noqa: F401
+        out["python_multipart"] = "ok"
+    except Exception as e:
+        out["python_multipart"] = f"missing: {e}"
+    return out
 
 
 @router.get("/gov-corps-registry/years")
