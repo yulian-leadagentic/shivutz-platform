@@ -1,11 +1,13 @@
 'use client';
 
-import { useEffect, useState, FormEvent } from 'react';
-import { Loader2, UserPlus, ShieldCheck, ShieldAlert, Phone, Mail, Building2 } from 'lucide-react';
+import { useCallback, useEffect, useState, FormEvent } from 'react';
+import { Loader2, UserPlus, ShieldCheck, ShieldAlert } from 'lucide-react';
 import { adminApi, type AdminUser } from '@/lib/adminApi';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { TableToolbar, type PillOption } from '@/components/table/TableToolbar';
+import { useTableState } from '@/components/table/useTableState';
 
 const ROLE_LABEL: Record<string, string> = {
   admin:       'מנהל',
@@ -79,7 +81,7 @@ export default function AdminUsersPage() {
     }
   }
 
-  const filtered = users.filter((u) => {
+  const filterPredicate = useCallback((u: AdminUser) => {
     if (filterRole !== 'all' && u.role !== filterRole) return false;
     if (search) {
       const q = search.toLowerCase();
@@ -87,7 +89,41 @@ export default function AdminUsersPage() {
       if (!hay.includes(q)) return false;
     }
     return true;
-  });
+  }, [filterRole, search]);
+
+  type UserSortKey = 'name' | 'last_login' | 'role' | 'org';
+  const sortBy = useCallback((u: AdminUser, key: UserSortKey) => {
+    switch (key) {
+      case 'name':       return u.full_name || '';
+      case 'last_login': return u.last_login_at ? new Date(u.last_login_at) : null;
+      case 'role':       return u.role || '';
+      case 'org':        return u.org_name || '';
+    }
+  }, []);
+
+  const { visible: filtered, sortKey, sortDir, setSortKey, flipSortDir } =
+    useTableState<AdminUser, UserSortKey>({
+      rows: users,
+      initialSortKey: 'last_login',
+      initialSortDir: 'desc',
+      filter: filterPredicate,
+      sortBy,
+    });
+
+  const hasActiveFilter = filterRole !== 'all' || search.trim() !== '';
+  function clearFilters() { setFilterRole('all'); setSearch(''); }
+
+  const roleCounts = {
+    admin:       users.filter((u) => u.role === 'admin').length,
+    contractor:  users.filter((u) => u.role === 'contractor').length,
+    corporation: users.filter((u) => u.role === 'corporation').length,
+  };
+  const ROLE_PILLS: PillOption<typeof filterRole>[] = [
+    { key: 'all',         label: 'הכל',     count: users.length,         tone: 'bg-slate-900 text-white' },
+    { key: 'admin',       label: 'מנהלים',  count: roleCounts.admin,     tone: 'bg-brand-600 text-white' },
+    { key: 'contractor',  label: 'קבלנים',  count: roleCounts.contractor, tone: 'bg-amber-500 text-white' },
+    { key: 'corporation', label: 'תאגידים', count: roleCounts.corporation, tone: 'bg-navy-600 text-white' },
+  ];
 
   const adminCount = users.filter((u) => u.role === 'admin' && u.is_active).length;
 
@@ -160,23 +196,24 @@ export default function AdminUsersPage() {
         </Card>
       )}
 
-      {/* Filters + search */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <div className="flex gap-1.5">
-          {(['all', 'admin', 'contractor', 'corporation'] as const).map((r) => (
-            <button key={r} onClick={() => setFilterRole(r)}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                filterRole === r
-                  ? 'bg-brand-600 text-white'
-                  : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-50'
-              }`}>
-              {r === 'all' ? 'הכל' : ROLE_LABEL[r]}
-            </button>
-          ))}
-        </div>
-        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="חפש לפי שם / טלפון / אימייל"
-          className="h-9 flex-1 min-w-[200px] max-w-sm rounded-md border border-slate-300 bg-white px-3 text-sm" />
-      </div>
+      <TableToolbar
+        pills={{ options: ROLE_PILLS, active: filterRole, onChange: setFilterRole }}
+        searchValue={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="חיפוש: שם / טלפון / אימייל / שם ארגון"
+        sortOptions={[
+          { key: 'last_login', label: 'כניסה אחרונה' },
+          { key: 'name',       label: 'שם' },
+          { key: 'role',       label: 'תפקיד' },
+          { key: 'org',        label: 'ארגון' },
+        ]}
+        sortKey={sortKey}
+        sortDir={sortDir}
+        onSortKeyChange={setSortKey}
+        onSortDirToggle={flipSortDir}
+        hasActiveFilter={hasActiveFilter}
+        onClear={clearFilters}
+      />
 
       {/* Users table */}
       <Card>

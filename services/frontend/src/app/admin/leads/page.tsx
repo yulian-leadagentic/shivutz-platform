@@ -1,11 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Loader2, Phone, Check, RotateCcw, Trash2, Inbox } from 'lucide-react';
 import { adminApi, type Lead } from '@/lib/adminApi';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { TableToolbar } from '@/components/table/TableToolbar';
+import { useTableState } from '@/components/table/useTableState';
 
 type Filter = 'false' | 'true' | 'all';
 const FILTER_LABEL: Record<Filter, string> = {
@@ -30,6 +32,8 @@ export default function AdminLeadsPage() {
   const [leads, setLeads]     = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter]   = useState<Filter>('false');
+  const [search, setSearch]   = useState('');
+  const [sourceFilter, setSourceFilter] = useState<'all' | 'landing_page' | 'refund_request'>('all');
   const [error, setError]     = useState('');
   const [busyId, setBusyId]   = useState<string | null>(null);
   const [toast, setToast]     = useState('');
@@ -46,6 +50,39 @@ export default function AdminLeadsPage() {
   }
 
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [filter]);
+
+  // Source + search are CLIENT-side filters on top of the server's
+  // handled/pending bucket (load() refetches when `filter` changes).
+  const filterPredicate = useCallback((l: Lead) => {
+    if (sourceFilter !== 'all' && l.source !== sourceFilter) return false;
+    if (search) {
+      const q = search.toLowerCase();
+      const hay = [l.full_name, l.phone, l.notes].filter(Boolean).join(' ').toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  }, [sourceFilter, search]);
+
+  type LeadSortKey = 'created' | 'handled' | 'name';
+  const sortBy = useCallback((l: Lead, key: LeadSortKey) => {
+    switch (key) {
+      case 'created': return l.created_at ? new Date(l.created_at) : null;
+      case 'handled': return l.handled_at ? new Date(l.handled_at) : null;
+      case 'name':    return l.full_name || '';
+    }
+  }, []);
+
+  const { visible: visibleLeads, sortKey, sortDir, setSortKey, flipSortDir } =
+    useTableState<Lead, LeadSortKey>({
+      rows: leads,
+      initialSortKey: 'created',
+      initialSortDir: 'desc',
+      filter: filterPredicate,
+      sortBy,
+    });
+
+  const hasActiveFilter = sourceFilter !== 'all' || search.trim() !== '';
+  function clearFilters() { setSourceFilter('all'); setSearch(''); }
 
   async function markHandled(l: Lead) {
     setBusyId(l.id);
@@ -88,19 +125,43 @@ export default function AdminLeadsPage() {
         </p>
       </div>
 
-      {/* Filter tabs */}
-      <div className="flex gap-1.5">
-        {(Object.keys(FILTER_LABEL) as Filter[]).map((f) => (
-          <button key={f} onClick={() => setFilter(f)}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-              filter === f
-                ? 'bg-brand-600 text-white'
-                : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-50'
-            }`}>
-            {FILTER_LABEL[f]}
-          </button>
-        ))}
-      </div>
+      <TableToolbar
+        pills={{
+          options: (Object.keys(FILTER_LABEL) as Filter[]).map((f) => ({
+            key: f, label: FILTER_LABEL[f],
+            tone: f === 'false' ? 'bg-amber-500 text-white' : f === 'true' ? 'bg-emerald-600 text-white' : 'bg-slate-900 text-white',
+          })),
+          active: filter,
+          onChange: setFilter,
+        }}
+        selects={[
+          {
+            key: 'source',
+            ariaLabel: 'מקור',
+            value: sourceFilter,
+            onChange: (v) => setSourceFilter(v as typeof sourceFilter),
+            options: [
+              { value: 'all',             label: 'כל המקורות' },
+              { value: 'landing_page',    label: 'דף נחיתה' },
+              { value: 'refund_request',  label: 'בקשת החזר' },
+            ],
+          },
+        ]}
+        searchValue={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="חיפוש: שם / טלפון / הערות"
+        sortOptions={[
+          { key: 'created', label: 'תאריך פנייה' },
+          { key: 'handled', label: 'תאריך טיפול' },
+          { key: 'name',    label: 'שם' },
+        ]}
+        sortKey={sortKey}
+        sortDir={sortDir}
+        onSortKeyChange={setSortKey}
+        onSortDirToggle={flipSortDir}
+        hasActiveFilter={hasActiveFilter}
+        onClear={clearFilters}
+      />
 
       <Card>
         <CardContent className="p-0">
@@ -108,14 +169,14 @@ export default function AdminLeadsPage() {
             <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-slate-400" /></div>
           ) : error ? (
             <p className="p-4 text-sm text-red-600">{error}</p>
-          ) : leads.length === 0 ? (
+          ) : visibleLeads.length === 0 ? (
             <div className="text-center py-12 text-slate-400">
               <Inbox className="h-10 w-10 mx-auto mb-2" />
-              {filter === 'false' ? 'אין פניות ממתינות' : 'אין פניות'}
+              {hasActiveFilter ? 'אין פניות תואמות לסינון' : filter === 'false' ? 'אין פניות ממתינות' : 'אין פניות'}
             </div>
           ) : (
             <ul className="divide-y divide-slate-100">
-              {leads.map((l) => {
+              {visibleLeads.map((l) => {
                 const isRefund = l.source === 'refund_request';
                 const handled = !!l.handled_at;
                 return (

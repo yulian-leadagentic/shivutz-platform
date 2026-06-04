@@ -1,11 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Loader2, Search, ChevronLeft } from 'lucide-react';
+import { Loader2, ChevronLeft } from 'lucide-react';
 import { adminApi, type PendingOrg } from '@/lib/adminApi';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { TableToolbar } from '@/components/table/TableToolbar';
+import { useTableState } from '@/components/table/useTableState';
 
 type StatusFilter = 'all' | 'approved' | 'pending' | 'rejected' | 'suspended';
 const STATUS_FILTER_LABEL: Record<StatusFilter, string> = {
@@ -37,15 +39,41 @@ export default function AdminOrgsPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  const filtered = orgs.filter(o => {
-    const matchType   = typeFilter === 'all'   || o.org_type === typeFilter;
-    const matchStatus = statusFilter === 'all' || (o as any).approval_status === statusFilter;
-    const matchSearch = !search ||
-      (o.company_name || '').toLowerCase().includes(search.toLowerCase()) ||
-      (o.contact_email || '').toLowerCase().includes(search.toLowerCase()) ||
-      (o.business_number || '').includes(search);
-    return matchType && matchStatus && matchSearch;
-  });
+  type OrgRow = PendingOrg & { approval_status?: string };
+  const filterPredicate = useCallback((o: OrgRow) => {
+    if (typeFilter !== 'all' && o.org_type !== typeFilter) return false;
+    if (statusFilter !== 'all' && o.approval_status !== statusFilter) return false;
+    if (search) {
+      const q = search.toLowerCase();
+      if (
+        !(o.company_name || '').toLowerCase().includes(q) &&
+        !(o.contact_email || '').toLowerCase().includes(q) &&
+        !(o.business_number || '').includes(search)
+      ) return false;
+    }
+    return true;
+  }, [typeFilter, statusFilter, search]);
+
+  type OrgSortKey = 'created' | 'name' | 'status';
+  const sortBy = useCallback((o: OrgRow, key: OrgSortKey) => {
+    switch (key) {
+      case 'created': return o.created_at ? new Date(o.created_at) : null;
+      case 'name':    return o.company_name || '';
+      case 'status':  return o.approval_status || '';
+    }
+  }, []);
+
+  const { visible: filtered, sortKey, sortDir, setSortKey, flipSortDir } =
+    useTableState<OrgRow, OrgSortKey>({
+      rows: orgs,
+      initialSortKey: 'created',
+      initialSortDir: 'desc',
+      filter: filterPredicate,
+      sortBy,
+    });
+
+  const hasActiveFilter = typeFilter !== 'all' || statusFilter !== 'all' || search.trim() !== '';
+  function clearFilters() { setTypeFilter('all'); setStatusFilter('all'); setSearch(''); }
 
   function fmt(iso?: string) {
     if (!iso) return '—';
@@ -56,52 +84,42 @@ export default function AdminOrgsPage() {
     <div className="space-y-4">
       <h2 className="text-xl font-bold text-slate-900">כל הארגונים</h2>
 
-      <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
-        <div className="flex gap-1.5 flex-wrap">
-          <span className="text-xs text-slate-500 self-center me-1">סוג:</span>
-          {(['all', 'contractor', 'corporation'] as const).map(f => (
-            <button
-              key={f}
-              onClick={() => setTypeFilter(f)}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                typeFilter === f
-                  ? 'bg-brand-600 text-white'
-                  : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-50'
-              }`}
-            >
-              {f === 'all' ? 'הכל' : f === 'contractor' ? 'קבלנים' : 'תאגידים'}
-            </button>
-          ))}
-        </div>
-        <div className="flex gap-1.5 flex-wrap">
-          <span className="text-xs text-slate-500 self-center me-1">סטטוס:</span>
-          {(Object.keys(STATUS_FILTER_LABEL) as StatusFilter[]).map(f => (
-            <button
-              key={f}
-              onClick={() => setStatusFilter(f)}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                statusFilter === f
-                  ? 'bg-brand-600 text-white'
-                  : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-50'
-              }`}
-            >
-              {STATUS_FILTER_LABEL[f]}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Search */}
-      <div className="relative">
-        <Search className="absolute start-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-        <input
-          type="text"
-          placeholder="חפש לפי שם או אימייל..."
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          className="w-full ps-9 pe-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-        />
-      </div>
+      <TableToolbar
+        pills={{
+          options: [
+            { key: 'all',         label: 'הכל',     count: orgs.length,                                                       tone: 'bg-slate-900 text-white' },
+            { key: 'contractor',  label: 'קבלנים',  count: orgs.filter((o) => o.org_type === 'contractor').length,            tone: 'bg-brand-600 text-white' },
+            { key: 'corporation', label: 'תאגידים', count: orgs.filter((o) => o.org_type === 'corporation').length,           tone: 'bg-navy-600 text-white' },
+          ],
+          active: typeFilter,
+          onChange: setTypeFilter,
+        }}
+        selects={[
+          {
+            key: 'status',
+            ariaLabel: 'סטטוס',
+            value: statusFilter,
+            onChange: (v) => setStatusFilter(v as StatusFilter),
+            options: (Object.keys(STATUS_FILTER_LABEL) as StatusFilter[]).map((s) => ({
+              value: s, label: STATUS_FILTER_LABEL[s],
+            })),
+          },
+        ]}
+        searchValue={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="חיפוש: שם / אימייל / ע.מ / ח.פ"
+        sortOptions={[
+          { key: 'created', label: 'תאריך רישום' },
+          { key: 'name',    label: 'שם' },
+          { key: 'status',  label: 'סטטוס' },
+        ]}
+        sortKey={sortKey}
+        sortDir={sortDir}
+        onSortKeyChange={setSortKey}
+        onSortDirToggle={flipSortDir}
+        hasActiveFilter={hasActiveFilter}
+        onClear={clearFilters}
+      />
 
       <Card>
         <CardHeader className="pb-2">
