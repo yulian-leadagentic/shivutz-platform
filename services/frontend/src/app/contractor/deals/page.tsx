@@ -1244,6 +1244,10 @@ function ContractorDealsPageInner() {
   const [error, setError]                   = useState(false);
   const [filter, setFilter]                 = useState<Filter>(initialFilter);
   const [query, setQuery]                   = useState('');
+  // Sort dropdown — defaults to 'priority' which preserves the existing
+  // urgent-first behavior (action-required deals at top, then by recency).
+  type DealSortKey = 'priority' | 'newest' | 'oldest' | 'most_proposals';
+  const [sortKey, setSortKey]               = useState<DealSortKey>('priority');
   const [expandedDealId, setExpandedDealId] = useState<string | null>(null);
   const [workersById, setWorkersById]       = useState<Record<string, Worker[]>>({});
   const [loadingWorkers, setLoadingWorkers] = useState<Record<string, boolean>>({});
@@ -1430,13 +1434,24 @@ function ContractorDealsPageInner() {
       const fromSearch = c.search?.created_at ? parseUtcMs(c.search.created_at) : 0;
       return Math.max(fromDeals, fromSearch);
     };
-    return [...visible].sort((a, b) => {
-      const pa = CARD_STATE_PRIORITY[classifyCard(a.deals, a.search)];
-      const pb = CARD_STATE_PRIORITY[classifyCard(b.deals, b.search)];
-      if (pa !== pb) return pa - pb;
-      return ts(b) - ts(a);
-    });
-  }, [visible]);
+    const arr = [...visible];
+    if (sortKey === 'priority') {
+      // Original behaviour: action-required first, then recency.
+      arr.sort((a, b) => {
+        const pa = CARD_STATE_PRIORITY[classifyCard(a.deals, a.search)];
+        const pb = CARD_STATE_PRIORITY[classifyCard(b.deals, b.search)];
+        if (pa !== pb) return pa - pb;
+        return ts(b) - ts(a);
+      });
+    } else if (sortKey === 'newest') {
+      arr.sort((a, b) => ts(b) - ts(a));
+    } else if (sortKey === 'oldest') {
+      arr.sort((a, b) => ts(a) - ts(b));
+    } else if (sortKey === 'most_proposals') {
+      arr.sort((a, b) => (b.deals.length - a.deals.length) || (ts(b) - ts(a)));
+    }
+    return arr;
+  }, [visible, sortKey]);
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 space-y-5">
@@ -1479,15 +1494,31 @@ function ContractorDealsPageInner() {
           })}
         </div>
 
-        <div className="relative sm:w-72">
-          <Search className="h-4 w-4 text-slate-400 absolute top-1/2 -translate-y-1/2 start-3 pointer-events-none" />
-          <input
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="חיפוש מקצוע, אזור, מוצא"
-            className="w-full ps-9 pe-3 py-2 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 bg-white"
-          />
+        <div className="flex items-center gap-2 sm:w-auto">
+          <div className="relative flex-1 sm:w-72">
+            <Search className="h-4 w-4 text-slate-400 absolute top-1/2 -translate-y-1/2 start-3 pointer-events-none" />
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="חיפוש מקצוע, אזור, מוצא"
+              className="w-full ps-9 pe-3 py-2 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 bg-white"
+            />
+          </div>
+          {/* Sort dropdown — default 'priority' preserves the urgent-
+              first ordering; other options let the user override
+              when they're browsing rather than acting. */}
+          <select
+            aria-label="מיון"
+            value={sortKey}
+            onChange={(e) => setSortKey(e.target.value as DealSortKey)}
+            className="h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+          >
+            <option value="priority">דחיפות (ברירת מחדל)</option>
+            <option value="newest">החדשות ביותר</option>
+            <option value="oldest">הישנות ביותר</option>
+            <option value="most_proposals">הכי הרבה הצעות</option>
+          </select>
         </div>
       </div>
 
