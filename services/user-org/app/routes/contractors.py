@@ -207,10 +207,22 @@ async def register_contractor(data: ContractorCreate):
     #                 (approval_status='pending'). Admin can override.
     #   ok=False    → data.gov.il was unreachable; treat as mismatch
     #                 (pending) rather than blocking the user.
+    # Pass the user's OTP-verified phone + (optional) email so the
+    # sole-prop fallback can match against MISPAR_TEL / EMAIL when the
+    # registry has an empty MISPAR_YESHUT.
     kablan_check = await verification.verify_kablan_match(
         data.business_number, data.kablan_number,
+        owner_phone=data.contact_phone,
+        owner_email=data.contact_email,
     )
     kablan_matched = bool(kablan_check.get("match"))
+
+    # Snapshot the registry row + extracted fields for the contractors
+    # insert. Either path A (lookup-by-ח.פ) or path B (lookup-by-kablan)
+    # may have produced these; the helper threads them through so we
+    # don't have to know which one matched.
+    pinkash_row    = kablan_check.get("pinkash_row")
+    pinkash_fields = kablan_check.get("pinkash_fields") or {}
     now = datetime.utcnow()
 
     org_id = str(uuid.uuid4())
@@ -231,29 +243,55 @@ async def register_contractor(data: ContractorCreate):
     conn = get_db()
     try:
         cur = conn.cursor()
+        # Prefer the pinkash snapshot from the kablan check (covers both
+        # path A and path B) over the original quick_lookup prefill —
+        # path B kicks in for sole props whose ח.פ isn't in the dataset,
+        # so quick_lookup's prefill is empty in that case.
+        snapshot_kvutza     = pinkash_fields.get("kvutza")     or prefill.get("kvutza")
+        snapshot_sivug      = pinkash_fields.get("sivug")      or prefill.get("sivug")
+        snapshot_branch     = pinkash_fields.get("gov_branch") or prefill.get("gov_branch")
+
         cur.execute(
             """INSERT INTO contractors
                (id, user_owner_id, company_name, company_name_he, business_number,
                 kablan_number, kvutza, sivug, gov_branch, gov_company_status,
                 operating_regions, contact_name, contact_phone, contact_email,
                 verification_tier, verification_method, verified_at,
-                kablan_verified_at, revalidate_at,
+                kablan_verified_at,
+                gov_registry_snapshot, gov_registry_fetched_at,
+                registry_email, registry_phone, registry_address,
+                license_issued_at, registry_kablan_mukar, registry_annual_scope,
+                revalidate_at,
                 approval_status, approved_at, approval_sla_deadline)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                       %s, %s,
+                       %s, %s, %s,
+                       %s, %s, %s,
+                       %s, %s, %s, %s)""",
             (org_id, "PENDING", company_name, company_name_he,
              data.business_number,
              # Always store what the USER TYPED, not the registry value.
              # On match these are equal modulo formatting; on mismatch
              # the admin queue surfaces both for comparison.
              data.kablan_number.strip(),
-             prefill.get("kvutza"),
-             prefill.get("sivug"),
-             prefill.get("gov_branch"),
+             snapshot_kvutza,
+             snapshot_sivug,
+             snapshot_branch,
              lookup.get("gov_company_status"),
              json.dumps(data.operating_regions), data.contact_name,
              data.contact_phone, data.contact_email,
              final_tier, verification_method, verified_at,
-             kablan_verified_at, revalidate_at,
+             kablan_verified_at,
+             # Registry snapshot (NULL when no pinkash row was found).
+             json.dumps(pinkash_row, ensure_ascii=False) if pinkash_row else None,
+             now if pinkash_row else None,
+             pinkash_fields.get("email"),
+             pinkash_fields.get("phone"),
+             pinkash_fields.get("address"),
+             pinkash_fields.get("license_issued_at"),
+             pinkash_fields.get("kablan_mukar"),
+             pinkash_fields.get("annual_scope"),
+             revalidate_at,
              approval_status, approved_at, sla_deadline)
         )
 
@@ -425,15 +463,22 @@ async def verify_kablan(
     conn = get_db()
     try:
         cur = conn.cursor()
-        # Confirm the contractor exists + grab business_number for the lookup.
+        # Confirm the contractor exists + grab business_number + contact
+        # info for the lookup. Phone + email are needed for the sole-
+        # prop fallback in verify_kablan_match.
         cur.execute(
-            "SELECT business_number, kablan_verified_at FROM contractors WHERE id = %s AND deleted_at IS NULL",
+            """SELECT business_number, contact_phone, contact_email,
+                      kablan_verified_at
+                 FROM contractors
+                WHERE id = %s AND deleted_at IS NULL""",
             (org_id,),
         )
         row = cur.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="contractor_not_found")
         business_number = row["business_number"]
+        contact_phone   = row.get("contact_phone")
+        contact_email   = row.get("contact_email")
 
         # Role gate (skip if platform admin)
         if x_user_role != "admin":
@@ -457,18 +502,56 @@ async def verify_kablan(
     finally:
         conn.close()
 
-    check = await verification.verify_kablan_match(business_number, data.kablan_number)
+    check = await verification.verify_kablan_match(
+        business_number, data.kablan_number,
+        owner_phone=contact_phone, owner_email=contact_email,
+    )
     matched = bool(check.get("match"))
 
     # Always store the typed value so admin/support can see what the
-    # contractor claimed even on a mismatch.
+    # contractor claimed even on a mismatch. If the verifier located a
+    # pinkash row (path A or B), also refresh the registry snapshot
+    # columns — useful even on a mismatch because admin can review the
+    # row that almost matched.
+    pinkash_row    = check.get("pinkash_row")
+    pinkash_fields = check.get("pinkash_fields") or {}
     conn = get_db()
     try:
         cur = conn.cursor()
-        cur.execute(
-            "UPDATE contractors SET kablan_number=%s WHERE id=%s",
-            (data.kablan_number.strip(), org_id),
-        )
+        if pinkash_row:
+            cur.execute(
+                """UPDATE contractors
+                      SET kablan_number          = %s,
+                          gov_registry_snapshot  = %s,
+                          gov_registry_fetched_at= NOW(),
+                          registry_email         = %s,
+                          registry_phone         = %s,
+                          registry_address       = %s,
+                          license_issued_at      = %s,
+                          registry_kablan_mukar  = %s,
+                          registry_annual_scope  = %s,
+                          kvutza                 = COALESCE(%s, kvutza),
+                          sivug                  = COALESCE(%s, sivug),
+                          gov_branch             = COALESCE(%s, gov_branch)
+                    WHERE id = %s""",
+                (data.kablan_number.strip(),
+                 json.dumps(pinkash_row, ensure_ascii=False),
+                 pinkash_fields.get("email"),
+                 pinkash_fields.get("phone"),
+                 pinkash_fields.get("address"),
+                 pinkash_fields.get("license_issued_at"),
+                 pinkash_fields.get("kablan_mukar"),
+                 pinkash_fields.get("annual_scope"),
+                 pinkash_fields.get("kvutza"),
+                 pinkash_fields.get("sivug"),
+                 pinkash_fields.get("gov_branch"),
+                 org_id),
+            )
+        else:
+            cur.execute(
+                "UPDATE contractors SET kablan_number=%s WHERE id=%s",
+                (data.kablan_number.strip(), org_id),
+            )
         conn.commit()
     finally:
         conn.close()
