@@ -25,9 +25,9 @@
 //     stronger CTA — sells the platform breadth.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
-  ArrowLeft, Users, Home, Briefcase, Handshake,
+  Users, Home, Briefcase, Handshake,
   Sparkles, Building2, ClipboardList,
 } from 'lucide-react';
 import { ProfessionIcon } from '@/features/searches/ProfessionIcon';
@@ -35,7 +35,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { createPicker } from '@/features/live-activity/picker';
 import { MIX_SHOWCASE_BY_ROLE, MOCK_ITEMS } from '@/features/live-activity/mocks';
 import type { ActivityItem, AudienceRole } from '@/features/live-activity/types';
-import { resolveCta } from '@/features/live-activity/ctas';
+import { RoleChoiceModal } from './RoleChoiceModal';
 
 function audienceFor(entityType: 'contractor' | 'corporation' | null): AudienceRole {
   return entityType ?? 'anon';
@@ -72,7 +72,7 @@ const CATEGORY_LABEL: Record<keyof typeof CATEGORY_ICON, string> = {
   workers_available:  'עובדים זמינים',
   requirement_new:    'דרישה חדשה',
   housing_new:        'מגורים זמינים',
-  match_closed:       'התאמה נסגרה',
+  match_closed:       'עסקה נסגרה',
   service_new:        'שירות חדש',
   corp_active:        'תאגיד פעיל',
   contractor_active:  'קבלן פעיל',
@@ -85,14 +85,14 @@ const CATEGORY_LABEL: Record<keyof typeof CATEGORY_ICON, string> = {
 // are intentionally generic — they should hold even when Phase 2 swaps
 // the data source from mocks to real /api/marketplace/activity-feed.
 const CATEGORY_TAGLINE: Record<keyof typeof CATEGORY_ICON, string> = {
-  workers_available:  'מנוע ההתאמה מציג חבילות מתאימות תוך שניות',
-  requirement_new:    'תאגידים מאומתים מגיבים תוך 48 שעות בממוצע',
-  housing_new:        'מתוך עשרות מתחמי מגורים פעילים בפלטפורמה',
-  match_closed:       'התאמה ממוצעת נסגרת בפלטפורמה תוך 48 שעות',
-  service_new:        'ספקים מאומתים — לוגיסטיקה, ויזות, ביטוחים ועוד',
+  workers_available:  'המערכת מציעה התאמות מותאמות תוך שניות',
+  requirement_new:    'תאגידים מאומתים מגישים הצעות תוך 48 שעות בממוצע',
+  housing_new:        'עשרות מתחמי מגורים זמינים לעובדים שלך',
+  match_closed:       'עסקאות בפלטפורמה נסגרות בממוצע תוך 48 שעות',
+  service_new:        'ספקים מאומתים: לוגיסטיקה, ויזות, ביטוחים ועוד',
   corp_active:        'תאגידים מורשים מעדכנים זמינות מדי יום',
-  contractor_active:  'מאות קבלנים פעילים מחפשים עובדים בפלטפורמה',
-  platform_pulse:     'נתון מצטבר מהפעילות בפלטפורמה בתקופה האחרונה',
+  contractor_active:  'מאות קבלנים פעילים מחפשים עובדים כרגע',
+  platform_pulse:     'הנתונים מתעדכנים בזמן אמת',
 };
 
 function nextInterval(baseMs: number): number {
@@ -107,7 +107,11 @@ interface Props {
 
 export default function LiveShowcase({ intervalMs = 5000 }: Props) {
   const auth = useAuth();
+  const router = useRouter();
   const role = audienceFor(auth.entityType);
+  // Opens when an anon visitor clicks the card. Logged-in users skip
+  // it and route straight to their dashboard.
+  const [showRoleModal, setShowRoleModal] = useState(false);
 
   const pickerRef = useRef<ReturnType<typeof createPicker> | null>(null);
   const lastRoleRef = useRef<AudienceRole>(role);
@@ -155,12 +159,20 @@ export default function LiveShowcase({ intervalMs = 5000 }: Props) {
 
   if (!current) return null;
 
-  const cta = resolveCta(current.cta_intent, role);
   const profCode = current.meta?.profession_code;
   const FallbackIcon = CATEGORY_ICON[current.category];
   const accent = CATEGORY_ACCENT[current.category];
   const categoryLabel = CATEGORY_LABEL[current.category];
   const categoryTagline = CATEGORY_TAGLINE[current.category];
+
+  /** Card click handler. Logged-in users go straight to their
+   *  dashboard; anon visitors get the role-choice popup since we
+   *  don't know if they're a contractor or corporation yet. */
+  function handleCardClick() {
+    if (role === 'contractor')  { router.push('/contractor/dashboard'); return; }
+    if (role === 'corporation') { router.push('/corporation/dashboard'); return; }
+    setShowRoleModal(true);
+  }
 
   return (
     <section
@@ -202,35 +214,24 @@ export default function LiveShowcase({ intervalMs = 5000 }: Props) {
           </p>
         </div>
 
-        {/* Rotating card — key={current.id} forces remount so the enter
-            animation runs every swap. aria-live="polite" so screen
-            readers catch updates without nagging.
-            Border bumped from border-slate-200 to border-2 border-rose-200
-            + rose-tinted shadow to draw the eye to the live surface
-            without resorting to a loud color shift on the content itself. */}
-        <div
+        {/* Rotating card — the whole card is now a button. Clicking it
+            either routes a logged-in user to their dashboard or opens
+            the role-choice popup for anon visitors. The previous
+            per-item inline CTA (resolveCta) was removed because the
+            popup is the single, role-agnostic entry point now. */}
+        <button
+          type="button"
+          onClick={handleCardClick}
           onMouseEnter={() => setPaused(true)}
           onMouseLeave={() => setPaused(false)}
-          className="rounded-2xl border-2 border-rose-200 bg-white shadow-md shadow-rose-100/60 hover:shadow-lg hover:shadow-rose-200/60 transition-shadow"
+          aria-label="כניסה לפלטפורמה"
+          className="block w-full text-start rounded-2xl border-2 border-rose-200 bg-white shadow-md shadow-rose-100/60 hover:shadow-lg hover:shadow-rose-200/60 hover:border-rose-300 transition-all cursor-pointer"
         >
           <div
             key={current.id}
             aria-live="polite"
             className="animate-live-card-enter p-2.5 sm:p-3.5"
           >
-            {/*
-              Layout:
-                Mobile  — vertical stack:
-                            [icon | body]            ← one row, icon inline
-                            [CTA pill, start-aligned]   ← own row below
-                Desktop — flat horizontal row:
-                            [icon | body | CTA]
-              On mobile, dropping the CTA to its own row gives the
-              headline text the full width to breathe (it was wrapping
-              awkwardly while a giant orange pill ate the end of the
-              card). The CTA also shrinks on mobile (px-3 / text-xs)
-              so it reads as a button, not a billboard.
-            */}
             <div className="flex flex-row items-center gap-3 sm:gap-4">
               <div className="shrink-0">
                 {profCode ? (
@@ -258,37 +259,9 @@ export default function LiveShowcase({ intervalMs = 5000 }: Props) {
                   {categoryTagline}
                 </p>
               </div>
-
-              {/* CTA — only renders inline (on the right of the row)
-                  on desktop. On mobile it sits in the separate row
-                  below; rendered there. */}
-              {!cta.hidden && cta.label && (
-                <Link
-                  href={cta.href}
-                  className="hidden sm:inline-flex shrink-0 items-center gap-1.5 px-5 py-2.5 rounded-full bg-brand-600 text-sm font-bold text-white shadow-sm hover:bg-brand-700 transition-colors self-center"
-                >
-                  {cta.label}
-                  <ArrowLeft className="h-4 w-4" />
-                </Link>
-              )}
             </div>
-
-            {/* Mobile CTA row — only renders below sm. The CTA is a
-                small pill with reduced padding so it no longer
-                dominates the card. */}
-            {!cta.hidden && cta.label && (
-              <div className="mt-3 sm:hidden">
-                <Link
-                  href={cta.href}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-brand-600 text-xs font-bold text-white shadow-sm hover:bg-brand-700 transition-colors"
-                >
-                  {cta.label}
-                  <ArrowLeft className="h-3.5 w-3.5" />
-                </Link>
-              </div>
-            )}
           </div>
-        </div>
+        </button>
 
         {/* The "פתח חשבון בחינם" conversion strip was removed — the
             role-tiles in the hero just above already handle the
@@ -299,6 +272,10 @@ export default function LiveShowcase({ intervalMs = 5000 }: Props) {
 
        </div>
       </div>
+
+      {/* Role-choice popup for anon visitors. Logged-in users never
+          see it (handleCardClick skips it for them). */}
+      <RoleChoiceModal open={showRoleModal} onClose={() => setShowRoleModal(false)} />
     </section>
   );
 }
