@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, FormEvent } from 'react';
+import { useCallback, useEffect, useState, FormEvent } from 'react';
 import { Loader2, UserPlus, Clock, CheckCircle2, Trash2, AlertCircle, Pencil } from 'lucide-react';
 import { memberApi, type TeamMember } from '@/lib/api';
 import { useAuth } from '@/lib/AuthContext';
@@ -9,6 +9,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { NotificationRecipientsSection } from '@/features/notification-recipients/NotificationRecipientsSection';
 import { EditMemberModal } from '@/components/team/EditMemberModal';
+import { TableToolbar } from '@/components/table/TableToolbar';
+import { useTableState } from '@/components/table/useTableState';
 
 // Wave 2: 'operator' dropped — three roles cover the cases.
 const ROLE_LABELS: Record<string, string> = {
@@ -98,8 +100,43 @@ export default function ContractorUsersPage() {
     return new Date(iso).toLocaleDateString('he-IL');
   }
 
-  const active  = members.filter((m) => !m.pending);
-  const pending = members.filter((m) => m.pending);
+  // ── Filter + sort (light pattern — typical team is 2-20 rows) ──
+  const [roleFilter, setRoleFilter] = useState<'all' | 'owner' | 'admin' | 'viewer'>('all');
+  const [search, setSearch] = useState('');
+
+  const memberFilter = useCallback((m: TeamMember) => {
+    if (roleFilter !== 'all' && m.role !== roleFilter) return false;
+    if (search) {
+      const q = search.toLowerCase();
+      const hay = [m.full_name, m.phone, m.job_title].filter(Boolean).join(' ').toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  }, [roleFilter, search]);
+
+  type MemberSortKey = 'name' | 'joined' | 'role';
+  const memberSortBy = useCallback((m: TeamMember, key: MemberSortKey) => {
+    switch (key) {
+      case 'name':   return m.full_name || '';
+      case 'joined': return m.invitation_accepted_at ? new Date(m.invitation_accepted_at) : (m.created_at ? new Date(m.created_at) : null);
+      case 'role':   return m.role || '';
+    }
+  }, []);
+
+  const { visible: visibleMembers, sortKey, sortDir, setSortKey, flipSortDir } =
+    useTableState<TeamMember, MemberSortKey>({
+      rows: members,
+      initialSortKey: 'joined',
+      initialSortDir: 'desc',
+      filter: memberFilter,
+      sortBy: memberSortBy,
+    });
+
+  const active  = visibleMembers.filter((m) => !m.pending);
+  const pending = visibleMembers.filter((m) => m.pending);
+
+  const hasActiveFilter = roleFilter !== 'all' || search.trim() !== '';
+  function clearFilters() { setRoleFilter('all'); setSearch(''); }
 
   return (
     <div className="space-y-4 max-w-4xl">
@@ -172,6 +209,37 @@ export default function ContractorUsersPage() {
             </Button>
           </CardContent>
         </Card>
+      )}
+
+      {/* Filter + sort toolbar — applies to both active and pending
+          tables since they share the `members` state. */}
+      {members.length > 0 && (
+        <TableToolbar
+          pills={{
+            options: [
+              { key: 'all',    label: 'הכל',    count: members.length,                                tone: 'bg-slate-900 text-white' },
+              { key: 'owner',  label: 'בעלים',  count: members.filter((m) => m.role === 'owner').length, tone: 'bg-navy-600 text-white' },
+              { key: 'admin',  label: 'מנהלים', count: members.filter((m) => m.role === 'admin').length, tone: 'bg-blue-500 text-white' },
+              { key: 'viewer', label: 'צופים',  count: members.filter((m) => m.role === 'viewer').length, tone: 'bg-slate-500 text-white' },
+            ],
+            active: roleFilter,
+            onChange: setRoleFilter,
+          }}
+          searchValue={search}
+          onSearchChange={setSearch}
+          searchPlaceholder="חיפוש: שם / טלפון / תפקיד"
+          sortOptions={[
+            { key: 'joined', label: 'תאריך הצטרפות' },
+            { key: 'name',   label: 'שם' },
+            { key: 'role',   label: 'הרשאה' },
+          ]}
+          sortKey={sortKey}
+          sortDir={sortDir}
+          onSortKeyChange={setSortKey}
+          onSortDirToggle={flipSortDir}
+          hasActiveFilter={hasActiveFilter}
+          onClear={clearFilters}
+        />
       )}
 
       {/* Active members */}

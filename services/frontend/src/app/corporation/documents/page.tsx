@@ -1,12 +1,14 @@
 'use client';
 
-import { useEffect, useState, FormEvent } from 'react';
+import { useCallback, useEffect, useState, FormEvent } from 'react';
 import { Loader2, FilePlus, FileCheck, FileX, ExternalLink, Trash2 } from 'lucide-react';
 import { documentApi, fileHref, type OrgDocument, DOC_TYPE_LABELS } from '@/lib/api';
 import { useAuth } from '@/lib/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { TableToolbar } from '@/components/table/TableToolbar';
+import { useTableState } from '@/components/table/useTableState';
 
 const DOC_TYPES = Object.entries(DOC_TYPE_LABELS);
 
@@ -57,6 +59,46 @@ export default function CorporationDocumentsPage() {
     } catch { /* ignore */ } finally { setDeleting(null); }
   }
 
+  // ── Filter + sort ───────────────────────────────────────────────
+  const [docTypeFilter, setDocTypeFilter] = useState('all');
+  const [validityFilter, setValidityFilter] = useState<'all' | 'valid' | 'pending' | 'rejected'>('all');
+  const [search, setSearch] = useState('');
+
+  const docFilter = useCallback((d: OrgDocument) => {
+    if (docTypeFilter !== 'all' && d.doc_type !== docTypeFilter) return false;
+    if (validityFilter !== 'all') {
+      const status = d.is_valid === true ? 'valid' : d.is_valid === false ? 'rejected' : 'pending';
+      if (status !== validityFilter) return false;
+    }
+    if (search) {
+      const q = search.toLowerCase();
+      const hay = [d.file_name, d.notes].filter(Boolean).join(' ').toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  }, [docTypeFilter, validityFilter, search]);
+
+  type DocSortKey = 'uploaded' | 'name' | 'type';
+  const docSortBy = useCallback((d: OrgDocument, key: DocSortKey) => {
+    switch (key) {
+      case 'uploaded': return d.uploaded_at ? new Date(d.uploaded_at) : null;
+      case 'name':     return d.file_name || '';
+      case 'type':     return d.doc_type || '';
+    }
+  }, []);
+
+  const { visible: visibleDocs, sortKey, sortDir, setSortKey, flipSortDir } =
+    useTableState<OrgDocument, DocSortKey>({
+      rows: docs,
+      initialSortKey: 'uploaded',
+      initialSortDir: 'desc',
+      filter: docFilter,
+      sortBy: docSortBy,
+    });
+
+  const hasActiveFilter = docTypeFilter !== 'all' || validityFilter !== 'all' || search.trim() !== '';
+  function clearFilters() { setDocTypeFilter('all'); setValidityFilter('all'); setSearch(''); }
+
   function validBadge(doc: OrgDocument) {
     if (doc.is_valid === true)  return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700"><FileCheck className="h-3 w-3" />מאושר</span>;
     if (doc.is_valid === false) return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-red-100 text-red-700"><FileX className="h-3 w-3" />נדחה</span>;
@@ -102,20 +144,65 @@ export default function CorporationDocumentsPage() {
         </Card>
       )}
 
+      {docs.length > 0 && (
+        <TableToolbar
+          selects={[
+            {
+              key: 'type',
+              ariaLabel: 'סוג מסמך',
+              value: docTypeFilter,
+              onChange: setDocTypeFilter,
+              options: [
+                { value: 'all', label: 'כל הסוגים' },
+                ...DOC_TYPES.map(([v, l]) => ({ value: v, label: l })),
+              ],
+            },
+            {
+              key: 'validity',
+              ariaLabel: 'תקפות',
+              value: validityFilter,
+              onChange: (v) => setValidityFilter(v as typeof validityFilter),
+              options: [
+                { value: 'all',      label: 'כל הסטטוסים' },
+                { value: 'valid',    label: 'מאושרים' },
+                { value: 'pending',  label: 'ממתינים לאישור' },
+                { value: 'rejected', label: 'נדחו' },
+              ],
+            },
+          ]}
+          searchValue={search}
+          onSearchChange={setSearch}
+          searchPlaceholder="חיפוש: שם קובץ / הערות"
+          sortOptions={[
+            { key: 'uploaded', label: 'תאריך העלאה' },
+            { key: 'name',     label: 'שם הקובץ' },
+            { key: 'type',     label: 'סוג' },
+          ]}
+          sortKey={sortKey}
+          sortDir={sortDir}
+          onSortKeyChange={setSortKey}
+          onSortDirToggle={flipSortDir}
+          hasActiveFilter={hasActiveFilter}
+          onClear={clearFilters}
+        />
+      )}
+
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-medium text-slate-500">
-            {loading ? '...' : `${docs.length} מסמכים`}
+            {loading ? '...' : `${visibleDocs.length} מסמכים`}
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           {loading ? (
             <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-slate-400" /></div>
-          ) : docs.length === 0 ? (
-            <p className="text-center text-slate-400 py-8 text-sm">אין מסמכים. הוסף מסמך כדי לקבל אישור מנהל</p>
+          ) : visibleDocs.length === 0 ? (
+            <p className="text-center text-slate-400 py-8 text-sm">
+              {hasActiveFilter ? 'אין מסמכים תואמים לסינון' : 'אין מסמכים. הוסף מסמך כדי לקבל אישור מנהל'}
+            </p>
           ) : (
             <div className="divide-y divide-slate-50">
-              {docs.map((d) => (
+              {visibleDocs.map((d) => (
                 <div key={d.doc_id} className="flex items-center justify-between px-4 py-3 hover:bg-slate-50">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
