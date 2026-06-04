@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import Logo from '@/components/Logo';
-import { Home, LayoutDashboard, ClipboardCheck, Handshake, Building2, LogOut, Percent, PhoneCall, Users, Inbox, Store, Globe2, Flag, MessageCircle } from 'lucide-react';
+import { Home, LayoutDashboard, ClipboardCheck, Handshake, Building2, LogOut, Percent, PhoneCall, Users, Inbox, Store, Globe2, Flag, MessageCircle, FileCheck } from 'lucide-react';
 import { clearTokens } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 import MobileNavDrawer from '@/components/layout/MobileNavDrawer';
@@ -14,6 +14,7 @@ const NAV = [
   { href: '/admin/deals',      label: 'עסקאות',         icon: Handshake },
   { href: '/admin/tenders',    label: 'בקשות ייבוא',    icon: Globe2 },
   { href: '/admin/orgs',       label: 'ארגונים',        icon: Building2 },
+  { href: '/admin/gov-corps-registry', label: 'רשימת תאגידים מורשים', icon: FileCheck },
   { href: '/admin/users',      label: 'משתמשים',        icon: Users },
   { href: '/admin/leads',      label: 'פניות ובקשות',   icon: Inbox },
   { href: '/admin/support',    label: 'פניות שירות לקוחות', icon: MessageCircle },

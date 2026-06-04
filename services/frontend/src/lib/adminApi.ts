@@ -474,4 +474,51 @@ export const adminApi = {
   deactivateOrigin: (code: string) =>
     apiFetch<void>(`/admin/enums/origins/${code}`, { method: 'DELETE' }),
 
+  // ── רשות האוכלוסין annual manpower-corps PDF ─────────────────────
+  /** List years that have data in the registry, with row counts +
+   *  last imported_at. Drives the "current data" panel on the admin
+   *  upload page. */
+  listGovCorpYears: () =>
+    apiFetch<{ years: Array<{
+      source_year: number;
+      row_count: number;
+      matchable_count: number;
+      last_imported_at: string;
+    }> }>('/admin/gov-corps-registry/years'),
+
+  /** Preview every parsed row for a given year — for spot-checking
+   *  the import. */
+  previewGovCorpsYear: (year: number) =>
+    apiFetch<{ year: number; rows: Array<Record<string, unknown>> }>(
+      `/admin/gov-corps-registry/${year}`,
+    ),
+
+  /** Upload the gov PDF + year. Backend parses, replaces all rows for
+   *  that year, and re-promotes existing corps whose ח.פ is in the
+   *  file to tier_2 with verification_method='gov_list_match'. */
+  importGovCorpsPdf: async (year: number, file: File) => {
+    const fd = new FormData();
+    fd.append('source_year', String(year));
+    fd.append('file', file);
+    const token = (typeof window !== 'undefined') ? window.localStorage.getItem('access_token') : null;
+    const res = await fetch(`/api/admin/gov-corps-registry/import`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: fd,
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(text || `upload_failed: ${res.status}`);
+    }
+    return res.json() as Promise<{
+      ok: true;
+      source_year: number;
+      rows_parsed: number;
+      rows_with_business_number: number;
+      rows_skipped_no_business_number: number;
+      rows_inserted: number;
+      existing_corps_promoted_or_renewed: number;
+    }>;
+  },
+
 };

@@ -218,13 +218,21 @@ export interface Corporation {
   business_number: string;
   gov_company_status?: string | null;
   verification_tier: 'tier_0' | 'tier_1' | 'tier_2';
-  verification_method?: 'email' | 'sms' | 'manual' | 'none' | null;
+  verification_method?: 'email' | 'sms' | 'manual' | 'none' | 'gov_list_match' | null;
+  /** Year of the רשות האוכלוסין list this corp was matched against.
+   *  NULL = never matched, just admin-approved. */
+  gov_registry_source_year?: number | null;
+  gov_registry_matched_at?: string | null;
   countries_of_origin: string[];
   minimum_contract_months: number;
   approval_status: 'pending' | 'approved' | 'rejected' | 'suspended';
   contact_name: string;
   contact_email: string;
   contact_phone: string;
+  /** Extra phone columns surfaced from the gov list (when matched). */
+  phone_landline?: string | null;
+  phone_landline_secondary?: string | null;
+  phone_mobile_secondary?: string | null;
   threshold_requirements?: Record<string, unknown> | null;
 }
 

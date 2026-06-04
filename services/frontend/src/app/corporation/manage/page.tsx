@@ -12,6 +12,8 @@ import {
 } from 'lucide-react';
 import { dealApi, workerApi } from '@/lib/api';
 import type { Deal, Worker } from '@/types';
+import { useAuth } from '@/lib/AuthContext';
+import { GovRegistrySection } from '@/components/corporation/GovRegistrySection';
 
 const ACTIVE_DEAL_STATUSES = new Set([
   'proposed', 'corp_committed', 'counter_proposed',
@@ -84,6 +86,7 @@ function ManageTile({ href, icon, title, subtitle }: {
 }
 
 export default function CorporationManagePage() {
+  const { entityId } = useAuth();
   const [workers, setWorkers] = useState<Worker[] | null>(null);
   const [deals, setDeals]     = useState<Deal[] | null>(null);
 
@@ -118,6 +121,10 @@ export default function CorporationManagePage() {
         <h1 className="text-2xl font-bold text-slate-900">ניהול</h1>
         <p className="text-sm text-slate-600">צוות, מסמכים, מנוי שירותים נלווים והגדרות</p>
       </div>
+
+      {/* Official-record section — visible only when the corp matched
+          the רשות האוכלוסין annual list. Self-hides otherwise. */}
+      {entityId && <GovRegistrySection corpId={entityId} />}
 
       {/* KPI strip — every tile is a deep-link into the relevant list */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
