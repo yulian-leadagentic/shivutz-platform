@@ -170,8 +170,14 @@ export default function LiveShowcase({ intervalMs = 5000 }: Props) {
       {/* Vertical padding tightened (py-6 sm:py-8 → py-3 sm:py-4) and
           the header→card gap halved so the showcase doesn't blow out
           the hero's single-viewport budget now that it sits between
-          the headline and the role tiles. */}
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-3 sm:py-4">
+          the headline and the role tiles.
+          Outer container mirrors the role-tiles wrapper exactly
+          (max-w-6xl + px-6 → max-w-5xl inner) so the Live card's edges
+          line up flush with the קבלן/תאגיד tiles below it. Previously
+          this section was max-w-5xl with its own px, which left the
+          card visibly narrower than the tiles. */}
+      <div className="max-w-6xl mx-auto px-6 w-full py-3 sm:py-4">
+       <div className="max-w-5xl mx-auto">
 
         {/* Header — Live label + tagline. The tagline drops the
             "מגורים, שירותים" wording since the showcase now filters
@@ -283,6 +289,7 @@ export default function LiveShowcase({ intervalMs = 5000 }: Props) {
             /login. A second sign-up nudge here was duplicating that
             ask without adding value at this stage. */}
 
+       </div>
       </div>
     </section>
   );
