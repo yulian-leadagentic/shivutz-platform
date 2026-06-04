@@ -265,6 +265,49 @@ export const adminApi = {
   getOrg: (id: string, orgType: string) =>
     apiFetch<PendingOrg & Record<string, unknown>>(`/admin/orgs/${id}?org_type=${orgType}`),
 
+  /** Aggregate admin view: org row + deal counts + team count + workers
+   *  (corp) / open searches (contractor) + gov data + recent deals.
+   *  Powers the /admin/orgs/{id} single-glance summary. */
+  getOrgSummary: (id: string, orgType: string) =>
+    apiFetch<{
+      org: PendingOrg & Record<string, unknown> & { org_type: 'contractor' | 'corporation' };
+      deal_counts: Record<string, number> & { total: number };
+      team_count: number;
+      workers: { available: number; assigned: number; on_leave: number; deactivated: number; total: number } | null;
+      open_searches: number;
+      recent_deals: Array<{
+        id: string;
+        status: string;
+        contractor_id: string;
+        corporation_id: string;
+        worker_count: number | null;
+        commission_amount: number | null;
+        created_at: string;
+        updated_at: string;
+        dw_count: number;
+      }>;
+      gov: {
+        contractor?: {
+          pinkash_found: boolean;
+          ica_found:     boolean;
+          fetched_at:    string;
+          pinkash?: { kablan_number: string | null; company_name_he: string | null; kvutza: string | null; sivug: number | null; gov_branch: string | null; email: string | null; phone: string | null } | null;
+          ica?:     { gov_company_status: string | null; company_name_he: string | null } | null;
+        } | null;
+        corporation?: {
+          source_year: number;
+          serial_no: number | null;
+          company_name_he: string | null;
+          address: string | null;
+          phone_mobile_1: string | null;
+          phone_mobile_2: string | null;
+          phone_landline_1: string | null;
+          phone_landline_2: string | null;
+          imported_at: string;
+        } | null;
+      };
+    }>(`/admin/orgs/${id}/summary?org_type=${orgType}`),
+
   decide: (id: string, orgType: string, approved: boolean, reason?: string,
            commission_per_worker_amount?: number) =>
     apiFetch<{ id: string; status: string; company_name: string }>(

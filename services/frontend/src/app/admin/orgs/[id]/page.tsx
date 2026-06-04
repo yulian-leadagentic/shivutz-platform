@@ -11,6 +11,7 @@ import { adminApi, type OrgEditPayload, type OrgAuditEntry } from '@/lib/adminAp
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { OrgSummaryHeader } from '@/components/admin/OrgSummaryHeader';
 
 type OrgType = 'contractor' | 'corporation';
 
@@ -182,7 +183,7 @@ function OrgDetailContent() {
   const isApproved  = org.approval_status === 'approved';
 
   return (
-    <div className="max-w-4xl space-y-4">
+    <div className="max-w-6xl space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-3">
@@ -228,6 +229,11 @@ function OrgDetailContent() {
           </Button>
         </div>
       </div>
+
+      {/* Single-glance summary: deal counts + team + workers/searches +
+          gov data + recent deals. Sits above the edit form so the
+          admin sees the state of the org before they edit it. */}
+      <OrgSummaryHeader orgId={id} orgType={orgType} />
 
       {/* Edit form */}
       <Card>
