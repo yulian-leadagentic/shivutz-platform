@@ -244,7 +244,7 @@ export default function CorporationUsersPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-100 text-slate-500">
-                  <th className="px-4 py-3 text-start font-medium">טלפון</th>
+                  <th className="px-4 py-3 text-start font-medium">שם / טלפון</th>
                   <th className="px-4 py-3 text-start font-medium">הרשאה</th>
                   <th className="px-4 py-3 text-start font-medium">נשלח</th>
                   <th className="px-4 py-3 text-end font-medium w-12" aria-label="פעולות" />
@@ -253,7 +253,11 @@ export default function CorporationUsersPage() {
               <tbody>
                 {pending.map((m) => (
                   <tr key={m.membership_id} className="border-b border-slate-50 last:border-0">
-                    <td className="px-4 py-3 text-slate-500" dir="ltr">{m.phone ?? '—'}</td>
+                    <td className="px-4 py-3">
+                      <div className="font-medium text-slate-900">{m.full_name ?? '—'}</div>
+                      {m.phone && <div className="text-xs text-slate-400" dir="ltr">{m.phone}</div>}
+                      {m.job_title && <div className="text-xs text-slate-400">{m.job_title}</div>}
+                    </td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${ROLE_COLORS[m.role] ?? 'bg-slate-100 text-slate-600'}`}>
                         {ROLE_LABELS[m.role] ?? m.role}
