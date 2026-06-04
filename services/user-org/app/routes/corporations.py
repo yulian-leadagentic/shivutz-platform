@@ -154,25 +154,76 @@ async def register_corporation(data: CorporationCreate):
     company_name = data.company_name or company_name_he
     initial_tier = "tier_1" if (registry["ica_found"] and company_active) else "tier_0"
 
+    # ── Cross-check against the רשות האוכלוסין annual list ──────────
+    # If the corp's business_number appears in the most-recent uploaded
+    # year's file, fast-path them to tier_2 with verification_method=
+    # 'gov_list_match'. Otherwise keep the existing pending-admin flow.
+    gov_row = None
+    gov_year = None
+    conn_lookup = get_db()
+    try:
+        cur_l = conn_lookup.cursor()
+        cur_l.execute(
+            """SELECT id, source_year, company_name_he, address,
+                      phone_mobile_1, phone_mobile_2,
+                      phone_landline_1, phone_landline_2
+               FROM gov_corporations_registry
+               WHERE business_number = %s
+               ORDER BY source_year DESC LIMIT 1""",
+            (data.business_number,),
+        )
+        gov_row = cur_l.fetchone()
+        gov_year = gov_row.get("source_year") if gov_row else None
+    finally:
+        conn_lookup.close()
+
+    matched_gov = gov_row is not None
+    final_tier = "tier_2" if matched_gov else initial_tier
+    verification_method = "gov_list_match" if matched_gov else None
+    now = datetime.utcnow()
+    verified_at = now if matched_gov else None
+    gov_matched_at = now if matched_gov else None
+    approval_status = "approved" if matched_gov else "pending"
+    approved_at = now if matched_gov else None
+
+    # Prefill corp fields from the gov row when the corp didn't supply
+    # them. We never OVERWRITE user-typed values — corps that want to
+    # use different details (e.g. a moved office) can still set them.
+    prefill_address = gov_row.get("address") if matched_gov else None
+    prefill_landline_1 = gov_row.get("phone_landline_1") if matched_gov else None
+    prefill_landline_2 = gov_row.get("phone_landline_2") if matched_gov else None
+    prefill_mobile_2 = gov_row.get("phone_mobile_2") if matched_gov else None
+    # If the gov list has a name that's more "official" than what the
+    # user typed, prefer the gov one for company_name_he.
+    if matched_gov and gov_row.get("company_name_he"):
+        company_name_he = gov_row["company_name_he"]
+        company_name = data.company_name or company_name_he
+
     org_id = str(uuid.uuid4())
-    sla_deadline = datetime.utcnow() + timedelta(hours=48)
+    sla_deadline = now + timedelta(hours=48)
 
     conn = get_db()
     try:
         cur = conn.cursor()
-        tc_signed_at = datetime.utcnow() if data.tc_version else None
+        tc_signed_at = now if data.tc_version else None
         cur.execute(
             """INSERT INTO corporations
                (id, user_owner_id, company_name, company_name_he, business_number,
-                gov_company_status, verification_tier,
+                gov_company_status, verification_tier, verification_method,
+                gov_registry_source_year, gov_registry_matched_at, verified_at,
+                approval_status, approved_at,
+                phone_landline, phone_landline_secondary, phone_mobile_secondary,
                 countries_of_origin, minimum_contract_months, contact_name,
                 contact_phone, contact_email, approval_sla_deadline,
                 tc_version, tc_signed_at)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
             (org_id, "PENDING", company_name, company_name_he,
              data.business_number,
              ica_fields.get("gov_company_status"),
-             initial_tier,
+             final_tier, verification_method,
+             gov_year, gov_matched_at, verified_at,
+             approval_status, approved_at,
+             prefill_landline_1, prefill_landline_2, prefill_mobile_2,
              json.dumps(data.countries_of_origin),
              data.minimum_contract_months, data.contact_name,
              data.contact_phone, data.contact_email, sla_deadline,
@@ -231,10 +282,14 @@ async def register_corporation(data: CorporationCreate):
 
         return {
             "id":                org_id,
-            "status":            "pending",
+            # 'approved' when the gov list matched, otherwise 'pending'
+            # for the admin queue (existing behaviour).
+            "status":            approval_status,
             "org_type":          "corporation",
-            "verification_tier": initial_tier,
+            "verification_tier": final_tier,
             "registry_found":    registry["ica_found"],
+            "gov_list_matched":  matched_gov,
+            "gov_list_year":     gov_year,
             "access_token":      user.get("access_token"),
             "refresh_token":     user.get("refresh_token"),
         }

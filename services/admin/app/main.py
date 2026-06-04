@@ -1,5 +1,5 @@
 from fastapi import FastAPI, HTTPException
-from app.routes import dashboard, enums, approvals, commissions, registration_log, settings, users, leads, deals, support
+from app.routes import dashboard, enums, approvals, commissions, registration_log, settings, users, leads, deals, support, gov_corp_list
 from app.db import get_db, init_db
 from app.errors import register_error_handlers
 
@@ -45,3 +45,4 @@ app.include_router(support.router,       prefix="/admin/support-tickets", tags=[
 # admin frontend calls /api/admin/enums/origins/... for the country CRUD.
 app.include_router(enums.router,              prefix="/admin/enums", tags=["admin-enums"])
 app.include_router(registration_log.router,   prefix="",        tags=["registration-log"])
+app.include_router(gov_corp_list.router,      prefix="/admin",  tags=["gov-corp-list"])
