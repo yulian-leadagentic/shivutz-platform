@@ -17,6 +17,9 @@ export type { Tender, TenderItem, Bid, BidItem, TenderCreatePayload, BidCreatePa
 export { memberApi } from './members';
 export type { TeamMember } from './members';
 
+export { notificationRecipientsApi } from './notificationRecipients';
+export type { NotificationChannel, RecipientRow, RecipientUpsertBody } from './notificationRecipients';
+
 export { documentApi, DOC_TYPE_LABELS } from './documents';
 export type { OrgDocument } from './documents';
 

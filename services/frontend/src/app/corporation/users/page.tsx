@@ -1,12 +1,13 @@
 'use client';
 
 import { useEffect, useState, FormEvent } from 'react';
-import { Loader2, UserPlus, Clock, CheckCircle2 } from 'lucide-react';
+import { Loader2, UserPlus, Clock, CheckCircle2, Trash2, AlertCircle } from 'lucide-react';
 import { memberApi, type TeamMember } from '@/lib/api';
 import { useAuth } from '@/lib/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { NotificationRecipientsSection } from '@/features/notification-recipients/NotificationRecipientsSection';
 
 // Wave 2: 'operator' dropped — three roles cover the cases.
 const ROLE_LABELS: Record<string, string> = {
@@ -31,6 +32,26 @@ export default function CorporationUsersPage() {
   const [saving, setSaving]     = useState(false);
   const [error, setError]       = useState('');
   const [success, setSuccess]   = useState('');
+  // Delete-confirmation modal state — null means closed; otherwise the
+  // row we're about to remove.
+  const [pendingDelete, setPendingDelete] = useState<TeamMember | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  async function handleDelete() {
+    if (!entityId || !pendingDelete) return;
+    setDeleting(true); setError('');
+    try {
+      await memberApi.remove('corporations', entityId, pendingDelete.membership_id);
+      setMembers((prev) => prev.filter((m) => m.membership_id !== pendingDelete.membership_id));
+      setPendingDelete(null);
+      setSuccess('המשתמש הוסר מהצוות');
+      setTimeout(() => setSuccess(''), 4000);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'שגיאה בהסרת המשתמש');
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   useEffect(() => {
     if (!entityId) return;
@@ -171,6 +192,7 @@ export default function CorporationUsersPage() {
                   <th className="px-4 py-3 text-start font-medium">שם / טלפון</th>
                   <th className="px-4 py-3 text-start font-medium">הרשאה</th>
                   <th className="px-4 py-3 text-start font-medium">הצטרף</th>
+                  <th className="px-4 py-3 text-end font-medium w-12" aria-label="פעולות" />
                 </tr>
               </thead>
               <tbody>
@@ -187,6 +209,16 @@ export default function CorporationUsersPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-slate-500">{fmt(m.invitation_accepted_at)}</td>
+                    <td className="px-3 py-3 text-end">
+                      <button
+                        onClick={() => setPendingDelete(m)}
+                        title="הסר משתמש"
+                        aria-label={`הסר את ${m.full_name ?? 'המשתמש'}`}
+                        className="inline-flex items-center justify-center h-7 w-7 rounded-full text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition-colors"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -194,6 +226,11 @@ export default function CorporationUsersPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Notification recipients — per-user opt-in + channel choice.
+          Lives below the active-members table because it's a power
+          feature; the team list itself is the primary content. */}
+      <NotificationRecipientsSection entityType="corporation" entityId={entityId} />
 
       {pending.length > 0 && (
         <Card>
@@ -210,6 +247,7 @@ export default function CorporationUsersPage() {
                   <th className="px-4 py-3 text-start font-medium">טלפון</th>
                   <th className="px-4 py-3 text-start font-medium">הרשאה</th>
                   <th className="px-4 py-3 text-start font-medium">נשלח</th>
+                  <th className="px-4 py-3 text-end font-medium w-12" aria-label="פעולות" />
                 </tr>
               </thead>
               <tbody>
@@ -222,12 +260,70 @@ export default function CorporationUsersPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-slate-400 text-xs">{fmt(m.created_at)}</td>
+                    <td className="px-3 py-3 text-end">
+                      <button
+                        onClick={() => setPendingDelete(m)}
+                        title="בטל הזמנה"
+                        aria-label="בטל הזמנה"
+                        className="inline-flex items-center justify-center h-7 w-7 rounded-full text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition-colors"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </CardContent>
         </Card>
+      )}
+
+      {/* Delete confirmation modal — shared by active + pending rows. */}
+      {pendingDelete && (
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-900/40 backdrop-blur-sm px-4"
+          onClick={() => !deleting && setPendingDelete(null)}
+        >
+          <div
+            className="bg-white rounded-t-2xl sm:rounded-2xl w-full max-w-md shadow-2xl p-5 space-y-3"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-3">
+              <div className="h-10 w-10 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0">
+                {pendingDelete.pending ? <Clock className="h-5 w-5" /> : <AlertCircle className="h-5 w-5" />}
+              </div>
+              <div className="flex-1">
+                <h2 className="text-lg font-bold text-slate-900">
+                  {pendingDelete.pending ? 'לבטל את ההזמנה?' : `להסיר את ${pendingDelete.full_name ?? 'המשתמש'} מהצוות?`}
+                </h2>
+                <p className="text-sm text-slate-700 mt-1 leading-relaxed">
+                  {pendingDelete.pending
+                    ? 'ההזמנה תיעלם והקישור שנשלח יפסיק להיות תקף. ניתן להזמין שוב מאוחר יותר.'
+                    : 'המשתמש לא יוכל להיכנס לתאגיד ולא יקבל יותר התראות. הפעולה ניתנת לשחזור על ידי הזמנה מחדש.'}
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setPendingDelete(null)}
+                disabled={deleting}
+                className="flex-1 px-4 py-2.5 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-50 font-medium text-sm disabled:opacity-50"
+              >
+                ביטול
+              </button>
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={deleting}
+                className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-sm shadow-sm disabled:opacity-50"
+              >
+                {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                {pendingDelete.pending ? 'בטל הזמנה' : 'הסר משתמש'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

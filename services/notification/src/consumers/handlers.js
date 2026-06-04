@@ -5,6 +5,10 @@ const ADMIN_EMAIL    = process.env.ADMIN_EMAIL || 'admin@shivutz-platform.co.il'
 const NOTIF_URL      = `http://localhost:${process.env.PORT || 3006}`;
 const FRONTEND_URL   = process.env.FRONTEND_URL || 'https://app.shivutz.co.il';
 
+// Phase-1 fan-out helper — picks up every team member the org flagged
+// as a notification recipient and dispatches per their channel choices.
+const { notifyEntity } = require('../dispatch/notifyEntity');
+
 // 'operator' was dropped Wave 2 (2026-05) — kept in the legacy fallback
 // case `payload.role` for any in-flight events from older deploys.
 const ROLE_LABELS_HE = {
@@ -43,25 +47,27 @@ async function notifyMatchFound(result, sendEmail) {
 
   const matchUrl   = `${FRONTEND_URL}/contractor/searches/${result.search_id}`;
   const profession = result.profession || 'החיפוש שלך';
-  const firstName  = (result.contact_name || '').split(' ')[0] || 'שלום';
+  const workerCt   = result.worker_count || 0;
+  const smsBody    = `BuildUp — נמצאה התאמה מלאה לחיפוש "${profession}" (${workerCt} עובדים). לצפייה: ${matchUrl}`;
 
-  if (result.contact_phone) {
-    await sendSmsInternal(
-      result.contact_phone,
-      `שיבוץ — ${firstName}, נמצאה התאמה מלאה לחיפוש "${profession}" (${result.worker_count || 0} עובדים). ` +
-      `לצפייה בהצעה: ${matchUrl}`
-    );
-  }
-
-  if (result.contact_email) {
-    await sendEmail('match.found', result.contact_email, result.contractor_id || null, {
+  // Fan-out across the contractor's notification recipients (Phase 1).
+  // Falls back to the single contact_phone / contact_email pair when
+  // the contractor hasn't configured a recipient list yet.
+  await notifyEntity({
+    entityType: 'contractor',
+    entityId:   result.contractor_id,
+    eventKey:   'match.found',
+    emailVars: {
       contact_name: result.contact_name || '',
       profession,
-      worker_count: result.worker_count || 0,
+      worker_count: workerCt,
       region:       result.region || '',
       match_url:    matchUrl,
-    });
-  }
+    },
+    smsText: smsBody,
+    sendEmail, sendSms: sendSmsInternal,
+    fallback: { email: result.contact_email, phone: result.contact_phone },
+  });
 }
 
 async function rematchForCorp(corporationId, professionType) {
@@ -167,7 +173,7 @@ async function materialiseNewDeals(result, sendEmail) {
       const corpLink = `${FRONTEND_URL}/corporation/deals`;
       await sendSmsInternal(
         corpPhone,
-        `שיבוץ — יש דרישה חדשה ממתינה לעובדי ${profHe}. אנא פתח את לוח העסקאות: ${corpLink}`
+        `BuildUp — יש דרישה חדשה ממתינה לעובדי ${profHe}. אנא פתח את לוח העסקאות: ${corpLink}`
       );
     }
   }
@@ -178,7 +184,7 @@ async function materialiseNewDeals(result, sendEmail) {
     const firstName = (result.contact_name || '').split(' ')[0] || 'שלום';
     await sendSmsInternal(
       result.contact_phone,
-      `שיבוץ — ${firstName}, תאגיד נוסף יכול לתת מענה לדרישה שלך ל-${profHe}. היכנס לבדוק: ${dealsLink}`
+      `BuildUp — ${firstName}, תאגיד נוסף יכול לתת מענה לדרישה שלך ל-${profHe}. היכנס לבדוק: ${dealsLink}`
     );
   }
 }
@@ -226,7 +232,7 @@ async function handle(routingKey, payload, sendEmail) {
         const firstName = (payload.contact_name || '').split(' ')[0] || 'שלום';
         await sendSmsInternal(
           payload.contact_phone,
-          `${firstName}, החשבון שלך בפלטפורמת שיבוץ אושר ✓\n${payload.org_type === 'contractor' ? 'לאיתור עובדים: ' : 'כניסה לחשבון: '}${link}`
+          `${firstName}, החשבון שלך בפורטל BuildUp אושר ✓\n${payload.org_type === 'contractor' ? 'לאיתור עובדים: ' : 'כניסה לחשבון: '}${link}`
         );
       }
       break;
@@ -245,22 +251,50 @@ async function handle(routingKey, payload, sendEmail) {
       });
       break;
 
-    case 'deal.proposed':
-      // Notify the corporation
-      await sendEmail('deal.proposed', payload.corporation_email || ADMIN_EMAIL, null, {
-        contractor_name: payload.contractor_name || payload.contractor_id,
-        profession:      payload.profession_he || 'חיפוש חדש',
-        deal_id:         payload.deal_id,
+    case 'deal.proposed': {
+      // Reaches the corporation team — every team member flagged as a
+      // recipient gets it on the channels they chose. Legacy single-
+      // contact fallback fires if no recipients are configured yet.
+      const dealUrl = `${FRONTEND_URL}/corporation/deals/${payload.deal_id}`;
+      const prof    = payload.profession_he || 'חיפוש חדש';
+      await notifyEntity({
+        entityType: 'corporation',
+        entityId:   payload.corporation_id,
+        eventKey:   'deal.proposed',
+        emailVars: {
+          contractor_name: payload.contractor_name || payload.contractor_id,
+          profession:      prof,
+          deal_id:         payload.deal_id,
+          link:            dealUrl,
+        },
+        smsText: `דרישה חדשה לתאגיד — ${prof}. לצפייה ותגובה: ${dealUrl}`,
+        sendEmail, sendSms: sendSmsInternal,
+        fallback: { email: payload.corporation_email },
       });
       break;
+    }
 
-    case 'deal.accepted':
-      await sendEmail('deal.accepted', payload.contractor_email || ADMIN_EMAIL, null, {
-        corporation_name: payload.corporation_name || payload.corporation_id,
-        profession:       payload.profession_he || '',
-        deal_id:          payload.deal_id,
+    case 'deal.accepted': {
+      // Contractor side gets notified when their proposed deal flips to
+      // accepted (contractor's own confirmation flow).
+      const dealUrl = `${FRONTEND_URL}/contractor/deals/${payload.deal_id}`;
+      const corp    = payload.corporation_name || 'התאגיד';
+      await notifyEntity({
+        entityType: 'contractor',
+        entityId:   payload.contractor_id,
+        eventKey:   'deal.accepted',
+        emailVars: {
+          corporation_name: corp,
+          profession:       payload.profession_he || '',
+          deal_id:          payload.deal_id,
+          link:             dealUrl,
+        },
+        smsText: `העסקה אושרה — ${corp}. פרטים: ${dealUrl}`,
+        sendEmail, sendSms: sendSmsInternal,
+        fallback: { email: payload.contractor_email },
       });
       break;
+    }
 
     case 'deal.discrepancy.flagged':
       await sendEmail('deal.discrepancy.flagged', ADMIN_EMAIL, null, {
@@ -268,12 +302,35 @@ async function handle(routingKey, payload, sendEmail) {
       });
       break;
 
-    case 'message.new':
-      await sendEmail('message.new', payload.recipient_email || ADMIN_EMAIL, null, {
-        deal_id:     payload.deal_id,
-        sender_name: payload.sender_role || 'משתמש',
-      });
+    case 'message.new': {
+      // Cross-party chat — payload.recipient_role tells us which side
+      // owns the inbox we're notifying, so we look up the right entity.
+      const recipientSide  = payload.recipient_role === 'contractor' ? 'contractor' : 'corporation';
+      const recipientEntId = recipientSide === 'contractor'
+        ? payload.contractor_id
+        : payload.corporation_id;
+      const dealUrl = `${FRONTEND_URL}/${recipientSide}/deals/${payload.deal_id}`;
+      const senderLabel = payload.sender_role === 'contractor' ? 'הקבלן'
+                       : payload.sender_role === 'corporation' ? 'התאגיד'
+                       : 'משתמש';
+      if (recipientEntId) {
+        await notifyEntity({
+          entityType: recipientSide,
+          entityId:   recipientEntId,
+          eventKey:   'message.new',
+          emailVars: { deal_id: payload.deal_id, sender_name: senderLabel, link: dealUrl },
+          smsText:   `הודעה חדשה מ${senderLabel} בעסקה. צפייה: ${dealUrl}`,
+          sendEmail, sendSms: sendSmsInternal,
+          fallback: { email: payload.recipient_email },
+        });
+      } else if (payload.recipient_email) {
+        // Legacy path before the deal-service started attaching ids.
+        await sendEmail('message.new', payload.recipient_email, null, {
+          deal_id: payload.deal_id, sender_name: senderLabel,
+        });
+      }
       break;
+    }
 
     case 'commission.invoiced':
       await sendEmail('commission.invoiced', ADMIN_EMAIL, null, {
@@ -301,7 +358,7 @@ async function handle(routingKey, payload, sendEmail) {
       const inviteUrl   = `${FRONTEND_URL}/invite/accept/${payload.invite_token}`;
       const inviterName = payload.inviter_name || 'המנהל';
       const entityName  = payload.entity_name  || 'הארגון';
-      const message     = `שלום! ${inviterName} מזמין אותך להצטרף לצוות "${entityName}" בפלטפורמת שיבוץ בתפקיד ${roleLabel}.\nלהתחברות והצטרפות לפלטפורמה:\n${inviteUrl}`;
+      const message     = `שלום! ${inviterName} מזמין אותך להצטרף לצוות "${entityName}" בפורטל BuildUp בתפקיד ${roleLabel}.\nלהתחברות והצטרפות לפלטפורמה:\n${inviteUrl}`;
       await sendSmsInternal(payload.phone, message);
       break;
     }
@@ -317,7 +374,7 @@ async function handle(routingKey, payload, sendEmail) {
     case 'contractor.verify.sms_code': {
       const firstName = (payload.contact_name || '').split(' ')[0] || 'שלום';
       const message =
-        `שיבוץ — קוד אימות בעלות לעסק שלך: ${payload.code}\n` +
+        `BuildUp — קוד אימות בעלות לעסק שלך: ${payload.code}\n` +
         `הזן את הקוד באתר כדי להשלים את הרישום. תקף ל-30 דקות.\n` +
         `אם לא ביקשת — התעלם מההודעה (${firstName}).`;
       await sendSmsInternal(payload.phone, message);
@@ -345,7 +402,7 @@ async function handle(routingKey, payload, sendEmail) {
         const firstName = (payload.contact_name || '').split(' ')[0] || 'שלום';
         await sendSmsInternal(
           payload.contact_phone,
-          `שיבוץ — ${firstName}, הרישום של ${payload.company_name || 'העסק שלך'} כבר לא מופיע בפנקס הקבלנים. ` +
+          `BuildUp — ${firstName}, הרישום של ${payload.company_name || 'העסק שלך'} כבר לא מופיע בפנקס הקבלנים. ` +
           `הגשת בקשות לתאגידים מושהית עד שנעדכן את האימות. היכנס לאתר ובחר "אמת מחדש" בהגדרות.`
         );
       }
@@ -369,7 +426,7 @@ async function handle(routingKey, payload, sendEmail) {
         const firstName = (payload.contact_name || '').split(' ')[0] || 'שלום';
         await sendSmsInternal(
           payload.contact_phone,
-          `שיבוץ — ${firstName}, החשבון שלך אומת בהצלחה ✓ אתה יכול עכשיו להגיש בקשות לתאגידים. ` +
+          `BuildUp — ${firstName}, החשבון שלך אומת בהצלחה ✓ אתה יכול עכשיו להגיש בקשות לתאגידים. ` +
           `כניסה: ${FRONTEND_URL}/contractor/dashboard`
         );
       }
@@ -394,7 +451,7 @@ async function handle(routingKey, payload, sendEmail) {
         const firstName = (payload.contractor_contact_name || '').split(' ')[0] || 'שלום';
         await sendSmsInternal(
           payload.contractor_contact_phone,
-          `שיבוץ — ${firstName}, תאגיד הציע ${vars.worker_count} עובדי ${vars.profession_he} לבקשתך. ` +
+          `BuildUp — ${firstName}, תאגיד הציע ${vars.worker_count} עובדי ${vars.profession_he} לבקשתך. ` +
           `יש לך 7 ימים לאשר. כניסה: ${dealUrl}`
         );
       }
@@ -431,7 +488,7 @@ async function handle(routingKey, payload, sendEmail) {
         const firstName = (payload.contractor_contact_name || '').split(' ')[0] || 'שלום';
         await sendSmsInternal(
           payload.contractor_contact_phone,
-          `שיבוץ — ${firstName}, אישרת רשימה של ${payload.worker_count} עובדים. ` +
+          `BuildUp — ${firstName}, אישרת רשימה של ${payload.worker_count} עובדים. ` +
           `חיוב יבוצע ב-${captureFmt} (אלא אם התאגיד יבטל בחלון הזמן).`
         );
       }
@@ -494,7 +551,7 @@ async function handle(routingKey, payload, sendEmail) {
         const firstName = (payload.contractor_contact_name || '').split(' ')[0] || 'שלום';
         await sendSmsInternal(
           payload.contractor_contact_phone,
-          `שיבוץ — ${firstName}, ${payload.corp_name || 'התאגיד'} ביטל את העסקה לפני החיוב. לא חויבת. ` +
+          `BuildUp — ${firstName}, ${payload.corp_name || 'התאגיד'} ביטל את העסקה לפני החיוב. לא חויבת. ` +
           `הבקשה שלך נשארת פתוחה.`
         );
       }
@@ -709,7 +766,7 @@ async function broadcastTender(payload) {
 
   const link = `${FRONTEND_URL}/corporation/tenders`;
   const message =
-    `שיבוץ — מכרז ייבוא חדש: קבלן מבקש ${qty} עובדים מחו״ל ` +
+    `BuildUp — מכרז ייבוא חדש: קבלן מבקש ${qty} עובדים מחו״ל ` +
     `(${profCount} מקצועות). אם תוכלו לספק — הגישו הצעה: ${link}`;
 
   for (const c of corps) {
@@ -728,7 +785,7 @@ async function notifyContractorOfBid(payload) {
   const link = `${FRONTEND_URL}/contractor/tenders/${payload.tender_id}`;
   await sendSmsInternal(
     phone,
-    `שיבוץ — התקבלה הצעה חדשה למכרז הייבוא שלך. היכנס לבדוק ולבחור: ${link}`,
+    `BuildUp — התקבלה הצעה חדשה למכרז הייבוא שלך. היכנס לבדוק ולבחור: ${link}`,
   );
 }
 
@@ -745,7 +802,7 @@ async function notifyTenderRevealed(payload) {
     if (cPhone) {
       await sendSmsInternal(
         cPhone,
-        `שיבוץ — מכרז הייבוא אושר ע״י מנהל המערכת. פרטי התאגיד הזוכה נחשפו: ${contractorLink}`,
+        `BuildUp — מכרז הייבוא אושר ע״י מנהל המערכת. פרטי התאגיד הזוכה נחשפו: ${contractorLink}`,
       );
     }
   }
@@ -754,7 +811,7 @@ async function notifyTenderRevealed(payload) {
     if (phone) {
       await sendSmsInternal(
         phone,
-        `שיבוץ — זכיתם במכרז ייבוא עובדים! פרטי הקבלן נחשפו, ניתן ליצור קשר: ${corpLink}`,
+        `BuildUp — זכיתם במכרז ייבוא עובדים! פרטי הקבלן נחשפו, ניתן ליצור קשר: ${corpLink}`,
       );
     }
   }

@@ -7,6 +7,8 @@ import uuid, httpx, os, json, secrets, shutil
 from app.db import get_db
 from app.publisher import publish_event
 from app.services import rate_limit
+from app.services import notification_recipients as notif_recipients
+from app.services import team_membership as team_mgmt
 from app.integrations import data_gov_il
 from app.integrations.israeli_id import is_valid_israeli_id
 
@@ -320,7 +322,8 @@ def list_corporation_users(org_id: str):
             """SELECT em.membership_id, em.user_id, em.role, em.job_title,
                       em.is_active, em.invitation_accepted_at, em.created_at,
                       em.invited_first_name, em.invited_last_name,
-                      u.phone, u.full_name, u.email
+                      COALESCE(u.phone, em.invited_phone) AS phone,
+                      u.full_name, u.email
                FROM auth_db.entity_memberships em
                LEFT JOIN auth_db.users u ON u.id = em.user_id
                WHERE em.entity_type = 'corporation' AND em.entity_id = %s
@@ -378,13 +381,14 @@ async def invite_corporation_user(
         cur.execute(
             """INSERT INTO auth_db.entity_memberships
                (membership_id, user_id, entity_type, entity_id, role, job_title,
-                invited_first_name, invited_last_name,
+                invited_first_name, invited_last_name, invited_phone,
                 invited_by, invitation_token, is_active)
-               VALUES (%s, NULL, 'corporation', %s, %s, %s, %s, %s, %s, %s, FALSE)""",
+               VALUES (%s, NULL, 'corporation', %s, %s, %s, %s, %s, %s, %s, %s, FALSE)""",
             (membership_id,
              org_id, data.role, data.job_title,
              (data.first_name or '').strip() or None,
              (data.last_name  or '').strip() or None,
+             data.phone.strip() or None,
              inviter_user_id, invite_token)
         )
         conn.commit()
@@ -417,6 +421,54 @@ class DocumentCreate(BaseModel):
     file_size: Optional[int] = None
     mime_type: Optional[str] = None
     notes: Optional[str] = None
+
+
+@router.delete("/{org_id}/users/{membership_id}", status_code=204)
+def delete_corporation_user(
+    org_id: str,
+    membership_id: str,
+    x_user_id:   Optional[str] = Header(default=None),
+    x_user_role: Optional[str] = Header(default=None),
+):
+    """Hard-delete a team membership (active or pending). Cleans up the
+    notification_recipients row for the same (entity, user) pair. Role
+    gate: corp admin/owner or platform admin. Sole-owner protection."""
+    team_mgmt.delete_membership(
+        entity_type="corporation",
+        entity_id=org_id,
+        membership_id=membership_id,
+        caller_user_id=x_user_id,
+        caller_role=x_user_role,
+    )
+
+
+# ── Notification recipients ──────────────────────────────────────────
+@router.get("/{org_id}/notification-recipients")
+def list_corporation_notification_recipients(org_id: str):
+    """List all active team members joined with their recipient state.
+    Non-recipients come back with is_recipient=false / channels=[]."""
+    return notif_recipients.list_recipients("corporation", org_id)
+
+
+@router.put("/{org_id}/notification-recipients/{user_id}")
+def upsert_corporation_notification_recipient(
+    org_id: str,
+    user_id: str,
+    body: notif_recipients.RecipientUpsert,
+    x_user_id:   Optional[str] = Header(default=None),
+    x_user_role: Optional[str] = Header(default=None),
+):
+    """Flag/unflag a team member as a notification recipient + choose
+    their channels. Role gate: corp admin/owner OR the user themselves
+    (for self opt-out). Max-5 cap is enforced in the service layer."""
+    return notif_recipients.upsert_recipient(
+        entity_type="corporation",
+        entity_id=org_id,
+        target_user_id=user_id,
+        body=body,
+        caller_user_id=x_user_id,
+        caller_role=x_user_role,
+    )
 
 
 @router.get("/{org_id}/documents")

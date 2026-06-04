@@ -45,4 +45,13 @@ export const memberApi = {
         }),
       }
     ),
+
+  /** Hard-delete a membership (active or pending). Also cleans up the
+   *  notification_recipients row for the same (entity, user) pair.
+   *  Server returns 204 No Content; sole-owner protection returns 409. */
+  remove: (orgType: 'contractors' | 'corporations', orgId: string, membershipId: string) =>
+    apiFetch<void>(
+      `/organizations/${orgType}/${orgId}/users/${membershipId}`,
+      { method: 'DELETE' },
+    ),
 };

@@ -37,9 +37,14 @@ const CONTRACTOR_NAV: NavItem[] = [
   // ועסקאות" so the merge is obvious.
   { label: 'בקשות ועסקאות', href: '/contractor/deals',     icon: Handshake },
   { label: 'בקשות ייבוא מחו״ל', href: '/contractor/tenders', icon: Globe2 },
-  { label: 'ניהול והעלאת מסמכים', href: '/contractor/manage', icon: Users,
+  // Promoted "צוות" to a top-level entry so contractors get a direct
+  // path to the team-management page (matches the corp sidebar). The
+  // "ניהול והעלאת מסמכים" parent stays as the home for documents +
+  // other future admin surfaces — its sub-menu just shed the team
+  // item to avoid duplication.
+  { label: 'צוות',      href: '/contractor/users',     icon: Users },
+  { label: 'ניהול והעלאת מסמכים', href: '/contractor/manage', icon: FileText,
     sub: [
-      { label: 'צוות',     href: '/contractor/users' },
       { label: 'מסמכים',   href: '/contractor/documents' },
     ] },
 ];

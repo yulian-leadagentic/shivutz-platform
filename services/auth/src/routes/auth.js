@@ -112,7 +112,7 @@ async function getMemberships(pool, userId) {
  * Send OTP SMS via notification service internal endpoint.
  */
 async function sendOtpSms(phone, code) {
-  const message = `קוד האימות שלך לשיבוץ פלטפורמה: ${code}\nבתוקף 10 דקות. אל תשתף קוד זה.`;
+  const message = `קוד האימות שלך לכניסה לפורטל BuildUp הוא: ${code}\nבתוקף 10 דקות. אל תשתף קוד זה.`;
   try {
     const resp = await fetch(`${NOTIF_URL}/internal/sms`, {
       method:  'POST',
