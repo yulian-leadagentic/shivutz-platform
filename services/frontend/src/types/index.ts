@@ -245,6 +245,13 @@ export interface CorporationLookupResult {
   prefill?: {
     company_name_he?: string | null;
   };
+  /** Did this ח.פ match a row in the admin-uploaded רשות האוכלוסין list? */
+  gov_list_found?: boolean;
+  gov_list_year?:  number | null;
+  /** All 4 phone columns (mobile + landline x2) from the matched gov row,
+   *  used by the post-register UI to explain whether the typed phone
+   *  matched the gov record. */
+  gov_list_phones?: string[];
   error?: string;
   message?: string;
 }
@@ -395,17 +402,24 @@ export interface CorporationRegistration {
 
 export interface RegistrationResult {
   id: string;
-  /** 'approved' when kablan matched (auto-promoted to tier_2);
-   *  'pending' when the typed kablan didn't match and the row needs
-   *  an admin to confirm. */
+  /** 'approved' when the credential match was strong enough for auto-
+   *  promote: contractor → kablan number matched; corporation → ח.פ
+   *  AND contact_phone both matched the gov list. Otherwise 'pending'
+   *  and admin handles it. */
   status: string;
   org_type: string;
   verification_tier?: 'tier_0' | 'tier_1' | 'tier_2';
   registry_found?: boolean;
-  /** True when the typed kablan_number matched פנקס הקבלנים. The UI
-   *  branches on this: matched → straight to dashboard with a success
-   *  toast; mismatched → 'ממתין לאישור מנהל' screen. */
+  /** Contractor: typed kablan_number matched פנקס הקבלנים. */
   kablan_matched?: boolean;
+  /** Corporation: ח.פ matched a row in רשות האוכלוסין list. */
+  gov_list_matched?: boolean;
+  gov_list_year?: number | null;
+  /** Corporation: typed contact_phone matched one of the 4 gov phones.
+   *  Drives the post-register copy:
+   *    matched   → 'אושר אוטומטית — תוכל להתחיל לפעול מיד'
+   *    mismatch  → 'מאושר לפעולה, מנהל יבצע אימות נוסף תוך 48 שעות'. */
+  phone_matched_gov?: boolean;
   available_channels?: RegistryChannel[];
   access_token?: string;
   refresh_token?: string;

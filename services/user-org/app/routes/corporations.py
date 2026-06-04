@@ -85,6 +85,27 @@ async def lookup_corporation_business(data: CorpLookupRequest):
     company_active = data_gov_il.is_company_active(result["ica"])
     blocked = result["ica_found"] and company_active is False
 
+    # Also cross-check against the admin-uploaded רשות האוכלוסין list.
+    # If the corp is in the latest year's list we want the registration
+    # UI to say so up-front ('חברה רשומה ברשם החברות ומופיעה ברשימת
+    # תאגידי בניין מורשים') rather than the generic ica-only message.
+    gov_corp_row = None
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT id, source_year, company_name_he, address,
+                      phone_mobile_1, phone_mobile_2,
+                      phone_landline_1, phone_landline_2
+               FROM gov_corporations_registry
+               WHERE business_number = %s
+               ORDER BY source_year DESC LIMIT 1""",
+            (data.business_number,),
+        )
+        gov_corp_row = cur.fetchone()
+    finally:
+        conn.close()
+
     return {
         "ok": True,
         "blocked": blocked,
@@ -92,8 +113,26 @@ async def lookup_corporation_business(data: CorpLookupRequest):
         "ica_found": result["ica_found"],
         "gov_company_status": ica_fields.get("gov_company_status"),
         "prefill": {
-            "company_name_he": ica_fields.get("company_name_he"),
+            # Prefer the gov-list name when it's available — it's the
+            # canonical "registered manpower corp" name. Fall back to
+            # whatever רשם החברות returned.
+            "company_name_he":
+                (gov_corp_row.get("company_name_he") if gov_corp_row else None)
+                or ica_fields.get("company_name_he"),
         },
+        # Gov-list flag + payload — frontend uses these to swap the
+        # confirmation message and (later) to compare contact_phone
+        # against the gov phones for the auto-approve fast path.
+        "gov_list_found":      bool(gov_corp_row),
+        "gov_list_year":       (gov_corp_row.get("source_year") if gov_corp_row else None),
+        "gov_list_phones":     (
+            [p for p in [
+                (gov_corp_row or {}).get("phone_mobile_1"),
+                (gov_corp_row or {}).get("phone_mobile_2"),
+                (gov_corp_row or {}).get("phone_landline_1"),
+                (gov_corp_row or {}).get("phone_landline_2"),
+            ] if p] if gov_corp_row else []
+        ),
         "from_cache": result["from_cache"],
     }
 
@@ -178,13 +217,46 @@ async def register_corporation(data: CorporationCreate):
         conn_lookup.close()
 
     matched_gov = gov_row is not None
+    # Phone-match tiering: when the typed contact_phone matches any of
+    # the 4 phone columns on the gov row (digits-only compare), we
+    # treat the registration as fully self-verified — tier_2 + auto-
+    # approved. When it doesn't match we still credit tier_2 (the corp
+    # IS in the gov list) but leave approval_status=pending so admin
+    # double-checks. This is the stronger of the two paths the product
+    # asked for: gov-list presence is real, but the new user might not
+    # be the person the registry has on file.
+    def _digits(s) -> str:
+        return "".join(c for c in (s or "") if c.isdigit())
+
+    typed_phone_digits = _digits(data.contact_phone)
+    gov_phones_digits = [_digits(p) for p in [
+        (gov_row or {}).get("phone_mobile_1"),
+        (gov_row or {}).get("phone_mobile_2"),
+        (gov_row or {}).get("phone_landline_1"),
+        (gov_row or {}).get("phone_landline_2"),
+    ] if p]
+    phone_matches_gov = bool(matched_gov and typed_phone_digits and any(
+        # Substring compare both ways — covers '0501234567' vs '+972501234567'
+        # without re-normalising every variant. Both digit strings end with
+        # the same 9-digit local number so endswith is enough.
+        typed_phone_digits.endswith(g) or g.endswith(typed_phone_digits)
+        for g in gov_phones_digits
+    ))
+
     final_tier = "tier_2" if matched_gov else initial_tier
     verification_method = "gov_list_match" if matched_gov else None
     now = datetime.utcnow()
     verified_at = now if matched_gov else None
     gov_matched_at = now if matched_gov else None
-    approval_status = "approved" if matched_gov else "pending"
-    approved_at = now if matched_gov else None
+    # Phone match → auto-approve. Phone mismatch on a gov-matched corp
+    # → tier_2 but still needs admin verification (a stronger signal
+    # than not being in the gov list at all).
+    if matched_gov and phone_matches_gov:
+        approval_status = "approved"
+        approved_at = now
+    else:
+        approval_status = "pending"
+        approved_at = None
 
     # Prefill corp fields from the gov row when the corp didn't supply
     # them. We never OVERWRITE user-typed values — corps that want to
@@ -282,14 +354,18 @@ async def register_corporation(data: CorporationCreate):
 
         return {
             "id":                org_id,
-            # 'approved' when the gov list matched, otherwise 'pending'
-            # for the admin queue (existing behaviour).
+            # 'approved' when the gov-list ח.פ AND phone both matched.
+            # 'pending' otherwise — admin queue handles the rest.
             "status":            approval_status,
             "org_type":          "corporation",
             "verification_tier": final_tier,
             "registry_found":    registry["ica_found"],
             "gov_list_matched":  matched_gov,
             "gov_list_year":     gov_year,
+            # Was the typed contact_phone among the 4 gov phones?
+            # Drives the post-register copy: 'אושר אוטומטית' vs
+            # 'מורשה לפעול, מנהל יבצע אימות נוסף'.
+            "phone_matched_gov": phone_matches_gov,
             "access_token":      user.get("access_token"),
             "refresh_token":     user.get("refresh_token"),
         }

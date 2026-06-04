@@ -407,7 +407,25 @@ function RegisterCorporationInner() {
                     </div>
                   </div>
                 )}
-                {lookup && lookup.ok && !lookup.blocked && lookup.ica_found && (
+                {lookup && lookup.ok && !lookup.blocked && lookup.gov_list_found && (
+                  <div className="flex items-start gap-2 text-sm text-emerald-700 bg-emerald-50 border-2 border-emerald-300 rounded-md px-3 py-2">
+                    <ShieldCheck className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                    <div>
+                      <p className="font-bold">
+                        חברה רשומה ברשם החברות ומופיעה ברשימת תאגידי בניין מורשים
+                      </p>
+                      {lookup.prefill?.company_name_he && (
+                        <p>שם: {lookup.prefill.company_name_he}</p>
+                      )}
+                      {lookup.gov_list_year && (
+                        <p className="text-xs text-emerald-600 mt-0.5">
+                          רשות האוכלוסין וההגירה — רשימת {lookup.gov_list_year}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+                {lookup && lookup.ok && !lookup.blocked && !lookup.gov_list_found && lookup.ica_found && (
                   <div className="flex items-start gap-2 text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md px-3 py-2">
                     <ShieldCheck className="h-4 w-4 mt-0.5 flex-shrink-0" />
                     <div>
@@ -415,6 +433,9 @@ function RegisterCorporationInner() {
                       {lookup.prefill?.company_name_he && (
                         <p>שם: {lookup.prefill.company_name_he}</p>
                       )}
+                      <p className="text-xs text-emerald-600 mt-0.5">
+                        לא נמצאה ברשימת תאגידי בניין מורשים — אישור ידני יידרש.
+                      </p>
                     </div>
                   </div>
                 )}

@@ -73,6 +73,7 @@ export default function CorporationDashboard() {
   const [pendingDeals, setPendingDeals] = useState<number | null>(null);
   const [openTenders, setOpenTenders]   = useState<number | null>(null);
   const [approvalStatus, setApprovalStatus] = useState<string | null>(null);
+  const [verificationTier, setVerificationTier] = useState<string | null>(null);
 
   useEffect(() => {
     // Org approval status from JWT
@@ -83,8 +84,10 @@ export default function CorporationDashboard() {
       const entType  = (payload?.entity_type || payload?.org_type) as string | undefined;
       if (entityId && entType === 'corporation') {
         orgApi.getCorporation(entityId)
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          .then((c: any) => setApprovalStatus(c.approval_status ?? null))
+          .then((c) => {
+            setApprovalStatus(c.approval_status ?? null);
+            setVerificationTier(c.verification_tier ?? null);
+          })
           .catch(() => {});
       }
     }
@@ -107,8 +110,26 @@ export default function CorporationDashboard() {
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-6 space-y-6">
-      {/* Pending approval banner */}
-      {approvalStatus === 'pending' && (
+      {/* Two flavours of the pending-approval banner — depend on
+          whether the corp made it to tier_2 (gov-list-matched but the
+          typed phone didn't match the registered gov phones) or is
+          still at tier_0/tier_1.
+            tier_2 + pending  → can operate, admin doing extra verification
+            tier_<2 + pending → blocked from publishing, waiting on admin */}
+      {approvalStatus === 'pending' && verificationTier === 'tier_2' && (
+        <div className="flex items-start gap-4 bg-sky-50 border border-sky-200 rounded-2xl p-4">
+          <div className="shrink-0 w-10 h-10 rounded-full bg-sky-100 flex items-center justify-center">
+            <Clock className="h-5 w-5 text-sky-600" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-sky-900">החשבון מאושר לפעולה</h3>
+            <p className="text-sm text-sky-700 mt-0.5">
+              התאגיד מופיע ברשימת התאגידים המורשים — אישור סופי על ידי מנהל יושלם תוך 48 שעות. בינתיים תוכל להתחיל לפעול במלוא היקף השירותים.
+            </p>
+          </div>
+        </div>
+      )}
+      {approvalStatus === 'pending' && verificationTier !== 'tier_2' && (
         <div className="flex items-start gap-4 bg-amber-50 border border-amber-200 rounded-2xl p-4">
           <div className="shrink-0 w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
             <Clock className="h-5 w-5 text-amber-600" />
