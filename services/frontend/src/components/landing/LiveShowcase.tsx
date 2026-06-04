@@ -165,7 +165,11 @@ export default function LiveShowcase({ intervalMs = 5000 }: Props) {
   return (
     <section
       aria-label="פעילות חיה בפלטפורמה"
-      className="relative bg-slate-50/60"
+      // Rose-tinted band (was bg-slate-50/60) so the Live surface reads
+      // as visually distinct from the white hero above + tile band
+      // below. The hue echoes the pulsing rose dot in the header,
+      // tying the colour to the "live" semantic.
+      className="relative bg-rose-50/40"
     >
       {/* Vertical padding tightened (py-6 sm:py-8 → py-3 sm:py-4) and
           the header→card gap halved so the showcase doesn't blow out
@@ -179,18 +183,19 @@ export default function LiveShowcase({ intervalMs = 5000 }: Props) {
       <div className="max-w-6xl mx-auto px-6 w-full py-3 sm:py-4">
        <div className="max-w-5xl mx-auto">
 
-        {/* Header — Live label + tagline. The tagline drops the
-            "מגורים, שירותים" wording since the showcase now filters
-            those categories out (see MIX_SHOWCASE_BY_ROLE in mocks). */}
+        {/* Header — Live label + tagline. "Live" promoted to a rose
+            pill badge so it reads as a status indicator (not just text)
+            and ties the colour to the surrounding emphasis treatment. */}
         <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
           <div className="flex items-center gap-2">
-            <span
-              aria-hidden="true"
-              className="h-2 w-2 rounded-full bg-rose-500 animate-live-dot"
-            />
-            <span className="font-bold text-sm text-slate-800">Live</span>
-            <span className="text-slate-300">·</span>
-            <span className="text-sm text-slate-600">מה קורה עכשיו ב-BuildUp</span>
+            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-rose-500 text-white text-xs font-bold tracking-wide shadow-sm">
+              <span
+                aria-hidden="true"
+                className="h-1.5 w-1.5 rounded-full bg-white animate-live-dot"
+              />
+              LIVE
+            </span>
+            <span className="text-sm font-semibold text-slate-800">מה קורה עכשיו ב-BuildUp</span>
           </div>
           <p className="text-xs text-slate-500 leading-snug">
             דרישות קבלנים, תאגידים פעילים, עובדים והתאמות — הכל בזמן אמת
@@ -199,11 +204,14 @@ export default function LiveShowcase({ intervalMs = 5000 }: Props) {
 
         {/* Rotating card — key={current.id} forces remount so the enter
             animation runs every swap. aria-live="polite" so screen
-            readers catch updates without nagging. */}
+            readers catch updates without nagging.
+            Border bumped from border-slate-200 to border-2 border-rose-200
+            + rose-tinted shadow to draw the eye to the live surface
+            without resorting to a loud color shift on the content itself. */}
         <div
           onMouseEnter={() => setPaused(true)}
           onMouseLeave={() => setPaused(false)}
-          className="rounded-2xl border border-slate-200 bg-white shadow-sm hover:shadow-md transition-shadow"
+          className="rounded-2xl border-2 border-rose-200 bg-white shadow-md shadow-rose-100/60 hover:shadow-lg hover:shadow-rose-200/60 transition-shadow"
         >
           <div
             key={current.id}
