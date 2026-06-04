@@ -17,12 +17,32 @@ const ROLE_LABELS_HE = {
   viewer:   'צופה',
 };
 
+// E.164 normaliser for Israeli mobile numbers. Required because some
+// publishers (team.invited, deal.* fan-out, etc.) pass through whatever
+// the user typed at invite-time. Vonage rejects local-format (0XX...)
+// with DLR error code 12 ("Destination Unreachable") so anything not
+// already in E.164 gets converted here. Non-Israeli numbers fall
+// through unchanged — Vonage handles those itself when E.164 is well-
+// formed.
+function normaliseIsraeliPhone(phone) {
+  if (!phone) return phone;
+  let p = String(phone).replace(/[\s()-]/g, '');
+  if (p.startsWith('+972'))  return p;
+  if (p.startsWith('972'))   return '+' + p;
+  if (p.startsWith('00972')) return '+' + p.slice(2);
+  if (p.startsWith('0'))     return '+972' + p.slice(1);
+  // 9-digit Israeli mobile with the leading 0 stripped already
+  if (/^\d{9}$/.test(p))     return '+972' + p;
+  return phone;
+}
+
 async function sendSmsInternal(phone, message) {
+  const normalised = normaliseIsraeliPhone(phone);
   try {
     const resp = await fetch(`${NOTIF_URL}/internal/sms`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ phone, message }),
+      body:    JSON.stringify({ phone: normalised, message }),
     });
     if (!resp.ok) console.error('[handlers] SMS failed:', await resp.text());
   } catch (err) {
