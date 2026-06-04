@@ -1,4 +1,5 @@
 import { apiFetch } from './api';
+import { BASE } from './api/client';
 import type { Deal, Worker } from '@/types';
 
 // ── Commission types ────────────────────────────────────────────────────────
@@ -495,13 +496,20 @@ export const adminApi = {
 
   /** Upload the gov PDF + year. Backend parses, replaces all rows for
    *  that year, and re-promotes existing corps whose ח.פ is in the
-   *  file to tier_2 with verification_method='gov_list_match'. */
+   *  file to tier_2 with verification_method='gov_list_match'.
+   *
+   *  We import BASE here and don't use apiFetch — apiFetch hard-codes
+   *  Content-Type: application/json which breaks multipart uploads.
+   *  Using a raw fetch but pinned to BASE so we hit the gateway origin
+   *  (apiFetch resolves `${BASE}${path}`), not the frontend origin —
+   *  hitting the frontend's relative URL is what produces the
+   *  'Failed to fetch' browser error. */
   importGovCorpsPdf: async (year: number, file: File) => {
     const fd = new FormData();
     fd.append('source_year', String(year));
     fd.append('file', file);
     const token = (typeof window !== 'undefined') ? window.localStorage.getItem('access_token') : null;
-    const res = await fetch(`/api/admin/gov-corps-registry/import`, {
+    const res = await fetch(`${BASE}/admin/gov-corps-registry/import`, {
       method: 'POST',
       headers: token ? { Authorization: `Bearer ${token}` } : {},
       body: fd,
