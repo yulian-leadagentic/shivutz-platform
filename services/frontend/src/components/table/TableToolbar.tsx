@@ -20,10 +20,7 @@
  * dance in 17 different files.
  */
 
-import { ArrowUp, ArrowDown, Filter as FilterIcon, X } from 'lucide-react';
-import { Card, CardContent } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { ArrowUp, ArrowDown, Filter as FilterIcon, X, Search } from 'lucide-react';
 
 export interface PillOption<K extends string = string> {
   key: K;
@@ -136,8 +133,13 @@ export function TableToolbar<P extends string = string, S extends string = strin
       )}
 
       {showControl && (
-        <Card>
-          <CardContent className="p-3 flex flex-wrap items-center gap-3">
+        // Single-row control strip — never wraps. Narrow viewports get
+        // horizontal scroll instead of breaking into 3 rows. All
+        // children are h-9 so the row reads as one continuous bar.
+        // The bg-white + border + rounded-lg replaces the previous
+        // Card wrapper for a tighter footprint.
+        <div className="bg-white border border-slate-200 rounded-lg shadow-sm">
+          <div className="flex items-center gap-2 p-2 overflow-x-auto">
             <FilterIcon className="h-4 w-4 text-slate-400 shrink-0" />
 
             {showSelects && selects.map((s) => (
@@ -146,7 +148,7 @@ export function TableToolbar<P extends string = string, S extends string = strin
                 aria-label={s.ariaLabel}
                 value={s.value}
                 onChange={(e) => s.onChange(e.target.value)}
-                className="text-sm border border-slate-300 rounded-md px-2 py-1.5 bg-white"
+                className="h-9 text-sm border border-slate-300 rounded-md px-2 bg-white shrink-0 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
               >
                 {s.options.map((o) => (
                   <option key={o.value} value={o.value}>{o.label}</option>
@@ -155,22 +157,30 @@ export function TableToolbar<P extends string = string, S extends string = strin
             ))}
 
             {showSearch && (
-              <Input
-                placeholder={searchPlaceholder}
-                value={searchValue || ''}
-                onChange={(e) => onSearchChange?.(e.target.value)}
-                className="flex-1 min-w-[200px]"
-              />
+              // The search is the ONLY element that flex-grows. On
+              // very narrow viewports it'll shrink to its min-width
+              // and the toolbar gets a horizontal scrollbar.
+              <div className="relative flex-1 min-w-[140px]">
+                <Search className="h-4 w-4 text-slate-400 absolute top-1/2 -translate-y-1/2 start-2.5 pointer-events-none" />
+                <input
+                  type="search"
+                  placeholder={searchPlaceholder}
+                  value={searchValue || ''}
+                  onChange={(e) => onSearchChange?.(e.target.value)}
+                  className="h-9 w-full ps-8 pe-2 text-sm rounded-md border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+                />
+              </div>
             )}
 
             {showSort && (
-              <div className="inline-flex items-center gap-1">
-                <span className="text-xs text-slate-500">מיון:</span>
+              // Sort key dropdown + direction toggle, side by side.
+              // Both are h-9 so visually they're the same row size.
+              <>
                 <select
-                  aria-label="מיון"
+                  aria-label="מיון לפי"
                   value={sortKey}
                   onChange={(e) => onSortKeyChange?.(e.target.value as S)}
-                  className="text-sm border border-slate-300 rounded-md px-2 py-1.5 bg-white"
+                  className="h-9 text-sm border border-slate-300 rounded-md px-2 bg-white shrink-0 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
                 >
                   {sortOptions.map((o) => (
                     <option key={o.key} value={o.key}>{o.label}</option>
@@ -180,28 +190,28 @@ export function TableToolbar<P extends string = string, S extends string = strin
                   type="button"
                   onClick={onSortDirToggle}
                   aria-label={sortDir === 'asc' ? 'סדר עולה' : 'סדר יורד'}
-                  className="inline-flex items-center justify-center h-8 w-8 rounded-md border border-slate-300 bg-white hover:bg-slate-50 text-slate-600"
+                  title={sortDir === 'asc' ? 'סדר עולה' : 'סדר יורד'}
+                  className="h-9 w-9 inline-flex items-center justify-center rounded-md border border-slate-300 bg-white hover:bg-slate-50 text-slate-600 shrink-0"
                 >
                   {sortDir === 'asc'
                     ? <ArrowUp className="h-4 w-4" />
                     : <ArrowDown className="h-4 w-4" />}
                 </button>
-              </div>
+              </>
             )}
 
             {hasActiveFilter && onClear && (
-              <Button
-                variant="outline"
-                size="sm"
+              <button
+                type="button"
                 onClick={onClear}
-                className="inline-flex items-center gap-1"
+                className="h-9 inline-flex items-center gap-1 px-3 text-sm font-medium rounded-md border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 shrink-0"
               >
                 <X className="h-3.5 w-3.5" />
-                נקה סינון
-              </Button>
+                נקה
+              </button>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       )}
     </div>
   );
