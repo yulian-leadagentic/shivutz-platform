@@ -1,5 +1,6 @@
 import { apiFetch } from './api';
 import { BASE } from './api/client';
+import { getAccessToken } from './auth';
 import type { Deal, Worker } from '@/types';
 
 // ── Commission types ────────────────────────────────────────────────────────
@@ -368,8 +369,10 @@ export const adminApi = {
     fd.append('doc_type', docType);
     if (notes) fd.append('notes', notes);
     // Hits the gateway → user-org's authenticated upload endpoint.
-    const token = (typeof window !== 'undefined') ? window.localStorage.getItem('access_token') : null;
-    const res = await fetch(`/api/organizations/${orgType}s/${orgId}/documents/upload`, {
+    // JWT lives in a cookie (lib/auth.ts), not localStorage — reading
+    // localStorage here silently yielded null and the gateway 401'd.
+    const token = getAccessToken();
+    const res = await fetch(`${BASE}/organizations/${orgType}s/${orgId}/documents/upload`, {
       method: 'POST',
       headers: token ? { Authorization: `Bearer ${token}` } : {},
       body: fd,
@@ -604,7 +607,11 @@ export const adminApi = {
     const fd = new FormData();
     fd.append('source_year', String(year));
     fd.append('file', file);
-    const token = (typeof window !== 'undefined') ? window.localStorage.getItem('access_token') : null;
+    // JWT lives in a cookie (lib/auth.ts), not localStorage — reading
+    // localStorage here silently yielded null and the gateway 401'd
+    // with {"error":"Unauthorized"}, which surfaced to the admin as a
+    // confusing "upload failed" with no further detail.
+    const token = getAccessToken();
     // Wrap in a try/catch so the browser's vague 'Failed to fetch'
     // (which can mean DNS / CORS / service-down) gets re-thrown with
     // a more helpful message pointing at the admin service.
