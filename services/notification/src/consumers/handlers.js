@@ -36,6 +36,32 @@ function normaliseIsraeliPhone(phone) {
   return phone;
 }
 
+/**
+ * List every active admin user in auth_db so org.registered (and any
+ * future admin-broadcast events) can SMS + email all of them rather
+ * than the single ADMIN_EMAIL fallback. Cross-database query — the
+ * notification service's pool is rooted at notif_db but the root
+ * credential it uses has access to every schema.
+ *
+ * Returns rows with `{id, full_name, phone, email}`. Empty array when
+ * no active admins exist (the caller falls back to ADMIN_EMAIL).
+ */
+const { getPool } = require('../db');
+async function listAdminUsers() {
+  try {
+    const pool = getPool();
+    const [rows] = await pool.query(
+      `SELECT id, full_name, phone, email
+         FROM auth_db.users
+        WHERE role = 'admin' AND is_active = TRUE`
+    );
+    return rows;
+  } catch (err) {
+    console.error('[handlers] listAdminUsers failed:', err.message);
+    return [];
+  }
+}
+
 async function sendSmsInternal(phone, message) {
   const normalised = normaliseIsraeliPhone(phone);
   try {
@@ -233,11 +259,48 @@ async function rematchForSearch(searchId, force) {
  */
 async function handle(routingKey, payload, sendEmail) {
   switch (routingKey) {
-    case 'org.registered':
-      await sendEmail('org.registered', ADMIN_EMAIL, null, {
-        org_name: payload.org_name,
-      });
+    case 'org.registered': {
+      // Notify every active admin so a new contractor / corporation
+      // doesn't sit unattended in the approval queue. SMS for instant
+      // attention + email for archival. Includes a deep link to the
+      // /admin/approvals screen so the admin can triage in one click.
+      const orgTypeLabel = payload.org_type === 'contractor' ? 'קבלן' : 'תאגיד';
+      const adminLink    = `${FRONTEND_URL}/admin/approvals`;
+      const admins       = await listAdminUsers();
+
+      if (admins.length === 0) {
+        // Fallback when no admin users in DB yet (fresh env, seeding
+        // not done, etc.). Preserves the previous single-recipient
+        // behaviour against the ADMIN_EMAIL env var so we don't lose
+        // visibility entirely on a misconfigured deploy.
+        await sendEmail('org.registered', ADMIN_EMAIL, null, {
+          org_name:       payload.org_name,
+          org_type_label: orgTypeLabel,
+          admin_link:     adminLink,
+        });
+        break;
+      }
+
+      for (const admin of admins) {
+        const firstName = (admin.full_name || '').split(' ')[0] || 'שלום';
+
+        if (admin.phone) {
+          await sendSmsInternal(
+            admin.phone,
+            `${firstName}, ${orgTypeLabel} חדש ממתין לאישור: ${payload.org_name}\n${adminLink}`,
+          );
+        }
+        if (admin.email) {
+          await sendEmail('org.registered', admin.email, admin.id, {
+            org_name:       payload.org_name,
+            org_type_label: orgTypeLabel,
+            admin_link:     adminLink,
+            contact_name:   admin.full_name || '',
+          });
+        }
+      }
       break;
+    }
 
     case 'org.approved':
       await sendEmail('org.approved', payload.contact_email, null, {
