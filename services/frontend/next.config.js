@@ -22,17 +22,18 @@
 const nextConfig = {
   output: 'standalone',
   async rewrites() {
-    const gateway = process.env.GATEWAY_URL;
-    if (!gateway) {
-      // No gateway configured — fall back to no rewrites so existing
-      // behaviour (NEXT_PUBLIC_API_URL points at gateway directly) keeps
-      // working. Means a misconfigured prod still 404s loudly instead of
-      // silently misrouting.
-      return [];
-    }
-    const base = gateway.replace(/\/+$/, ''); // trim trailing slash
+    // Resolution order:
+    //   1. GATEWAY_URL  — explicit override (set this when the gateway
+    //      lives outside the Railway project or on a different network).
+    //   2. http://gateway.railway.internal:3000 — Railway's internal DNS
+    //      between services in the same project, IF the gateway service
+    //      is named `gateway`. Works without any env var, no public URL
+    //      needed. Falls back silently if the service is named something
+    //      else (you'll see 502s on /api/*).
+    const gateway = (process.env.GATEWAY_URL
+      || 'http://gateway.railway.internal:3000').replace(/\/+$/, '');
     return [
-      { source: '/api/:path*', destination: `${base}/api/:path*` },
+      { source: '/api/:path*', destination: `${gateway}/api/:path*` },
     ];
   },
 };
