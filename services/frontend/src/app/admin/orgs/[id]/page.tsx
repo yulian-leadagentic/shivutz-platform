@@ -422,7 +422,7 @@ function OrgDetailContent() {
 
       {/* Toast */}
       {toast && (
-        <div className={`fixed bottom-6 start-6 px-4 py-3 rounded-lg shadow-lg text-sm font-medium text-white z-50 ${toast.startsWith('✓') ? 'bg-green-600' : 'bg-red-600'}`}>
+        <div className={`fixed top-4 start-4 end-4 sm:end-auto sm:top-auto sm:bottom-6 sm:start-6 px-4 py-3 rounded-lg shadow-lg text-sm font-medium text-white z-50 ${toast.startsWith('✓') ? 'bg-green-600' : 'bg-red-600'}`}>
           {toast}
         </div>
       )}

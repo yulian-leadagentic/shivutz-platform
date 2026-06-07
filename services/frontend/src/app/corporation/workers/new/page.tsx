@@ -14,7 +14,7 @@ import { ExcelUploadSection } from '@/features/workers/components/ExcelUploadSec
 
 function Toast({ msg, onClose }: { msg: string; onClose: () => void }) {
   return (
-    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 bg-green-700 text-white px-5 py-3 rounded-xl shadow-xl text-sm font-medium">
+    <div className="fixed top-4 start-4 end-4 sm:end-auto sm:top-auto sm:bottom-6 sm:left-1/2 sm:-translate-x-1/2 z-50 flex items-center gap-3 bg-green-700 text-white px-5 py-3 rounded-xl shadow-xl text-sm font-medium">
       <CheckCircle2 className="h-5 w-5 shrink-0" />{msg}
       <button onClick={onClose} className="ms-2 text-green-200 hover:text-white text-base leading-none">✕</button>
     </div>

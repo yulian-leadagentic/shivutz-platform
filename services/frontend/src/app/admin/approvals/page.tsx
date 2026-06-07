@@ -495,7 +495,7 @@ function ApprovalsContent() {
       )}
 
       {/* Toast stack */}
-      <div className="fixed bottom-6 start-6 space-y-2 z-50">
+      <div className="fixed top-4 start-4 end-4 sm:end-auto sm:top-auto sm:bottom-6 sm:start-6 space-y-2 z-50">
         {toasts.map((msg, i) => (
           <div
             key={i}
