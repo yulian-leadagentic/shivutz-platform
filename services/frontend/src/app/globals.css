@@ -9,14 +9,28 @@
   --background:        #f8fafc;
   --surface:           #ffffff;
   --border:            #e2e8f0;
-  --primary:           #4f46e5;
-  --primary-hover:     #4338ca;
-  --primary-light:     #eef2ff;
+  --primary:           #f78203;   /* BuildUp orange (logo) */
+  --primary-hover:     #d26a02;
+  --primary-light:     #fff8ed;
 }
 
 /* ─── Base ───────────────────────────────────────────────────────── */
 html[dir="rtl"] {
   direction: rtl;
+}
+
+/* Smooth-scroll for in-page anchors (e.g. nav → #how-it-works).
+   Per the spec, scroll-behavior: smooth ignores prefers-reduced-motion
+   on its own, so the media query below restores instant for users
+   who opted out of animation. */
+html {
+  scroll-behavior: smooth;
+  /* Offset for the fixed top nav so anchor targets don't get hidden
+     under it after the smooth scroll lands. */
+  scroll-padding-top: 80px;
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
 }
 
 body {
@@ -49,7 +63,257 @@ body {
   to   { opacity: 1; }
 }
 
+/* Soft pulsing dot next to the word "Live". 1.6s cycle, gentle enough
+   to read as "alive" without feeling frantic. */
+@keyframes livePulseDot {
+  0%, 100% { opacity: 0.55; transform: scale(1); }
+  50%      { opacity: 1;    transform: scale(1.15); }
+}
+.animate-live-dot {
+  animation: livePulseDot 1.6s ease-in-out infinite;
+}
+
+/* Halo ring expanding outward from the Live dot — gives the badge a
+   second layer of life. Pairs with .animate-live-dot. */
+@keyframes liveDotHalo {
+  0%   { box-shadow: 0 0 0 0   rgba(244, 63, 94, 0.55); }
+  70%  { box-shadow: 0 0 0 8px rgba(244, 63, 94, 0);    }
+  100% { box-shadow: 0 0 0 0   rgba(244, 63, 94, 0);    }
+}
+.animate-live-dot-halo {
+  animation: liveDotHalo 2s ease-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-live-dot,
+  .animate-live-dot-halo { animation: none; }
+}
+
+/* ─── HowItWorks (`.bu-how`) — responsive spec ──────────────────────
+   Single 560px breakpoint:
+     ≥560px (desktop)  — three cards in a row, circle protruding above
+                         each card, single horizontal dashed connector
+                         passes through all three circle centres.
+     <560px  (mobile)  — three card-rows stacked vertically, each row
+                         contains [circle][icon][label]; short vertical
+                         dashed connectors sit between the cards.
+   All tokens (#F7941D / #1A2B4A / #E5E7EB / #6B7280), sizes, and
+   typography are locked to the spec (CLAUDE.md §HowItWorks v2). */
+
+.bu-how                                { background:#fff; padding:1.5rem 1rem; box-sizing:border-box; }
+.bu-how *, .bu-how *::before, .bu-how *::after { box-sizing:border-box; }
+
+.bu-eyebrow  { text-align:center; font-size:12px; font-weight:500; color:#F7941D;
+               letter-spacing:.04em; margin:0 0 6px; }
+.bu-title    { text-align:center; font-size:24px; font-weight:500; color:#1A2B4A;
+               margin:0 0 6px; }
+.bu-subtitle { text-align:center; font-size:14px; color:#6B7280; margin:0 0 1.75rem; }
+
+.bu-track    { position:relative; max-width:880px; margin:0 auto; padding-top:28px; }
+.bu-grid     { display:grid; grid-template-columns:repeat(3,1fr); gap:16px;
+               position:relative; z-index:1; }
+
+.bu-card {
+  display:flex; flex-direction:column; align-items:center; text-align:center;
+  width:100%;
+  background:#fff;
+  border:1px solid #E5E7EB;
+  border-radius:14px;
+  padding:20px 16px;
+}
+
+.bu-circle {
+  width:56px; height:56px; border-radius:50%;
+  display:flex; align-items:center; justify-content:center;
+  color:#fff; font-size:24px; font-weight:500;
+  border:4px solid #fff;
+  /* Pull the circle ABOVE the card top so the connector line at
+     top:28px of .bu-track passes through the circle's centre. The
+     padding-top:28 on .bu-track makes room for this overflow. */
+  margin-top:-48px;
+  position:relative; z-index:2;
+  flex-shrink:0;
+}
+
+.bu-icon  { margin-top:14px; display:inline-flex; align-items:center; }
+.bu-icon svg { width:30px; height:30px; }
+.bu-label { margin-top:10px; font-size:17px; font-weight:500; color:#1A2B4A; }
+
+/* Per-step colouring via data attribute. Each step owns its own
+   accent so the infographic reads as a left-to-right progression:
+   step 1 orange (brand entry), step 2 navy (neutral process),
+   step 3 emerald (success / closed deal). */
+.bu-step[data-step="1"] .bu-circle { background:#F7941D; }
+.bu-step[data-step="1"] .bu-card   { border-top:3px solid #F7941D; }
+.bu-step[data-step="1"] .bu-icon   { color:#F7941D; }
+.bu-step[data-step="2"] .bu-circle { background:#1A2B4A; }
+.bu-step[data-step="2"] .bu-card   { border-top:3px solid #1A2B4A; }
+.bu-step[data-step="2"] .bu-icon   { color:#1A2B4A; }
+.bu-step[data-step="3"] .bu-circle { background:#10B981; }
+.bu-step[data-step="3"] .bu-card   { border-top:3px solid #10B981; }
+.bu-step[data-step="3"] .bu-icon   { color:#10B981; }
+
+.bu-connect-h { position:absolute; top:28px; left:0; right:0;
+                width:100%; height:2px; z-index:0; }
+.bu-connect-v { display:none; }
+
+.bu-summary {
+  display:flex; align-items:center; justify-content:center; gap:10px;
+  background:#1A2B4A; border-radius:14px; padding:14px 18px;
+  margin:1.75rem auto 0; max-width:560px;
+  color:#fff; font-size:15px; font-weight:500; text-align:center;
+}
+.bu-summary-icon { color:#F7941D; display:inline-flex; flex-shrink:0; }
+.bu-summary-icon svg { width:24px; height:24px; }
+
+/* ===== Mobile: vertical stack =================================== */
+@media (max-width:560px) {
+  .bu-eyebrow  { font-size:11px; }
+  .bu-title    { font-size:21px; }
+  .bu-subtitle { font-size:13px; margin-bottom:1rem; }
+
+  .bu-track     { padding-top:0; }
+  .bu-grid      { grid-template-columns:1fr; gap:0; }
+  .bu-connect-h { display:none; }
+
+  .bu-card {
+    flex-direction:row;
+    align-items:center;
+    text-align:start;
+    gap:10px;
+    padding:12px 14px;
+    border-top:1px solid #E5E7EB;          /* override the desktop coloured top border */
+  }
+  .bu-step[data-step="1"] .bu-card {
+    border-top:1px solid #E5E7EB; border-right:3px solid #F7941D;
+  }
+  .bu-step[data-step="2"] .bu-card {
+    border-top:1px solid #E5E7EB; border-right:3px solid #1A2B4A;
+  }
+  .bu-step[data-step="3"] .bu-card {
+    border-top:1px solid #E5E7EB; border-right:3px solid #10B981;
+  }
+
+  .bu-circle {
+    width:38px; height:38px;
+    font-size:17px;
+    border:none;
+    margin-top:0;
+  }
+  .bu-icon  { margin-top:0; }
+  .bu-icon svg { width:22px; height:22px; }
+  .bu-label { margin-top:0; font-size:16px; flex:1; }
+
+  .bu-connect-v {
+    display:block;
+    width:6px; height:26px;
+    margin:8px auto;
+  }
+  .bu-step[data-step="1"] .bu-connect-v line { stroke:#F7941D; }
+  .bu-step[data-step="2"] .bu-connect-v line { stroke:#10B981; }
+}
+
+/* Dashes flow along the connector line. Shared keyframe for both
+   the horizontal connector (desktop) and the vertical connectors
+   (mobile) so they animate at the same cadence. */
+@keyframes buFlow { to { stroke-dashoffset:-150; } }
+@media (prefers-reduced-motion: no-preference) {
+  .bu-line { animation: buFlow 4s linear infinite; }
+}
+
+/* Click-to-expand explanation panel under the step grid. Uses the
+   grid-template-rows: 0fr → 1fr trick so the panel animates between
+   zero height and its natural content height — no fixed max-height,
+   no JS measurement. */
+.bu-card {
+  appearance: none;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  width: 100%;
+  text-align: inherit;
+  transition: box-shadow 200ms ease, transform 200ms ease;
+}
+.bu-card[data-active="true"] {
+  box-shadow: 0 6px 22px rgba(26, 43, 74, 0.08);
+  transform: translateY(-1px);
+}
+
+.bu-explain {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 320ms ease, margin-top 320ms ease;
+  margin-top: 0;
+}
+.bu-explain.is-open {
+  grid-template-rows: 1fr;
+  margin-top: 16px;
+}
+.bu-explain-content { overflow: hidden; }
+.bu-explain-inner {
+  background: #fff;
+  border: 1px solid #E5E7EB;
+  border-top: 3px solid #F7941D;
+  border-radius: 12px;
+  padding: 14px 18px;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.55;
+  color: #1A2B4A;
+  text-align: start;
+}
+.bu-explain-inner[data-accent="navy"]    { border-top-color: #1A2B4A; }
+.bu-explain-inner[data-accent="emerald"] { border-top-color: #10B981; }
+
+/* Panel responsiveness — there are TWO sets of panels in the DOM:
+   - .bu-explain-mobile : rendered inside each .bu-step, sits directly
+                          below the tapped card. Used on mobile.
+   - .bu-explain-desktop: a single shared panel below the grid. Used
+                          on desktop where the cards are in a row.
+   We toggle visibility instead of conditional render so the
+   grid-template-rows transition keeps working. */
+.bu-explain-mobile  { display: none; }
+@media (max-width:560px) {
+  .bu-explain-mobile  { display: grid; margin-top: 0; }
+  .bu-explain-mobile.is-open { margin-top: 10px; }
+  .bu-explain-desktop { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bu-explain { transition: none; }
+  .bu-card    { transition: none; }
+}
+
 @keyframes slideUp {
   from { opacity: 0; transform: translateY(6px); }
   to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Brand-orange attention pulse — outward-fading halo. Use sparingly
+   on the single "do this next" CTA per page so it actually pulls the
+   eye instead of becoming visual noise. */
+@keyframes brandPulse {
+  0%, 100% { box-shadow: 0 0 0 0   rgba(247, 130, 3, 0.45); }
+  50%      { box-shadow: 0 0 0 10px rgba(247, 130, 3, 0);   }
+}
+.animate-brand-pulse {
+  animation: brandPulse 2.2s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-brand-pulse { animation: none; }
+}
+
+/* Confetti pieces for FireworksOverlay — falling animation used as
+   the CSS-only fallback when /brand/fireworks.mp4 isn't on disk.
+   Each piece sets its own delay + duration inline. */
+@keyframes fwFall {
+  0%   { transform: translate3d(0, -20%, 0) rotate(0deg);       opacity: 0; }
+  10%  { opacity: 1; }
+  100% { transform: translate3d(20px, 120vh, 0) rotate(720deg); opacity: 0.85; }
+}
+.fw-piece {
+  animation-name: fwFall;
+  animation-timing-function: cubic-bezier(.2, .7, .25, 1);
+  animation-fill-mode: forwards;
+  will-change: transform, opacity;
 }

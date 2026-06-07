@@ -70,7 +70,7 @@ export default function ListingDetailPage() {
         <AlertCircle className="h-10 w-10 text-slate-300" />
         <p className="text-lg font-medium">{error || 'המודעה לא נמצאה'}</p>
         <Link href="/marketplace">
-          <Button variant="outline">חזור לשוק</Button>
+          <Button variant="outline">חזור לשירותים נלווים</Button>
         </Link>
       </div>
     );
@@ -93,7 +93,7 @@ export default function ListingDetailPage() {
           </button>
           <div className="h-4 w-px bg-slate-200" />
           <Link href="/marketplace" className="text-sm text-slate-500 hover:text-brand-600 transition-colors">
-            שוק תאגידים
+            שירותים נלווים
           </Link>
           <span className="text-slate-300">/</span>
           <span className="text-sm text-slate-700 truncate font-medium">{listing.title}</span>

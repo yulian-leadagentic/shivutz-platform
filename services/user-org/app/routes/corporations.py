@@ -7,6 +7,9 @@ import uuid, httpx, os, json, secrets, shutil
 from app.db import get_db
 from app.publisher import publish_event
 from app.services import rate_limit
+from app.services import notification_recipients as notif_recipients
+from app.services import team_membership as team_mgmt
+from app.services import membership_requests as mreq
 from app.integrations import data_gov_il
 from app.integrations.israeli_id import is_valid_israeli_id
 
@@ -83,6 +86,27 @@ async def lookup_corporation_business(data: CorpLookupRequest):
     company_active = data_gov_il.is_company_active(result["ica"])
     blocked = result["ica_found"] and company_active is False
 
+    # Also cross-check against the admin-uploaded רשות האוכלוסין list.
+    # If the corp is in the latest year's list we want the registration
+    # UI to say so up-front ('חברה רשומה ברשם החברות ומופיעה ברשימת
+    # תאגידי בניין מורשים') rather than the generic ica-only message.
+    gov_corp_row = None
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT id, source_year, company_name_he, address,
+                      phone_mobile_1, phone_mobile_2,
+                      phone_landline_1, phone_landline_2
+               FROM gov_corporations_registry
+               WHERE business_number = %s
+               ORDER BY source_year DESC LIMIT 1""",
+            (data.business_number,),
+        )
+        gov_corp_row = cur.fetchone()
+    finally:
+        conn.close()
+
     return {
         "ok": True,
         "blocked": blocked,
@@ -90,8 +114,26 @@ async def lookup_corporation_business(data: CorpLookupRequest):
         "ica_found": result["ica_found"],
         "gov_company_status": ica_fields.get("gov_company_status"),
         "prefill": {
-            "company_name_he": ica_fields.get("company_name_he"),
+            # Prefer the gov-list name when it's available — it's the
+            # canonical "registered manpower corp" name. Fall back to
+            # whatever רשם החברות returned.
+            "company_name_he":
+                (gov_corp_row.get("company_name_he") if gov_corp_row else None)
+                or ica_fields.get("company_name_he"),
         },
+        # Gov-list flag + payload — frontend uses these to swap the
+        # confirmation message and (later) to compare contact_phone
+        # against the gov phones for the auto-approve fast path.
+        "gov_list_found":      bool(gov_corp_row),
+        "gov_list_year":       (gov_corp_row.get("source_year") if gov_corp_row else None),
+        "gov_list_phones":     (
+            [p for p in [
+                (gov_corp_row or {}).get("phone_mobile_1"),
+                (gov_corp_row or {}).get("phone_mobile_2"),
+                (gov_corp_row or {}).get("phone_landline_1"),
+                (gov_corp_row or {}).get("phone_landline_2"),
+            ] if p] if gov_corp_row else []
+        ),
         "from_cache": result["from_cache"],
     }
 
@@ -100,6 +142,72 @@ async def lookup_corporation_business(data: CorpLookupRequest):
 async def register_corporation(data: CorporationCreate):
     if not is_valid_israeli_id(data.business_number):
         raise HTTPException(status_code=400, detail="invalid_business_number")
+
+    # ── Duplicate ח.פ guard ────────────────────────────────────────
+    # If a corp with this business_number is already on file (and not
+    # soft-deleted), don't create a parallel org row. Instead capture
+    # the new user's typed name + phone as a membership_request and
+    # SMS the existing owner(s) a one-click approve link. The 409
+    # below tells the frontend to land the user on a 'בעלים קיבל
+    # בקשה' screen.
+    existing = mreq.find_existing_active_org(data.business_number, "corporation")
+    if existing:
+        owners = mreq.owners_for("corporation", existing["id"])
+        request = mreq.create_request(
+            entity_type="corporation",
+            entity_id=existing["id"],
+            requester_phone=data.contact_phone,
+            requester_name=data.contact_name,
+            requester_email=data.contact_email,
+            requested_role="admin",
+        )
+        # One SMS per owner. The notification service unpacks each
+        # event and dispatches via SMS/WhatsApp.
+        for owner in owners:
+            await publish_event("team.membership_request.created", {
+                "owner_phone":     owner.get("phone"),
+                "owner_name":      owner.get("full_name") or "",
+                "entity_type":     "corporation",
+                "entity_name":     existing.get("company_name_he") or existing.get("company_name") or "",
+                "requester_name":  data.contact_name,
+                "requester_phone": data.contact_phone,
+                "approval_token":  request["approval_token"],
+                "expires_at":      request["expires_at"],
+            })
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "corporation_already_registered",
+                "message": "תאגיד עם ח.פ זה כבר רשום במערכת. שלחנו לבעלים הקיים הודעת SMS ובה קישור לאישור הוספתך כחבר צוות.",
+                "existing_company_name": existing.get("company_name_he") or existing.get("company_name"),
+                "request_token": request["approval_token"],
+            },
+        )
+
+    # Block duplicate corporation registration for the same phone.
+    # (Reached only when the ח.פ check above didn't fire — e.g. the
+    # user is trying to register a SECOND corp under a phone that
+    # already owns a different corp.)
+    conn = get_db()
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT 1
+               FROM auth_db.entity_memberships em
+               JOIN auth_db.users u ON u.id = em.user_id
+               WHERE u.phone = %s
+                 AND em.entity_type = 'corporation'
+                 AND em.is_active = TRUE
+               LIMIT 1""",
+            (data.contact_phone,),
+        )
+        if cur.fetchone():
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "phone_already_corporation",
+                    "message": "מספר טלפון זה כבר רשום כתאגיד. אנא היכנס במקום להירשם, או פנה לתמיכה.",
+                },
+            )
 
     # Cross-check רשם החברות. Corporations don't have an email/sms self-
     # verification path; tier_2 ("תאגיד מאושר") is admin-only.
@@ -128,25 +236,109 @@ async def register_corporation(data: CorporationCreate):
     company_name = data.company_name or company_name_he
     initial_tier = "tier_1" if (registry["ica_found"] and company_active) else "tier_0"
 
+    # ── Cross-check against the רשות האוכלוסין annual list ──────────
+    # If the corp's business_number appears in the most-recent uploaded
+    # year's file, fast-path them to tier_2 with verification_method=
+    # 'gov_list_match'. Otherwise keep the existing pending-admin flow.
+    gov_row = None
+    gov_year = None
+    conn_lookup = get_db()
+    try:
+        cur_l = conn_lookup.cursor()
+        cur_l.execute(
+            """SELECT id, source_year, company_name_he, address,
+                      phone_mobile_1, phone_mobile_2,
+                      phone_landline_1, phone_landline_2
+               FROM gov_corporations_registry
+               WHERE business_number = %s
+               ORDER BY source_year DESC LIMIT 1""",
+            (data.business_number,),
+        )
+        gov_row = cur_l.fetchone()
+        gov_year = gov_row.get("source_year") if gov_row else None
+    finally:
+        conn_lookup.close()
+
+    matched_gov = gov_row is not None
+    # Phone-match tiering: when the typed contact_phone matches any of
+    # the 4 phone columns on the gov row (digits-only compare), we
+    # treat the registration as fully self-verified — tier_2 + auto-
+    # approved. When it doesn't match we still credit tier_2 (the corp
+    # IS in the gov list) but leave approval_status=pending so admin
+    # double-checks. This is the stronger of the two paths the product
+    # asked for: gov-list presence is real, but the new user might not
+    # be the person the registry has on file.
+    def _digits(s) -> str:
+        return "".join(c for c in (s or "") if c.isdigit())
+
+    typed_phone_digits = _digits(data.contact_phone)
+    gov_phones_digits = [_digits(p) for p in [
+        (gov_row or {}).get("phone_mobile_1"),
+        (gov_row or {}).get("phone_mobile_2"),
+        (gov_row or {}).get("phone_landline_1"),
+        (gov_row or {}).get("phone_landline_2"),
+    ] if p]
+    phone_matches_gov = bool(matched_gov and typed_phone_digits and any(
+        # Substring compare both ways — covers '0501234567' vs '+972501234567'
+        # without re-normalising every variant. Both digit strings end with
+        # the same 9-digit local number so endswith is enough.
+        typed_phone_digits.endswith(g) or g.endswith(typed_phone_digits)
+        for g in gov_phones_digits
+    ))
+
+    final_tier = "tier_2" if matched_gov else initial_tier
+    verification_method = "gov_list_match" if matched_gov else None
+    now = datetime.utcnow()
+    verified_at = now if matched_gov else None
+    gov_matched_at = now if matched_gov else None
+    # Phone match → auto-approve. Phone mismatch on a gov-matched corp
+    # → tier_2 but still needs admin verification (a stronger signal
+    # than not being in the gov list at all).
+    if matched_gov and phone_matches_gov:
+        approval_status = "approved"
+        approved_at = now
+    else:
+        approval_status = "pending"
+        approved_at = None
+
+    # Prefill corp fields from the gov row when the corp didn't supply
+    # them. We never OVERWRITE user-typed values — corps that want to
+    # use different details (e.g. a moved office) can still set them.
+    prefill_address = gov_row.get("address") if matched_gov else None
+    prefill_landline_1 = gov_row.get("phone_landline_1") if matched_gov else None
+    prefill_landline_2 = gov_row.get("phone_landline_2") if matched_gov else None
+    prefill_mobile_2 = gov_row.get("phone_mobile_2") if matched_gov else None
+    # If the gov list has a name that's more "official" than what the
+    # user typed, prefer the gov one for company_name_he.
+    if matched_gov and gov_row.get("company_name_he"):
+        company_name_he = gov_row["company_name_he"]
+        company_name = data.company_name or company_name_he
+
     org_id = str(uuid.uuid4())
-    sla_deadline = datetime.utcnow() + timedelta(hours=48)
+    sla_deadline = now + timedelta(hours=48)
 
     conn = get_db()
     try:
         cur = conn.cursor()
-        tc_signed_at = datetime.utcnow() if data.tc_version else None
+        tc_signed_at = now if data.tc_version else None
         cur.execute(
             """INSERT INTO corporations
                (id, user_owner_id, company_name, company_name_he, business_number,
-                gov_company_status, verification_tier,
+                gov_company_status, verification_tier, verification_method,
+                gov_registry_source_year, gov_registry_matched_at, verified_at,
+                approval_status, approved_at,
+                phone_landline, phone_landline_secondary, phone_mobile_secondary,
                 countries_of_origin, minimum_contract_months, contact_name,
                 contact_phone, contact_email, approval_sla_deadline,
                 tc_version, tc_signed_at)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
             (org_id, "PENDING", company_name, company_name_he,
              data.business_number,
              ica_fields.get("gov_company_status"),
-             initial_tier,
+             final_tier, verification_method,
+             gov_year, gov_matched_at, verified_at,
+             approval_status, approved_at,
+             prefill_landline_1, prefill_landline_2, prefill_mobile_2,
              json.dumps(data.countries_of_origin),
              data.minimum_contract_months, data.contact_name,
              data.contact_phone, data.contact_email, sla_deadline,
@@ -205,10 +397,18 @@ async def register_corporation(data: CorporationCreate):
 
         return {
             "id":                org_id,
-            "status":            "pending",
+            # 'approved' when the gov-list ח.פ AND phone both matched.
+            # 'pending' otherwise — admin queue handles the rest.
+            "status":            approval_status,
             "org_type":          "corporation",
-            "verification_tier": initial_tier,
+            "verification_tier": final_tier,
             "registry_found":    registry["ica_found"],
+            "gov_list_matched":  matched_gov,
+            "gov_list_year":     gov_year,
+            # Was the typed contact_phone among the 4 gov phones?
+            # Drives the post-register copy: 'אושר אוטומטית' vs
+            # 'מורשה לפעול, מנהל יבצע אימות נוסף'.
+            "phone_matched_gov": phone_matches_gov,
             "access_token":      user.get("access_token"),
             "refresh_token":     user.get("refresh_token"),
         }
@@ -217,6 +417,57 @@ async def register_corporation(data: CorporationCreate):
     except Exception as e:
         conn.rollback()
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+
+@router.get("")
+def list_corporations(
+    tier: Optional[str] = None,
+    recruitment_type: Optional[str] = None,
+):
+    """Internal-use directory query — returns the lightweight subset
+    of corporation rows needed by the notification service to fan
+    out SMS for the search.no_match event.
+
+    Filters (both optional):
+      - tier:             'tier_2' restricts to admin-approved corps
+      - recruitment_type: 'foreign'|'domestic' — corp must list at
+                          least one matching country in
+                          countries_of_origin (foreign) or have
+                          domestic-recruit enabled.
+
+    Note: this endpoint is reachable only via internal Docker
+    networking (user-org:3002 isn't published to host). The gateway
+    doesn't proxy GET on this path; if you need to expose it
+    externally later, add an admin-only guard.
+    """
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        filters = ["deleted_at IS NULL", "approval_status = 'approved'"]
+        params: list = []
+        if tier:
+            filters.append("verification_tier = %s")
+            params.append(tier)
+        # countries_of_origin is a JSON array column. "foreign" means
+        # any non-IL country; "domestic" means the corp explicitly
+        # listed Israel. We treat unset recruitment_type as no filter.
+        if recruitment_type == 'foreign':
+            filters.append("JSON_LENGTH(countries_of_origin) > 0")
+            filters.append("NOT JSON_CONTAINS(countries_of_origin, '\"IL\"')")
+        elif recruitment_type == 'domestic':
+            filters.append("JSON_CONTAINS(countries_of_origin, '\"IL\"')")
+        where = " AND ".join(filters)
+        cur.execute(
+            f"""SELECT id, company_name, company_name_he, contact_name,
+                       contact_phone, contact_email, verification_tier,
+                       countries_of_origin
+                  FROM corporations
+                 WHERE {where}""",
+            tuple(params),
+        )
+        return cur.fetchall()
     finally:
         conn.close()
 
@@ -245,7 +496,8 @@ def list_corporation_users(org_id: str):
             """SELECT em.membership_id, em.user_id, em.role, em.job_title,
                       em.is_active, em.invitation_accepted_at, em.created_at,
                       em.invited_first_name, em.invited_last_name,
-                      u.phone, u.full_name, u.email
+                      COALESCE(u.phone, em.invited_phone) AS phone,
+                      u.full_name, u.email
                FROM auth_db.entity_memberships em
                LEFT JOIN auth_db.users u ON u.id = em.user_id
                WHERE em.entity_type = 'corporation' AND em.entity_id = %s
@@ -303,13 +555,14 @@ async def invite_corporation_user(
         cur.execute(
             """INSERT INTO auth_db.entity_memberships
                (membership_id, user_id, entity_type, entity_id, role, job_title,
-                invited_first_name, invited_last_name,
+                invited_first_name, invited_last_name, invited_phone,
                 invited_by, invitation_token, is_active)
-               VALUES (%s, NULL, 'corporation', %s, %s, %s, %s, %s, %s, %s, FALSE)""",
+               VALUES (%s, NULL, 'corporation', %s, %s, %s, %s, %s, %s, %s, %s, FALSE)""",
             (membership_id,
              org_id, data.role, data.job_title,
              (data.first_name or '').strip() or None,
              (data.last_name  or '').strip() or None,
+             data.phone.strip() or None,
              inviter_user_id, invite_token)
         )
         conn.commit()
@@ -342,6 +595,98 @@ class DocumentCreate(BaseModel):
     file_size: Optional[int] = None
     mime_type: Optional[str] = None
     notes: Optional[str] = None
+
+
+@router.delete("/{org_id}/users/{membership_id}", status_code=204)
+def delete_corporation_user(
+    org_id: str,
+    membership_id: str,
+    x_user_id:   Optional[str] = Header(default=None),
+    x_user_role: Optional[str] = Header(default=None),
+):
+    """Hard-delete a team membership (active or pending). Cleans up the
+    notification_recipients row for the same (entity, user) pair. Role
+    gate: corp admin/owner or platform admin. Sole-owner protection."""
+    team_mgmt.delete_membership(
+        entity_type="corporation",
+        entity_id=org_id,
+        membership_id=membership_id,
+        caller_user_id=x_user_id,
+        caller_role=x_user_role,
+    )
+
+
+class TeamMemberPatch(BaseModel):
+    role:               Optional[str] = None      # owner | admin | viewer
+    job_title:          Optional[str] = None      # "" → clear
+    # Pending-only — silently ignored on active rows (user_id IS NOT NULL).
+    invited_first_name: Optional[str] = None
+    invited_last_name:  Optional[str] = None
+    invited_phone:      Optional[str] = None
+
+
+@router.patch("/{org_id}/users/{membership_id}")
+async def update_corporation_user(
+    org_id: str,
+    membership_id: str,
+    data: TeamMemberPatch,
+    x_user_id:   Optional[str] = Header(default=None),
+    x_user_role: Optional[str] = Header(default=None),
+):
+    """Edit role / job title (active or pending) and — for pending rows
+    only — the invited name + phone. Phone change resends the SMS to
+    the new number with the same invitation_token."""
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT company_name_he FROM corporations WHERE id = %s AND deleted_at IS NULL",
+            (org_id,),
+        )
+        org = cur.fetchone()
+    finally:
+        conn.close()
+    if not org:
+        raise HTTPException(status_code=404, detail="Corporation not found")
+
+    return await team_mgmt.update_membership(
+        entity_type="corporation",
+        entity_id=org_id,
+        membership_id=membership_id,
+        patch=data.dict(exclude_unset=True),
+        caller_user_id=x_user_id,
+        caller_role=x_user_role,
+        entity_name=org.get("company_name_he"),
+    )
+
+
+# ── Notification recipients ──────────────────────────────────────────
+@router.get("/{org_id}/notification-recipients")
+def list_corporation_notification_recipients(org_id: str):
+    """List all active team members joined with their recipient state.
+    Non-recipients come back with is_recipient=false / channels=[]."""
+    return notif_recipients.list_recipients("corporation", org_id)
+
+
+@router.put("/{org_id}/notification-recipients/{user_id}")
+def upsert_corporation_notification_recipient(
+    org_id: str,
+    user_id: str,
+    body: notif_recipients.RecipientUpsert,
+    x_user_id:   Optional[str] = Header(default=None),
+    x_user_role: Optional[str] = Header(default=None),
+):
+    """Flag/unflag a team member as a notification recipient + choose
+    their channels. Role gate: corp admin/owner OR the user themselves
+    (for self opt-out). Max-5 cap is enforced in the service layer."""
+    return notif_recipients.upsert_recipient(
+        entity_type="corporation",
+        entity_id=org_id,
+        target_user_id=user_id,
+        body=body,
+        caller_user_id=x_user_id,
+        caller_role=x_user_role,
+    )
 
 
 @router.get("/{org_id}/documents")

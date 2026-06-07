@@ -1,11 +1,23 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
-import { ChevronDown, ArrowLeft, Home, Wrench, Briefcase, Store, Users } from 'lucide-react';
+import Image from 'next/image';
+import { useRouter } from 'next/navigation';
+import { ArrowLeft, Users, Building2, Loader2 } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
+import { otpApi } from '@/lib/api';
+import { saveTokens } from '@/lib/auth';
+import LiveShowcase from './LiveShowcase';
 
+// Lead-capture button removed from the hero per user feedback —
+// the two role-specific tiles are clearer entry points and the
+// callback CTA was diluting that. Prop kept for now since the
+// landing page wrapper still passes it (LeadCaptureModal lives
+// outside the hero); marking it optional + ignoring it here is
+// the lowest-friction option.
 interface HeroSectionProps {
-  onLeadCapture: () => void;
+  onLeadCapture?: () => void;
 }
 
 // Per key-user feedback (2026-05): the "active workers" tile is the one
@@ -13,206 +25,214 @@ interface HeroSectionProps {
 // The tile itself is now a CTA — tap = login (or dashboard if logged in).
 const HERO_STAT = { value: '1,200+', label: 'עובדים פעילים' };
 
-const MARKET_CATS = [
-  {
-    icon: Home,
-    label: 'דיור לעובדים',
-    desc: 'דירות ומעונות לשיכון עובדים זרים',
-    href: '/marketplace?category=housing',
-    accent: 'bg-brand-500',
-    iconBg: 'bg-brand-500/20',
-    iconColor: 'text-brand-300',
-    labelColor: 'text-white',
-    descColor: 'text-slate-400',
-  },
-  {
-    icon: Wrench,
-    label: 'ציוד ומכונות',
-    desc: 'השכרת ציוד בנייה וכלי עבודה',
-    href: '/marketplace?category=equipment',
-    accent: 'bg-amber-500',
-    iconBg: 'bg-amber-500/20',
-    iconColor: 'text-amber-300',
-    labelColor: 'text-white',
-    descColor: 'text-slate-400',
-  },
-  {
-    icon: Briefcase,
-    label: 'שירותים',
-    desc: 'לוגיסטיקה, הסעות ושירותי תמיכה',
-    href: '/marketplace?category=services',
-    accent: 'bg-emerald-500',
-    iconBg: 'bg-emerald-500/20',
-    iconColor: 'text-emerald-300',
-    labelColor: 'text-white',
-    descColor: 'text-slate-400',
-  },
-  {
-    icon: Store,
-    label: 'כל המודעות',
-    desc: 'עיון חופשי בכל הפרסומים',
-    href: '/marketplace',
-    accent: 'bg-slate-500',
-    iconBg: 'bg-slate-600',
-    iconColor: 'text-slate-300',
-    labelColor: 'text-white',
-    descColor: 'text-slate-400',
-  },
-];
+// The fixed "שירותים נלווים — גלוש לפי קטגוריה" row that used to live
+// here was replaced by <LiveShowcase /> below — the dynamic showcase
+// covers the whole platform breadth (workers, requirements, housing,
+// services, matches) rather than just the marketplace categories, and
+// auto-rotates so the page feels alive on first scroll.
 
-export default function HeroSection({ onLeadCapture }: HeroSectionProps) {
-  const { isLoggedIn, entityType } = useAuth();
-  // Logged-in visitors land on their role dashboard; everyone else
-  // funnels to /login (which has the "register here" link below).
-  const heroCtaHref = !isLoggedIn
-    ? '/login'
-    : entityType === 'corporation' ? '/corporation/dashboard'
-    : entityType === 'contractor'  ? '/contractor/dashboard'
-    : '/login';
+export default function HeroSection(_: HeroSectionProps) {
+  const router = useRouter();
+  const { isLoggedIn, entityType, refreshAuth } = useAuth();
+  // Tracks which tile is currently hot-swapping its entity context.
+  // Used to disable both buttons and show a spinner on the active one.
+  const [switching, setSwitching] = useState<'contractor' | 'corporation' | null>(null);
+
+  const dashboardOf = (role: 'contractor' | 'corporation') =>
+    role === 'corporation' ? '/corporation/dashboard' : '/contractor/dashboard';
+  const registerOf = (role: 'contractor' | 'corporation') =>
+    role === 'corporation' ? '/register/corporation' : '/register/contractor';
+
+  /**
+   * Decide what should happen when the user clicks a role tile.
+   *
+   *   - Not logged in → kick to /login?intent=<role> (login auto-skips
+   *     the entity-picker after auth).
+   *   - Logged in *as that role* already → just route to its dashboard.
+   *   - Logged in *as the other role* → fetch the user's memberships;
+   *     if a matching one exists, hot-swap their JWT via select-entity
+   *     so they land in the requested role without re-auth. If no
+   *     matching membership exists, send them to the registration
+   *     flow for that role.
+   *   - Anything fails along the way → fall back to /login with intent
+   *     so the user always has *some* path forward.
+   */
+  async function enterRole(role: 'contractor' | 'corporation') {
+    if (!isLoggedIn) {
+      router.push(`/login?intent=${role}`);
+      return;
+    }
+    // Always fetch memberships so we can offer the picker to users
+    // who have >1 entity of the requested role (e.g. multiple
+    // contractor companies). Used to skip this when entityType
+    // already matched — that silently locked the user into the
+    // first contractor they had.
+    setSwitching(role);
+    try {
+      const { memberships } = await otpApi.myMemberships();
+      const matching = memberships.filter((m) => m.entity_type === role);
+      if (matching.length === 0) {
+        // Logged-in user clicked a role they don't have a membership
+        // for — registration is the right next step.
+        router.push(registerOf(role));
+        return;
+      }
+      if (matching.length > 1) {
+        // Multi-entity user: push to the picker so they can choose
+        // which contractor / corporation account to act as. The
+        // `force` flag tells select-entity to render the chooser
+        // even when the intent matches multiple memberships
+        // (default behaviour auto-picks the first).
+        sessionStorage.setItem('pending_intent', role);
+        sessionStorage.setItem('pending_memberships', JSON.stringify(memberships));
+        router.push(`/select-entity?intent=${role}&force=1`);
+        return;
+      }
+      // Exactly one matching membership.
+      if (entityType === role) {
+        // The user only has one entity of this role, so the current
+        // entity context IS that one — skip the select-entity round-
+        // trip and go straight to the dashboard.
+        router.push(dashboardOf(role));
+        return;
+      }
+      const tokens = await otpApi.selectEntity(matching[0].entity_id, matching[0].entity_type);
+      saveTokens(tokens.access_token, tokens.refresh_token);
+      refreshAuth();
+      router.push(dashboardOf(role));
+    } catch {
+      router.push(`/login?intent=${role}`);
+    } finally {
+      setSwitching(null);
+    }
+  }
+
+  // Hrefs are still set for SEO + right-click "open in new tab"
+  // behavior, but the click handler intercepts to do the right thing
+  // at runtime.
+  const contractorCtaHref = !isLoggedIn
+    ? '/login?intent=contractor'
+    : dashboardOf('contractor');
+  const corporationCtaHref = !isLoggedIn
+    ? '/login?intent=corporation'
+    : dashboardOf('corporation');
 
   return (
-    <section
-      className="relative flex flex-col overflow-hidden"
-      style={{ background: 'linear-gradient(135deg, #0a0f1e 0%, #0f172a 60%, #111827 100%)' }}
-    >
-      {/* Subtle top-right glow */}
+    <section className="relative flex flex-col overflow-hidden bg-white">
+      {/* Subtle top-end orange glow — reduced opacity for white surface */}
       <div
-        className="pointer-events-none absolute top-0 end-0 h-[480px] w-[480px] rounded-full opacity-20"
-        style={{ background: 'radial-gradient(circle, #4f46e5 0%, transparent 70%)', transform: 'translate(30%, -30%)' }}
+        className="pointer-events-none absolute top-0 end-0 h-[480px] w-[480px] rounded-full opacity-[0.08]"
+        style={{ background: 'radial-gradient(circle, #f78203 0%, transparent 70%)', transform: 'translate(30%, -30%)' }}
       />
-      {/* Dot texture */}
+      {/* Dot texture — dark dots on light surface */}
       <div
-        className="pointer-events-none absolute inset-0 opacity-[0.035]"
-        style={{ backgroundImage: 'radial-gradient(circle, #fff 1px, transparent 1px)', backgroundSize: '32px 32px' }}
+        className="pointer-events-none absolute inset-0 opacity-[0.04]"
+        style={{ backgroundImage: 'radial-gradient(circle, #0f172a 1px, transparent 1px)', backgroundSize: '32px 32px' }}
       />
 
-      {/* ── Main hero content ── */}
-      <div className="relative flex items-center">
-        <div className="max-w-7xl mx-auto px-6 w-full pt-28 pb-10">
-          <div className="grid lg:grid-cols-2 gap-16 items-center">
+      {/* ── Header: logo + headline + subtitle ── */}
+      {/* Top padding trimmed (pt-20→pt-14, md:pt-24→pt-16) so the live
+          showcase + role tiles can fit in one viewport on common
+          phones. Bottom padding gone — LiveShowcase below carries its
+          own band. */}
+      <div className="relative">
+        <div className="max-w-6xl mx-auto px-6 w-full pt-14 md:pt-16 pb-3 md:pb-4">
+          <div className="text-center space-y-1.5 md:space-y-2">
+            <Image
+              src="/brand/buildup-lockup.png?v=3"
+              alt="BuildUp"
+              width={500}
+              height={400}
+              className="mx-auto object-contain h-16 md:h-24 w-auto"
+              priority
+              unoptimized
+            />
 
-            {/* Text */}
-            <div className="space-y-8">
-              {/* Pill */}
-              <div className="inline-flex items-center gap-2 border border-slate-700 text-slate-400 text-xs font-medium px-4 py-1.5 rounded-full bg-slate-800/60">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                הפלטפורמה המובילה לעובדים זרים בבנייה
-              </div>
+            <h1 className="text-lg md:text-3xl font-extrabold leading-[1.25] tracking-tight text-slate-900 max-w-3xl mx-auto">
+              פלטפורמת השיבוץ הראשונה בישראל
+              <br className="hidden sm:block" />
+              <span className="text-brand-600"> לעובדים זרים בענף הבנייה</span>
+            </h1>
 
-              {/* Headline */}
-              <h1 className="text-5xl md:text-6xl font-extrabold leading-[1.08] tracking-tight text-white">
-                השוק הדיגיטלי
-                <br />
-                לכוח אדם זר
-                <br />
-                <span className="text-amber-400">בענף הבנייה</span>
-              </h1>
-
-              {/* Subtitle */}
-              <p className="text-lg text-slate-400 leading-relaxed max-w-lg">
-                מחבר קבלנים עם תאגידי כוח אדם מורשים — בחירת עובדים, שיבוץ, עסקאות ותשלום — הכל במקום אחד.
-              </p>
-
-              {/* CTAs */}
-              <div className="flex flex-wrap gap-3 pt-1">
-                <Link
-                  href="/register/contractor"
-                  className="inline-flex items-center gap-2 bg-brand-600 hover:bg-brand-500 text-white font-semibold text-sm px-6 py-3 rounded-xl shadow-lg shadow-brand-600/30 transition-all hover:-translate-y-0.5"
-                >
-                  אני קבלן — הצטרף בחינם
-                  <ArrowLeft className="h-4 w-4" />
-                </Link>
-                <Link
-                  href="/register/corporation"
-                  className="inline-flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-white font-semibold text-sm px-6 py-3 rounded-xl border border-slate-700 transition-all hover:-translate-y-0.5"
-                >
-                  אני תאגיד — פרסם עובדים
-                </Link>
-                <button
-                  onClick={onLeadCapture}
-                  className="text-sm text-slate-500 hover:text-slate-300 underline underline-offset-4 transition-colors self-center px-2"
-                >
-                  השאר פרטים לחזרה
-                </button>
-              </div>
-            </div>
-
-            {/* Single CTA stat — the only number on the hero now. */}
-            <div className="hidden lg:flex justify-center">
-              <Link
-                href={heroCtaHref}
-                className="group flex flex-col items-center justify-center bg-slate-800/50 hover:bg-slate-800 border border-slate-700/60 hover:border-amber-400/50 rounded-3xl p-12 w-full max-w-md transition-all duration-200 hover:-translate-y-1 hover:shadow-2xl hover:shadow-amber-500/10"
-              >
-                <div className="h-14 w-14 rounded-2xl bg-amber-500/20 flex items-center justify-center mb-5">
-                  <Users className="h-7 w-7 text-amber-300" />
-                </div>
-                <div className="text-6xl font-extrabold text-white mb-2 group-hover:text-amber-300 transition-colors">
-                  {HERO_STAT.value}
-                </div>
-                <div className="text-base text-slate-400 mb-1">{HERO_STAT.label}</div>
-                <div className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-amber-300 group-hover:text-amber-200">
-                  לחץ כאן לאיתור עובדים
-                  <ArrowLeft className="h-4 w-4 group-hover:-translate-x-1 transition-transform" />
-                </div>
-              </Link>
-            </div>
-          </div>
-
-          {/* Mobile single stat — same CTA, smaller */}
-          <Link
-            href={heroCtaHref}
-            className="lg:hidden mt-10 flex flex-col items-center justify-center bg-slate-800/60 border border-slate-700/60 rounded-2xl p-7 hover:border-amber-400/50 transition-colors"
-          >
-            <div className="h-10 w-10 rounded-xl bg-amber-500/20 flex items-center justify-center mb-3">
-              <Users className="h-5 w-5 text-amber-300" />
-            </div>
-            <div className="text-4xl font-extrabold text-white">{HERO_STAT.value}</div>
-            <div className="text-sm text-slate-400 mt-0.5 mb-3">{HERO_STAT.label}</div>
-            <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-amber-300">
-              לחץ כאן לאיתור עובדים
-              <ArrowLeft className="h-4 w-4" />
-            </span>
-          </Link>
-        </div>
-      </div>
-
-      {/* ── Marketplace quick-access bar ── */}
-      <div className="relative border-t border-slate-800/80">
-        <div className="max-w-7xl mx-auto px-6 py-6">
-          <p className="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-4">
-            שוק תאגידים — גלוש ישירות לפי קטגוריה
-          </p>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {MARKET_CATS.map(({ icon: Icon, label, desc, href, accent, iconBg, iconColor, labelColor, descColor }) => (
-              <Link
-                key={href}
-                href={href}
-                className="group flex flex-col bg-slate-800 hover:bg-slate-750 border border-slate-700 hover:border-slate-600 rounded-2xl overflow-hidden transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-black/30"
-              >
-                {/* Color accent stripe */}
-                <div className={`h-1 w-full ${accent}`} />
-                <div className="flex items-center gap-3 p-4">
-                  <div className={`h-9 w-9 rounded-xl ${iconBg} flex items-center justify-center shrink-0`}>
-                    <Icon className={`h-4.5 w-4.5 ${iconColor}`} />
-                  </div>
-                  <div>
-                    <p className={`text-sm font-semibold ${labelColor}`}>{label}</p>
-                    <p className={`text-xs ${descColor} mt-0.5 leading-snug`}>{desc}</p>
-                  </div>
-                </div>
-              </Link>
-            ))}
+            <p className="text-xs md:text-sm text-slate-600 leading-relaxed max-w-xl mx-auto">
+              מערכת מבוססת AI להתאמת עובדים, שיבוץ וניהול תהליך הגיוס — במהירות, בפשטות ובזמן אמת.
+            </p>
           </div>
         </div>
       </div>
 
-      {/* Scroll cue */}
-      <div className="relative flex justify-center py-5">
-        <a href="#trust-bar" className="flex flex-col items-center gap-1 text-slate-600 hover:text-slate-400 transition-colors">
-          <span className="text-xs">גלול למטה</span>
-          <ChevronDown className="h-4 w-4 animate-bounce" />
-        </a>
+      {/* ── Live showcase ── moved from below the tiles to above them so
+          the social-proof signal lands BEFORE the user has to pick a
+          role. Renders as a slate-50 band breaking up the white hero. */}
+      <LiveShowcase />
+
+      {/* ── Role tiles ── */}
+      <div className="relative">
+        <div className="max-w-6xl mx-auto px-6 w-full pt-3 md:pt-4 pb-6 md:pb-10">
+          {/* Two tiles SIDE-BY-SIDE on every breakpoint — mobile users
+              should see both choices at the same time so they can pick
+              which role they're entering without scrolling. Heights
+              tightened (p-9→p-5, mb's trimmed, CTA py-4→py-2.5) so the
+              hero fits in one viewport alongside the live band. */}
+          <div className="grid grid-cols-2 gap-3 md:gap-6 max-w-5xl mx-auto">
+            {/* Contractor tile — anchored on the active-workers stat */}
+            <Link
+              href={contractorCtaHref}
+              onClick={(e) => { e.preventDefault(); enterRole('contractor'); }}
+              aria-disabled={switching !== null}
+              className={`group flex flex-col items-center justify-center text-center bg-white hover:bg-brand-50/40 border border-slate-200 hover:border-brand-400 rounded-2xl md:rounded-3xl p-2.5 md:p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg ${switching === 'contractor' ? 'opacity-80' : ''} ${switching && switching !== 'contractor' ? 'pointer-events-none opacity-50' : ''}`}
+            >
+              <div className="text-lg md:text-3xl font-black text-brand-600 tracking-tight mb-1 md:mb-2">
+                קבלן
+              </div>
+              <div className="h-7 w-7 md:h-10 md:w-10 rounded-xl bg-brand-100 flex items-center justify-center mb-1 md:mb-2">
+                <Users className="h-3.5 w-3.5 md:h-5 md:w-5 text-brand-600" />
+              </div>
+              <div className="text-xl md:text-4xl font-extrabold text-slate-900 leading-none mb-0.5 group-hover:text-brand-700 transition-colors">
+                {HERO_STAT.value}
+              </div>
+              <div className="text-[11px] md:text-sm text-slate-500 mb-1.5 md:mb-3">{HERO_STAT.label}</div>
+              <div className="inline-flex items-center gap-1 md:gap-2 px-3 md:px-6 py-1.5 md:py-2.5 rounded-full bg-brand-600 text-xs md:text-base font-bold text-white shadow-md group-hover:bg-brand-700 transition-colors">
+                {switching === 'contractor'
+                  ? <><Loader2 className="h-3.5 w-3.5 md:h-4 md:w-4 animate-spin" /> מעביר...</>
+                  : <>חפש עובדים<ArrowLeft className="h-3.5 w-3.5 md:h-4 md:w-4 group-hover:-translate-x-1 transition-transform" /></>}
+              </div>
+            </Link>
+
+            {/* Corporation tile — invite manpower corporations to publish */}
+            <Link
+              href={corporationCtaHref}
+              onClick={(e) => { e.preventDefault(); enterRole('corporation'); }}
+              aria-disabled={switching !== null}
+              className={`group flex flex-col items-center justify-center text-center bg-white hover:bg-navy-50/40 border border-slate-200 hover:border-navy-400 rounded-2xl md:rounded-3xl p-2.5 md:p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg ${switching === 'corporation' ? 'opacity-80' : ''} ${switching && switching !== 'corporation' ? 'pointer-events-none opacity-50' : ''}`}
+            >
+              <div className="text-lg md:text-3xl font-black text-navy-600 tracking-tight mb-1 md:mb-2">
+                תאגיד
+              </div>
+              <div className="h-7 w-7 md:h-10 md:w-10 rounded-xl bg-navy-100 flex items-center justify-center mb-1 md:mb-2">
+                <Building2 className="h-3.5 w-3.5 md:h-5 md:w-5 text-navy-600" />
+              </div>
+              {/* Description trimmed to one short line on mobile so the
+                  tile height roughly matches the contractor tile and
+                  both CTAs line up. The fuller copy stays on desktop. */}
+              <div className="text-xs md:text-base text-slate-900 font-semibold leading-snug mb-0.5 md:mb-1.5 max-w-sm">
+                <span className="md:hidden">קבלנים פעילים מחפשים עובדים</span>
+                <span className="hidden md:inline">עשרות קבלנים כבר מנויים לשירותים שלנו ומחפשים עובדים</span>
+              </div>
+              <div className="text-xs md:text-lg text-navy-600 font-bold leading-snug mb-1.5 md:mb-3">
+                <span className="md:hidden">אל תישאר בחוץ</span>
+                <span className="hidden md:inline">מנהל תאגיד — אל תישאר בחוץ</span>
+              </div>
+              <div className="inline-flex items-center gap-1 md:gap-2 px-3 md:px-6 py-1.5 md:py-2.5 rounded-full bg-navy-600 text-xs md:text-base font-bold text-white shadow-md group-hover:bg-navy-700 transition-colors">
+                {switching === 'corporation'
+                  ? <><Loader2 className="h-3.5 w-3.5 md:h-4 md:w-4 animate-spin" /> מעביר...</>
+                  : <>פרסם עובדים<ArrowLeft className="h-3.5 w-3.5 md:h-4 md:w-4 group-hover:-translate-x-1 transition-transform" /></>}
+              </div>
+            </Link>
+          </div>
+        </div>
       </div>
+
     </section>
   );
 }

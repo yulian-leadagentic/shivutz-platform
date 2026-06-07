@@ -1,20 +1,24 @@
 'use client';
 
-import { useEffect, useMemo, useState, useRef } from 'react';
+import { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import Link from 'next/link';
-import { Loader2, Search, Plus, AlertTriangle, Check, X, Pencil } from 'lucide-react';
-import { workerApi } from '@/lib/api';
+import { Loader2, Plus, AlertTriangle, Check, X, Pencil, Clock, Trash2 } from 'lucide-react';
+import { workerApi, orgApi } from '@/lib/api';
+import { getAccessToken, decodeJwtPayload } from '@/lib/auth';
+import { useAuth } from '@/lib/AuthContext';
 import type { Worker } from '@/types';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useEnums } from '@/features/enums/EnumsContext';
 import { EXPERIENCE_LABEL } from '@/i18n/he';
+import { TableToolbar, type PillOption } from '@/components/table/TableToolbar';
+import { useTableState } from '@/components/table/useTableState';
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
-  available:   { label: 'זמין',     color: 'bg-green-100 text-green-700' },
-  assigned:    { label: 'משובץ',    color: 'bg-blue-100 text-blue-700' },
-  on_leave:    { label: 'בחופשה',   color: 'bg-amber-100 text-amber-700' },
-  deactivated: { label: 'לא פעיל', color: 'bg-slate-100 text-slate-500' },
+  available:   { label: 'עובדים זמינים לשיבוץ', color: 'bg-green-100 text-green-700' },
+  assigned:    { label: 'עובדים משובצים',       color: 'bg-blue-100 text-blue-700' },
+  on_leave:    { label: 'בחופשה',                color: 'bg-amber-100 text-amber-700' },
+  deactivated: { label: 'עובדים לא זמינים',     color: 'bg-slate-100 text-slate-500' },
 };
 
 const ROW_BG: Record<string, string> = {
@@ -300,10 +304,31 @@ function EmpNumCell({ workerId, value, onSaved }: {
 
 // ── Main page ──────────────────────────────────────────────────────────────
 export default function WorkersPage() {
+  // entityId watched by the fetch effect — if the corp switches
+  // entity (TopBar dropdown) or comes back from the Excel-import
+  // page after just attaching workers, the list re-fetches so the
+  // newly-attached rows show up without a hard reload.
+  const { entityId } = useAuth();
   const [workers, setWorkers]             = useState<Worker[]>([]);
   const [loading, setLoading]             = useState(true);
   const [search, setSearch]               = useState('');
-  const [statusFilter, setStatusFilter]   = useState<'all' | 'available' | 'assigned' | 'deactivated'>('all');
+  type StatusFilter = 'all' | 'available' | 'assigned' | 'on_leave' | 'deactivated';
+  const [statusFilter, setStatusFilter]   = useState<StatusFilter>('all');
+  const [professionFilter, setProfessionFilter] = useState('all');
+  const [originFilter, setOriginFilter]         = useState('all');
+  const [experienceFilter, setExperienceFilter] = useState('all');
+  // Visa-expiring quick filter — operational maintenance lens. Options:
+  //   all      → no filter
+  //   expired  → visa_valid_until in the past
+  //   30 / 60 / 90 → visa expires within that many days from today
+  type VisaFilter = 'all' | 'expired' | '30' | '60' | '90';
+  const [visaFilter, setVisaFilter] = useState<VisaFilter>('all');
+  // Surface "תאגיד עדיין לא אושר — העובדים שלך לא יופיעו לקבלנים" so
+  // the corp knows uploads are saved but invisible until admin
+  // approval. We pull the verification_tier and approval_status off
+  // the corporation row; only tier_2 + approved exposes workers in
+  // matching (see services/worker/app/routes/workers.py list_workers).
+  const [pendingApproval, setPendingApproval] = useState(false);
 
   const { professions, origins, regions, professionMap, originMap, regionMap } = useEnums();
 
@@ -321,8 +346,29 @@ export default function WorkersPage() {
   );
 
   useEffect(() => {
+    setLoading(true);
     workerApi.list().then(setWorkers).catch(console.error).finally(() => setLoading(false));
-  }, []);
+
+    // Detect pending-approval state for the banner.
+    const token = getAccessToken();
+    if (!token) return;
+    const payload = decodeJwtPayload(token);
+    const tokenEntityId = (payload?.entity_id || payload?.org_id) as string | undefined;
+    const entType  = (payload?.entity_type || payload?.org_type) as string | undefined;
+    if (tokenEntityId && entType === 'corporation') {
+      orgApi.getCorporation(tokenEntityId)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .then((c: any) => {
+          // Pending iff not yet tier_2. tier_2 is the only setting that
+          // exposes workers to matching. Same gate the backend enforces.
+          setPendingApproval(c.verification_tier !== 'tier_2');
+        })
+        .catch(() => {});
+    }
+  // Re-run when entityId changes (switched entity via TopBar /
+  // came back from Excel import). Otherwise the list shows the
+  // OLD entity's workers and the just-imported rows look missing.
+  }, [entityId]);
 
   // Update employee_number in local state after inline save
   function handleEmpNumSaved(workerId: string, newVal: string) {
@@ -356,18 +402,137 @@ export default function WorkersPage() {
     }));
   }
 
-  const filtered = workers.filter((w) => {
-    const matchStatus = statusFilter === 'all' || w.status === statusFilter;
-    const profLabel = professionMap[w.profession_type] ?? w.profession_type;
-    const originLabel = originMap[w.origin_country] ?? w.origin_country;
-    const q = search.toLowerCase();
-    const matchSearch =
-      !q ||
-      `${w.first_name} ${w.last_name}`.toLowerCase().includes(q) ||
-      profLabel.toLowerCase().includes(q) ||
-      originLabel.toLowerCase().includes(q);
-    return matchStatus && matchSearch;
-  });
+  // ── Delete-worker flow ──────────────────────────────────────────────
+  // Only allowed when the worker isn't currently on an active deal —
+  // proxied here as `status !== 'assigned'`. The UI hides the delete
+  // button for assigned workers; this state guards the confirm modal.
+  const [pendingDelete, setPendingDelete] = useState<Worker | null>(null);
+  const [deleting, setDeleting]           = useState(false);
+  const [deleteError, setDeleteError]     = useState('');
+
+  async function confirmDelete() {
+    if (!pendingDelete) return;
+    setDeleting(true); setDeleteError('');
+    try {
+      await workerApi.delete(pendingDelete.id);
+      setWorkers((prev) => prev.filter((w) => w.id !== pendingDelete.id));
+      setPendingDelete(null);
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : 'מחיקה נכשלה');
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  // Visa-window helper: returns the number of days until expiry, or
+  // -1 if already expired. Used by both the visa quick-filter and the
+  // 'visa expiry' sort key. Cheap, no memoisation needed (called once
+  // per row per render).
+  function daysUntilVisa(w: Worker): number {
+    if (!w.visa_valid_until) return Number.POSITIVE_INFINITY;
+    return (new Date(w.visa_valid_until).getTime() - Date.now()) / 86_400_000;
+  }
+
+  // Build the predicate fresh per filter-state change so useTableState
+  // can re-run filter+sort on dependency change. Wrapped in useCallback
+  // so reference stability matches the dependency list.
+  const filterPredicate = useCallback((w: Worker) => {
+    if (statusFilter !== 'all' && w.status !== statusFilter) return false;
+    if (professionFilter !== 'all' && w.profession_type !== professionFilter) return false;
+    if (originFilter !== 'all' && w.origin_country !== originFilter) return false;
+    if (experienceFilter !== 'all' && (w.experience_range ?? '') !== experienceFilter) return false;
+    if (visaFilter !== 'all') {
+      const d = daysUntilVisa(w);
+      if (visaFilter === 'expired' && d >= 0) return false;
+      if (visaFilter === '30' && (d < 0 || d > 30)) return false;
+      if (visaFilter === '60' && (d < 0 || d > 60)) return false;
+      if (visaFilter === '90' && (d < 0 || d > 90)) return false;
+    }
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      const profLabel = (professionMap[w.profession_type] ?? w.profession_type).toLowerCase();
+      const originLabel = (originMap[w.origin_country] ?? w.origin_country).toLowerCase();
+      const fullName = `${w.first_name} ${w.last_name}`.toLowerCase();
+      // Look for the term across name, profession, origin, passport,
+      // internal_id and employee_number — the fields someone is most
+      // likely to search by.
+      const internalId = ((w as unknown as { internal_id?: string }).internal_id || '').toLowerCase();
+      const passport   = ((w as unknown as { passport_number?: string }).passport_number || '').toLowerCase();
+      const empNum     = String((w.extra_fields as Record<string, unknown> | undefined)?.employee_number ?? '').toLowerCase();
+      if (
+        !fullName.includes(q) &&
+        !profLabel.includes(q) &&
+        !originLabel.includes(q) &&
+        !internalId.includes(q) &&
+        !passport.includes(q) &&
+        !empNum.includes(q)
+      ) return false;
+    }
+    return true;
+  }, [statusFilter, professionFilter, originFilter, experienceFilter, visaFilter, search, professionMap, originMap]);
+
+  type WorkerSortKey = 'name' | 'profession' | 'visa' | 'experience' | 'created';
+  const sortBy = useCallback((w: Worker, key: WorkerSortKey) => {
+    switch (key) {
+      case 'name':       return `${w.first_name} ${w.last_name}`.trim();
+      case 'profession': return professionMap[w.profession_type] ?? w.profession_type;
+      case 'visa':       return w.visa_valid_until ? new Date(w.visa_valid_until) : null;
+      case 'experience': {
+        // experience_range is encoded like '6-12' / '36+' — sort by the
+        // lower bound of months so the order reads "more experience first"
+        // when desc and "less first" when asc.
+        const raw = w.experience_range ?? '';
+        const m = raw.match(/^(\d+)/);
+        return m ? parseInt(m[1], 10) : null;
+      }
+      case 'created':    return (w as unknown as { created_at?: string }).created_at
+        ? new Date((w as unknown as { created_at: string }).created_at) : null;
+    }
+  }, [professionMap]);
+
+  const { visible: filtered, sortKey, sortDir, setSortKey, flipSortDir } =
+    useTableState<Worker, WorkerSortKey>({
+      rows: workers,
+      initialSortKey: 'visa',
+      initialSortDir: 'asc',   // soonest visa expiry first by default
+      filter: filterPredicate,
+      sortBy,
+    });
+
+  const hasActiveFilter =
+    statusFilter !== 'all' ||
+    professionFilter !== 'all' ||
+    originFilter !== 'all' ||
+    experienceFilter !== 'all' ||
+    visaFilter !== 'all' ||
+    search.trim() !== '';
+
+  function clearFilters() {
+    setStatusFilter('all');
+    setProfessionFilter('all');
+    setOriginFilter('all');
+    setExperienceFilter('all');
+    setVisaFilter('all');
+    setSearch('');
+  }
+
+  // Per-status counts feed the pill badges so the corp sees at a
+  // glance how many workers are in each bucket without clicking
+  // through. Computed off the unfiltered list (the pills change
+  // the filter — counting from filtered would be circular).
+  const statusCounts = useMemo(() => {
+    const c: Record<string, number> = {};
+    for (const w of workers) c[w.status] = (c[w.status] || 0) + 1;
+    return c;
+  }, [workers]);
+
+  const STATUS_PILLS: PillOption<StatusFilter>[] = [
+    { key: 'all',         label: 'הכל',        count: workers.length,           tone: 'bg-slate-900 text-white' },
+    { key: 'available',   label: 'זמינים',     count: statusCounts.available  || 0, tone: 'bg-emerald-500 text-white' },
+    { key: 'assigned',    label: 'משובצים',    count: statusCounts.assigned   || 0, tone: 'bg-blue-500 text-white' },
+    { key: 'on_leave',    label: 'בחופשה',     count: statusCounts.on_leave   || 0, tone: 'bg-amber-500 text-white' },
+    { key: 'deactivated', label: 'לא פעילים',  count: statusCounts.deactivated|| 0, tone: 'bg-slate-500 text-white' },
+  ];
 
   const expiringSoon = workers.filter((w) => {
     const days = (new Date(w.visa_valid_until).getTime() - Date.now()) / 86_400_000;
@@ -378,7 +543,7 @@ export default function WorkersPage() {
     <div className="space-y-4 max-w-7xl">
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <h2 className="text-xl font-bold text-slate-900">ניהול עובדים</h2>
+        <h2 className="text-xl font-bold text-slate-900">עובדים פנויים למסירה מיידית</h2>
         <Button asChild>
           <Link href="/corporation/workers/new">
             <Plus className="h-4 w-4" />
@@ -386,6 +551,22 @@ export default function WorkersPage() {
           </Link>
         </Button>
       </div>
+
+      {/* Pending-approval banner — corp can upload but workers are
+          hidden from matching until admin approves the corporation. */}
+      {pendingApproval && (
+        <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-2xl p-4">
+          <div className="shrink-0 w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
+            <Clock className="h-5 w-5 text-amber-600" />
+          </div>
+          <div className="flex-1">
+            <h3 className="font-semibold text-amber-900 text-sm">התאגיד עדיין ממתין לאישור</h3>
+            <p className="text-sm text-amber-700 mt-0.5 leading-relaxed">
+              ניתן להוסיף עובדים ולהכין את הרשימה כבר עכשיו, אך הם לא יופיעו לקבלנים בחיפוש עד שמנהל המערכת יאשר את התאגיד. בדרך כלל אישור עד 48 שעות.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Expiring visa warning */}
       {expiringSoon.length > 0 && (
@@ -397,149 +578,258 @@ export default function WorkersPage() {
         </div>
       )}
 
-      {/* Filters */}
-      <div className="flex gap-2 flex-wrap">
-        {(['all', 'available', 'assigned', 'deactivated'] as const).map((f) => (
-          <button key={f} onClick={() => setStatusFilter(f)}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-              statusFilter === f
-                ? 'bg-brand-600 text-white'
-                : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-50'
-            }`}>
-            {f === 'all' ? 'הכל' : STATUS_LABELS[f]?.label ?? f}
-          </button>
-        ))}
+      {/* Filter + sort toolbar — status pills + profession / origin /
+          experience / visa-window dropdowns + free-text search +
+          sort dropdown. Same pattern as /admin/deals. */}
+      <TableToolbar
+        pills={{
+          options: STATUS_PILLS,
+          active: statusFilter,
+          onChange: setStatusFilter,
+        }}
+        selects={[
+          {
+            key: 'profession',
+            ariaLabel: 'מקצוע',
+            value: professionFilter,
+            onChange: setProfessionFilter,
+            options: [
+              { value: 'all', label: 'כל המקצועות' },
+              ...professionOptions.map((p) => ({ value: p.value, label: p.label })),
+            ],
+          },
+          {
+            key: 'origin',
+            ariaLabel: 'מדינת מוצא',
+            value: originFilter,
+            onChange: setOriginFilter,
+            options: [
+              { value: 'all', label: 'כל המדינות' },
+              ...originOptions.map((o) => ({ value: o.value, label: o.label })),
+            ],
+          },
+          {
+            key: 'experience',
+            ariaLabel: 'ניסיון',
+            value: experienceFilter,
+            onChange: setExperienceFilter,
+            options: [
+              { value: 'all', label: 'כל הניסיון' },
+              ...EXP_RANGE_OPTIONS.map((r) => ({ value: r.code, label: r.label })),
+            ],
+          },
+          {
+            key: 'visa',
+            ariaLabel: 'ויזה',
+            value: visaFilter,
+            onChange: (v) => setVisaFilter(v as VisaFilter),
+            options: [
+              { value: 'all',     label: 'כל הויזות' },
+              { value: 'expired', label: 'ויזה פגה' },
+              { value: '30',      label: 'פגה תוך 30 יום' },
+              { value: '60',      label: 'פגה תוך 60 יום' },
+              { value: '90',      label: 'פגה תוך 90 יום' },
+            ],
+          },
+        ]}
+        searchValue={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="חיפוש: שם / מקצוע / מדינה / דרכון / מס׳ עובד"
+        sortOptions={[
+          { key: 'visa',       label: 'תוקף ויזה' },
+          { key: 'name',       label: 'שם' },
+          { key: 'profession', label: 'מקצוע' },
+          { key: 'experience', label: 'ניסיון' },
+          { key: 'created',    label: 'תאריך הוספה' },
+        ]}
+        sortKey={sortKey}
+        sortDir={sortDir}
+        onSortKeyChange={setSortKey}
+        onSortDirToggle={flipSortDir}
+        hasActiveFilter={hasActiveFilter}
+        onClear={clearFilters}
+      />
+
+      {/* Result count strip */}
+      <div className="text-sm font-medium text-slate-500">
+        {loading ? '...' : `${filtered.length} עובדים`}
       </div>
 
-      {/* Search */}
-      <div className="relative">
-        <Search className="absolute start-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-        <input type="text" placeholder="חפש לפי שם, מקצוע, מדינה..." value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="w-full ps-9 pe-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
-      </div>
-
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-medium text-slate-500">
-            {loading ? '...' : `${filtered.length} עובדים`}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
-          {loading ? (
-            <div className="flex justify-center py-12">
-              <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
-            </div>
-          ) : filtered.length === 0 ? (
-            <p className="text-center text-slate-400 py-8">לא נמצאו עובדים</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-100 text-slate-500">
-                    <th className="px-3 py-3 text-start font-medium">מס׳ פנימי</th>
-                    <th className="px-3 py-3 text-start font-medium">מס׳ עובד</th>
-                    <th className="px-3 py-3 text-start font-medium">שם</th>
-                    <th className="px-3 py-3 text-start font-medium">מקצוע</th>
-                    <th className="px-3 py-3 text-start font-medium">ניסיון</th>
-                    <th className="px-3 py-3 text-start font-medium">מדינה</th>
-                    <th className="px-3 py-3 text-start font-medium">אזור זמינות</th>
-                    <th className="px-3 py-3 text-start font-medium">זמין מ-</th>
-                    <th className="px-3 py-3 text-start font-medium">ויזה</th>
-                    <th className="px-3 py-3 text-start font-medium">סטטוס</th>
+      {/* Worker table — dense, scannable, with the same inline-edit cells
+          (SelectCell, ExperienceCell, DateCell, EmpNumCell). Horizontal
+          scroll on narrow screens. Filters + search above drive `filtered`. */}
+      {loading ? (
+        <div className="flex justify-center py-12">
+          <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
+        </div>
+      ) : filtered.length === 0 ? (
+        <Card><CardContent className="p-8 text-center text-slate-400">לא נמצאו עובדים</CardContent></Card>
+      ) : (
+        <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <table className="w-full text-sm border-collapse">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 text-xs">
+                <th className="px-3 py-2.5 text-start font-medium whitespace-nowrap">שם</th>
+                <th className="px-3 py-2.5 text-start font-medium whitespace-nowrap">מקצוע</th>
+                <th className="px-3 py-2.5 text-start font-medium whitespace-nowrap">ניסיון</th>
+                <th className="px-3 py-2.5 text-start font-medium whitespace-nowrap">מדינה</th>
+                <th className="px-3 py-2.5 text-start font-medium whitespace-nowrap">אזור זמינות</th>
+                <th className="px-3 py-2.5 text-start font-medium whitespace-nowrap">זמין מ-</th>
+                <th className="px-3 py-2.5 text-start font-medium whitespace-nowrap">ויזה</th>
+                <th className="px-3 py-2.5 text-start font-medium whitespace-nowrap">סטטוס</th>
+                <th className="px-3 py-2.5 text-start font-medium whitespace-nowrap">מס׳ עובד</th>
+                <th className="px-3 py-2.5 text-end font-medium whitespace-nowrap w-12" aria-label="פעולות" />
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((w) => {
+                const vr = visaStatus(w.visa_valid_until);
+                const sr = STATUS_LABELS[w.status] ?? { label: w.status, color: 'bg-slate-100 text-slate-600' };
+                const extra = w.extra_fields as Record<string, string> | undefined;
+                const availRegion = extra?.available_region;
+                const availFrom   = extra?.available_from;
+                const empNum      = extra?.employee_number ?? '';
+                const expCode     = w.experience_range ?? '';
+                const profLabel   = professionMap[w.profession_type] ?? w.profession_type;
+                const originLabel = originMap[w.origin_country] ?? w.origin_country;
+                const regionLabel = availRegion ? (regionMap[availRegion] ?? availRegion) : '—';
+                const internalId  = (w as unknown as { internal_id?: string }).internal_id || '';
+                return (
+                  <tr key={w.id} className={`border-b border-slate-100 last:border-0 hover:bg-slate-50/60 ${ROW_BG[w.status] ?? ''}`}>
+                    <td className="px-3 py-2.5 align-top">
+                      <div className="font-semibold text-slate-900 whitespace-nowrap">{w.first_name} {w.last_name}</div>
+                      <div className="text-[11px] font-mono text-slate-400">{internalId || '—'}</div>
+                    </td>
+                    <td className="px-3 py-2.5 align-top">
+                      <SelectCell workerId={w.id} value={w.profession_type}
+                        displayValue={profLabel} options={professionOptions}
+                        updateKey="profession_type"
+                        onSaved={(v) => handleFieldSaved(w.id, 'profession_type', v)} />
+                    </td>
+                    <td className="px-3 py-2.5 align-top">
+                      <ExperienceCell workerId={w.id} value={expCode}
+                        onSaved={(v) => handleExpSaved(w.id, v)} />
+                    </td>
+                    <td className="px-3 py-2.5 align-top">
+                      <SelectCell workerId={w.id} value={w.origin_country}
+                        displayValue={originLabel} options={originOptions}
+                        updateKey="origin_country"
+                        onSaved={(v) => handleFieldSaved(w.id, 'origin_country', v)} />
+                    </td>
+                    <td className="px-3 py-2.5 align-top">
+                      <SelectCell workerId={w.id} value={availRegion ?? ''}
+                        displayValue={regionLabel} options={regionOptions}
+                        updateKey="available_region"
+                        onSaved={(v) => handleExtraSaved(w.id, 'available_region', v)} />
+                    </td>
+                    <td className="px-3 py-2.5 align-top">
+                      <DateCell workerId={w.id} value={availFrom ?? ''}
+                        updateKey="available_from"
+                        onSaved={(v) => handleExtraSaved(w.id, 'available_from', v)} />
+                    </td>
+                    <td className="px-3 py-2.5 align-top">
+                      <div className={`flex items-center gap-1 ${vr.urgent ? 'text-red-600' : ''}`}>
+                        {vr.urgent && <AlertTriangle className="h-3 w-3 shrink-0" />}
+                        <DateCell workerId={w.id} value={w.visa_valid_until ?? ''}
+                          updateKey="visa_valid_until"
+                          onSaved={(v) => handleFieldSaved(w.id, 'visa_valid_until', v)} />
+                      </div>
+                    </td>
+                    <td className="px-3 py-2.5 align-top">
+                      <div className="flex items-center gap-2">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${sr.color}`}>{sr.label}</span>
+                        <SelectCell workerId={w.id} value={w.status}
+                          displayValue=""
+                          options={[
+                            { value: 'available',   label: 'זמין' },
+                            { value: 'assigned',    label: 'משובץ' },
+                            { value: 'on_leave',    label: 'בחופשה' },
+                            { value: 'deactivated', label: 'לא פעיל' },
+                          ]}
+                          updateKey="status"
+                          onSaved={(v) => handleFieldSaved(w.id, 'status', v)} />
+                      </div>
+                    </td>
+                    <td className="px-3 py-2.5 align-top">
+                      <EmpNumCell workerId={w.id} value={empNum}
+                        onSaved={(v) => handleEmpNumSaved(w.id, v)} />
+                    </td>
+                    <td className="px-3 py-2.5 align-top text-end">
+                      {/* Delete is gated: workers in 'assigned' status
+                          are on an active deal and shouldn't be removed
+                          mid-flight. Other statuses (available, on_leave,
+                          deactivated) are safe to delete. */}
+                      {w.status !== 'assigned' && (
+                        <button
+                          onClick={() => setPendingDelete(w)}
+                          title="מחק עובד"
+                          aria-label={`מחק את ${w.first_name} ${w.last_name}`}
+                          className="inline-flex items-center justify-center h-7 w-7 rounded-full text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition-colors"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      )}
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {filtered.map((w) => {
-                    const vr = visaStatus(w.visa_valid_until);
-                    const sr = STATUS_LABELS[w.status] ?? { label: w.status, color: 'bg-slate-100 text-slate-600' };
-                    const extra = w.extra_fields as Record<string, string> | undefined;
-                    const availRegion = extra?.available_region;
-                    const availFrom   = extra?.available_from;
-                    const empNum      = extra?.employee_number ?? '';
-                    const expCode     = w.experience_range ?? '';
-                    const expLabel    = EXP_LABELS[expCode] ?? (expCode || '—');
-                    const profLabel   = professionMap[w.profession_type] ?? w.profession_type;
-                    const originLabel = originMap[w.origin_country] ?? w.origin_country;
-                    const regionLabel = availRegion ? (regionMap[availRegion] ?? availRegion) : '—';
-                    return (
-                      <tr key={w.id} className={`border-b border-slate-50 last:border-0 hover:brightness-95 transition-colors ${ROW_BG[w.status] ?? ''}`}>
-                        <td className="px-3 py-3 font-mono text-xs text-slate-600">
-                          {(w as unknown as { internal_id?: string }).internal_id || '—'}
-                        </td>
-                        <td className="px-3 py-3">
-                          <EmpNumCell
-                            workerId={w.id}
-                            value={empNum}
-                            onSaved={(v) => handleEmpNumSaved(w.id, v)}
-                          />
-                        </td>
-                        <td className="px-3 py-3 font-medium text-slate-900 whitespace-nowrap">
-                          {w.first_name} {w.last_name}
-                        </td>
-                        {/* Profession — select */}
-                        <td className="px-3 py-3">
-                          <SelectCell workerId={w.id} value={w.profession_type}
-                            displayValue={profLabel} options={professionOptions}
-                            updateKey="profession_type"
-                            onSaved={(v) => handleFieldSaved(w.id, 'profession_type', v)} />
-                        </td>
-                        {/* Experience range */}
-                        <td className="px-3 py-3">
-                          <ExperienceCell workerId={w.id} value={expCode}
-                            onSaved={(v) => handleExpSaved(w.id, v)} />
-                        </td>
-                        {/* Origin country — select */}
-                        <td className="px-3 py-3">
-                          <SelectCell workerId={w.id} value={w.origin_country}
-                            displayValue={originLabel} options={originOptions}
-                            updateKey="origin_country"
-                            onSaved={(v) => handleFieldSaved(w.id, 'origin_country', v)} />
-                        </td>
-                        {/* Available region — select */}
-                        <td className="px-3 py-3">
-                          <SelectCell workerId={w.id} value={availRegion ?? ''}
-                            displayValue={regionLabel} options={regionOptions}
-                            updateKey="available_region"
-                            onSaved={(v) => handleExtraSaved(w.id, 'available_region', v)} />
-                        </td>
-                        {/* Available from — date */}
-                        <td className="px-3 py-3">
-                          <DateCell workerId={w.id} value={availFrom ?? ''}
-                            updateKey="available_from"
-                            onSaved={(v) => handleExtraSaved(w.id, 'available_from', v)} />
-                        </td>
-                        {/* Visa — date with urgency indicator */}
-                        <td className={`px-3 py-3 ${vr.urgent ? 'text-red-600' : ''}`}>
-                          <div className="flex items-center gap-1">
-                            {vr.urgent && <AlertTriangle className="h-3 w-3 shrink-0" />}
-                            <DateCell workerId={w.id} value={w.visa_valid_until ?? ''}
-                              updateKey="visa_valid_until"
-                              onSaved={(v) => handleFieldSaved(w.id, 'visa_valid_until', v)} />
-                          </div>
-                        </td>
-                        {/* Status — select */}
-                        <td className="px-3 py-3">
-                          <SelectCell workerId={w.id} value={w.status}
-                            displayValue={sr.label}
-                            options={[
-                              { value: 'available',   label: 'זמין' },
-                              { value: 'assigned',    label: 'משובץ' },
-                              { value: 'on_leave',    label: 'בחופשה' },
-                              { value: 'deactivated', label: 'לא פעיל' },
-                            ]}
-                            updateKey="status"
-                            onSaved={(v) => handleFieldSaved(w.id, 'status', v)} />
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Delete confirmation modal — soft-deletes on the server and
+          drops the row from local state. Cancel restores nothing
+          because the worker is removed from the list optimistically
+          only on success. */}
+      {pendingDelete && (
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-900/40 backdrop-blur-sm px-4"
+          onClick={() => !deleting && setPendingDelete(null)}
+        >
+          <div
+            className="bg-white rounded-t-2xl sm:rounded-2xl w-full max-w-md shadow-2xl p-5 space-y-3"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-3">
+              <div className="h-10 w-10 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0">
+                <Trash2 className="h-5 w-5" />
+              </div>
+              <div className="flex-1">
+                <h2 className="text-lg font-bold text-slate-900">
+                  למחוק את {pendingDelete.first_name} {pendingDelete.last_name}?
+                </h2>
+                <p className="text-sm text-slate-700 mt-1 leading-relaxed">
+                  העובד יוסר מרשימת העובדים שלך ולא יופיע יותר בחיפושי קבלנים.
+                  הפעולה ניתנת לשחזור ע״י פנייה לתמיכה.
+                </p>
+                {deleteError && (
+                  <p className="text-sm text-rose-600 mt-2 font-medium">{deleteError}</p>
+                )}
+              </div>
             </div>
-          )}
-        </CardContent>
-      </Card>
+            <div className="flex gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setPendingDelete(null)}
+                disabled={deleting}
+                className="flex-1 px-4 py-2.5 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-50 font-medium text-sm disabled:opacity-50"
+              >
+                ביטול
+              </button>
+              <button
+                type="button"
+                onClick={confirmDelete}
+                disabled={deleting}
+                className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-sm shadow-sm disabled:opacity-50"
+              >
+                {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                מחק עובד
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

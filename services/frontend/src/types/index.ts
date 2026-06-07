@@ -22,7 +22,12 @@ export interface Contractor {
   gov_branch?: string | null;
   gov_company_status?: string | null;
   verification_tier: 'tier_0' | 'tier_1' | 'tier_2';
-  verification_method?: 'email' | 'sms' | 'manual' | 'none' | null;
+  verification_method?: 'email' | 'sms' | 'manual' | 'none' | 'kablan_match' | null;
+  /** Set when the contractor typed their kablan_number and it matched
+   *  פנקס הקבלנים. Distinct from `verified_at` (which records ANY
+   *  path to tier_2) so we can banner contractors who got tier_2 via
+   *  the older email/SMS flow but never proved kablan ownership. */
+  kablan_verified_at?: string | null;
   operating_regions: string[];
   approval_status: 'pending' | 'approved' | 'rejected';
   contact_name: string;
@@ -51,9 +56,19 @@ export interface Worker {
   };
 }
 
-export interface JobLineItem {
+// ─── Worker-search types (Wave 3 — replaces project + line-items) ─────────────
+//
+// A WorkerSearch is a contractor's standalone request for N workers of a
+// given profession starting on a date. No project umbrella.
+
+export type RecruitmentType = 'domestic' | 'foreign';
+
+export interface WorkerSearch {
   id: string;
-  request_id: string;
+  contractor_id: string;
+  recruitment_type: RecruitmentType;
+  region?: string;
+  address?: string;
   profession_type: string;
   quantity: number;
   start_date: string;
@@ -61,33 +76,34 @@ export interface JobLineItem {
   min_experience: number;
   required_languages: string[];
   origin_preference: string[];
+  special_requirements?: string;
   status: string;
-}
-
-export interface JobLineItemSummary {
-  id: string;
-  profession_type: string;
-  quantity: number;
-  status: string;
-}
-
-export interface JobRequest {
-  id: string;
-  contractor_id: string;
-  project_name: string;
-  project_name_he: string;
-  region: string;
-  status: string;
-  line_items: JobLineItem[];
   created_at?: string;
-  address?: string;
-  project_start_date?: string;
-  project_end_date?: string;
-  professions_count?: number;
-  total_workers?: number;
-  /** -1 = no match run yet; 0-100 = fill percentage from best bundle */
+  /** -1 = no match run yet; 0-100 = fill percentage from best corp */
   best_fill_pct?: number;
   best_is_complete?: boolean;
+}
+
+export interface WorkerSearchCreate {
+  recruitment_type: RecruitmentType;
+  profession_type: string;
+  quantity: number;
+  start_date: string;
+  end_date?: string;
+  region?: string;
+  address?: string;
+  min_experience?: number;
+  origin_preference?: string[];
+  required_languages?: string[];
+}
+
+export interface WorkerSearchUpdate {
+  quantity?: number;
+  start_date?: string;
+  end_date?: string;
+  region?: string;
+  min_experience?: number;
+  status?: string;
 }
 
 // ─── Match types (Go job-match service response) ──────────────────────────────
@@ -107,35 +123,32 @@ export interface MatchedWorkerDetail {
 export interface WorkerMatchResult {
   worker: MatchedWorkerDetail;
   score: number;           // raw 0-110
-  line_item_id: string;
+  search_id: string;
   match_tier: string;      // "perfect" | "good" | "partial"
   matched_criteria: string[];
   missing_criteria: string[];
 }
 
-export interface LineItemFill {
-  line_item_id: string;
+// CorpMatch — for a single search, a single corporation's offer of
+// up to N workers. The matcher returns a sorted list of these per
+// search (one entry per corp that has any matching worker).
+export interface CorpMatch {
+  search_id: string;
+  corporation_id: string;
+  corporation_name?: string;   // resolved client-side after fetch
+  threshold_requirements?: Record<string, unknown> | null;
   profession: string;
   needed: number;
   workers: WorkerMatchResult[];
-  is_filled: boolean;
-}
-
-export interface MatchBundle {
-  corporation_id: string;
-  corporation_name?: string;   // resolved client-side after fetch
-  threshold_requirements?: Record<string, unknown> | null;  // resolved client-side
-  line_items: LineItemFill[];
-  total_score: number;
+  filled_workers: number;
   is_complete: boolean;
   fill_percentage: number;     // 0-100
-  filled_workers: number;
-  needed_workers: number;
+  total_score: number;
 }
 
 export interface Deal {
   id: string;
-  request_line_item_id: string;
+  search_id: string;
   contractor_id: string | null;   // null when info-disclosure hides the counter-party
   corporation_id: string | null;  // null when info-disclosure hides the counter-party
   status: string;
@@ -165,6 +178,14 @@ export interface Deal {
   standard_contract_doc_name?: string;
   payment_status?: string;
   payment_amount_estimated?: number;
+  /** ID of the active payment transaction (the one that's been
+   *  authorized for this deal). Returned by /deals/{id} + the list
+   *  endpoints. Used to fetch the captured transaction for the
+   *  CapturedBadge invoice/auth-code display. */
+  active_payment_transaction_id?: string | null;
+  /** Last-modified timestamp. Returned everywhere; used by the
+   *  admin dashboard's "sort by recent activity" column. */
+  updated_at?: string;
 }
 
 export interface Message {
@@ -197,13 +218,21 @@ export interface Corporation {
   business_number: string;
   gov_company_status?: string | null;
   verification_tier: 'tier_0' | 'tier_1' | 'tier_2';
-  verification_method?: 'email' | 'sms' | 'manual' | 'none' | null;
+  verification_method?: 'email' | 'sms' | 'manual' | 'none' | 'gov_list_match' | null;
+  /** Year of the רשות האוכלוסין list this corp was matched against.
+   *  NULL = never matched, just admin-approved. */
+  gov_registry_source_year?: number | null;
+  gov_registry_matched_at?: string | null;
   countries_of_origin: string[];
   minimum_contract_months: number;
   approval_status: 'pending' | 'approved' | 'rejected' | 'suspended';
   contact_name: string;
   contact_email: string;
   contact_phone: string;
+  /** Extra phone columns surfaced from the gov list (when matched). */
+  phone_landline?: string | null;
+  phone_landline_secondary?: string | null;
+  phone_mobile_secondary?: string | null;
   threshold_requirements?: Record<string, unknown> | null;
 }
 
@@ -216,6 +245,13 @@ export interface CorporationLookupResult {
   prefill?: {
     company_name_he?: string | null;
   };
+  /** Did this ח.פ match a row in the admin-uploaded רשות האוכלוסין list? */
+  gov_list_found?: boolean;
+  gov_list_year?:  number | null;
+  /** All 4 phone columns (mobile + landline x2) from the matched gov row,
+   *  used by the post-register UI to explain whether the typed phone
+   *  matched the gov record. */
+  gov_list_phones?: string[];
   error?: string;
   message?: string;
 }
@@ -318,6 +354,11 @@ export interface PaginatedResponse<T> {
 export interface ContractorRegistration {
   company_name_he: string;
   business_number: string;
+  /** מספר רישיון קבלן — required. Backend cross-checks against
+   *  פנקס הקבלנים for the same business_number. On mismatch the row
+   *  is created but lands in admin queue (status='pending') instead of
+   *  the user getting automatic tier_2. */
+  kablan_number: string;
   operating_regions: string[];
   contact_name: string;
   contact_phone: string;
@@ -361,41 +402,31 @@ export interface CorporationRegistration {
 
 export interface RegistrationResult {
   id: string;
+  /** 'approved' when the credential match was strong enough for auto-
+   *  promote: contractor → kablan number matched; corporation → ח.פ
+   *  AND contact_phone both matched the gov list. Otherwise 'pending'
+   *  and admin handles it. */
   status: string;
   org_type: string;
   verification_tier?: 'tier_0' | 'tier_1' | 'tier_2';
   registry_found?: boolean;
+  /** Contractor: typed kablan_number matched פנקס הקבלנים. */
+  kablan_matched?: boolean;
+  /** Corporation: ח.פ matched a row in רשות האוכלוסין list. */
+  gov_list_matched?: boolean;
+  gov_list_year?: number | null;
+  /** Corporation: typed contact_phone matched one of the 4 gov phones.
+   *  Drives the post-register copy:
+   *    matched   → 'אושר אוטומטית — תוכל להתחיל לפעול מיד'
+   *    mismatch  → 'מאושר לפעולה, מנהל יבצע אימות נוסף תוך 48 שעות'. */
+  phone_matched_gov?: boolean;
   available_channels?: RegistryChannel[];
   access_token?: string;
   refresh_token?: string;
 }
 
-export interface JobLineItemInput {
-  profession_type: string;
-  quantity: number;
-  start_date: string;
-  end_date: string;
-  min_experience: number;
-  min_experience_range?: string;
-  min_experience_ranges?: string[];
-  origin_preference: string[];
-  required_languages: string[];
-}
-
-export interface JobRequestCreate {
-  project_name_he: string;
-  region: string;
-  project_start_date?: string;
-  project_end_date?: string;
-  line_items: JobLineItemInput[];
-}
-
-export interface JobRequestUpdate {
-  project_name_he?: string;
-  region?: string;
-  project_start_date?: string;
-  project_end_date?: string;
-}
+// (Wave 3) JobLineItemInput / JobRequestCreate / JobRequestUpdate were
+// removed — replaced by WorkerSearchCreate / WorkerSearchUpdate above.
 
 // Wave 2 (2026-05): origin_country + experience_range relaxed to
 // optional/nullable (corp can leave them blank — "לא צויין").
@@ -412,6 +443,12 @@ export interface WorkerInput {
   available_region?: string | null;
   available_from?: string | null;
   employee_number?: string | null;
+  /** Explicitly scope to this corp. Belt-and-suspenders against the
+   *  gateway falling back to `users.org_id` when there's no active
+   *  entity context (admin user without a selected entity), which
+   *  on staging pointed at the user's first-signup contractor and
+   *  blew up worker create with "corporation_not_found". */
+  corporation_id?: string;
 }
 
 // Update accepts any known mutable field plus an index signature for
@@ -422,10 +459,10 @@ export type WorkerUpdate = Partial<WorkerInput> & {
 };
 
 export interface DealCreate {
-  job_request_id: string;
+  search_id?: string;
   corporation_id: string;
-  worker_ids: string[];
-  workers_count: number;
+  worker_ids?: string[];
+  workers_count?: number;
   notes?: string;
 }
 

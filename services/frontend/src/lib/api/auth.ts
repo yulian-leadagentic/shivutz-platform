@@ -5,6 +5,11 @@ export interface Membership {
   membership_id: string;
   entity_id: string;
   entity_type: 'contractor' | 'corporation';
+  /** Hebrew company name (or fallback to non-Hebrew name). May be null
+   *  for legacy memberships where the org row was deleted but the
+   *  membership row lingered — display logic should fall back to the
+   *  entity_type label in that case. */
+  entity_name: string | null;
   role: string;
 }
 
@@ -16,6 +21,12 @@ export interface InviteMetadata {
   job_title: string | null;
   inviter_name: string | null;
   membership_id: string;
+  /** Pre-fill values for the accept screen. NULL on legacy rows that
+   *  predate the invited_phone / invited_*_name columns — UI falls back
+   *  to free input in that case. */
+  invited_phone:      string | null;
+  invited_first_name: string | null;
+  invited_last_name:  string | null;
 }
 
 export const authApi = {
@@ -47,17 +58,32 @@ export const otpApi = {
       body: JSON.stringify({ phone, code, purpose }),
     }),
 
-  /** Full login: verify OTP + issue JWT. Returns entity context or needs_entity_selection. */
-  loginOtp: (phone: string, code: string) =>
-    apiFetch<{
-      access_token: string;
-      refresh_token: string;
-      role: string;
-      needs_entity_selection: boolean;
-      memberships?: Membership[];
-    }>('/auth/login/otp', {
+  /** Full login: verify OTP + issue JWT. Returns entity context or
+   *  needs_entity_selection on the registered-user path. When the
+   *  phone has NO user record, returns `{ prospect: true, phone, intent }`
+   *  instead — no JWT issued, but the backend has marked the OTP as
+   *  satisfying the 'register' purpose for the next 15 minutes so the
+   *  caller can drop the user into the trial → register flow without a
+   *  second OTP. The `intent` param lets us route them to the right
+   *  trial surface (today: contractor only). */
+  loginOtp: (phone: string, code: string, intent?: 'contractor' | 'corporation') =>
+    apiFetch<
+      | {
+          prospect?: undefined;
+          access_token: string;
+          refresh_token: string;
+          role: string;
+          needs_entity_selection: boolean;
+          memberships?: Membership[];
+        }
+      | {
+          prospect: true;
+          phone: string;
+          intent: 'contractor' | 'corporation';
+        }
+    >('/auth/login/otp', {
       method: 'POST',
-      body: JSON.stringify({ phone, code }),
+      body: JSON.stringify({ phone, code, intent }),
     }),
 
   /** Re-issue JWT scoped to a specific entity (called after needs_entity_selection=true). */
@@ -66,6 +92,16 @@ export const otpApi = {
       method: 'POST',
       body: JSON.stringify({ entity_id: entityId, entity_type: entityType }),
     }),
+
+  /**
+   * List the *current* user's active memberships. Used by the
+   * landing-page tile click handler to switch entity context
+   * cross-role (e.g. logged-in contractor clicks the corporation
+   * tile and we hot-swap their JWT to the corporation membership
+   * without re-authenticating).
+   */
+  myMemberships: () =>
+    apiFetch<{ memberships: Membership[] }>('/auth/memberships'),
 };
 
 export const inviteApi = {
@@ -75,6 +111,10 @@ export const inviteApi = {
       body: JSON.stringify({ token }),
     }),
 
+  /** Accept the invitation. `phone` must match the invited_phone the
+   *  inviter typed (server enforces hard match). `fullName` is only
+   *  used as a fallback for legacy rows where invited_first/last_name
+   *  weren't captured — modern invites ignore it entirely. */
   accept: (token: string, phone: string, code: string, fullName?: string) =>
     apiFetch<{ access_token: string; refresh_token: string; role: string }>(
       '/auth/invite/accept',

@@ -14,20 +14,36 @@ export type DealStatus =
   | 'disputed'
   | 'cancelled';
 
-export type DealFilter = 'all' | 'proposed' | 'active' | 'completed';
+// Superset — each surface picks the subset it shows. Contractor-side
+// (re)design uses awaiting_approval / proposed / completed / cancelled;
+// corp-side keeps proposed / active / completed.
+export type DealFilter =
+  | 'all'
+  | 'awaiting_approval' // contractor-side: corp committed, contractor must act
+  | 'proposed'          // sent to corp, awaiting first response
+  | 'active'            // corp-side: workers in field
+  | 'completed'         // closed / done
+  | 'cancelled';        // cancelled / rejected / expired
 
-export const DEAL_FILTER_LABEL: Record<DealFilter, string> = {
-  all: 'הכל',
-  proposed: 'ממתינות לתאגיד',
-  active: 'פעילות',
-  completed: 'הסתיימו',
+export const DEAL_FILTER_LABEL: Partial<Record<DealFilter, string>> = {
+  all:               'הכל',
+  awaiting_approval: 'ממתינות לאישורך',
+  proposed:          'ממתינות לתאגיד',
+  completed:         'נסגרו',
+  cancelled:         'בוטל',
 };
 
 // Status → which filter bucket it belongs to (reverse index of the groups).
-export const DEAL_STATUS_GROUP: Record<Exclude<DealFilter, 'all'>, DealStatus[]> = {
-  proposed:  ['proposed', 'counter_proposed'],
-  active:    ['accepted', 'active', 'reporting'],
-  completed: ['completed', 'cancelled', 'disputed'],
+// Note: status strings here are read as plain strings — the DealStatus
+// union doesn't enumerate every value the API can return (the DB adds
+// corp_committed, closed, cancelled_by_corp, cancelled_by_contractor,
+// expired, rejected — none of which are part of the legacy union).
+export const DEAL_STATUS_GROUP: Record<Exclude<DealFilter, 'all'>, string[]> = {
+  awaiting_approval: ['corp_committed'],
+  proposed:          ['proposed', 'counter_proposed'],
+  active:            ['accepted', 'active', 'reporting'],
+  completed:         ['completed', 'closed'],
+  cancelled:         ['cancelled', 'cancelled_by_corp', 'cancelled_by_contractor', 'rejected', 'expired', 'disputed'],
 };
 
 export function dealMatchesFilter(status: DealStatus | string, filter: DealFilter): boolean {

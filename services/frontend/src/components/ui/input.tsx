@@ -8,8 +8,22 @@ export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> 
 }
 
 const Input = React.forwardRef<HTMLInputElement, InputProps>(
-  ({ className, type, label, error, hint, id, ...props }, ref) => {
+  ({ className, type, label, error, hint, id, onFocus, ...props }, ref) => {
     const inputId = id ?? label?.toLowerCase().replace(/\s+/g, '-');
+    // QA-R3 #21 — auto-select existing content on focus so the user can
+    // just type to replace. Skip for type=checkbox/radio (no text value)
+    // and respect any per-input override (caller-provided onFocus runs
+    // afterwards and can preventDefault by returning early).
+    const handleFocus: React.FocusEventHandler<HTMLInputElement> = (e) => {
+      if (type !== 'checkbox' && type !== 'radio' && type !== 'file') {
+        // Defer so the value is committed when the browser moves the
+        // caret on focus; selecting in the same tick can race with the
+        // native focus handler in some browsers.
+        const target = e.target;
+        requestAnimationFrame(() => { try { target.select(); } catch {} });
+      }
+      onFocus?.(e);
+    };
     return (
       <div className="flex flex-col gap-1.5 w-full">
         {label && (
@@ -23,6 +37,15 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
         <input
           id={inputId}
           type={type}
+          onFocus={handleFocus}
+          // Password managers / autofill extensions (Edge, LastPass,
+          // 1Password) inject attributes like `fdprocessedid` into
+          // form inputs before React hydrates. The DOM no longer
+          // matches what was server-rendered → hydration aborts →
+          // event handlers may not re-attach cleanly, so the user's
+          // first click does nothing. Tell React to tolerate this
+          // specific element diverging from SSR output.
+          suppressHydrationWarning
           className={cn(
             'flex h-9 w-full rounded-lg border bg-white px-3 py-2 text-sm text-start',
             'border-slate-200 text-slate-900',

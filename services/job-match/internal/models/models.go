@@ -15,22 +15,19 @@ func (f *FlexDate) UnmarshalJSON(b []byte) error {
 	if s == "null" || s == "" {
 		return nil
 	}
-	// Try date-only first
 	if t, err := time.Parse("2006-01-02", s); err == nil {
 		f.Time = t
 		return nil
 	}
-	// Try RFC3339
 	if t, err := time.Parse(time.RFC3339, s); err == nil {
 		f.Time = t
 		return nil
 	}
-	// Try datetime without timezone
 	if t, err := time.Parse("2006-01-02T15:04:05", s); err == nil {
 		f.Time = t
 		return nil
 	}
-	return nil // swallow unknown formats gracefully
+	return nil
 }
 
 func (f FlexDate) IsZero() bool {
@@ -41,22 +38,15 @@ func (f FlexDate) After(t time.Time) bool {
 	return f.Time.After(t)
 }
 
-type JobRequest struct {
-	ID           string     `json:"id"`
-	ContractorID string     `json:"contractor_id"`
-	ProjectName  string     `json:"project_name"`
-	Region       string     `json:"region"`
-	Address      string     `json:"address,omitempty"`
-	ProjectStart time.Time  `json:"project_start"`
-	ProjectEnd   *time.Time `json:"project_end,omitempty"`
-	Status       string     `json:"status"`
-	CreatedBy    string     `json:"created_by"`
-	CreatedAt    time.Time  `json:"created_at"`
-}
-
-type LineItem struct {
+// WorkerSearch — a contractor's standalone request for N workers of a
+// given profession starting on a date. Wave 3 (2026-05-06) replaced
+// the project + line-items model with this single self-contained row.
+type WorkerSearch struct {
 	ID                  string    `json:"id"`
-	RequestID           string    `json:"request_id"`
+	ContractorID        string    `json:"contractor_id"`
+	RecruitmentType     string    `json:"recruitment_type"` // "domestic" | "foreign"
+	Region              string    `json:"region,omitempty"`
+	Address             string    `json:"address,omitempty"`
 	ProfessionType      string    `json:"profession_type"`
 	Quantity            int       `json:"quantity"`
 	StartDate           time.Time `json:"start_date"`
@@ -66,6 +56,7 @@ type LineItem struct {
 	RequiredLanguages   []string  `json:"required_languages"`
 	SpecialRequirements string    `json:"special_requirements,omitempty"`
 	Status              string    `json:"status"`
+	CreatedAt           time.Time `json:"created_at"`
 }
 
 type Worker struct {
@@ -80,31 +71,27 @@ type Worker struct {
 	AvailableRegion string    `json:"available_region,omitempty"`
 }
 
-// MatchTier describes how well a worker matches the line item requirements.
-// perfect: all criteria met | good: most criteria met | partial: some criteria met
+// WorkerMatch describes how well a worker matches a search.
 type WorkerMatch struct {
 	Worker          Worker   `json:"worker"`
 	Score           int      `json:"score"`
-	LineItemID      string   `json:"line_item_id"`
-	MatchTier       string   `json:"match_tier"`        // "perfect" | "good" | "partial"
-	MatchedCriteria []string `json:"matched_criteria"`  // e.g. ["profession","region","experience"]
-	MissingCriteria []string `json:"missing_criteria"`  // e.g. ["visa","language"]
+	SearchID        string   `json:"search_id"`
+	MatchTier       string   `json:"match_tier"`       // "perfect" | "good" | "partial"
+	MatchedCriteria []string `json:"matched_criteria"` // e.g. ["profession","region","experience"]
+	MissingCriteria []string `json:"missing_criteria"` // e.g. ["visa","language"]
 }
 
-type Bundle struct {
-	CorporationID  string         `json:"corporation_id"`
-	LineItems      []LineItemFill `json:"line_items"`
-	TotalScore     int            `json:"total_score"`
-	IsComplete     bool           `json:"is_complete"`
-	FillPercentage float64        `json:"fill_percentage"` // 0-100: pct of total workers filled
-	FilledWorkers  int            `json:"filled_workers"`
-	NeededWorkers  int            `json:"needed_workers"`
-}
-
-type LineItemFill struct {
-	LineItemID string        `json:"line_item_id"`
-	Profession string        `json:"profession"`
-	Needed     int           `json:"needed"`
-	Workers    []WorkerMatch `json:"workers"`
-	IsFilled   bool          `json:"is_filled"`
+// CorpMatch — for a single search, a single corporation's offer of
+// up to N workers. The matcher returns a sorted list of these per
+// search (one entry per corp that has any matching worker).
+type CorpMatch struct {
+	SearchID       string        `json:"search_id"`
+	CorporationID  string        `json:"corporation_id"`
+	Profession     string        `json:"profession"`
+	Needed         int           `json:"needed"`
+	Workers        []WorkerMatch `json:"workers"`
+	FilledWorkers  int           `json:"filled_workers"`
+	IsComplete     bool          `json:"is_complete"`     // FilledWorkers >= Needed
+	FillPercentage float64       `json:"fill_percentage"` // 0-100
+	TotalScore     int           `json:"total_score"`
 }

@@ -1,5 +1,5 @@
 from fastapi import FastAPI, HTTPException
-from app.routes import dashboard, enums, approvals, commissions, registration_log, settings, users, leads
+from app.routes import dashboard, enums, approvals, commissions, registration_log, settings, users, leads, deals, support, gov_corp_list, org_summary
 from app.db import get_db, init_db
 from app.errors import register_error_handlers
 
@@ -34,8 +34,16 @@ def readyz():
 app.include_router(dashboard.router,     prefix="/admin", tags=["dashboard"])
 app.include_router(approvals.router,     prefix="/admin", tags=["approvals"])
 app.include_router(commissions.router,   prefix="/admin", tags=["commissions"])
+app.include_router(deals.router,         prefix="/admin", tags=["deals"])
 app.include_router(settings.router,      prefix="/admin", tags=["settings"])
 app.include_router(users.router,         prefix="/admin", tags=["users"])
 app.include_router(leads.router,         prefix="/admin", tags=["leads"])
-app.include_router(enums.router,              prefix="/enums",  tags=["enums"])
+app.include_router(support.router,       prefix="/admin/support-tickets", tags=["support"])
+# Admin enum CRUD lives under /admin/enums (was /enums historically, but
+# the gateway routes /api/enums → worker service for the read-only public
+# picker endpoints, so /enums on the admin service was unreachable). The
+# admin frontend calls /api/admin/enums/origins/... for the country CRUD.
+app.include_router(enums.router,              prefix="/admin/enums", tags=["admin-enums"])
 app.include_router(registration_log.router,   prefix="",        tags=["registration-log"])
+app.include_router(gov_corp_list.router,      prefix="/admin",  tags=["gov-corp-list"])
+app.include_router(org_summary.router,        prefix="/admin",  tags=["org-summary"])

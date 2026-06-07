@@ -648,19 +648,27 @@ def get_deal_payment_status(
         conn.close()
 
 
-# ── GET /cardcom-init ─────────────────────────────────────────────────────
+# ── GET / POST /cardcom-init ──────────────────────────────────────────────
+# Two methods on the same path:
+#   GET  — legacy path; tokenization only, no invoice email captured. Kept
+#          alive to avoid breaking older clients during rollout.
+#   POST — new path; carries an optional `invoice_email` body so future
+#          captured charges send the receipt to the corp's accounting
+#          address (QA-R4 #D2). Body shape is `{ invoice_email?: string }`.
 
-@router.get("/cardcom-init")
-async def cardcom_init(
-    x_entity_id:   Optional[str] = Header(default=None),
-    x_entity_type: Optional[str] = Header(default=None),
-    x_org_id:      Optional[str] = Header(default=None),
+
+class CardcomInitBody(BaseModel):
+    invoice_email: Optional[str] = None
+
+
+async def _cardcom_init_impl(
+    entity_id: Optional[str],
+    entity_type: Optional[str],
+    org_id: Optional[str],
+    invoice_email: Optional[str],
 ):
-    """Initiate a Cardcom low-profile tokenization session (amount=1.0, tokenization only)."""
-    entity_id   = x_entity_id or x_org_id
-    entity_type = x_entity_type
-
-    if not entity_id or not entity_type:
+    eid = entity_id or org_id
+    if not eid or not entity_type:
         raise HTTPException(status_code=400, detail="Entity context required (x-entity-id, x-entity-type)")
 
     frontend_url     = os.environ.get("FRONTEND_URL", "")
@@ -668,12 +676,44 @@ async def cardcom_init(
 
     try:
         result = await create_low_profile(
-            entity_id   = f"{entity_type}:{entity_id}",
-            return_url  = frontend_url + "/corporation/settings/billing",
-            webhook_url = payment_svc_url + "/webhooks/cardcom",
-            amount      = 1.0,
+            entity_id    = f"{entity_type}:{eid}",
+            return_url   = frontend_url + "/corporation/settings/billing",
+            webhook_url  = payment_svc_url + "/webhooks/cardcom",
+            amount       = 1.0,
+            invoice_email = invoice_email,
         )
     except (CardcomApiError, CardcomNetworkError) as e:
-        raise HTTPException(status_code=502, detail=f"Cardcom error: {e}")
+        # Surface Cardcom's response code in the detail so the FE
+        # error toast carries enough signal to debug — the previous
+        # bare "Cardcom error: ..." copy meant a 401 from Cardcom was
+        # indistinguishable from a network blip (QA-R4 #D5).
+        code = getattr(e, "code", None)
+        detail = f"Cardcom error [code={code}]: {e}" if code else f"Cardcom error: {e}"
+        raise HTTPException(status_code=502, detail=detail)
 
     return {"url": result["url"], "low_profile_id": result["low_profile_id"]}
+
+
+@router.get("/cardcom-init")
+async def cardcom_init_get(
+    x_entity_id:   Optional[str] = Header(default=None),
+    x_entity_type: Optional[str] = Header(default=None),
+    x_org_id:      Optional[str] = Header(default=None),
+):
+    """Initiate a Cardcom low-profile tokenization session (amount=1.0, tokenization only)."""
+    return await _cardcom_init_impl(x_entity_id, x_entity_type, x_org_id, invoice_email=None)
+
+
+@router.post("/cardcom-init")
+async def cardcom_init_post(
+    body: CardcomInitBody,
+    x_entity_id:   Optional[str] = Header(default=None),
+    x_entity_type: Optional[str] = Header(default=None),
+    x_org_id:      Optional[str] = Header(default=None),
+):
+    """Same as GET, plus an optional `invoice_email` that propagates to
+    Cardcom's InvoiceHead so captured-charge receipts reach the corp."""
+    return await _cardcom_init_impl(
+        x_entity_id, x_entity_type, x_org_id,
+        invoice_email=(body.invoice_email or "").strip() or None,
+    )

@@ -35,7 +35,18 @@ async function startConsumer() {
     // path. The handler calls the job-match service's /internal endpoints
     // and sends SMS+email only when fill_state transitions to 'complete'.
     'worker.changed',
-    'job_request.changed',
+    'worker_search.changed',
+    // Wave 5: contractor's search returned 0 corps with workers in the
+    // requested profession. We SMS every approved corp telling them
+    // there's a contractor actively looking — turns dead-ends into
+    // recruiting moments.
+    'search.no_match',
+    // Foreign-import tenders: published → broadcast to corps; bid →
+    // nudge contractor; revealed → tell both parties identities are
+    // now visible.
+    'tender.published',
+    'tender.bid_submitted',
+    'tender.revealed',
   ];
   for (const key of keys) {
     await channel.bindQueue(queue, EXCHANGE_NAME, key);
@@ -59,3 +70,4 @@ async function startConsumer() {
 }
 
 module.exports = { startConsumer };
+// Wave 4 deploy probe — 2026-05-07T09:12:51Z

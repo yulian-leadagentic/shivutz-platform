@@ -2,7 +2,8 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { LayoutDashboard, ClipboardCheck, Handshake, Building2, LogOut, Percent, PhoneCall, Users, Inbox, Store } from 'lucide-react';
+import Logo from '@/components/Logo';
+import { Home, LayoutDashboard, ClipboardCheck, Handshake, Building2, LogOut, Percent, PhoneCall, Users, Inbox, Store, Globe2, Flag, MessageCircle, FileCheck } from 'lucide-react';
 import { clearTokens } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 import MobileNavDrawer from '@/components/layout/MobileNavDrawer';
@@ -11,10 +12,14 @@ const NAV = [
   { href: '/admin/dashboard',  label: 'לוח בקרה',      icon: LayoutDashboard },
   { href: '/admin/approvals',  label: 'אישורים',        icon: ClipboardCheck, badge: true },
   { href: '/admin/deals',      label: 'עסקאות',         icon: Handshake },
+  { href: '/admin/tenders',    label: 'בקשות ייבוא',    icon: Globe2 },
   { href: '/admin/orgs',       label: 'ארגונים',        icon: Building2 },
+  { href: '/admin/gov-corps-registry', label: 'רשימת תאגידים מורשים', icon: FileCheck },
   { href: '/admin/users',      label: 'משתמשים',        icon: Users },
   { href: '/admin/leads',      label: 'פניות ובקשות',   icon: Inbox },
-  { href: '/admin/marketplace', label: 'שוק — קטגוריות', icon: Store },
+  { href: '/admin/support',    label: 'פניות שירות לקוחות', icon: MessageCircle },
+  { href: '/admin/marketplace', label: 'שירותים נלווים — קטגוריות', icon: Store },
+  { href: '/admin/origins',          label: 'ארצות מוצא',   icon: Flag },
   { href: '/admin/commissions',      label: 'עמלות ומע״מ',  icon: Percent },
   { href: '/admin/registration-log', label: 'לוג רישומים',  icon: PhoneCall },
 ];
@@ -26,13 +31,24 @@ const NAV = [
  */
 function AdminSidebarBody({ pathname, onLogout }: { pathname: string; onLogout: () => void }) {
   return (
-    <div className="w-64 max-w-full bg-slate-900 text-white flex flex-col h-full">
-      <div className="px-6 py-5 border-b border-slate-700">
-        <span className="text-2xl font-bold text-brand-400">שיבוץ</span>
-        <span className="block text-xs text-slate-400 mt-0.5">פאנל ניהול</span>
-      </div>
+    // Light theme — matches the contractor + corp sidebars. The mobile
+    // hamburger drawer reuses this same component on phone, and the
+    // dark navy background read as heavy + inconsistent with the rest
+    // of the app on small screens.
+    <div className="w-64 max-w-full bg-white text-slate-700 flex flex-col h-full border-s border-slate-200 shadow-sm">
+      <Link href="/" className="block px-6 py-4 border-b border-slate-200 hover:bg-slate-50 transition-colors">
+        <Logo size="sm" variant="on-light" decorative />
+        <span className="block text-xs text-slate-400 mt-1.5">פאנל ניהול</span>
+      </Link>
 
       <nav className="flex-1 py-4 space-y-1 px-3 overflow-y-auto">
+        <Link
+          href="/"
+          className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors"
+        >
+          <Home className="h-4 w-4 shrink-0" />
+          דף הבית
+        </Link>
         {NAV.map(({ href, label, icon: Icon }) => (
           <Link
             key={href}
@@ -40,8 +56,8 @@ function AdminSidebarBody({ pathname, onLogout }: { pathname: string; onLogout: 
             className={cn(
               'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
               pathname.startsWith(href)
-                ? 'bg-brand-600 text-white'
-                : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                ? 'bg-brand-50 text-brand-700'
+                : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
             )}
           >
             <Icon className="h-4 w-4 shrink-0" />
@@ -50,10 +66,10 @@ function AdminSidebarBody({ pathname, onLogout }: { pathname: string; onLogout: 
         ))}
       </nav>
 
-      <div className="p-3 border-t border-slate-700">
+      <div className="p-3 border-t border-slate-200">
         <button
           onClick={onLogout}
-          className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm text-slate-400 hover:bg-slate-800 hover:text-white transition-colors"
+          className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm text-slate-600 hover:bg-red-50 hover:text-red-600 transition-colors"
         >
           <LogOut className="h-4 w-4 shrink-0" />
           יציאה

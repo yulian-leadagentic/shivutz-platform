@@ -20,9 +20,13 @@ WORKER_URL   = os.getenv("WORKER_SERVICE_URL",   "http://worker:3003")
 class DealCreate(BaseModel):
     """Inquiry sent by contractor to corp. The corp side commits the worker
     list later via POST /deals/{id}/commit. No price field — commission is
-    applied at corp-commit time as accepted_count × system_settings rate."""
-    job_request_id: Optional[str] = None
-    request_line_item_id: Optional[str] = None
+    applied at corp-commit time as accepted_count × system_settings rate.
+
+    Wave 3 (2026-05-06): the project umbrella was dropped — `search_id`
+    points directly at job_db.worker_searches. The legacy
+    `request_line_item_id` field is accepted as an alias for one release."""
+    search_id: Optional[str] = None
+    request_line_item_id: Optional[str] = None  # legacy alias — to be removed
     contractor_id: Optional[str] = None
     corporation_id: str
     proposed_by: Optional[str] = None
@@ -92,7 +96,7 @@ def _read_setting_int(conn, key: str, default: int) -> int:
 
 def _enrich_event_payload(deal_id: str, contractor_id: str, corporation_id: str,
                           worker_count: Optional[int] = None,
-                          line_item_id: Optional[str] = None) -> dict:
+                          search_id: Optional[str] = None) -> dict:
     """Pull party contact info + profession/region context so the notification
     consumer can route emails/SMS to the right recipients without extra
     round-trips. Best-effort — empty values fall through gracefully."""
@@ -128,25 +132,24 @@ def _enrich_event_payload(deal_id: str, contractor_id: str, corporation_id: str,
             "corp_contact_phone":       p.get("contact_phone") or "",
             "corp_name":                p.get("company_name_he") or "",
         })
-        # profession_he/region_he: best-effort lookup via the line item.
+        # profession_he/region_he: best-effort lookup via the search row.
         # Cross-service join is fragile; we skip it on any error and the
         # template falls back to a generic phrasing.
-        if line_item_id:
+        if search_id:
             try:
                 cur.execute(
-                    "SELECT li.profession_type, li.quantity, "
-                    "       COALESCE(pt.name_he, li.profession_type) AS prof_he, "
-                    "       jr.region "
-                    "FROM job_db.job_request_line_items li "
-                    "LEFT JOIN job_db.job_requests jr ON jr.id = li.request_id "
-                    "LEFT JOIN worker_db.profession_types pt ON pt.code = li.profession_type "
-                    "WHERE li.id=%s",
-                    (line_item_id,),
+                    "SELECT ws.profession_type, ws.quantity, "
+                    "       COALESCE(pt.name_he, ws.profession_type) AS prof_he, "
+                    "       ws.region "
+                    "FROM job_db.worker_searches ws "
+                    "LEFT JOIN worker_db.profession_types pt ON pt.code = ws.profession_type "
+                    "WHERE ws.id=%s",
+                    (search_id,),
                 )
-                li = cur.fetchone() or {}
-                out["profession_he"]   = li.get("prof_he") or ""
-                out["region_he"]       = li.get("region")  or ""
-                out["requested_count"] = int(li.get("quantity") or 0)
+                ws = cur.fetchone() or {}
+                out["profession_he"]   = ws.get("prof_he") or ""
+                out["region_he"]       = ws.get("region")  or ""
+                out["requested_count"] = int(ws.get("quantity") or 0)
             except Exception:
                 out["profession_he"]   = ""
                 out["region_he"]       = ""
@@ -227,14 +230,13 @@ def list_deals(
             f"""SELECT d.*,
                        (SELECT COUNT(*) FROM deal_workers dw
                         WHERE dw.deal_id=d.id AND dw.removed_at IS NULL) AS worker_count,
-                       li.profession_type,
-                       li.quantity AS requested_count,
-                       COALESCE(pt.name_he, li.profession_type) AS profession_he,
-                       jr.region AS region_he
+                       ws.profession_type,
+                       ws.quantity AS requested_count,
+                       COALESCE(pt.name_he, ws.profession_type) AS profession_he,
+                       ws.region AS region_he
                 FROM deals d
-                LEFT JOIN job_db.job_request_line_items li ON li.id = d.request_line_item_id
-                LEFT JOIN job_db.job_requests jr           ON jr.id = li.request_id
-                LEFT JOIN worker_db.profession_types pt       ON pt.code = li.profession_type
+                LEFT JOIN job_db.worker_searches ws       ON ws.id = d.search_id
+                LEFT JOIN worker_db.profession_types pt   ON pt.code = ws.profession_type
                 WHERE {where}
                 ORDER BY d.created_at DESC
                 LIMIT %s OFFSET %s""",
@@ -289,19 +291,9 @@ async def create_deal(
     if x_user_role == "contractor" and contractor_id:
         _require_contractor_tier_2(contractor_id)
 
-    # Resolve line_item_id — call job-match service if only job_request_id provided
-    line_item_id = data.request_line_item_id
-    if not line_item_id and data.job_request_id:
-        try:
-            async with httpx.AsyncClient(timeout=3.0) as client:
-                resp = await client.get(f"{JOB_MATCH_URL}/job-requests/{data.job_request_id}")
-                if resp.status_code == 200:
-                    jr = resp.json()
-                    items = jr.get("line_items", [])
-                    if items:
-                        line_item_id = items[0]["id"]
-        except Exception:
-            pass  # proceed without line_item_id
+    # Wave 3: search_id directly references job_db.worker_searches.
+    # Accept the legacy field name as a fallback for one release.
+    search_id = data.search_id or data.request_line_item_id
 
     deal_id = str(uuid.uuid4())
     conn = get_db()
@@ -309,9 +301,9 @@ async def create_deal(
         cur = conn.cursor()
         cur.execute(
             """INSERT INTO deals
-               (id, request_line_item_id, contractor_id, corporation_id, proposed_by, notes)
+               (id, search_id, contractor_id, corporation_id, proposed_by, notes)
                VALUES (%s,%s,%s,%s,%s,%s)""",
-            (deal_id, line_item_id, contractor_id, data.corporation_id,
+            (deal_id, search_id, contractor_id, data.corporation_id,
              proposed_by, data.notes)
         )
         conn.commit()
@@ -326,6 +318,90 @@ async def create_deal(
         })
 
         return {"id": deal_id, "status": "proposed"}
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+
+# ── POST /deals/from-search/{search_id} — corp-initiated proposal ──────────
+#
+# Corp browses /corporation/requests and clicks "השב לדרישה" on a search
+# it wasn't auto-matched to. We create (or reuse) a 'proposed' deal row
+# for (this corp, this search) and return the deal_id so the FE can
+# navigate straight into the existing /corporation/deals/{id} allocation
+# flow. The contractor_id is resolved from the search itself — the corp
+# never sees it on the browse surface (anonymized "קבלן N").
+#
+# Idempotent: if a deal already exists for this (corp, search), we
+# return it instead of creating a duplicate.
+@router.post("/from-search/{search_id}", status_code=201)
+async def create_deal_from_search(
+    search_id: str,
+    x_org_id: Optional[str] = Header(default=None),
+    x_user_id: Optional[str] = Header(default=None),
+    x_user_role: Optional[str] = Header(default=None),
+):
+    if x_user_role not in ("corporation", "admin"):
+        raise HTTPException(status_code=403, detail="corp_only")
+    if not x_org_id:
+        raise HTTPException(status_code=400, detail="entity_context_required")
+
+    corporation_id = x_org_id
+    proposed_by    = x_user_id or "unknown"
+
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+
+        # Idempotency — reuse existing deal if one exists for this (corp, search).
+        cur.execute(
+            """SELECT id, status FROM deals
+               WHERE search_id=%s AND corporation_id=%s AND deleted_at IS NULL
+               LIMIT 1""",
+            (search_id, corporation_id),
+        )
+        existing = cur.fetchone()
+        if existing:
+            return {"id": existing["id"], "status": existing["status"], "reused": True}
+
+        # Resolve contractor_id from the search (cross-db query to job_db).
+        cur.execute(
+            "SELECT contractor_id, status FROM job_db.worker_searches WHERE id=%s",
+            (search_id,),
+        )
+        srow = cur.fetchone()
+        if not srow:
+            raise HTTPException(status_code=404, detail="search_not_found")
+        if srow["status"] not in ("open", "partially_matched"):
+            raise HTTPException(status_code=409, detail="search_not_active")
+        contractor_id = srow["contractor_id"]
+
+        deal_id = str(uuid.uuid4())
+        cur.execute(
+            """INSERT INTO deals
+               (id, search_id, contractor_id, corporation_id, proposed_by, notes)
+               VALUES (%s,%s,%s,%s,%s,%s)""",
+            (deal_id, search_id, contractor_id, corporation_id, proposed_by, None),
+        )
+        conn.commit()
+
+        audit.log("deal", deal_id, "created_from_browse", proposed_by,
+                  new_value={"contractor_id": contractor_id,
+                             "corporation_id": corporation_id,
+                             "search_id": search_id})
+
+        await publish_event("deal.proposed", {
+            "deal_id": deal_id,
+            "contractor_id": contractor_id,
+            "corporation_id": corporation_id,
+            "corp_initiated": True,
+        })
+
+        return {"id": deal_id, "status": "proposed", "reused": False}
+    except HTTPException:
+        raise
     except Exception as e:
         conn.rollback()
         raise HTTPException(status_code=500, detail=str(e))
@@ -385,7 +461,7 @@ async def commit_deal(
         # Compute commission snapshot — per-contractor rate, fallback to system default.
         rate = _fetch_commission_rate(conn, contractor_id=deal["contractor_id"])
         commission_amount = rate * len(body.worker_ids)
-        approval_hours = _read_setting_int(conn, "approval_deadline_hours", 168)
+        approval_hours = _read_setting_int(conn, "approval_deadline_hours", 24)
 
         now = datetime.utcnow()
         expires_at = now + timedelta(hours=approval_hours)
@@ -439,7 +515,7 @@ async def commit_deal(
 
         payload = _enrich_event_payload(
             deal_id, deal["contractor_id"], deal["corporation_id"],
-            worker_count=len(body.worker_ids), line_item_id=deal.get("request_line_item_id"),
+            worker_count=len(body.worker_ids), search_id=deal.get("search_id"),
         )
         payload.update({
             "commission_amount": float(commission_amount),
@@ -506,7 +582,7 @@ async def approve_deal(
         wc = int((cur.fetchone() or {}).get("c") or 0)
         payload = _enrich_event_payload(
             deal_id, deal["contractor_id"], deal["corporation_id"],
-            worker_count=wc, line_item_id=deal.get("request_line_item_id"),
+            worker_count=wc, search_id=deal.get("search_id"),
         )
         payload.update({
             "commission_amount":   float(deal["commission_amount"] or 0),
@@ -578,7 +654,7 @@ async def reject_deal(
         wc = int((cur.fetchone() or {}).get("c") or 0)
         payload = _enrich_event_payload(
             deal_id, deal["contractor_id"], deal["corporation_id"],
-            worker_count=wc, line_item_id=deal.get("request_line_item_id"),
+            worker_count=wc, search_id=deal.get("search_id"),
         )
         payload.update({
             "commission_amount": float(deal["commission_amount"] or 0),
@@ -586,6 +662,93 @@ async def reject_deal(
         })
         await publish_event("deal.rejected", payload)
         return {"id": deal_id, "status": "rejected"}
+    except HTTPException:
+        raise
+    finally:
+        conn.close()
+
+
+@router.post("/{deal_id}/contractor-cancel")
+async def contractor_cancel_deal(
+    deal_id: str,
+    body: CancelRequest,
+    x_org_id: Optional[str] = Header(default=None),
+    x_user_id: Optional[str] = Header(default=None),
+    x_user_role: Optional[str] = Header(default=None),
+):
+    """Contractor withdraws an in-flight deal.
+
+    Used by the "סגור שאר ההצעות" action on the deals page: when one
+    corp has fulfilled the full requested quantity, the other corps'
+    bids become irrelevant and the contractor should be able to
+    retract them in one click.
+
+    Allowed source states:
+      * proposed / counter_proposed — corp hasn't responded yet,
+        so nothing to unlock / void.
+      * corp_committed             — corp committed workers; we
+        also unlock those workers + void the payment hold, just
+        like reject does.
+
+    Anything else (already accepted, closed, cancelled, expired,
+    rejected) is rejected with 409 wrong_state — those deals are
+    either done or already terminal-negative.
+    """
+    if x_user_role not in ("contractor", "admin"):
+        raise HTTPException(status_code=403, detail="contractor_only")
+
+    cancellable_states = {"proposed", "counter_proposed", "corp_committed"}
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM deals WHERE id=%s AND deleted_at IS NULL", (deal_id,))
+        deal = cur.fetchone()
+        if not deal:
+            raise HTTPException(status_code=404, detail="deal_not_found")
+        if x_user_role != "admin" and deal["contractor_id"] != x_org_id:
+            raise HTTPException(status_code=403, detail="not_your_deal")
+        if deal["status"] not in cancellable_states:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "wrong_state", "current": deal["status"]},
+            )
+
+        now    = datetime.utcnow()
+        reason = (body.reason or "").strip() or "התקבלה הצעה אחרת"
+        had_workers = deal["status"] == "corp_committed"
+
+        if had_workers:
+            _unlock_workers(cur, deal_id)
+        cur.execute(
+            """UPDATE deals
+                  SET status='cancelled_by_contractor',
+                      cancelled_at=%s,
+                      cancelled_by='contractor',
+                      cancellation_reason=%s,
+                      expires_at=NULL,
+                      scheduled_capture_at=NULL
+                WHERE id=%s""",
+            (now, reason, deal_id),
+        )
+        conn.commit()
+        audit.log(
+            "deal", deal_id, "contractor_cancelled", x_user_id or "unknown",
+            new_value={"reason": reason, "from_status": deal["status"]},
+        )
+        if had_workers:
+            await _void_payment_hold(deal_id)
+
+        payload = _enrich_event_payload(
+            deal_id, deal["contractor_id"], deal["corporation_id"],
+            search_id=deal.get("search_id"),
+        )
+        payload.update({
+            "cancellation_reason": reason,
+            "cancelled_at":        now.isoformat() + "Z",
+            "from_status":         deal["status"],
+        })
+        await publish_event("deal.contractor_cancelled", payload)
+        return {"id": deal_id, "status": "cancelled_by_contractor"}
     except HTTPException:
         raise
     finally:
@@ -644,7 +807,7 @@ async def cancel_deal(
         wc = int((cur.fetchone() or {}).get("c") or 0)
         payload = _enrich_event_payload(
             deal_id, deal["contractor_id"], deal["corporation_id"],
-            worker_count=wc, line_item_id=deal.get("request_line_item_id"),
+            worker_count=wc, search_id=deal.get("search_id"),
         )
         payload.update({
             "commission_amount":   float(deal["commission_amount"] or 0),
@@ -653,6 +816,125 @@ async def cancel_deal(
         })
         await publish_event("deal.cancelled_by_corp", payload)
         return {"id": deal_id, "status": "cancelled_by_corp"}
+    except HTTPException:
+        raise
+    finally:
+        conn.close()
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Contractor-side close-the-loop endpoints
+# After the contractor "approves" (= reveals corp details), they
+# coordinate with the corp off-platform. Once that's done, they come
+# back and tell us whether the deal actually closed — those two
+# outcomes go through these two endpoints.
+# ─────────────────────────────────────────────────────────────────────
+
+@router.post("/{deal_id}/contractor-confirm-closed")
+async def contractor_confirm_closed(
+    deal_id: str,
+    x_org_id: Optional[str] = Header(default=None),
+    x_user_id: Optional[str] = Header(default=None),
+    x_user_role: Optional[str] = Header(default=None),
+):
+    """Contractor confirms: yes, the deal actually closed. Status
+    advances to 'closed' (commission stays scheduled / captured per
+    the existing capture cron)."""
+    if x_user_role not in ("contractor", "admin"):
+        raise HTTPException(status_code=403, detail="contractor_only")
+
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM deals WHERE id=%s AND deleted_at IS NULL", (deal_id,))
+        deal = cur.fetchone()
+        if not deal:
+            raise HTTPException(status_code=404, detail="deal_not_found")
+        if x_user_role != "admin" and deal["contractor_id"] != x_org_id:
+            raise HTTPException(status_code=403, detail="not_your_deal")
+        if deal["status"] != "approved":
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "wrong_state", "current": deal["status"],
+                        "message": "ניתן לאשר סגירת עסקה רק במצב 'אושר'"},
+            )
+        now = datetime.utcnow()
+        cur.execute(
+            "UPDATE deals SET status='closed', closed_at=%s WHERE id=%s",
+            (now, deal_id),
+        )
+        conn.commit()
+        audit.log("deal", deal_id, "contractor_confirmed_closed", x_user_id or "unknown")
+        payload = _enrich_event_payload(
+            deal_id, deal["contractor_id"], deal["corporation_id"],
+            search_id=deal.get("search_id"),
+        )
+        await publish_event("deal.contractor_confirmed_closed", payload)
+        return {"id": deal_id, "status": "closed"}
+    except HTTPException:
+        raise
+    finally:
+        conn.close()
+
+
+class ContractorDeclineCloseRequest(BaseModel):
+    reason: Optional[str] = None
+
+
+@router.post("/{deal_id}/contractor-decline-closed")
+async def contractor_decline_closed(
+    deal_id: str,
+    body: ContractorDeclineCloseRequest,
+    x_org_id: Optional[str] = Header(default=None),
+    x_user_id: Optional[str] = Header(default=None),
+    x_user_role: Optional[str] = Header(default=None),
+):
+    """Contractor declines: the deal did NOT close. Reason text is
+    captured to the audit log and the cancellation_reason column.
+    Status advances to 'cancelled_by_contractor' and the J5 hold is
+    voided (no commission charged)."""
+    if x_user_role not in ("contractor", "admin"):
+        raise HTTPException(status_code=403, detail="contractor_only")
+
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM deals WHERE id=%s AND deleted_at IS NULL", (deal_id,))
+        deal = cur.fetchone()
+        if not deal:
+            raise HTTPException(status_code=404, detail="deal_not_found")
+        if x_user_role != "admin" and deal["contractor_id"] != x_org_id:
+            raise HTTPException(status_code=403, detail="not_your_deal")
+        if deal["status"] != "approved":
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "wrong_state", "current": deal["status"],
+                        "message": "ניתן לציין שעסקה לא נסגרה רק במצב 'אושר'"},
+            )
+        now = datetime.utcnow()
+        reason = (body.reason or '').strip() or None
+        _unlock_workers(cur, deal_id)
+        cur.execute(
+            """UPDATE deals
+               SET status='cancelled_by_contractor',
+                   cancelled_at=%s,
+                   cancelled_by='contractor',
+                   cancellation_reason=%s,
+                   scheduled_capture_at=NULL
+               WHERE id=%s""",
+            (now, reason, deal_id),
+        )
+        conn.commit()
+        audit.log("deal", deal_id, "contractor_declined_closed", x_user_id or "unknown",
+                  new_value={"reason": reason or ""})
+        await _void_payment_hold(deal_id)
+        payload = _enrich_event_payload(
+            deal_id, deal["contractor_id"], deal["corporation_id"],
+            search_id=deal.get("search_id"),
+        )
+        payload.update({"cancellation_reason": reason or ""})
+        await publish_event("deal.contractor_declined_closed", payload)
+        return {"id": deal_id, "status": "cancelled_by_contractor"}
     except HTTPException:
         raise
     finally:
@@ -740,7 +1022,7 @@ async def replace_worker(
         # capture is cancelled if it was scheduled.
         new_status = deal["status"]
         if material and deal["status"] == "approved":
-            approval_hours = _read_setting_int(conn, "approval_deadline_hours", 168)
+            approval_hours = _read_setting_int(conn, "approval_deadline_hours", 24)
             new_expires_at = datetime.utcnow() + timedelta(hours=approval_hours)
             cur.execute(
                 """UPDATE deals
@@ -774,7 +1056,7 @@ async def cron_expire_pending():
         cur = conn.cursor()
         cur.execute(
             """SELECT d.id, d.contractor_id, d.corporation_id, d.commission_amount,
-                      d.request_line_item_id,
+                      d.search_id,
                       (SELECT COUNT(*) FROM deal_workers dw WHERE dw.deal_id=d.id) AS worker_count
                FROM deals d
                WHERE d.status='corp_committed' AND d.expires_at <= NOW()
@@ -801,7 +1083,7 @@ async def cron_expire_pending():
         payload = _enrich_event_payload(
             d["id"], d["contractor_id"], d["corporation_id"],
             worker_count=int(d.get("worker_count") or 0),
-            line_item_id=d.get("request_line_item_id"),
+            search_id=d.get("search_id"),
         )
         payload["commission_amount"] = float(d["commission_amount"] or 0)
         await publish_event("deal.expired", payload)
@@ -817,7 +1099,7 @@ async def cron_capture_due():
         cur = conn.cursor()
         cur.execute(
             """SELECT d.id, d.contractor_id, d.corporation_id, d.commission_amount,
-                      d.request_line_item_id,
+                      d.search_id,
                       (SELECT COUNT(*) FROM deal_workers dw WHERE dw.deal_id=d.id) AS worker_count
                FROM deals d
                WHERE d.status='approved' AND d.scheduled_capture_at <= NOW()
@@ -855,11 +1137,48 @@ async def cron_capture_due():
         payload = _enrich_event_payload(
             d["id"], d["contractor_id"], d["corporation_id"],
             worker_count=int(d.get("worker_count") or 0),
-            line_item_id=d.get("request_line_item_id"),
+            search_id=d.get("search_id"),
         )
         payload["commission_amount"] = float(d["commission_amount"] or 0)
         await publish_event("deal.closed", payload)
     return {"captured": captured, "failed": failed}
+
+
+@router.get("/internal/contractor-approval-reminder-targets")
+async def cron_contractor_reminder_targets():
+    """Return one row per contractor that has corp_committed deals
+    older than 24h waiting for their approval. Called daily by the
+    notification service to fan out SMS reminders.
+
+    Cross-DB join to org_db.contractors so we get the contact phone
+    in a single query (mysql user is root locally; on Railway both
+    DBs live on the same plugin so the join is cheap).
+    """
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT
+              c.id              AS contractor_id,
+              c.contact_phone   AS contact_phone,
+              c.contact_name    AS contact_name,
+              c.company_name_he AS company_name_he,
+              COUNT(DISTINCT d.id)        AS pending_count,
+              COUNT(DISTINCT d.search_id) AS request_count
+            FROM deal_db.deals d
+            JOIN org_db.contractors c ON c.id = d.contractor_id
+            WHERE d.status = 'corp_committed'
+              AND d.deleted_at IS NULL
+              AND TIMESTAMPDIFF(HOUR, d.corp_committed_at, NOW()) >= 24
+              AND c.contact_phone IS NOT NULL
+              AND c.deleted_at IS NULL
+            GROUP BY c.id, c.contact_phone, c.contact_name, c.company_name_he
+            """
+        )
+        return {"targets": cur.fetchall()}
+    finally:
+        conn.close()
 
 
 @router.post("/internal/admin-nudge")
@@ -872,7 +1191,7 @@ async def cron_admin_nudge():
         nudge_after = _read_setting_int(conn, "admin_nudge_after_hours", 24)
         cur.execute(
             """SELECT d.id, d.contractor_id, d.corporation_id, d.commission_amount,
-                      d.corp_committed_at, d.expires_at, d.request_line_item_id,
+                      d.corp_committed_at, d.expires_at, d.search_id,
                       TIMESTAMPDIFF(HOUR, d.corp_committed_at, NOW()) AS hours_pending,
                       (SELECT COUNT(*) FROM deal_workers dw WHERE dw.deal_id=d.id) AS worker_count
                FROM deals d
@@ -889,7 +1208,7 @@ async def cron_admin_nudge():
         payload = _enrich_event_payload(
             d["id"], d["contractor_id"], d["corporation_id"],
             worker_count=int(d.get("worker_count") or 0),
-            line_item_id=d.get("request_line_item_id"),
+            search_id=d.get("search_id"),
         )
         payload.update({
             "commission_amount": float(d["commission_amount"] or 0),
@@ -898,6 +1217,134 @@ async def cron_admin_nudge():
         })
         await publish_event("deal.pending_admin_nudge", payload)
     return {"nudged": len(rows)}
+
+
+@router.get("/internal/corp-response-overdue")
+async def cron_corp_response_overdue():
+    """Cron target: deals in 'proposed' state past the corp-response
+    deadline whose admin notification hasn't yet fired.
+
+    The corp has `corp_response_hours` hours from the deal's
+    created_at to commit workers (commit_deal transitions the deal
+    to 'corp_committed'). If they don't, admin gets notified once
+    per deal. Late commits are still allowed — the notification
+    is informational, not blocking.
+
+    Returns the deal payload + admin recipients so the cron in the
+    notification service can compose the SMS and the admin
+    dashboard can render the in-app banner.
+    """
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        hours = _read_setting_int(conn, "corp_response_hours", 48)
+        cur.execute(
+            f"""SELECT d.id, d.contractor_id, d.corporation_id, d.search_id,
+                       d.created_at, d.proposed_admin_notified_at,
+                       TIMESTAMPDIFF(HOUR, d.created_at, NOW()) AS hours_past_deadline_total
+                  FROM deals d
+                 WHERE d.status = 'proposed'
+                   AND d.deleted_at IS NULL
+                   AND d.proposed_admin_notified_at IS NULL
+                   AND d.created_at + INTERVAL {int(hours)} HOUR <= NOW()""",
+        )
+        deals = cur.fetchall()
+        # Admin recipients — phones only (a row with NULL phone is skipped).
+        cur.execute(
+            "SELECT id, phone FROM auth_db.users WHERE role='admin' AND phone IS NOT NULL"
+        )
+        admins = cur.fetchall()
+        return {
+            "hours": hours,
+            "deals": [
+                {
+                    "id":            d["id"],
+                    "contractor_id": d["contractor_id"],
+                    "corporation_id": d["corporation_id"],
+                    "search_id":     d["search_id"],
+                    "created_at":    d["created_at"].isoformat() + "Z" if d["created_at"] else None,
+                    "hours_past":    int(d["hours_past_deadline_total"] or 0) - hours,
+                }
+                for d in deals
+            ],
+            "admins": admins,
+        }
+    finally:
+        conn.close()
+
+
+@router.post("/internal/corp-response-overdue/{deal_id}/mark-notified")
+async def cron_corp_response_overdue_mark(deal_id: str):
+    """Idempotency latch — sets proposed_admin_notified_at so the
+    cron doesn't re-fire the SMS / banner for this deal."""
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """UPDATE deals
+                  SET proposed_admin_notified_at = NOW()
+                WHERE id = %s
+                  AND proposed_admin_notified_at IS NULL""",
+            (deal_id,),
+        )
+        conn.commit()
+        return {"id": deal_id, "rows_affected": cur.rowcount}
+    finally:
+        conn.close()
+
+
+@router.get("/internal/corp-response-overdue/count")
+async def admin_overdue_count():
+    """Lightweight count for the admin dashboard banner — total
+    proposed deals past the corp-response deadline (notified or
+    not). Used by the admin banner to decide whether to render."""
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        hours = _read_setting_int(conn, "corp_response_hours", 48)
+        cur.execute(
+            f"""SELECT COUNT(*) AS n
+                  FROM deals d
+                 WHERE d.status = 'proposed'
+                   AND d.deleted_at IS NULL
+                   AND d.created_at + INTERVAL {int(hours)} HOUR <= NOW()""",
+        )
+        return {"count": int(cur.fetchone()["n"]), "hours": hours}
+    finally:
+        conn.close()
+
+
+@router.get("/internal/by-search/{search_id}")
+async def internal_deals_by_search(search_id: str):
+    """List existing (deal_id, corporation_id, status) tuples for a
+    given search_id. Internal-only — used by the notification
+    consumer's rematch flow to skip corps that already have a deal
+    before creating new ones.
+
+    No auth header gating: lives under /internal/* alongside the
+    overdue endpoints, which run from the same trust boundary
+    (notification consumer, cron, admin dashboard counter).
+    """
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT id, corporation_id, status
+                  FROM deals
+                 WHERE search_id = %s
+                   AND deleted_at IS NULL""",
+            (search_id,),
+        )
+        return [
+            {
+                "deal_id": r["id"],
+                "corporation_id": r["corporation_id"],
+                "status": r["status"],
+            }
+            for r in cur.fetchall()
+        ]
+    finally:
+        conn.close()
 
 
 @router.get("/{deal_id}/workers")
@@ -996,14 +1443,13 @@ def get_deal(
             """SELECT d.*,
                       (SELECT COUNT(*) FROM deal_workers dw
                        WHERE dw.deal_id=d.id AND dw.removed_at IS NULL) AS worker_count,
-                      li.profession_type,
-                      li.quantity AS requested_count,
-                      COALESCE(pt.name_he, li.profession_type) AS profession_he,
-                      jr.region AS region_he
+                      ws.profession_type,
+                      ws.quantity AS requested_count,
+                      COALESCE(pt.name_he, ws.profession_type) AS profession_he,
+                      ws.region AS region_he
                FROM deals d
-               LEFT JOIN job_db.job_request_line_items li ON li.id = d.request_line_item_id
-               LEFT JOIN job_db.job_requests jr           ON jr.id = li.request_id
-               LEFT JOIN worker_db.profession_types pt       ON pt.code = li.profession_type
+               LEFT JOIN job_db.worker_searches ws       ON ws.id = d.search_id
+               LEFT JOIN worker_db.profession_types pt   ON pt.code = ws.profession_type
                WHERE d.id=%s AND d.deleted_at IS NULL""",
             (deal_id,),
         )
@@ -1041,3 +1487,4 @@ def list_corporation_deals(corporation_id: str):
         return cur.fetchall()
     finally:
         conn.close()
+# Wave 4 deploy probe — 2026-05-07T09:12:51Z

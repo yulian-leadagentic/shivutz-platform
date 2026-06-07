@@ -1,8 +1,9 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import { Loader2, FileSpreadsheet, Download, Upload } from 'lucide-react';
+import { Loader2, FileSpreadsheet, Download, Upload, RotateCcw, AlertTriangle } from 'lucide-react';
 import { workerApi } from '@/lib/api';
+import { useAuth } from '@/lib/AuthContext';
 import type { Profession } from '@/types';
 import { Button } from '@/components/ui/button';
 import type { Origin, Region } from '../types';
@@ -23,6 +24,16 @@ interface Props {
 export function ExcelUploadSection({
   professions, origins, regions, onDone, onToast,
 }: Props) {
+  // Active corp from the JWT. We pass this explicitly on every
+  // worker.create() so the worker service doesn't fall back to the
+  // gateway's `x-org-id` projection — which on staging projected the
+  // legacy `users.org_id` (a CONTRACTOR id, from Yulian's first
+  // signup) when the user was logged in without a corporation entity
+  // context (e.g. admin-tile login). Worker create then failed with
+  // "corporation_not_found" trying to look up a contractor id in
+  // the corporations table.
+  const { entityId, entityType } = useAuth();
+  const corporationId = entityType === 'corporation' ? entityId : null;
   const fileRef = useRef<HTMLInputElement>(null);
   const [rows, setRows]           = useState<ExcelRow[]>([]);
   const [fileName, setFileName]   = useState('');
@@ -31,6 +42,20 @@ export function ExcelUploadSection({
 
   const validRows   = rows.filter(r => r._valid);
   const invalidRows = rows.filter(r => !r._valid);
+
+  /**
+   * Reset to a clean upload state — clears the parsed rows, the
+   * remembered filename, any error message, AND the underlying
+   * <input type="file"> value so the user can re-pick the same file
+   * if they want to. Called by the "טעינה חדשה" button below the
+   * preview table.
+   */
+  function resetUpload() {
+    setRows([]);
+    setFileName('');
+    setError('');
+    if (fileRef.current) fileRef.current.value = '';
+  }
 
   function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -56,11 +81,16 @@ export function ExcelUploadSection({
 
   async function handleImport() {
     if (!validRows.length) return;
+    if (!corporationId) {
+      setError('כדי לייבא עובדים יש להיכנס בתוך חשבון תאגיד. עבור ללוח החשבון שלך ובחר את התאגיד.');
+      return;
+    }
     setUploading(true); setError('');
     let created = 0;
     try {
       for (const row of validRows) {
         await workerApi.create({
+          corporation_id:   corporationId,
           first_name:       row.first_name,
           last_name:        row.last_name,
           profession_type:  row.profession_type,
@@ -158,20 +188,46 @@ export function ExcelUploadSection({
         </div>
       )}
 
+      {!corporationId && (
+        <div className="flex items-start gap-2 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2.5">
+          <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+          <span>
+            יבוא עובדים זמין רק כשמחוברים בתוך חשבון תאגיד. אם יש לך מספר חשבונות —
+            פתח את התפריט בפינה ובחר את התאגיד שלך, ונסה שוב.
+          </span>
+        </div>
+      )}
+
       {error && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">{error}</p>}
 
-      <div className="flex gap-3">
+      <div className="flex flex-wrap gap-3">
         <Button
           type="button"
-          disabled={uploading || validRows.length === 0}
+          disabled={uploading || validRows.length === 0 || !corporationId}
           onClick={handleImport}
-          className="flex-1"
+          className="flex-1 min-w-[180px]"
         >
           {uploading
             ? <><Loader2 className="h-4 w-4 animate-spin" /> מייבא...</>
             : <><FileSpreadsheet className="h-4 w-4" /> ייבא {validRows.length > 0 ? validRows.length : ''} עובדים</>}
         </Button>
-        <Button type="button" variant="outline" onClick={onDone}>ביטול</Button>
+        {/* Reset — clears the loaded rows + the file picker so the
+            user can switch to a different file (e.g. after fixing
+            errors in their spreadsheet) without first cancelling out
+            and reopening the import flow. */}
+        {rows.length > 0 && (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={resetUpload}
+            disabled={uploading}
+            title="נקה את הקובץ הנוכחי וטען קובץ חדש"
+          >
+            <RotateCcw className="h-4 w-4" />
+            טעינה חדשה
+          </Button>
+        )}
+        <Button type="button" variant="outline" onClick={onDone} disabled={uploading}>ביטול</Button>
       </div>
     </div>
   );

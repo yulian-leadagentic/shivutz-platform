@@ -52,4 +52,17 @@ export const orgApi = {
         body: JSON.stringify({ channel, secret }),
       },
     ),
+
+  /** Backfill flow — existing contractors submit their kablan_number
+   *  here to prove ownership. Match → bumped to tier_2. Mismatch (or
+   *  registry unreachable) → row stays pending, response carries the
+   *  reason so the UI can show 'we'll review' vs 'try again'. */
+  verifyKablan: (contractor_id: string, kablan_number: string) =>
+    apiFetch<{ ok: true; matched: boolean; tier?: string; reason?: string }>(
+      `/organizations/contractors/${contractor_id}/verify-kablan`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ kablan_number }),
+      },
+    ),
 };

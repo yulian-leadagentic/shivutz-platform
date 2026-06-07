@@ -8,6 +8,8 @@ import {
   BadgeCheck, CircleAlert, UserCheck, CreditCard, ShieldCheck,
 } from 'lucide-react';
 import { dealApi, workerApi, paymentApi } from '@/lib/api';
+import { orgApi } from '@/lib/api/organizations';
+import { dealRef } from '@/lib/utils';
 import { useEnums } from '@/features/enums/EnumsContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -22,6 +24,7 @@ import {
   CommitEngagementModal, consumePendingLowProfile,
 } from '@/features/payment/CommitEngagementModal';
 import { GraceBadge } from '@/features/payment/GraceBadge';
+import { CapturedBadge } from '@/features/payment/CapturedBadge';
 
 function expLabel(w: Worker) {
   return EXP_LABELS[w.experience_range ?? ''] ?? (w.experience_years ? `${w.experience_years} שנים` : '—');
@@ -282,8 +285,25 @@ function CorporationDealPageInner() {
   const searchParams  = useSearchParams();
 
   const [deal, setDeal]         = useState<Deal | null>(null);
+  // R15 — contractor identity, fetched only after the deal hits a state
+  // where the contractor has approved (accepted / active / reporting /
+  // completed). Before that the corp sees an anonymous "the contractor"
+  // and only the request meta (profession, region, quantity).
+  const [contractor, setContractor] = useState<{
+    company_name_he?: string | null;
+    company_name?: string | null;
+    contact_name?: string | null;
+    contact_phone?: string | null;
+  } | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [allWorkers, setAllWorkers] = useState<Worker[]>([]);
+  // Workers actually attached to this deal (from /deals/{id}/workers).
+  // Used to render the post-commit "עובדים משובצים" card directly,
+  // without relying on a roster-fetch + selectedIds filter (which
+  // turns up empty when the corp roster lookup misses an assigned
+  // worker for any reason — and leaves the corp staring at an
+  // empty section on a deal that does have workers attached).
+  const [assignedWorkers, setAssignedWorkers] = useState<Worker[]>([]);
   const [slots, setSlots]       = useState<ProfessionSlot[]>([]);
   const { professionMap: profMap } = useEnums();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -304,6 +324,19 @@ function CorporationDealPageInner() {
   const [paymentMethods, setPaymentMethods]     = useState<PaymentMethod[]>([]);
   const [pmLoading, setPmLoading]               = useState(true);
   const [commitResult, setCommitResult]         = useState<CommitEngagementResult | null>(null);
+  // Captured-state extras — loaded lazily once we know payment_status
+  // has moved to 'captured'. Held separately so the deal payload
+  // doesn't have to round-trip through the payment service on every
+  // open of an authorized deal.
+  const [capturedTx, setCapturedTx] = useState<
+    | { amount?: number | null;
+        auth_code?: string | null;
+        invoice_url?: string | null;
+        invoice_number?: string | null;
+        charged_at?: string | null; }
+    | null
+  >(null);
+  const [corpEmail, setCorpEmail] = useState<string | null>(null);
   // Pattern A modal state
   const [showCommitModal, setShowCommitModal]   = useState(false);
   const [previewAmount, setPreviewAmount]       = useState<number | undefined>(undefined);
@@ -323,68 +356,108 @@ function CorporationDealPageInner() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // R15 — reveal contractor identity to the corp once the contractor
+  // has approved the proposal. Fires whenever `deal.status` changes; the
+  // status check + the contractor ref dependency keep this from firing
+  // before there's anything to fetch.
+  useEffect(() => {
+    if (!deal) return;
+    const REVEAL = new Set(['accepted', 'active', 'reporting', 'completed', 'closed']);
+    if (!REVEAL.has(deal.status)) return;
+    if (contractor) return; // already loaded
+    const cid = (deal as unknown as { contractor_id?: string }).contractor_id;
+    if (!cid) return;
+    orgApi.getContractor(cid)
+      .then((c) => setContractor({
+        company_name_he: c.company_name_he,
+        company_name: c.company_name,
+        contact_name: c.contact_name,
+        contact_phone: c.contact_phone,
+      }))
+      .catch((e) => console.error('[corp/deal] getContractor failed:', e));
+  }, [deal, contractor]);
+
   useEffect(() => {
     async function init() {
       setLoading(true);
       try {
-        const [d, msgs, stubs, allW] = await Promise.all([
+        // Always-needed payload — three small reads in parallel, no
+        // per-worker fan-out. `dealApi.workers` already returns full
+        // Worker rows for the corp's own deal, so we can paint the
+        // assigned-workers card immediately without a second hop.
+        const [d, msgs, stubs] = await Promise.all([
           dealApi.get(id),
           dealApi.messages(id).catch(() => [] as Message[]),
           dealApi.workers(id).catch(() => []),
-          workerApi.list().catch(() => [] as Worker[]),
         ]);
 
         setDeal(d);
         setMessages(msgs);
-        setAllWorkers(allW);
+        setAssignedWorkers(stubs as Worker[]);
+        setSelectedIds(new Set<string>((stubs as { id: string }[]).map((s) => s.id)));
 
-        // Pre-select originally proposed workers
-        const proposedIds = new Set<string>((stubs as { id: string }[]).map((s) => s.id));
-        setSelectedIds(proposedIds);
+        // The expensive part — full corp roster + per-worker details
+        // for slot-building — is ONLY needed in the proposed flow,
+        // where the corp toggles workers on/off to commit the deal.
+        // Once the deal is past `proposed` (committed/approved/closed)
+        // the assignment is fixed and we're just rendering it.
+        // Previously this fan-out ran every time, dragging the open
+        // of a 7-worker deal to several seconds.
+        if (d.status === 'proposed') {
+          const [allW, proposedDetails] = await Promise.all([
+            workerApi.list().catch(() => [] as Worker[]),
+            Promise.allSettled(
+              (stubs as { id: string }[]).map((s) => workerApi.get(s.id))
+            ),
+          ]);
+          setAllWorkers(allW);
 
-        // Fetch full details of proposed workers to understand required professions
-        const proposedDetails = await Promise.allSettled(
-          [...proposedIds].map((wid) => workerApi.get(wid))
-        );
-        const proposed = proposedDetails
-          .filter((r): r is PromiseFulfilledResult<Worker> => r.status === 'fulfilled')
-          .map((r) => r.value);
+          const proposed = proposedDetails
+            .filter((r): r is PromiseFulfilledResult<Worker> => r.status === 'fulfilled')
+            .map((r) => r.value);
 
-        // Build the slot from the contractor's REQUEST (line item) — this is
-        // the authoritative source of "what's needed". Fall back to grouping
-        // the proposed workers if the deal API didn't enrich the line-item
-        // info (older deals).
-        const builtSlots: ProfessionSlot[] = [];
-        const dealAny = deal as unknown as { profession_type?: string; profession_he?: string; requested_count?: number };
-        if (dealAny.profession_type && dealAny.requested_count) {
-          const code = dealAny.profession_type;
-          builtSlots.push({
-            profCode: code,
-            profName: dealAny.profession_he || profMap[code] || code,
-            needed: dealAny.requested_count,
-            minExpMonths: 0,
-            proposedWorkerIds: new Set(proposed.filter((w) => w.profession_type === code).map((w) => w.id)),
-          });
-        } else {
-          // Legacy fallback: group proposed workers by their profession
-          const slotMap = new Map<string, { workers: Worker[] }>();
-          for (const w of proposed) {
-            const code = w.profession_type;
-            if (!slotMap.has(code)) slotMap.set(code, { workers: [] });
-            slotMap.get(code)!.workers.push(w);
-          }
-          for (const [code, { workers: pws }] of slotMap) {
-            const minExp = Math.max(0, ...pws.map((w) => expMonths(w)));
+          // Build the slot from the contractor's REQUEST (line item) —
+          // this is the authoritative source of "what's needed". Fall
+          // back to grouping the proposed workers if the deal API
+          // didn't enrich the line-item info (older deals).
+          //
+          // Use `d` (the just-fetched payload), not the `deal` state —
+          // setDeal(d) above schedules an async update so `deal` is
+          // still null on this tick. Reading `deal.profession_type`
+          // would throw and bubble up to the outer catch as a generic
+          // "שגיאה בטעינת העסקה" on every fresh open.
+          const builtSlots: ProfessionSlot[] = [];
+          const dealAny = d as unknown as { profession_type?: string; profession_he?: string; requested_count?: number };
+          if (dealAny.profession_type && dealAny.requested_count) {
+            const code = dealAny.profession_type;
             builtSlots.push({
               profCode: code,
-              profName: profMap[code] ?? code,
-              needed: pws.length,
-              minExpMonths: minExp,
-              proposedWorkerIds: new Set(pws.map((w) => w.id)),
+              profName: dealAny.profession_he || profMap[code] || code,
+              needed: dealAny.requested_count,
+              minExpMonths: 0,
+              proposedWorkerIds: new Set(proposed.filter((w) => w.profession_type === code).map((w) => w.id)),
             });
+          } else {
+            // Legacy fallback: group proposed workers by their profession
+            const slotMap = new Map<string, { workers: Worker[] }>();
+            for (const w of proposed) {
+              const code = w.profession_type;
+              if (!slotMap.has(code)) slotMap.set(code, { workers: [] });
+              slotMap.get(code)!.workers.push(w);
+            }
+            for (const [code, { workers: pws }] of slotMap) {
+              const minExp = Math.max(0, ...pws.map((w) => expMonths(w)));
+              builtSlots.push({
+                profCode: code,
+                profName: profMap[code] ?? code,
+                needed: pws.length,
+                minExpMonths: minExp,
+                proposedWorkerIds: new Set(pws.map((w) => w.id)),
+              });
+            }
           }
+          setSlots(builtSlots);
         }
-        setSlots(builtSlots);
       } catch {
         setError('שגיאה בטעינת העסקה');
       } finally {
@@ -392,10 +465,84 @@ function CorporationDealPageInner() {
       }
     }
     init();
-    pollRef.current = setInterval(() => dealApi.messages(id).then(setMessages).catch(() => {}), 30_000);
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+
+    // Visibility-aware message polling. When the tab isn't focused
+    // the corp can't read incoming messages anyway, so the poll is
+    // pure background noise — it occupies one of the browser's 6
+    // concurrent connections per origin and was contributing to
+    // ERR_CONNECTION_RESET on simultaneous requests (auth send-otp,
+    // enums, page chunks). Pause when hidden; refresh-then-resume
+    // when the tab comes back so the corp catches up instantly.
+    const fetchMessages = () => dealApi.messages(id).then(setMessages).catch(() => {});
+    function startPolling() {
+      if (pollRef.current) clearInterval(pollRef.current);
+      pollRef.current = setInterval(fetchMessages, 30_000);
+    }
+    function stopPolling() {
+      if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+    }
+    function onVisibility() {
+      if (typeof document === 'undefined') return;
+      if (document.visibilityState === 'visible') { fetchMessages(); startPolling(); }
+      else stopPolling();
+    }
+    if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+      startPolling();
+    }
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', onVisibility);
+    }
+    return () => {
+      stopPolling();
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', onVisibility);
+      }
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  // Captured-state extras — fetched lazily once we know the deal's
+  // J5 hold has actually been charged. Two parallel reads:
+  //   * payment transaction → invoice URL, auth code, charged_at
+  //   * org_db.corporations row → contact_email (where the receipt
+  //     was mailed; the corp's own user might not see emails so we
+  //     surface the recipient explicitly).
+  // Skipped entirely for non-captured deals so the deal page open
+  // stays cheap in the common authorized + proposed flows.
+  useEffect(() => {
+    if (!deal) return;
+    if (deal.payment_status !== 'captured') return;
+    if (capturedTx) return; // already loaded for this deal
+    const txId = deal.active_payment_transaction_id;
+    if (!txId) return;
+    paymentApi.getTransaction(txId)
+      .then((tx) => setCapturedTx({
+        amount:         tx.total_amount ?? deal.payment_amount_estimated ?? null,
+        auth_code:      tx.provider_response_code ?? null,
+        invoice_url:    tx.invoice_url ?? null,
+        invoice_number: tx.invoice_number ?? null,
+        charged_at:     tx.charged_at ?? null,
+      }))
+      .catch(() => {
+        // Best-effort — if the transaction read fails we still
+        // surface a stub CapturedBadge with whatever we know from
+        // the deal record. No retry; admin can dig in via the
+        // payments dashboard if a real value is missing.
+        setCapturedTx({
+          amount:         deal.payment_amount_estimated ?? null,
+          auth_code:      null,
+          invoice_url:    null,
+          invoice_number: null,
+          charged_at:     null,
+        });
+      });
+    if (deal.corporation_id && !corpEmail) {
+      orgApi.getCorporation(deal.corporation_id)
+        .then((c) => setCorpEmail(c.contact_email ?? null))
+        .catch(() => { /* recipient line will simply not render */ });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deal?.payment_status, deal?.active_payment_transaction_id, deal?.corporation_id]);
 
   // Only scroll the message thread to bottom when NEW messages arrive (user
   // sent or received). Skip the initial mount + skip same-length re-renders;
@@ -615,12 +762,56 @@ function CorporationDealPageInner() {
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
           <div className="flex items-center gap-2 flex-wrap">
-            <h1 className="text-2xl font-bold text-slate-900">עסקה #{id.slice(0, 8)}</h1>
-            <StatusBadge status={deal.status} />
+            <h1 className="text-2xl font-bold text-slate-900">עסקה #{dealRef(id)}</h1>
+            <StatusBadge status={deal.status} perspective="corporation" />
           </div>
           <p className="text-sm text-slate-500 mt-0.5">נוצרה: {fmtDate(deal.created_at)}</p>
         </div>
       </div>
+
+      {/* R15 — contractor identity reveal. Renders only after the deal
+          is accepted (or any downstream state) — before that the corp
+          sees the request anonymously. Phone is the headline detail so
+          the corp can call directly. */}
+      {contractor && (
+        <div className="rounded-2xl border-2 border-emerald-200 bg-emerald-50/50 p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <UserCheck className="h-5 w-5 text-emerald-700" />
+            <h3 className="text-base font-bold text-emerald-900">פרטי הקבלן</h3>
+            <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-emerald-200 text-emerald-900 px-2 py-0.5 rounded-full">
+              <CheckCircle className="h-3 w-3" /> נחשפו לאחר אישור
+            </span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+              <p className="text-xs text-slate-500 mb-0.5">תאגיד הקבלן</p>
+              <p className="text-base font-bold text-slate-900">
+                {contractor.company_name_he || contractor.company_name || '—'}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-500 mb-0.5">איש קשר</p>
+              <p className="text-base font-bold text-slate-900">
+                {contractor.contact_name || '—'}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-500 mb-0.5">טלפון</p>
+              {contractor.contact_phone ? (
+                <a
+                  href={`tel:${contractor.contact_phone}`}
+                  className="text-base font-bold text-emerald-700 hover:text-emerald-800 underline underline-offset-2"
+                  dir="ltr"
+                >
+                  {contractor.contact_phone}
+                </a>
+              ) : (
+                <p className="text-base font-bold text-slate-900">—</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Request summary — what the contractor is asking for, anonymized ── */}
       <div className="rounded-2xl border-2 border-brand-200 bg-brand-50/40 p-4 grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -644,17 +835,46 @@ function CorporationDealPageInner() {
         </div>
       </div>
 
-      {/* ── Grace period badge (visible while authorized) ── */}
-      {isAuthorized && (commitResult?.grace_period_expires_at || deal.payment_status === 'authorized') && (
+      {/* ── Payment status banner ── two states:
+            captured  → green CapturedBadge with charge amount,
+                         clearance auth code, invoice download +
+                         recipient email
+            authorized → GraceBadge with countdown to auto-capture
+                         + "cancel without charge" button
+          Anything else (no payment yet, cancelled hold) renders
+          nothing — the assignment / commit UI carries the load. */}
+      {deal.payment_status === 'captured' ? (
+        <CapturedBadge
+          amount={capturedTx?.amount ?? deal.payment_amount_estimated ?? null}
+          authCode={capturedTx?.auth_code ?? null}
+          invoiceUrl={capturedTx?.invoice_url ?? null}
+          invoiceNumber={capturedTx?.invoice_number ?? null}
+          recipientEmail={corpEmail}
+          chargedAtIso={capturedTx?.charged_at ?? null}
+        />
+      ) : isAuthorized && (commitResult?.grace_period_expires_at || deal.payment_status === 'authorized') ? (
         <GraceBadge
           dealId={id}
+          // End of the 48h cancel-without-charge window =
+          // auto-capture moment. Real backend timestamp wins; the
+          // in-session commitResult is preferred since it carries
+          // the post-server-side-rounding value; fallback is the
+          // estimated value if neither is available yet (rare).
           graceExpiresAt={
             commitResult?.grace_period_expires_at
+            ?? deal.scheduled_capture_at
             ?? new Date(Date.now() + 48 * 3600_000).toISOString()
           }
+          // J5 hold placed when the corp submitted workers — DIFFERENT
+          // from contractor-approval. Previously we conflated them
+          // under a single "הוקפא ב" line, which read as if the corp's
+          // money got frozen only after the contractor said yes.
+          holdPlacedAt={deal.corp_committed_at ?? null}
+          // When the contractor approved → cancel window opened.
+          approvedAt={deal.approved_at ?? null}
           onCancelled={handleCancelled}
         />
-      )}
+      ) : null}
 
       {/* ── Contractor notes ── */}
       {deal.notes && (
@@ -687,13 +907,27 @@ function CorporationDealPageInner() {
                     <div className="flex gap-2 shrink-0">
                       <Button
                         size="sm"
-                        className="bg-green-600 hover:bg-green-700 font-medium"
+                        className={`font-medium ${
+                          totalSelected === 0
+                            // Pre-selection: gray, disabled, prompts the
+                            // corp to actually pick workers first. Avoids
+                            // the previous "אשר ושבץ 0 עובדים" wording
+                            // that read as an active CTA on 0 selection.
+                            ? 'bg-slate-300 text-slate-600 hover:bg-slate-300 cursor-not-allowed'
+                            // Once workers are picked, the button promotes
+                            // to the green commit CTA. Stays disabled
+                            // (still green) when slots aren't fully
+                            // filled — the inline hint below explains why.
+                            : 'bg-green-600 hover:bg-green-700 text-white'
+                        }`}
                         onClick={handleAccept}
                         disabled={accepting || rejecting || !canAccept}
                       >
                         {accepting
                           ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />שולח...</>
-                          : <><CheckCircle className="h-3.5 w-3.5" />אשר ושבץ {totalSelected} עובדים</>}
+                          : totalSelected === 0
+                            ? <><CheckCircle className="h-3.5 w-3.5" />בחר עובדים לשיבוץ</>
+                            : <><CheckCircle className="h-3.5 w-3.5" />אשר ושבץ {totalSelected} עובדים</>}
                       </Button>
                       <Button size="sm" variant="destructive"
                         onClick={() => setShowRejectConfirm(true)}
@@ -816,15 +1050,15 @@ function CorporationDealPageInner() {
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2 text-base">
                 <Users className="h-4 w-4 text-brand-600" />
-                עובדים משובצים
+                עובדים משובצים ({assignedWorkers.length})
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {allWorkers.filter((w) => selectedIds.has(w.id)).length === 0 ? (
+              {assignedWorkers.length === 0 ? (
                 <p className="text-slate-500 text-sm text-center py-4">אין עובדים משובצים</p>
               ) : (
                 <div className="space-y-2">
-                  {allWorkers.filter((w) => selectedIds.has(w.id)).map((w) => (
+                  {assignedWorkers.map((w) => (
                     <div key={w.id} className="flex items-center gap-3 p-2.5 rounded-xl bg-slate-50 border border-slate-100">
                       <div className="h-8 w-8 rounded-full bg-brand-100 flex items-center justify-center text-xs font-bold text-brand-700 shrink-0">
                         {w.first_name?.[0]}{w.last_name?.[0]}

@@ -97,6 +97,175 @@ async def quick_lookup(business_number: str) -> dict[str, Any]:
     }
 
 
+def _digits_only(s: Optional[str]) -> str:
+    """Strip everything but digits. Used for kablan-number comparison so
+    leading zeros, dashes, or stray whitespace don't cause false misses
+    (registry returns '03842', user might type '3842' or '03842' or
+    '03-842')."""
+    if not s:
+        return ""
+    return "".join(c for c in str(s) if c.isdigit())
+
+
+async def verify_kablan_match(
+    business_number: str,
+    entered_kablan: str,
+    owner_phone: Optional[str] = None,
+    owner_email: Optional[str] = None,
+) -> dict[str, Any]:
+    """Confirm the kablan_number the user typed actually belongs to them.
+
+    Two paths, tried in order — both produce match=True only when we
+    can prove the kablan belongs to this user:
+
+      Path A — ח.פ-keyed lookup (companies)
+        Lookup פנקס הקבלנים by MISPAR_YESHUT = business_number. If a row
+        exists, compare its MISPAR_KABLAN to entered_kablan.
+
+      Path B — kablan-keyed fallback (sole proprietors)
+        Many יחיד / עוסק-מורשה kablanim have an EMPTY MISPAR_YESHUT in
+        the public dataset, so path A always misses them. We then
+        lookup by MISPAR_KABLAN directly. If we find a row:
+          - MISPAR_YESHUT matches our business_number → match.
+          - MISPAR_YESHUT populated but different      → mismatch.
+          - MISPAR_YESHUT empty (sole prop)            → cross-check
+            owner_phone against MISPAR_TEL (canonical 9-digit
+            subscriber compare, so 0542… / +972542… / 542… all match)
+            OR owner_email against EMAIL (case-insensitive). Either
+            channel matching = strong proof of identity.
+
+    Network failures bubble up as ok=False so callers can route to
+    manual approval rather than blocking the user. All other paths
+    return ok=True with a `reason` so the UI can show a specific
+    message instead of a generic "pending".
+
+    Returns:
+        {
+          ok:              bool,
+          match:           bool,
+          registry_kablan: str | None,   # what פנקס הקבלנים has on file
+          method:          str | None,   # business_number_match | phone_match | email_match
+          reason:          str | None,   # only on match=False
+          pinkash_row:     dict | None,  # raw registry row (when located)
+          pinkash_fields:  dict | None,  # extracted fields (when located)
+        }
+    """
+    entered_norm = _digits_only(entered_kablan)
+    bn_norm = _digits_only(business_number)
+    if not entered_norm:
+        return {"ok": True, "match": False, "registry_kablan": None, "reason": "empty_input"}
+
+    # `pinkash_row` and `pinkash_fields` are threaded through every
+    # return where we located a registry row, so the caller can
+    # snapshot them onto the contractors row regardless of which path
+    # produced the match. Both are None when no row was found.
+    pinkash_row: Optional[dict] = None
+    pinkash_fields: Optional[dict] = None
+
+    def _resp(**kw) -> dict[str, Any]:
+        kw.setdefault("ok", True)
+        kw.setdefault("pinkash_row", pinkash_row)
+        kw.setdefault("pinkash_fields", pinkash_fields)
+        return kw
+
+    # ── Path A — by ח.פ ───────────────────────────────────────────────
+    try:
+        result = await data_gov_il.lookup(business_number)
+    except Exception as e:
+        log.warning("verify_kablan_match: data.gov.il lookup failed for %s: %s", business_number, e)
+        return _resp(ok=False, match=False, registry_kablan=None, reason="registry_unreachable")
+
+    if result["pinkash_found"] and result["pinkash"]:
+        pinkash_row = result["pinkash"]
+        pinkash_fields = data_gov_il.extract_pinkash_fields(pinkash_row)
+        registry_norm = _digits_only(pinkash_fields.get("kablan_number"))
+        if registry_norm and registry_norm == entered_norm:
+            return _resp(
+                match=True,
+                registry_kablan=pinkash_fields.get("kablan_number"),
+                method="business_number_match",
+            )
+        # ח.פ is registered but the kablan doesn't match what the user
+        # typed — definite mismatch, no point falling through.
+        return _resp(
+            match=False,
+            registry_kablan=pinkash_fields.get("kablan_number"),
+            reason="kablan_mismatch",
+        )
+
+    # ── Path B — by kablan number (sole-proprietor fallback) ─────────
+    try:
+        kablan_row = await data_gov_il.lookup_by_kablan(entered_norm)
+    except Exception as e:
+        log.warning("verify_kablan_match: lookup_by_kablan failed for %s: %s", entered_norm, e)
+        return _resp(ok=False, match=False, registry_kablan=None, reason="registry_unreachable")
+
+    if not kablan_row:
+        return _resp(match=False, registry_kablan=None, reason="kablan_not_found")
+
+    pinkash_row = kablan_row
+    pinkash_fields = data_gov_il.extract_pinkash_fields(kablan_row)
+    registry_yeshut = _digits_only(kablan_row.get("MISPAR_YESHUT"))
+
+    # Kablan record has a ח.פ that matches the user's — strong match.
+    if registry_yeshut and registry_yeshut == bn_norm:
+        return _resp(
+            match=True,
+            registry_kablan=pinkash_fields.get("kablan_number"),
+            method="business_number_match",
+        )
+
+    # Kablan record has a different ח.פ — the user is claiming someone
+    # else's license.
+    if registry_yeshut and registry_yeshut != bn_norm:
+        return _resp(
+            match=False,
+            registry_kablan=pinkash_fields.get("kablan_number"),
+            reason="business_number_mismatch",
+        )
+
+    # Sole-prop case: MISPAR_YESHUT empty. Try phone match first
+    # (strongest because the phone was OTP-verified at signup), then
+    # email match. Either is enough — both compare the user's
+    # registration channel against what the registry lists.
+
+    # Phone match — canonical 9-digit subscriber compare. Handles
+    # +972, leading 0, dashes, spaces on either side.
+    if owner_phone:
+        reg_canon = data_gov_il.canonical_il_phone(pinkash_fields.get("phone"))
+        own_canon = data_gov_il.canonical_il_phone(owner_phone)
+        if reg_canon and own_canon and reg_canon == own_canon:
+            return _resp(
+                match=True,
+                registry_kablan=pinkash_fields.get("kablan_number"),
+                method="phone_match",
+            )
+
+    # Email match — case-insensitive, trimmed.
+    if owner_email and pinkash_fields.get("email"):
+        if owner_email.strip().lower() == pinkash_fields["email"].strip().lower():
+            return _resp(
+                match=True,
+                registry_kablan=pinkash_fields.get("kablan_number"),
+                method="email_match",
+            )
+
+    # Neither phone nor email matched — admin queue. Report which
+    # channels were available so the admin (and the user later) knows
+    # what to retry with.
+    available_channels = []
+    if pinkash_fields.get("phone"):
+        available_channels.append("phone")
+    if pinkash_fields.get("email"):
+        available_channels.append("email")
+    return _resp(
+        match=False,
+        registry_kablan=pinkash_fields.get("kablan_number"),
+        reason="sole_prop_contact_mismatch" if (owner_phone or owner_email) else "sole_prop_needs_contact",
+        available_channels=available_channels,
+    )
+
+
 def initial_tier_for(pinkash_found: bool, ica_found: bool, company_active: Optional[bool]) -> str:
     """Tier the contractor row gets at creation time, before any channel verification."""
     if pinkash_found and (company_active is None or company_active):
@@ -231,6 +400,36 @@ def confirm_verification(
         )
         conn.commit()
         return {"ok": True, "tier": "tier_2", "method": channel}
+    finally:
+        conn.close()
+
+
+def kablan_match_approve(contractor_id: str) -> dict[str, Any]:
+    """Self-serve path — bumps to tier_2 with method='kablan_match'.
+
+    Called from POST /contractors (registration with matching kablan)
+    and POST /contractors/{id}/verify-kablan (backfill flow). Same
+    side-effects as manual_approve except we record HOW the contractor
+    proved their identity (kablan_match vs admin click).
+    """
+    now = datetime.utcnow()
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """UPDATE contractors
+               SET verification_tier   = 'tier_2',
+                   verification_method = 'kablan_match',
+                   verified_at         = COALESCE(verified_at, %s),
+                   kablan_verified_at  = %s,
+                   revalidate_at       = %s,
+                   approval_status     = 'approved',
+                   approved_at         = COALESCE(approved_at, %s)
+               WHERE id = %s""",
+            (now, now, now + REVALIDATE_PERIOD, now, contractor_id),
+        )
+        conn.commit()
+        return {"ok": True, "tier": "tier_2", "method": "kablan_match"}
     finally:
         conn.close()
 

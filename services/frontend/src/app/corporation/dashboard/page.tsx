@@ -1,333 +1,221 @@
 'use client';
 
+// QA-R4 #C4 — corp dashboard restructured around the three inbound
+// streams the corp actually triages:
+//   1. Immediate-availability requests (contractor needs workers now)
+//   2. Foreign-import requests          (contractor needs workers from abroad)
+//   3. Deals (full lifecycle / history)
+// Workers + Manage live in the sidebar; this surface is "what needs
+// my attention today". Tile badges carry the urgency that used to be
+// duplicated in a separate amber strip — that strip is gone now.
+
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { AlertCircle, Users, Handshake, Clock } from 'lucide-react';
-import { dealApi, workerApi } from '@/lib/api';
-import { useEnums } from '@/features/enums/EnumsContext';
-import type { Deal, Worker } from '@/types';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import StatusBadge from '@/components/StatusBadge';
+import {
+  Plus, Settings as ManageIcon, Zap, Globe2, Clock,
+} from 'lucide-react';
+import { dealApi, orgApi } from '@/lib/api';
+import { tenderApi } from '@/lib/api/tenders';
+import { getAccessToken, decodeJwtPayload } from '@/lib/auth';
+import type { Deal } from '@/types';
 
-function SkeletonCard() {
+const PENDING_DEAL_STATUSES = new Set(['proposed', 'counter_proposed']);
+
+function Tile({
+  href, icon, title, subtitle, badge, accent = 'brand',
+}: {
+  href: string;
+  icon: React.ReactNode;
+  title: string;
+  subtitle: string;
+  badge?: number | null;
+  accent?: 'brand' | 'amber' | 'slate' | 'sky';
+}) {
+  const ringByAccent = {
+    brand: 'hover:border-brand-500 hover:bg-brand-50/40',
+    amber: 'hover:border-amber-400 hover:bg-amber-50/40',
+    slate: 'hover:border-slate-400 hover:bg-slate-50/60',
+    sky:   'hover:border-sky-400 hover:bg-sky-50/40',
+  }[accent];
+  const iconBgByAccent = {
+    brand: 'bg-brand-50 text-brand-600',
+    amber: 'bg-amber-50 text-amber-600',
+    slate: 'bg-slate-100 text-slate-600',
+    sky:   'bg-sky-50 text-sky-600',
+  }[accent];
+
   return (
-    <div className="animate-pulse">
-      <div className="h-4 bg-slate-200 rounded w-1/2 mb-2" />
-      <div className="h-8 bg-slate-200 rounded w-1/4" />
-    </div>
+    <Link
+      href={href}
+      className={`group relative flex flex-col items-center justify-center text-center
+                  rounded-2xl border border-slate-200 bg-white
+                  px-6 py-8 sm:py-10
+                  ${ringByAccent} hover:shadow-md
+                  active:scale-[0.99] transition shadow-sm`}
+    >
+      {badge != null && badge > 0 && (
+        <div className="absolute top-3 left-3 min-w-[28px] h-7 px-2 rounded-full
+                        bg-amber-500 text-white text-xs font-bold flex items-center
+                        justify-center">
+          {badge}
+        </div>
+      )}
+      <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mb-4 ${iconBgByAccent}`}>
+        {icon}
+      </div>
+      <div className="text-base sm:text-lg font-bold text-slate-900">{title}</div>
+      <div className="text-sm text-slate-500 mt-1 max-w-[18rem]">{subtitle}</div>
+    </Link>
   );
-}
-
-function SkeletonRows() {
-  return (
-    <>
-      {[1, 2, 3].map((i) => (
-        <tr key={i} className="animate-pulse">
-          <td className="px-4 py-3"><div className="h-4 bg-slate-200 rounded w-32" /></td>
-          <td className="px-4 py-3"><div className="h-4 bg-slate-200 rounded w-20" /></td>
-          <td className="px-4 py-3"><div className="h-4 bg-slate-200 rounded w-16" /></td>
-        </tr>
-      ))}
-    </>
-  );
-}
-
-function fmt(iso?: string) {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleDateString('he-IL');
 }
 
 export default function CorporationDashboard() {
-  const [deals, setDeals] = useState<Deal[]>([]);
-  const [workers, setWorkers] = useState<Worker[]>([]);
-  const { professionMap: profMap } = useEnums();
-  const [loadingDeals, setLoadingDeals] = useState(true);
-  const [loadingWorkers, setLoadingWorkers] = useState(true);
+  const [pendingDeals, setPendingDeals] = useState<number | null>(null);
+  const [openTenders, setOpenTenders]   = useState<number | null>(null);
+  const [approvalStatus, setApprovalStatus] = useState<string | null>(null);
+  const [verificationTier, setVerificationTier] = useState<string | null>(null);
 
   useEffect(() => {
-    dealApi.list()
-      .then((res) => setDeals(res.items))
-      .catch(console.error)
-      .finally(() => setLoadingDeals(false));
+    // Org approval status from JWT
+    const token = getAccessToken();
+    if (token) {
+      const payload  = decodeJwtPayload(token);
+      const entityId = (payload?.entity_id || payload?.org_id) as string | undefined;
+      const entType  = (payload?.entity_type || payload?.org_type) as string | undefined;
+      if (entityId && entType === 'corporation') {
+        orgApi.getCorporation(entityId)
+          .then((c) => {
+            setApprovalStatus(c.approval_status ?? null);
+            setVerificationTier(c.verification_tier ?? null);
+          })
+          .catch(() => {});
+      }
+    }
 
-    workerApi.list()
-      .then(setWorkers)
-      .catch(console.error)
-      .finally(() => setLoadingWorkers(false));
+    dealApi.list({ page_size: 200 })
+      .then((res) => {
+        setPendingDeals(res.items.filter((d: Deal) => PENDING_DEAL_STATUSES.has(d.status)).length);
+      })
+      .catch(() => { setPendingDeals(0); });
+
+    // Foreign-import tenders the corp can still bid on — same filter
+    // /corporation/tenders uses (no bid yet, or only withdrawn).
+    tenderApi.listOpen()
+      .then((open) => {
+        const biddable = open.filter((t) => !t.my_bid || t.my_bid.status === 'withdrawn');
+        setOpenTenders(biddable.length);
+      })
+      .catch(() => setOpenTenders(0));
   }, []);
 
-  const incomingDeals = deals.filter((d) => d.status === 'proposed');
-  const activeDeals   = deals.filter((d) => ['active', 'reporting'].includes(d.status));
-  const availWorkers  = workers.filter((w) => w.status === 'available');
-
   return (
-    <div className="max-w-6xl mx-auto space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-slate-900">לוח בקרה — תאגיד</h2>
-        <Button asChild variant="outline">
-          <Link href="/corporation/workers/new">+ עובד חדש</Link>
-        </Button>
-      </div>
-
-      {/* Pending proposals alert banner */}
-      {!loadingDeals && incomingDeals.length > 0 && (
-        <Link href="/corporation/deals?filter=proposed">
-          <div className="flex items-center justify-between bg-amber-50 border border-amber-300 rounded-xl px-4 py-3 hover:bg-amber-100 transition-colors cursor-pointer shadow-sm">
-            <div className="flex items-center gap-3">
-              <Clock className="h-5 w-5 text-amber-600 shrink-0" />
-              <div>
-                <p className="font-semibold text-amber-900 text-sm">
-                  יש לך {incomingDeals.length} {incomingDeals.length === 1 ? 'הצעה שממתינה' : 'הצעות שממתינות'} לתגובה שלך
-                </p>
-                <p className="text-amber-700 text-xs mt-0.5">לחץ לצפייה ואישור / דחיית ההצעות</p>
-              </div>
-            </div>
-            <span className="text-amber-700 text-sm font-medium whitespace-nowrap">לצפייה ←</span>
+    <div className="max-w-5xl mx-auto px-4 py-6 space-y-6">
+      {/* Two flavours of the pending-approval banner — depend on
+          whether the corp made it to tier_2 (gov-list-matched but the
+          typed phone didn't match the registered gov phones) or is
+          still at tier_0/tier_1.
+            tier_2 + pending  → can operate, admin doing extra verification
+            tier_<2 + pending → blocked from publishing, waiting on admin */}
+      {approvalStatus === 'pending' && verificationTier === 'tier_2' && (
+        <div className="flex items-start gap-4 bg-sky-50 border border-sky-200 rounded-2xl p-4">
+          <div className="shrink-0 w-10 h-10 rounded-full bg-sky-100 flex items-center justify-center">
+            <Clock className="h-5 w-5 text-sky-600" />
           </div>
-        </Link>
+          <div>
+            <h3 className="font-semibold text-sky-900">החשבון מאושר לפעולה</h3>
+            <p className="text-sm text-sky-700 mt-0.5">
+              התאגיד מופיע ברשימת התאגידים המורשים — אישור סופי על ידי מנהל יושלם תוך 48 שעות. בינתיים תוכל להתחיל לפעול במלוא היקף השירותים.
+            </p>
+          </div>
+        </div>
+      )}
+      {approvalStatus === 'pending' && verificationTier !== 'tier_2' && (
+        <div className="flex items-start gap-4 bg-amber-50 border border-amber-200 rounded-2xl p-4">
+          <div className="shrink-0 w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
+            <Clock className="h-5 w-5 text-amber-600" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-amber-900">החשבון ממתין לאישור</h3>
+            <p className="text-sm text-amber-700 mt-0.5">
+              הבקשה שלך מטופלת — תקבל SMS / WhatsApp ברגע שהחשבון יאושר.
+            </p>
+          </div>
+        </div>
       )}
 
-      {/* KPI cards */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <Link href="/corporation/deals?filter=proposed" className="block group">
-          <Card className="cursor-pointer group-hover:border-amber-300 group-hover:shadow-md transition-all">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-slate-500">הצעות ממתינות</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {loadingDeals ? <SkeletonCard /> : (
-                <div className="flex items-center gap-3">
-                  <Clock className="h-8 w-8 text-amber-500" />
-                  <span className="text-3xl font-bold text-slate-900">{incomingDeals.length}</span>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </Link>
-
-        <Link href="/corporation/deals?filter=active" className="block group">
-          <Card className="cursor-pointer group-hover:border-green-300 group-hover:shadow-md transition-all">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-slate-500">עסקאות פעילות</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {loadingDeals ? <SkeletonCard /> : (
-                <div className="flex items-center gap-3">
-                  <Handshake className="h-8 w-8 text-green-500" />
-                  <span className="text-3xl font-bold text-slate-900">{activeDeals.length}</span>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </Link>
-
-        <Link href="/corporation/workers?status=available" className="block group">
-          <Card className="cursor-pointer group-hover:border-brand-300 group-hover:shadow-md transition-all">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-slate-500">עובדים זמינים</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {loadingWorkers ? <SkeletonCard /> : (
-                <div className="flex items-center gap-3">
-                  <Users className="h-8 w-8 text-brand-500" />
-                  <span className="text-3xl font-bold text-slate-900">{availWorkers.length}</span>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </Link>
-      </div>
-
-      {/* Two column tables */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        {/* Incoming proposals */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle>הצעות נכנסות</CardTitle>
-              {incomingDeals.length > 0 && (
-                <span className="text-xs bg-amber-100 text-amber-700 font-medium px-2 py-1 rounded-full">
-                  {incomingDeals.length} ממתינות
-                </span>
-              )}
+      {/* Hero — recruitment-side pitch for the corporation */}
+      <section className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-6 sm:p-10">
+        <div
+          className="pointer-events-none absolute -top-24 end-0 h-72 w-72 rounded-full opacity-30"
+          style={{ background: 'radial-gradient(circle, #38bdf8 0%, transparent 70%)' }}
+        />
+        <div
+          className="pointer-events-none absolute inset-0 opacity-[0.04]"
+          style={{
+            backgroundImage: 'radial-gradient(circle, #fff 1px, transparent 1px)',
+            backgroundSize: '24px 24px',
+          }}
+        />
+        <div className="relative grid gap-6 lg:grid-cols-[1fr_auto] lg:items-center">
+          <div className="space-y-4">
+            <div className="inline-flex items-center gap-2 rounded-full border border-sky-300/30 bg-sky-400/10 px-3 py-1 text-xs font-medium text-sky-200">
+              <span className="h-1.5 w-1.5 rounded-full bg-sky-300 animate-pulse" />
+              התחבר ישירות לקבלנים פעילים
             </div>
-          </CardHeader>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-100 text-slate-500">
-                    <th className="px-4 py-3 text-start font-medium">מזהה</th>
-                    <th className="px-4 py-3 text-start font-medium">עובדים</th>
-                    <th className="px-4 py-3 text-start font-medium">תאריך</th>
-                    <th className="px-4 py-3 text-start font-medium"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {loadingDeals ? (
-                    <SkeletonRows />
-                  ) : incomingDeals.length === 0 ? (
-                    <tr>
-                      <td colSpan={4} className="px-4 py-8 text-center text-slate-500">
-                        אין הצעות ממתינות
-                      </td>
-                    </tr>
-                  ) : (
-                    incomingDeals.slice(0, 5).map((d) => (
-                      <tr key={d.id} className="border-b border-slate-50 hover:bg-slate-50">
-                        <td className="px-4 py-3 font-mono text-xs text-slate-700">#{d.id.slice(0, 8)}</td>
-                        <td className="px-4 py-3 text-center">{d.workers_count}</td>
-                        <td className="px-4 py-3 text-slate-500 text-xs">{fmt(d.created_at)}</td>
-                        <td className="px-4 py-3">
-                          <Link
-                            href={`/corporation/deals/${d.id}`}
-                            className="text-amber-600 hover:underline text-xs font-medium"
-                          >
-                            בדוק
-                          </Link>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
+            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-white leading-[1.15] tracking-tight">
+              פרסם עובדים זמינים מיידית — <span className="text-sky-300">עשרות קבלנים כבר מחפשים עובדים</span>
+            </h1>
+            <p className="text-sm sm:text-base text-slate-300 leading-relaxed max-w-2xl">
+              נהל את רשימת העובדים שלך, קבל פניות מקבלנים ואשר עסקאות בקליק במקום אחד.{' '}
+              <span className="text-white font-medium">מנוע AI מתאים את העובדים לפרויקטים הנכונים.</span>
+            </p>
+          </div>
 
-        {/* Active deals */}
-        <Card>
-          <CardHeader>
-            <CardTitle>עסקאות פעילות</CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-100 text-slate-500">
-                    <th className="px-4 py-3 text-start font-medium">מזהה</th>
-                    <th className="px-4 py-3 text-start font-medium">סטטוס</th>
-                    <th className="px-4 py-3 text-start font-medium">תאריך</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {loadingDeals ? (
-                    <SkeletonRows />
-                  ) : activeDeals.length === 0 ? (
-                    <tr>
-                      <td colSpan={3} className="px-4 py-8 text-center text-slate-500">
-                        אין עסקאות פעילות
-                      </td>
-                    </tr>
-                  ) : (
-                    activeDeals.slice(0, 5).map((d) => (
-                      <tr key={d.id} className="border-b border-slate-50 hover:bg-slate-50">
-                        <td className="px-4 py-3 font-mono text-xs text-slate-700">
-                          <Link
-                            href={`/corporation/deals/${d.id}`}
-                            className="hover:text-brand-600 hover:underline"
-                          >
-                            #{d.id.slice(0, 8)}
-                          </Link>
-                        </td>
-                        <td className="px-4 py-3"><StatusBadge status={d.status} /></td>
-                        <td className="px-4 py-3 text-slate-500 text-xs">{fmt(d.created_at)}</td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Workers snapshot */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>עובדים זמינים</CardTitle>
-            <Link href="/corporation/workers" className="text-sm text-brand-600 hover:underline">
-              כל העובדים ←
+          <div className="lg:shrink-0">
+            <Link
+              href="/corporation/workers/new"
+              className="inline-flex items-center justify-center gap-2 bg-sky-500 hover:bg-sky-400 active:bg-sky-600 text-slate-900 font-bold shadow-lg shadow-sky-500/20 px-7 h-11 rounded-lg text-base transition-colors"
+            >
+              <Plus className="h-5 w-5" />
+              הוסף עובד
             </Link>
           </div>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-slate-100 text-slate-500">
-                  <th className="px-4 py-3 text-start font-medium">שם</th>
-                  <th className="px-4 py-3 text-start font-medium">מקצוע</th>
-                  <th className="px-4 py-3 text-start font-medium">ניסיון</th>
-                  <th className="px-4 py-3 text-start font-medium">ויזה עד</th>
-                  <th className="px-4 py-3 text-start font-medium">סטטוס</th>
-                </tr>
-              </thead>
-              <tbody>
-                {loadingWorkers ? (
-                  <SkeletonRows />
-                ) : availWorkers.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="px-4 py-8 text-center text-slate-500">
-                      אין עובדים זמינים
-                    </td>
-                  </tr>
-                ) : (
-                  availWorkers.slice(0, 6).map((w) => (
-                    <tr key={w.id} className="border-b border-slate-50 hover:bg-slate-50">
-                      <td className="px-4 py-3 font-medium text-slate-900">
-                        {w.first_name} {w.last_name}
-                      </td>
-                      <td className="px-4 py-3 text-slate-600">{profMap[w.profession_type] ?? w.profession_type}</td>
-                      <td className="px-4 py-3 text-slate-600 text-xs">{w.experience_range ?? `${w.experience_years}y`}</td>
-                      <td className="px-4 py-3 text-slate-600">{fmt(w.visa_valid_until)}</td>
-                      <td className="px-4 py-3">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
-                          זמין
-                        </span>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-          {!loadingWorkers && availWorkers.length > 6 && (
-            <div className="px-4 py-3 border-t border-slate-100 text-center">
-              <Link href="/corporation/workers" className="text-sm text-brand-600 hover:underline">
-                הצג עוד {availWorkers.length - 6} עובדים
-              </Link>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+        </div>
+      </section>
 
-      {/* Alert: workers with expiring visas */}
-      {!loadingWorkers && workers.some((w) => {
-        const daysLeft = (new Date(w.visa_valid_until).getTime() - Date.now()) / 86_400_000;
-        return daysLeft >= 0 && daysLeft <= 30;
-      }) && (
-        <Card className="border-amber-200 bg-amber-50">
-          <CardContent className="py-4 flex items-start gap-3">
-            <AlertCircle className="h-5 w-5 text-amber-600 mt-0.5 shrink-0" />
-            <div>
-              <p className="font-medium text-amber-800 text-sm">ויזות פגות תוך 30 יום</p>
-              <p className="text-amber-700 text-xs mt-0.5">
-                {workers.filter((w) => {
-                  const daysLeft = (new Date(w.visa_valid_until).getTime() - Date.now()) / 86_400_000;
-                  return daysLeft >= 0 && daysLeft <= 30;
-                }).length} עובדים דורשים חידוש ויזה בקרוב.{' '}
-                <Link href="/corporation/workers" className="underline font-medium">
-                  צפה ברשימה
-                </Link>
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      {/* Three primary tiles — ordered to match the corp's mental
+          model from QA-R4 R5 feedback:
+            1. ניהול                              → /corporation/manage
+            2. דרישה לעובדים בזמינות מיידית      → /corporation/deals?filter=proposed
+            3. בקשת ייבוא של עובדים חדשים       → /corporation/tenders
+          Tile labels mirror the prospect-side /try/corporation entry
+          page so the same vocabulary (דרישה / בקשת ייבוא) carries
+          through registration into the working dashboard. */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <Tile
+          href="/corporation/manage"
+          icon={<ManageIcon className="h-9 w-9" />}
+          title="ניהול"
+          subtitle="צוות, מסמכים, מנוי שירותים נלווים והגדרות"
+          accent="slate"
+        />
+        <Tile
+          href="/corporation/deals"
+          icon={<Zap className="h-9 w-9" />}
+          title="דרישה לעובדים בזמינות מיידית"
+          subtitle="כל הדרישות הפעילות של קבלנים + העסקאות שלך — במקום אחד"
+          badge={pendingDeals}
+          accent="amber"
+        />
+        <Tile
+          href="/corporation/tenders"
+          icon={<Globe2 className="h-9 w-9" />}
+          title="בקשת ייבוא של עובדים חדשים"
+          subtitle="קבלנים שמבקשים עובדים מחו״ל — אפשר להגיש הצעה"
+          badge={openTenders}
+          accent="sky"
+        />
+      </div>
     </div>
   );
 }

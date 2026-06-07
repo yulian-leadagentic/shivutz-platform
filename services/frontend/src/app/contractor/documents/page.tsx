@@ -1,15 +1,17 @@
 'use client';
 
-import { useEffect, useRef, useState, FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, FormEvent } from 'react';
 import {
   Loader2, FilePlus, FileCheck, FileX, ExternalLink, Trash2,
   UploadCloud, Link2, FileText, ShieldCheck, RefreshCw, AlertTriangle,
 } from 'lucide-react';
-import { documentApi, type OrgDocument, DOC_TYPE_LABELS } from '@/lib/api';
+import { documentApi, fileHref, type OrgDocument, DOC_TYPE_LABELS } from '@/lib/api';
 import { useAuth } from '@/lib/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { TableToolbar } from '@/components/table/TableToolbar';
+import { useTableState } from '@/components/table/useTableState';
 
 const CONTRACTOR_LICENSE = 'contractor_license';
 const OTHER_DOC_TYPES = Object.entries(DOC_TYPE_LABELS).filter(([k]) => k !== CONTRACTOR_LICENSE);
@@ -124,7 +126,7 @@ function LicenseSection({
               {license.notes && <p className="text-xs text-slate-500">{license.notes}</p>}
             </div>
             <div className="flex items-center gap-1 shrink-0">
-              <a href={license.file_url} target="_blank" rel="noopener noreferrer"
+              <a href={fileHref(license.file_url)} target="_blank" rel="noopener noreferrer"
                 className="p-2 rounded-lg hover:bg-slate-200 text-slate-500 hover:text-brand-600 transition-colors"
                 title="צפייה">
                 <ExternalLink className="h-4 w-4" />
@@ -250,6 +252,46 @@ function OtherDocsSection({
   const [error, setError]       = useState('');
   const [deleting, setDeleting] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // Filter + sort across the "other docs" list (license is separate above).
+  const [docTypeFilter, setDocTypeFilter]   = useState('all');
+  const [validityFilter, setValidityFilter] = useState<'all' | 'valid' | 'pending' | 'rejected'>('all');
+  const [search, setSearch] = useState('');
+
+  const docFilter = useCallback((d: OrgDocument) => {
+    if (docTypeFilter !== 'all' && d.doc_type !== docTypeFilter) return false;
+    if (validityFilter !== 'all') {
+      const status = d.is_valid === true ? 'valid' : d.is_valid === false ? 'rejected' : 'pending';
+      if (status !== validityFilter) return false;
+    }
+    if (search) {
+      const q = search.toLowerCase();
+      const hay = [d.file_name, d.notes].filter(Boolean).join(' ').toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  }, [docTypeFilter, validityFilter, search]);
+
+  type DocSortKey = 'uploaded' | 'name' | 'type';
+  const docSortBy = useCallback((d: OrgDocument, key: DocSortKey) => {
+    switch (key) {
+      case 'uploaded': return d.uploaded_at ? new Date(d.uploaded_at) : null;
+      case 'name':     return d.file_name || '';
+      case 'type':     return d.doc_type || '';
+    }
+  }, []);
+
+  const { visible: visibleDocs, sortKey, sortDir, setSortKey, flipSortDir } =
+    useTableState<OrgDocument, DocSortKey>({
+      rows: docs,
+      initialSortKey: 'uploaded',
+      initialSortDir: 'desc',
+      filter: docFilter,
+      sortBy: docSortBy,
+    });
+
+  const hasActiveFilter = docTypeFilter !== 'all' || validityFilter !== 'all' || search.trim() !== '';
+  function clearFilters() { setDocTypeFilter('all'); setValidityFilter('all'); setSearch(''); }
 
   function reset() {
     setFile(null); setUrl(''); setFname(''); setNotes('');
@@ -386,16 +428,63 @@ function OtherDocsSection({
           </div>
         )}
 
+        {!loading && docs.length > 0 && (
+          <div className="px-4 pb-3">
+            <TableToolbar
+              selects={[
+                {
+                  key: 'type',
+                  ariaLabel: 'סוג מסמך',
+                  value: docTypeFilter,
+                  onChange: setDocTypeFilter,
+                  options: [
+                    { value: 'all', label: 'כל הסוגים' },
+                    ...OTHER_DOC_TYPES.map(([v, l]) => ({ value: v, label: l })),
+                  ],
+                },
+                {
+                  key: 'validity',
+                  ariaLabel: 'תקפות',
+                  value: validityFilter,
+                  onChange: (v) => setValidityFilter(v as typeof validityFilter),
+                  options: [
+                    { value: 'all',      label: 'כל הסטטוסים' },
+                    { value: 'valid',    label: 'מאושרים' },
+                    { value: 'pending',  label: 'ממתינים לאישור' },
+                    { value: 'rejected', label: 'נדחו' },
+                  ],
+                },
+              ]}
+              searchValue={search}
+              onSearchChange={setSearch}
+              searchPlaceholder="חיפוש: שם קובץ / הערות"
+              sortOptions={[
+                { key: 'uploaded', label: 'תאריך העלאה' },
+                { key: 'name',     label: 'שם הקובץ' },
+                { key: 'type',     label: 'סוג' },
+              ]}
+              sortKey={sortKey}
+              sortDir={sortDir}
+              onSortKeyChange={setSortKey}
+              onSortDirToggle={flipSortDir}
+              hasActiveFilter={hasActiveFilter}
+              onClear={clearFilters}
+            />
+          </div>
+        )}
+
         {loading ? (
           <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-slate-400" /></div>
-        ) : docs.length === 0 ? (
+        ) : visibleDocs.length === 0 ? (
           <div className="text-center py-10 space-y-3">
             <FileText className="h-10 w-10 text-slate-200 mx-auto" />
-            <p className="text-slate-400 text-sm">אין מסמכים נוספים. הוסף לפי הצורך.</p>
+            <p className="text-slate-400 text-sm">
+              {hasActiveFilter ? 'אין מסמכים תואמים לסינון' : 'אין מסמכים נוספים. הוסף לפי הצורך.'}
+            </p>
           </div>
         ) : (
           <div className="divide-y divide-slate-50">
-            {docs.map((d) => (
+            {visibleDocs.map((d) => (
               <div key={d.doc_id} className="flex items-center justify-between px-4 py-3.5 hover:bg-slate-50 transition-colors">
                 <div className="flex-1 min-w-0 space-y-0.5">
                   <div className="flex items-center gap-2 flex-wrap">
@@ -410,7 +499,7 @@ function OtherDocsSection({
                   {d.notes && <p className="text-xs text-slate-400">{d.notes}</p>}
                 </div>
                 <div className="flex items-center gap-1 ms-3 shrink-0">
-                  <a href={d.file_url} target="_blank" rel="noopener noreferrer"
+                  <a href={fileHref(d.file_url)} target="_blank" rel="noopener noreferrer"
                     className="p-2 rounded-lg hover:bg-slate-200 text-slate-500 hover:text-brand-600 transition-colors">
                     <ExternalLink className="h-4 w-4" />
                   </a>

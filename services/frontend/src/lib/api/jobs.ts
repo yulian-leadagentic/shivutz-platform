@@ -1,51 +1,88 @@
+// Wave 3 — searchApi replaces jobApi. The project + line-items model
+// was collapsed into self-contained worker_searches.
 import { apiFetch } from './client';
 import { orgApi } from './organizations';
 import type {
-  JobRequest,
-  JobRequestCreate,
-  JobRequestUpdate,
-  JobLineItemInput,
-  MatchBundle,
+  CorpMatch,
+  WorkerSearch,
+  WorkerSearchCreate,
+  WorkerSearchUpdate,
 } from '@/types';
 
-export const jobApi = {
-  list: () => apiFetch<JobRequest[]>('/job-requests'),
-  get: (id: string) => apiFetch<JobRequest>(`/job-requests/${id}`),
-  create: (data: JobRequestCreate) =>
-    apiFetch<JobRequest>('/job-requests', {
+// Public-browse row shape for /searches/open — the contractor identity
+// is replaced by an anonymous label so corps can browse without seeing
+// who's behind the request until they engage.
+export interface OpenSearchRow {
+  id: string;
+  anon_label: string;            // "קבלן N"
+  recruitment_type: string;
+  region: string;
+  profession_type: string;
+  quantity: number;
+  start_date: string;
+  end_date: string;
+  origin_preference: string[];
+  status: string;
+  created_at: string;
+}
+
+export const searchApi = {
+  list: () => apiFetch<WorkerSearch[]>('/searches'),
+
+  /** Corp-facing browse — every active worker_search across all
+   *  contractors, with the contractor identity anonymized. */
+  listOpen: () => apiFetch<OpenSearchRow[]>('/searches/open'),
+
+  get: (id: string) => apiFetch<WorkerSearch>(`/searches/${id}`),
+
+  create: (data: WorkerSearchCreate) =>
+    apiFetch<{ id: string; status: string }>('/searches', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
-  update: (id: string, data: JobRequestUpdate) =>
-    apiFetch<{ id: string }>(`/job-requests/${id}`, {
+
+  update: (id: string, data: WorkerSearchUpdate) =>
+    apiFetch<{ id: string }>(`/searches/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(data),
     }),
-  replaceLineItems: (id: string, lineItems: JobLineItemInput[]) =>
-    apiFetch<{ id: string; line_items_count: number }>(`/job-requests/${id}/line-items`, {
-      method: 'PUT',
-      body: JSON.stringify({ line_items: lineItems }),
+
+  cancel: (id: string) =>
+    apiFetch<{ id: string; status: string }>(`/searches/${id}`, {
+      method: 'DELETE',
     }),
-  addLineItem: (id: string, lineItem: JobLineItemInput) =>
-    apiFetch<{ id: string }>(`/job-requests/${id}/line-items`, {
+
+  /** Run the matcher and return sorted CorpMatch entries with corp names hydrated. */
+  match: async (id: string): Promise<CorpMatch[]> => {
+    const res = await apiFetch<{ corps: CorpMatch[] }>(`/searches/${id}/match`, {
       method: 'POST',
-      body: JSON.stringify(lineItem),
-    }),
-  match: async (id: string): Promise<MatchBundle[]> => {
-    const res = await apiFetch<{ bundles: MatchBundle[] }>(`/job-requests/${id}/match`, { method: 'POST' });
-    const bundles = res.bundles ?? [];
-    // Resolve corporation names + threshold_requirements in parallel (best-effort)
+    });
+    const corps = res.corps ?? [];
     await Promise.allSettled(
-      bundles.map(async (b) => {
+      corps.map(async (c) => {
         try {
-          const corp = await orgApi.getCorporation(b.corporation_id);
-          b.corporation_name = corp.company_name_he || corp.company_name;
-          b.threshold_requirements = corp.threshold_requirements ?? null;
+          const corp = await orgApi.getCorporation(c.corporation_id);
+          c.corporation_name = corp.company_name_he || corp.company_name;
+          c.threshold_requirements = corp.threshold_requirements ?? null;
         } catch {
-          b.corporation_name = b.corporation_id;
+          c.corporation_name = c.corporation_id;
         }
       })
     );
-    return bundles;
+    return corps;
+  },
+
+  /** Read cached matcher output without re-running. */
+  matchResults: async (id: string): Promise<CorpMatch[] | null> => {
+    try {
+      const res = await apiFetch<{ corps: CorpMatch[] }>(`/searches/${id}/match-results`);
+      return res.corps ?? [];
+    } catch {
+      return null;
+    }
   },
 };
+
+// Legacy alias kept for one release so any pages still importing
+// `jobApi` don't blow up at runtime. New code uses searchApi.
+export const jobApi = searchApi;

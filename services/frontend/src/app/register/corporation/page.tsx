@@ -1,27 +1,26 @@
 'use client';
 
-import { useState, FormEvent, useRef } from 'react';
+import { useEffect, useState, FormEvent, useRef, Suspense } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { Loader2, ShieldCheck, AlertCircle, Info } from 'lucide-react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Loader2, ShieldCheck, AlertCircle, Info, CheckCircle2 } from 'lucide-react';
 import { orgApi, otpApi } from '@/lib/api';
 import { saveTokens } from '@/lib/auth';
+import { useEnums } from '@/features/enums/EnumsContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { HomeLink } from '@/components/HomeLink';
+import Logo from '@/components/Logo';
+import { readProspect, clearProspect } from '@/features/prospect/state';
 import type { CorporationLookupResult } from '@/types';
 
 const TOTAL_STEPS = 3;
-const ORIGIN_COUNTRIES = [
-  { value: 'PH', label: 'פיליפינים' },
-  { value: 'TH', label: 'תאילנד' },
-  { value: 'MD', label: 'מולדובה' },
-  { value: 'RO', label: 'רומניה' },
-  { value: 'IN', label: 'הודו' },
-  { value: 'NP', label: 'נפאל' },
-  { value: 'LK', label: 'סרי לנקה' },
-  { value: 'VN', label: 'וייטנאם' },
-];
+// Origin list comes from useEnums().origins so admin-deactivated
+// countries (managed via /admin/origins) don't appear here. The
+// previous hardcoded list let corps mark themselves as bringing
+// workers from countries we'd already disabled (Romania was the
+// reported case).
 
 // Israeli ID checksum (mirrors backend israeli_id.py)
 function isValidIsraeliId(value: string): boolean {
@@ -56,18 +55,18 @@ interface Step3 {
   tc_accepted: boolean;
 }
 
-const TC_VERSION = '2026-04-27.v1';
+const TC_VERSION = '2026-06-04.v2';
 const TC_TEXT = `
-תנאי שימוש ופלטפורמת שיבוץ — גרסה ${TC_VERSION}
+תנאי שימוש ופלטפורמת BuildUp — גרסה ${TC_VERSION}
 
 1. אישור והפעלה
 המערכת פתוחה לתאגיד מיד עם הרישום. פרסום עובדים והגשת הצעות מחייבים אישור ידני של מנהל המערכת ("תאגיד מאושר").
 
 2. עמלות פלטפורמה
-על כל עובד שאוייש בעסקה ייגבה תעריף עמלה אחיד מהקבלן (לפי הגדרת מנהל המערכת). התאגיד אינו משלם עמלה בעסקה זו.
+על כל עובד שאוייש בעסקה ייגבה תעריף עמלה אחיד מהתאגיד (לפי הגדרת מנהל המערכת). הקבלן אינו משלם עמלה בעסקה זו.
 
 3. תהליך החיוב
-חיוב הקבלן מתבצע 48 שעות לאחר אישור רשימת העובדים על ידו. בחלון הזמן הזה התאגיד רשאי לבטל את העסקה במערכת ולמנוע חיוב.
+חיוב התאגיד מתבצע 48 שעות לאחר אישור רשימת העובדים על ידי הקבלן. בחלון הזמן הזה התאגיד רשאי לבטל את העסקה במערכת ולמנוע חיוב.
 
 4. נעילת עובדים
 ברגע שהתאגיד מגיש רשימת עובדים בעסקה, אותם עובדים ננעלים ואינם זמינים להצעות אחרות עד סגירת העסקה או ביטולה.
@@ -78,8 +77,11 @@ const TC_TEXT = `
 6. הסתרת פרטים עד אישור
 הקבלן והתאגיד רואים זה את פרטי זה רק לאחר שהעסקה אושרה. בשלב הראשון התאגיד רואה רק מקצוע, כמות, ואזור.
 
-7. אחריות
+7. אחריות לפרטי העובדים
 פרטי העובדים שמסופקים על ידי התאגיד נכונים למיטב ידיעתו ובאחריותו. תיאום ההצבה בפועל מתבצע ישירות מול הקבלן לאחר אישור העסקה.
+
+8. אימות צד נגדי והגבלת אחריות
+BuildUp עושה כמיטב יכולתה לאמת קבלנים ומשתמשים בפלטפורמה (פנקס הקבלנים, רשם החברות, אימות טלפון ועוד), אולם האחריות הסופית לבדיקת הקבלן שמולו פועל התאגיד — לרבות יכולת התשלום, רישיונותיו, ועמידה בחוקי העבודה — חלה על התאגיד עצמו. BuildUp לא תישא בכל הוצאה או נזק, ישיר או עקיף, הנובע מהתקשרות בין התאגיד לקבלן.
 `.trim();
 
 function otpErrorMsg(msg: string): string {
@@ -90,16 +92,46 @@ function otpErrorMsg(msg: string): string {
   return 'שגיאה באימות. נסה שוב';
 }
 
-export default function RegisterCorporationPage() {
+function RegisterCorporationInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const fromTrial = searchParams?.get('from') === 'trial';
+  // Live origin list — backend already filters to is_active=TRUE so
+  // admin-deactivated countries never reach this dropdown.
+  const { origins } = useEnums();
   const [step, setStep]       = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState('');
+  // ── Duplicate-ח.פ outcome ────────────────────────────────────────
+  // When the backend reports the ח.פ is already on file, we land the
+  // user on a "we SMS'd the existing owner" success screen instead
+  // of a red error. The string here is the existing corp's company
+  // name (used in the copy); null means "no duplicate detected".
+  const [duplicateExistingName, setDuplicateExistingName] = useState<string | null>(null);
 
   const [step1, setStep1] = useState<Step1>({
     phone: '', normPhone: '', full_name: '',
     otpPhase: 'enter', code: '', otpVerified: false,
   });
+
+  // Trial bypass — when the user arrives here from /try/corporation/*,
+  // their phone has already passed OTP at /login. The backend marked
+  // that OTP as ALSO satisfying the 'register' purpose for 15 minutes,
+  // so we can skip Step 1 entirely. Same shape as the contractor
+  // register page — see comment there for the full reasoning.
+  useEffect(() => {
+    if (!fromTrial) return;
+    const p = readProspect();
+    if (!p) return;          // expired / missing → fall back to normal flow
+    setStep1((s) => ({
+      ...s,
+      phone: p.phone,
+      normPhone: p.phone,
+      otpPhase: 'verify',
+      otpVerified: true,
+    }));
+    setStep(2);
+  }, [fromTrial]);
   const [step2, setStep2] = useState<Step2>({
     company_name_he: '', business_number: '', countries_of_origin: [], minimum_contract_months: 3,
   });
@@ -202,9 +234,25 @@ export default function RegisterCorporationPage() {
       if (result.access_token && result.refresh_token) {
         saveTokens(result.access_token, result.refresh_token);
       }
+      // Trial loop closure — the prospect session has served its
+      // purpose now that the user is a real registered corporation.
+      // (No pending_search to replay on the corp side; corps don't
+      // submit searches, they respond to them.)
+      clearProspect();
       router.push('/corporation/dashboard');
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'שגיאה בהרשמה';
+      // Backend returns the duplicate-ח.פ case as a structured detail
+      // object ({ code, message, existing_company_name }). apiFetch
+      // wraps the response body in the Error message, so we sniff the
+      // string for the code and branch to the 'pending request' screen
+      // rather than rendering as a red error.
+      if (msg.includes('corporation_already_registered')) {
+        // Try to extract the existing company name for the screen.
+        const m = msg.match(/"existing_company_name"\s*:\s*"([^"]+)"/);
+        setDuplicateExistingName(m ? m[1] : null);
+        return;
+      }
       setError(
         msg === 'phone_not_verified' ? 'אימות הטלפון פג תוקף. חזור לשלב הראשון' :
         msg === 'already_registered' ? 'מספר הטלפון כבר רשום. אנא התחבר' :
@@ -217,13 +265,63 @@ export default function RegisterCorporationPage() {
   const progressStep = step === 1 && step1.otpPhase === 'verify' ? 1 : step;
   const namePrefilledFromRegistry = !!(lookup?.ok && lookup.prefill?.company_name_he);
 
+  if (duplicateExistingName !== null) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 px-4 py-8">
+        <div className="w-full max-w-lg mb-3 flex justify-end">
+          <HomeLink />
+        </div>
+        <div className="w-full max-w-lg bg-white border-2 border-emerald-300 rounded-2xl shadow-lg p-6 text-center space-y-3">
+          <div className="mx-auto h-14 w-14 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center">
+            <CheckCircle2 className="h-8 w-8" />
+          </div>
+          <h1 className="text-xl font-bold text-slate-900">הבקשה נשלחה</h1>
+          <p className="text-sm text-slate-700 leading-relaxed">
+            התאגיד <strong>{duplicateExistingName || 'עם ח.פ זה'}</strong> כבר רשום במערכת.
+            <br />
+            שלחנו לבעלים הקיים הודעת SMS עם קישור לאישור הוספתך כחבר צוות.
+          </p>
+          <p className="text-xs text-slate-500">
+            לאחר אישור, נשלח לך SMS עם פרטי הכניסה. אם הבעלים לא יאשר בזמן סביר, פנה לתמיכה.
+          </p>
+          <div className="pt-2 flex gap-2 justify-center">
+            <Link href="/login" className="px-4 py-2 rounded-lg border border-slate-300 text-sm font-medium text-slate-700 hover:bg-slate-50">
+              חזרה לכניסה
+            </Link>
+            <Link href="/" className="px-4 py-2 rounded-lg bg-brand-600 text-sm font-medium text-white hover:bg-brand-700">
+              חזרה לדף הבית
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4 py-8">
-      <div className="w-full max-w-lg">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 px-4 py-8">
+      <div className="w-full max-w-lg mb-3 flex justify-end">
+        <HomeLink />
+      </div>
+      <div className="w-full max-w-lg relative">
+        {/* Full-card loading overlay during the final registration
+            submit. The submit's button-level spinner is too small to
+            register as feedback on a fast network — users were double-
+            clicking the submit because nothing visible happened. This
+            covers the whole card with a clear "מבצע רישום..." panel so
+            it's obvious the request is in flight. */}
+        {loading && step === 3 && (
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center
+                          bg-white/85 backdrop-blur-sm rounded-xl"
+               aria-live="polite" aria-busy="true">
+            <Loader2 className="h-12 w-12 animate-spin text-brand-600 mb-4" />
+            <p className="text-base font-semibold text-slate-800">מבצע רישום...</p>
+            <p className="text-sm text-slate-500 mt-1">אל תסגור את הדף</p>
+          </div>
+        )}
         <div className="h-2 rounded-t-xl bg-gradient-to-e from-brand-600 to-brand-400" />
         <Card className="rounded-t-none shadow-md">
           <CardHeader className="pb-2">
-            <div className="text-2xl font-bold text-brand-600 mb-1 text-center">שיבוץ</div>
+            <div className="flex justify-center mb-3"><Logo size="md" variant="on-light" /></div>
             <CardTitle className="text-center">הרשמת תאגיד</CardTitle>
             <CardDescription className="text-center">שלב {step} מתוך {TOTAL_STEPS}</CardDescription>
             <div className="mt-3 flex gap-1.5">
@@ -311,6 +409,21 @@ export default function RegisterCorporationPage() {
             {step === 2 && (
               <form onSubmit={handleNext} className="flex flex-col gap-4" noValidate>
                 <h3 className="font-semibold text-slate-800">פרטי תאגיד</h3>
+
+                {/* When the user arrived from the trial flow we skipped
+                    Step 1, so the full-name input never rendered. Show
+                    it here at the top of Step 2 so we still capture
+                    contact_name before the final submit. */}
+                {fromTrial && (
+                  <Input
+                    label="שם מלא"
+                    placeholder="ישראל ישראלי"
+                    value={step1.full_name}
+                    onChange={(e) => setStep1((p) => ({ ...p, full_name: e.target.value }))}
+                    autoComplete="name"
+                  />
+                )}
+
                 <Input
                   label="מספר ח.פ (9 ספרות)"
                   placeholder="123456789"
@@ -340,7 +453,25 @@ export default function RegisterCorporationPage() {
                     </div>
                   </div>
                 )}
-                {lookup && lookup.ok && !lookup.blocked && lookup.ica_found && (
+                {lookup && lookup.ok && !lookup.blocked && lookup.gov_list_found && (
+                  <div className="flex items-start gap-2 text-sm text-emerald-700 bg-emerald-50 border-2 border-emerald-300 rounded-md px-3 py-2">
+                    <ShieldCheck className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                    <div>
+                      <p className="font-bold">
+                        חברה רשומה ברשם החברות ומופיעה ברשימת תאגידי בניין מורשים
+                      </p>
+                      {lookup.prefill?.company_name_he && (
+                        <p>שם: {lookup.prefill.company_name_he}</p>
+                      )}
+                      {lookup.gov_list_year && (
+                        <p className="text-xs text-emerald-600 mt-0.5">
+                          רשות האוכלוסין וההגירה — רשימת {lookup.gov_list_year}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+                {lookup && lookup.ok && !lookup.blocked && !lookup.gov_list_found && lookup.ica_found && (
                   <div className="flex items-start gap-2 text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md px-3 py-2">
                     <ShieldCheck className="h-4 w-4 mt-0.5 flex-shrink-0" />
                     <div>
@@ -348,6 +479,9 @@ export default function RegisterCorporationPage() {
                       {lookup.prefill?.company_name_he && (
                         <p>שם: {lookup.prefill.company_name_he}</p>
                       )}
+                      <p className="text-xs text-emerald-600 mt-0.5">
+                        לא נמצאה ברשימת תאגידי בניין מורשים — אישור ידני יידרש.
+                      </p>
                     </div>
                   </div>
                 )}
@@ -378,15 +512,17 @@ export default function RegisterCorporationPage() {
                 <div className="flex flex-col gap-2">
                   <label className="text-sm font-medium text-slate-700">מדינות מוצא עובדים</label>
                   <div className="grid grid-cols-2 gap-2 border border-slate-200 rounded-md p-3">
-                    {ORIGIN_COUNTRIES.map((c) => (
-                      <label key={c.value} className="flex items-center gap-2 text-sm cursor-pointer">
+                    {origins.length === 0 ? (
+                      <p className="text-sm text-slate-400 col-span-2">טוען מדינות...</p>
+                    ) : origins.map((o) => (
+                      <label key={o.code} className="flex items-center gap-2 text-sm cursor-pointer">
                         <input
                           type="checkbox"
-                          checked={step2.countries_of_origin.includes(c.value)}
-                          onChange={() => toggleCountry(c.value)}
+                          checked={step2.countries_of_origin.includes(o.code)}
+                          onChange={() => toggleCountry(o.code)}
                           className="rounded"
                         />
-                        {c.label}
+                        {o.name_he}
                       </label>
                     ))}
                   </div>
@@ -498,5 +634,16 @@ export default function RegisterCorporationPage() {
         </p>
       </div>
     </div>
+  );
+}
+
+// useSearchParams (added for the trial-flow `?from=trial` query) must
+// be wrapped in a Suspense boundary or Next 16 fails the static-render
+// step for this page. Same pattern as /login and /register/contractor.
+export default function RegisterCorporationPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
+      <RegisterCorporationInner />
+    </Suspense>
   );
 }

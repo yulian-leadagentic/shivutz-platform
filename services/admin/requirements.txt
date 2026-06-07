@@ -5,3 +5,7 @@ pymysql==1.1.1
 python-jose[cryptography]==3.3.0
 httpx==0.27.0
 python-dotenv==1.0.1
+# Multipart for the gov-corp-list PDF upload endpoint.
+python-multipart==0.0.9
+# PDF parsing for רשות האוכלוסין annual manpower-corps list.
+pdfplumber==0.11.0

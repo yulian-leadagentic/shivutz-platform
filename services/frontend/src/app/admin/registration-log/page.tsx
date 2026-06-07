@@ -1,8 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Loader2, Phone, RefreshCw, ShieldAlert, CheckCircle2, Clock, AlertTriangle } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
+import { TableToolbar } from '@/components/table/TableToolbar';
+import { useTableState } from '@/components/table/useTableState';
 
 interface LogEntry {
   otp_id: string;
@@ -32,6 +34,7 @@ export default function RegistrationLogPage() {
   const [entries, setEntries] = useState<LogEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter]   = useState<'all' | 'failed' | 'verified'>('all');
+  const [search, setSearch]   = useState('');
 
   async function load() {
     setLoading(true);
@@ -47,6 +50,35 @@ export default function RegistrationLogPage() {
   useEffect(() => { load(); }, [filter]);
 
   const failed = entries.filter((e) => ['failed_attempts', 'locked', 'expired'].includes(e.status));
+
+  const filterPredicate = useCallback((e: LogEntry) => {
+    if (search) {
+      const q = search.toLowerCase();
+      if (!e.phone.toLowerCase().includes(q) && !(e.ip_address || '').toLowerCase().includes(q)) return false;
+    }
+    return true;
+  }, [search]);
+
+  type LogSortKey = 'created' | 'verified' | 'attempts' | 'phone';
+  const sortBy = useCallback((e: LogEntry, key: LogSortKey) => {
+    switch (key) {
+      case 'created':  return new Date(e.created_at);
+      case 'verified': return e.verified_at ? new Date(e.verified_at) : null;
+      case 'attempts': return e.attempts;
+      case 'phone':    return e.phone;
+    }
+  }, []);
+
+  const { visible: visibleEntries, sortKey, sortDir, setSortKey, flipSortDir } =
+    useTableState<LogEntry, LogSortKey>({
+      rows: entries,
+      initialSortKey: 'created',
+      initialSortDir: 'desc',
+      filter: filterPredicate,
+      sortBy,
+    });
+
+  const hasActiveFilter = search.trim() !== '';
 
   return (
     <div className="space-y-6 max-w-5xl">
@@ -74,22 +106,32 @@ export default function RegistrationLogPage() {
         </div>
       )}
 
-      {/* Filter tabs */}
-      <div className="flex gap-2">
-        {(['all', 'failed', 'verified'] as const).map((f) => (
-          <button
-            key={f}
-            onClick={() => setFilter(f)}
-            className={`text-sm font-medium px-4 py-2 rounded-xl border transition-colors ${
-              filter === f
-                ? 'bg-brand-600 text-white border-brand-600'
-                : 'bg-white text-slate-600 border-slate-200 hover:border-brand-300'
-            }`}
-          >
-            {f === 'all' ? 'הכל' : f === 'failed' ? 'כישלונות' : 'הצליחו'}
-          </button>
-        ))}
-      </div>
+      <TableToolbar
+        pills={{
+          options: [
+            { key: 'all',      label: 'הכל',     tone: 'bg-slate-900 text-white' },
+            { key: 'failed',   label: 'כישלונות', tone: 'bg-rose-500 text-white' },
+            { key: 'verified', label: 'הצליחו',  tone: 'bg-emerald-600 text-white' },
+          ],
+          active: filter,
+          onChange: setFilter,
+        }}
+        searchValue={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="חיפוש: טלפון / IP"
+        sortOptions={[
+          { key: 'created',  label: 'תאריך שליחה' },
+          { key: 'verified', label: 'תאריך אימות' },
+          { key: 'attempts', label: 'מספר ניסיונות' },
+          { key: 'phone',    label: 'טלפון' },
+        ]}
+        sortKey={sortKey}
+        sortDir={sortDir}
+        onSortKeyChange={setSortKey}
+        onSortDirToggle={flipSortDir}
+        hasActiveFilter={hasActiveFilter}
+        onClear={() => setSearch('')}
+      />
 
       {/* Table */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-card overflow-hidden">
@@ -97,10 +139,10 @@ export default function RegistrationLogPage() {
           <div className="flex items-center justify-center py-16 text-slate-400">
             <Loader2 className="h-5 w-5 animate-spin me-2" />טוען...
           </div>
-        ) : entries.length === 0 ? (
+        ) : visibleEntries.length === 0 ? (
           <div className="text-center py-16 text-slate-400">
             <Phone className="h-10 w-10 mx-auto mb-3 text-slate-200" />
-            <p>אין רשומות</p>
+            <p>{hasActiveFilter ? 'אין רשומות תואמות' : 'אין רשומות'}</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -116,7 +158,7 @@ export default function RegistrationLogPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {entries.map((e) => {
+              {visibleEntries.map((e) => {
                 const s = STATUS_MAP[e.status] ?? STATUS_MAP.pending;
                 const Icon = s.icon;
                 return (

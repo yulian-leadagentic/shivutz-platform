@@ -4,15 +4,16 @@ import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import {
   Loader2, Send, FileText, Users, Clock, CheckCircle2,
-  Building2, Phone, Mail, UserCheck, HandshakeIcon, Download,
+  Building2, Phone, Mail, UserCheck, HandshakeIcon, Download, X,
 } from 'lucide-react';
 import { dealApi, workerApi, orgApi } from '@/lib/api';
+import { dealRef } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import StatusBadge from '@/components/StatusBadge';
 import type { Deal, Message, Worker, Corporation } from '@/types';
-import { EXPERIENCE_LABEL as EXP_LABELS } from '@/i18n/he';
+import { EXPERIENCE_LABEL as EXP_LABELS, heOrigin } from '@/i18n/he';
 
 interface ReportForm {
   actual_workers: string;
@@ -33,7 +34,7 @@ const STATUS_EXPLANATION: Record<string, { icon: React.ReactNode; text: string; 
   },
   approved: {
     icon: <CheckCircle2 className="h-4 w-4 shrink-0" />,
-    text: 'אישרת — חיוב יבוצע אוטומטית בתום 48 שעות (אלא אם התאגיד יבטל)',
+    text: 'ממתינים שתאשר שנסגרה עסקה',
     color: 'bg-emerald-50 border-emerald-200 text-emerald-800',
   },
   rejected: {
@@ -51,21 +52,27 @@ const STATUS_EXPLANATION: Record<string, { icon: React.ReactNode; text: string; 
     text: 'התאגיד ביטל לפני החיוב — לא חויבת. הבקשה נשארת פתוחה',
     color: 'bg-red-50 border-red-200 text-red-800',
   },
+  cancelled_by_contractor: {
+    icon: <Clock className="h-4 w-4 shrink-0" />,
+    text: 'סימנת שהעסקה לא נסגרה — לא חויבת',
+    color: 'bg-slate-50 border-slate-200 text-slate-700',
+  },
   closed: {
     icon: <CheckCircle2 className="h-4 w-4 shrink-0" />,
-    text: 'העסקה נסגרה — חשבונית הופקה',
+    text: 'אישרת שהעסקה נסגרה — תודה',
     color: 'bg-emerald-50 border-emerald-200 text-emerald-800',
   },
 };
 
 const STATUS_LABEL_HE: Record<string, string> = {
-  proposed:           'הפנייה נשלחה',
-  corp_committed:     'תאגיד הציג רשימה',
-  approved:           'אושר — ממתין לחיוב',
-  rejected:           'נדחה',
-  expired:            'פג תוקף',
-  cancelled_by_corp:  'בוטל ע״י התאגיד',
-  closed:             'נסגר',
+  proposed:                  'הפנייה נשלחה',
+  corp_committed:            'תאגיד הציג רשימה',
+  approved:                  'אושר',
+  rejected:                  'נדחה',
+  expired:                   'פג תוקף',
+  cancelled_by_corp:         'בוטל ע״י התאגיד',
+  cancelled_by_contractor:   'לא נסגרה',
+  closed:                    'נסגר',
 };
 
 export default function DealDetailPage() {
@@ -81,6 +88,12 @@ export default function DealDetailPage() {
   const [error, setError]       = useState('');
   const [confirming, setConfirming] = useState(false);
   const [confirmError, setConfirmError] = useState('');
+  // Close-the-loop (status='approved' → contractor confirms whether
+  // the deal actually closed off-platform).
+  const [closing, setClosing] = useState<'confirm' | 'decline' | null>(null);
+  const [closeError, setCloseError] = useState('');
+  const [declineDialogOpen, setDeclineDialogOpen] = useState(false);
+  const [declineReason, setDeclineReason] = useState('');
 
   const [reportForm, setReportForm] = useState<ReportForm>({
     actual_workers: '', actual_start_date: '', actual_end_date: '',
@@ -133,8 +146,35 @@ export default function DealDetailPage() {
       }
     }
     init();
-    pollRef.current = setInterval(loadMessages, 30_000);
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+
+    // Visibility-aware polling — pause when the tab isn't focused
+    // so a stale background tab doesn't churn one of the browser's
+    // 6 concurrent connections per origin against the gateway.
+    // Same pattern as the corp deal detail page.
+    function startPolling() {
+      if (pollRef.current) clearInterval(pollRef.current);
+      pollRef.current = setInterval(loadMessages, 30_000);
+    }
+    function stopPolling() {
+      if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+    }
+    function onVisibility() {
+      if (typeof document === 'undefined') return;
+      if (document.visibilityState === 'visible') { loadMessages(); startPolling(); }
+      else stopPolling();
+    }
+    if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+      startPolling();
+    }
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', onVisibility);
+    }
+    return () => {
+      stopPolling();
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', onVisibility);
+      }
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
@@ -177,6 +217,41 @@ export default function DealDetailPage() {
       setConfirmError(e instanceof Error ? e.message : 'שגיאה בדחיית ההצעה');
     } finally {
       setConfirming(false);
+    }
+  }
+
+  /** Contractor confirms the off-platform deal closed. Moves the
+   *  deal to 'closed'. Commission charging path is untouched —
+   *  whatever scheduled capture / billing rules already applied to
+   *  the approved state still apply. */
+  async function handleContractorConfirmClosed() {
+    setClosing('confirm');
+    setCloseError('');
+    try {
+      await dealApi.contractorConfirmClosed(id);
+      await loadDeal();
+    } catch (e: unknown) {
+      setCloseError(e instanceof Error ? e.message : 'שגיאה באישור סגירת העסקה');
+    } finally {
+      setClosing(null);
+    }
+  }
+
+  /** Contractor declines: the deal did not close. Captures the
+   *  free-text reason, voids the J5 hold via the backend, moves the
+   *  deal to 'cancelled_by_contractor'. */
+  async function handleContractorDeclineClosed() {
+    setClosing('decline');
+    setCloseError('');
+    try {
+      await dealApi.contractorDeclineClosed(id, declineReason.trim());
+      setDeclineDialogOpen(false);
+      setDeclineReason('');
+      await loadDeal();
+    } catch (e: unknown) {
+      setCloseError(e instanceof Error ? e.message : 'שגיאה בעדכון העסקה');
+    } finally {
+      setClosing(null);
     }
   }
 
@@ -237,7 +312,7 @@ export default function DealDetailPage() {
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div className="space-y-1">
           <div className="flex items-center gap-2 flex-wrap">
-            <h1 className="text-2xl font-bold text-slate-900">עסקה #{id.slice(0, 8)}</h1>
+            <h1 className="text-2xl font-bold text-slate-900">עסקה #{dealRef(id)}</h1>
             <span className="text-xs font-medium px-2.5 py-0.5 rounded-full border border-slate-300 bg-slate-50 text-slate-700">
               {STATUS_LABEL_HE[deal.status] || deal.status}
             </span>
@@ -295,6 +370,87 @@ export default function DealDetailPage() {
         <div className={`flex items-center gap-2.5 border rounded-xl px-4 py-3 text-sm font-medium ${statusInfo.color}`}>
           {statusInfo.icon}
           {statusInfo.text}
+        </div>
+      )}
+
+      {/* Approved → contractor close-the-loop. The contractor has
+          revealed corp details and is coordinating off-platform; we
+          ask back: did this actually close? */}
+      {deal.status === 'approved' && (
+        <Card className="border-emerald-200 bg-emerald-50/30">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base text-emerald-900">סגירת העסקה</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-slate-700 leading-relaxed">
+              לאחר התיאום עם התאגיד, אנא עדכן אם העסקה אכן נסגרה.
+            </p>
+            {closeError && (
+              <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                {closeError}
+              </p>
+            )}
+            <div className="flex gap-2 flex-wrap">
+              <Button
+                onClick={handleContractorConfirmClosed}
+                disabled={closing !== null}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              >
+                {closing === 'confirm'
+                  ? <><Loader2 className="h-4 w-4 animate-spin me-2" />מעדכן...</>
+                  : <><CheckCircle2 className="h-4 w-4 me-2" />אושרה עסקה</>}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => setDeclineDialogOpen(true)}
+                disabled={!!closing}
+              >
+                <X className="h-4 w-4 me-2" />
+                לא אושרה עסקה
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Decline-with-reason dialog */}
+      {declineDialogOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-5 space-y-4">
+            <h3 className="text-lg font-bold text-slate-900">העסקה לא נסגרה</h3>
+            <p className="text-sm text-slate-600 leading-relaxed">
+              נודה לך אם תפרט מדוע העסקה לא נסגרה. הפרטים יעזרו לנו להבין מה השתבש ולשפר את ההתאמות.
+            </p>
+            <textarea
+              value={declineReason}
+              onChange={(e) => setDeclineReason(e.target.value)}
+              rows={4}
+              maxLength={500}
+              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none resize-none"
+              placeholder="לדוגמה: התאגיד לא חזר אלי, העובדים לא התאימו, מצאתי בחברה אחרת..."
+            />
+            {closeError && (
+              <p className="text-sm text-red-600">{closeError}</p>
+            )}
+            <div className="flex gap-2 justify-end">
+              <Button
+                variant="outline"
+                onClick={() => { setDeclineDialogOpen(false); setDeclineReason(''); setCloseError(''); }}
+                disabled={closing === 'decline'}
+              >
+                ביטול
+              </Button>
+              <Button
+                onClick={handleContractorDeclineClosed}
+                disabled={closing === 'decline'}
+                className="bg-slate-700 hover:bg-slate-800 text-white"
+              >
+                {closing === 'decline'
+                  ? <><Loader2 className="h-4 w-4 animate-spin me-2" />שולח...</>
+                  : 'אשר ושלח'}
+              </Button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -369,34 +525,39 @@ export default function DealDetailPage() {
               </div>
             )}
 
-            {/* Workers list (with disclosure-rule fields applied by backend) */}
+            {/* Workers list — pre-approval (this screen, status =
+                corp_committed) hides names + internal IDs. Contractor
+                gets to evaluate profession / experience / origin /
+                languages without identifying info, which keeps a
+                level playing field across deals and avoids "I'll
+                pick them by name" shortcuts. Names + internal IDs
+                are unlocked AFTER the contractor approves the list
+                — that block lives further down in this page (search
+                for "post-disclosure"). */}
             {workers.length > 0 && (
               <div className="bg-white rounded-xl border border-emerald-100 p-4">
                 <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
                   רשימת עובדים שהוצעה ({workers.length})
                 </p>
+                <p className="text-[11px] text-slate-400 mb-3 leading-relaxed">
+                  פרטי הזיהוי של העובדים יוצגו לאחר אישור הרשימה. כעת מוצגים מקצוע, ניסיון וארץ מוצא בלבד.
+                </p>
                 <div className="space-y-2">
-                  {workers.map((w) => {
-                    const wAny = w as unknown as { full_name?: string; internal_id?: string; years_in_israel?: number };
-                    const name = wAny.full_name || `${w.first_name ?? ''} ${w.last_name ?? ''}`.trim() || '—';
-                    const initials = name.split(/\s+/).filter(Boolean).map((p) => p[0]).slice(0, 2).join('');
+                  {workers.map((w, idx) => {
+                    const wAny = w as unknown as { years_in_israel?: number; experience_range?: string };
                     return (
                       <div key={w.id} className="flex items-center gap-3 py-1.5 border-b border-slate-50 last:border-0">
                         <div className="h-8 w-8 rounded-full bg-brand-100 flex items-center justify-center shrink-0 text-xs font-bold text-brand-700">
-                          {initials || '?'}
+                          {idx + 1}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <p className="text-sm font-medium text-slate-900">{name}</p>
-                            {wAny.internal_id && (
-                              <span className="text-[10px] font-mono text-slate-400" dir="ltr">{wAny.internal_id}</span>
-                            )}
-                          </div>
+                          <p className="text-sm font-medium text-slate-900">עובד #{idx + 1}</p>
                           <p className="text-xs text-slate-500">
                             {w.profession_type}
+                            {wAny.experience_range && <> · ניסיון {wAny.experience_range}</>}
+                            {!wAny.experience_range && w.experience_years != null && <> · {w.experience_years} שנים ניסיון</>}
                             {w.origin_country && <> · {w.origin_country}</>}
                             {wAny.years_in_israel != null && <> · {wAny.years_in_israel} שנים בישראל</>}
-                            {Array.isArray(w.languages) && w.languages.length > 0 && <> · {w.languages.join(', ')}</>}
                           </p>
                         </div>
                       </div>
@@ -420,7 +581,7 @@ export default function DealDetailPage() {
               >
                 {confirming
                   ? <><Loader2 className="h-4 w-4 animate-spin me-2" />מעבד...</>
-                  : <><CheckCircle2 className="h-4 w-4 me-2" />אשר רשימה ({workers.length} עובדים)</>
+                  : <><CheckCircle2 className="h-4 w-4 me-2" />הצג פרטי תאגיד ({workers.length} עובדים)</>
                 }
               </Button>
               <Button
@@ -449,39 +610,38 @@ export default function DealDetailPage() {
             <CardContent>
               {!showWorkers ? (
                 <p className="text-slate-400 text-sm text-center py-4">
-                  שמות העובדים יוצגו ברגע שהתאגיד יציג רשימה
+                  רשימת העובדים תוצג ברגע שהתאגיד יציג הצעה
                 </p>
               ) : workers.length === 0 ? (
                 <p className="text-slate-400 text-sm text-center py-4">אין עובדים משובצים</p>
               ) : (
-                <div className="-mx-4 sm:mx-0 overflow-x-auto">
-                  <table className="w-full text-sm min-w-[560px] sm:min-w-0">
-                    <thead>
-                      <tr className="text-slate-500 border-b border-slate-100">
-                        <th className="px-4 sm:px-0 pb-2 font-medium text-start">שם</th>
-                        <th className="px-4 sm:px-0 pb-2 font-medium text-start">מס׳ פנימי</th>
-                        <th className="px-4 sm:px-0 pb-2 font-medium text-start">מקצוע</th>
-                        <th className="px-4 sm:px-0 pb-2 font-medium text-start">מדינה</th>
-                        <th className="px-4 sm:px-0 pb-2 font-medium text-start">שנים בארץ</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {workers.map((w) => {
-                        const wAny = w as unknown as { full_name?: string; internal_id?: string; years_in_israel?: number };
-                        const name = wAny.full_name || `${w.first_name ?? ''} ${w.last_name ?? ''}`.trim() || '—';
-                        return (
-                          <tr key={w.id} className="border-b border-slate-50 last:border-0">
-                            <td className="px-4 sm:px-0 py-2 font-medium">{name}</td>
-                            <td className="px-4 sm:px-0 py-2 text-slate-500 text-xs font-mono" dir="ltr">{wAny.internal_id ?? '—'}</td>
-                            <td className="px-4 sm:px-0 py-2 text-slate-600">{w.profession_type}</td>
-                            <td className="px-4 sm:px-0 py-2 text-slate-600">{w.origin_country || '—'}</td>
-                            <td className="px-4 sm:px-0 py-2 text-slate-500 text-xs">{wAny.years_in_israel ?? '—'}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                <>
+                  <p className="text-[11px] text-slate-500 pb-2">
+                    מוצגים מוצא וותק בלבד — שמות אינם נדרשים להחלטה.
+                  </p>
+                  <ul className="divide-y divide-slate-100">
+                    {workers.map((w, wIdx) => {
+                      const wAny = w as unknown as { experience_range?: string };
+                      const origin = w.origin_country ? heOrigin(w.origin_country) : null;
+                      const experience = wAny.experience_range
+                        ? `ניסיון ${wAny.experience_range}`
+                        : (w.experience_years != null ? `${w.experience_years} שנות ניסיון` : null);
+                      return (
+                        <li key={w.id || wIdx} className="flex items-center gap-3 py-2.5">
+                          <div className="h-7 w-7 rounded-full bg-brand-100 flex items-center justify-center text-[10px] font-bold text-brand-700 shrink-0">
+                            {wIdx + 1}
+                          </div>
+                          <div className="flex-1 min-w-0 text-sm text-slate-700 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                            {origin && <span className="font-medium text-slate-900">{origin}</span>}
+                            {origin && experience && <span className="text-slate-300">·</span>}
+                            {experience && <span>{experience}</span>}
+                            {!origin && !experience && <span className="text-slate-400">—</span>}
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </>
               )}
             </CardContent>
           </Card>

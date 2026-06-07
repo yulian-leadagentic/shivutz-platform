@@ -77,7 +77,7 @@ export default function LeadCaptureModal({ open, onClose }: LeadCaptureModalProp
       {/* Modal */}
       <div className="relative bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden animate-slide-up">
         {/* Header gradient */}
-        <div className="bg-gradient-to-br from-brand-600 to-indigo-700 px-7 pt-7 pb-8">
+        <div className="bg-gradient-to-br from-brand-600 to-brand-700 px-7 pt-7 pb-8">
           <button
             onClick={handleClose}
             className="absolute top-4 start-4 text-white/60 hover:text-white p-1.5 rounded-lg hover:bg-white/10 transition-colors"

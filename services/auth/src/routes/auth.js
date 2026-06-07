@@ -9,7 +9,11 @@ const { generateOtp, verifyOtp, hasRecentVerifiedOtp, normalisePhone } = require
 
 const ACCESS_SECRET  = process.env.JWT_SECRET;
 const REFRESH_SECRET = process.env.JWT_SECRET + '_refresh';
-const ACCESS_TTL     = process.env.JWT_ACCESS_EXPIRES_IN  || '15m';
+// Wave 5 feedback: "המערכת מעיפה אותי כל כמה דקות" — keep users
+// signed in for a full 6h workday so they don't bounce to /login
+// mid-task. Frontend cookie TTL was bumped to match in
+// services/frontend/src/lib/auth.ts.
+const ACCESS_TTL     = process.env.JWT_ACCESS_EXPIRES_IN  || '6h';
 const REFRESH_TTL    = process.env.JWT_REFRESH_EXPIRES_IN || '7d';
 const NOTIF_URL      = process.env.NOTIF_SERVICE_URL || 'http://notification:3006';
 
@@ -45,10 +49,20 @@ function buildPayload(user, membership = null) {
 }
 
 /**
- * Store refresh token and update last_login_at.
+ * Store refresh token and update last_login_at. The refresh token
+ * carries the entity context (entity_id + entity_type) it was
+ * issued under, so /auth/refresh can rebuild an access token that
+ * stays in the user's chosen role — important for multi-membership
+ * users where re-fetching memberships and arbitrarily picking the
+ * "first one" loses the role they're actively working in.
  */
-async function issueRefreshToken(pool, userId) {
-  const refreshToken = signRefresh({ sub: userId });
+async function issueRefreshToken(pool, userId, entityCtx = {}) {
+  const payload = {
+    sub: userId,
+    ...(entityCtx.entity_id   ? { entity_id:   entityCtx.entity_id }   : {}),
+    ...(entityCtx.entity_type ? { entity_type: entityCtx.entity_type } : {}),
+  };
+  const refreshToken = signRefresh(payload);
   const tokenHash    = crypto.createHash('sha256').update(refreshToken).digest('hex');
   const expiresAt    = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
   await pool.query(
@@ -60,12 +74,35 @@ async function issueRefreshToken(pool, userId) {
 }
 
 /**
- * Fetch entity memberships for a user.
+ * Fetch entity memberships for a user, enriched with the Hebrew
+ * company name pulled cross-database from org_db.contractors /
+ * org_db.corporations. The membership picker has nothing else to
+ * disambiguate two contractor memberships with the same role —
+ * showing the company name keeps it actionable.
+ *
+ * `entity_name` falls back gracefully: company_name_he → company_name
+ * → null. The frontend handles null by hiding the line.
  */
 async function getMemberships(pool, userId) {
+  const orgDb = process.env.ORG_DB_NAME || 'org_db';
   const [rows] = await pool.query(
-    `SELECT * FROM entity_memberships
-     WHERE user_id = ? AND is_active = TRUE AND invitation_accepted_at IS NOT NULL`,
+    `SELECT em.*,
+            COALESCE(
+              CASE em.entity_type
+                WHEN 'contractor'  THEN c.company_name_he
+                WHEN 'corporation' THEN co.company_name_he
+              END,
+              CASE em.entity_type
+                WHEN 'contractor'  THEN c.company_name
+                WHEN 'corporation' THEN co.company_name
+              END
+            ) AS entity_name
+       FROM entity_memberships em
+       LEFT JOIN \`${orgDb}\`.contractors  c  ON em.entity_type = 'contractor'  AND c.id  = em.entity_id
+       LEFT JOIN \`${orgDb}\`.corporations co ON em.entity_type = 'corporation' AND co.id = em.entity_id
+      WHERE em.user_id = ?
+        AND em.is_active = TRUE
+        AND em.invitation_accepted_at IS NOT NULL`,
     [userId]
   );
   return rows;
@@ -75,7 +112,7 @@ async function getMemberships(pool, userId) {
  * Send OTP SMS via notification service internal endpoint.
  */
 async function sendOtpSms(phone, code) {
-  const message = `קוד האימות שלך לשיבוץ פלטפורמה: ${code}\nבתוקף 10 דקות. אל תשתף קוד זה.`;
+  const message = `קוד האימות שלך לכניסה לפורטל BuildUp הוא: ${code}\nבתוקף 10 דקות. אל תשתף קוד זה.`;
   try {
     const resp = await fetch(`${NOTIF_URL}/internal/sms`, {
       method:  'POST',
@@ -191,7 +228,46 @@ router.post('/auth/login/otp', async (req, res) => {
     );
     const user = users[0];
     if (!user || !user.is_active) {
-      return res.status(401).json({ error: 'user_not_found' });
+      // Prospect path — phone has no user record (or the user is
+      // inactive). Instead of bouncing them with a 401, treat the
+      // OTP they just passed as ALSO satisfying the 'register'
+      // purpose: insert a verified sms_otp row so the contractor
+      // registration flow's check-recent-otp gate passes for the
+      // next 15 minutes (same TTL used everywhere else). The
+      // frontend then sends them through /try/contractor/* and on
+      // to /register/contractor?from=trial — skipping a redundant
+      // second OTP. See pm-flow spec for QA-R4 #X.
+      try {
+        await pool.query(
+          `INSERT INTO sms_otp
+             (otp_id, phone, code, purpose, expires_at, verified_at)
+           VALUES (?, ?, ?, 'register',
+                   DATE_ADD(NOW(), INTERVAL 15 MINUTE), NOW())`,
+          [
+            require('uuid').v4(),
+            normPhone,
+            // hasRecentVerifiedOtp doesn't read this column; using a
+            // sentinel string both documents intent in the DB and
+            // ensures no client OTP value could collide with it.
+            '__login_promoted_to_register__',
+          ],
+        );
+      } catch (e) {
+        console.error('[login/otp prospect promote]', e);
+        // If the promotion insert fails (DB hiccup), fall back to the
+        // legacy 401 — better the prospect re-OTPs through /register
+        // than that we silently lose the signal.
+        return res.status(401).json({ error: 'user_not_found' });
+      }
+      return res.json({
+        prospect: true,
+        phone: normPhone,
+        // intent isn't carried through the OTP flow today, so the
+        // caller passes it in the body if it wants role-aware routing
+        // post-prospect. Default to contractor since that's the only
+        // role the trial flow supports right now.
+        intent: req.body.intent || 'contractor',
+      });
     }
 
     // 3. Fetch entity memberships
@@ -212,7 +288,10 @@ router.post('/auth/login/otp', async (req, res) => {
     }
 
     const accessToken  = signAccess(payload);
-    const refreshToken = await issueRefreshToken(pool, user.id);
+    const refreshToken = await issueRefreshToken(pool, user.id, {
+      entity_id:   payload.entity_id,
+      entity_type: payload.entity_type,
+    });
 
     res.json({
       access_token:            accessToken,
@@ -223,6 +302,7 @@ router.post('/auth/login/otp', async (req, res) => {
         membership_id: m.membership_id,
         entity_id:     m.entity_id,
         entity_type:   m.entity_type,
+        entity_name:   m.entity_name,
         role:          m.role,
       })) : undefined,
     });
@@ -277,7 +357,10 @@ router.post('/auth/select-entity', async (req, res) => {
 
   const payload    = buildPayload(user, membership);
   const accessToken = signAccess(payload);
-  const refreshToken = await issueRefreshToken(pool, user.id);
+  const refreshToken = await issueRefreshToken(pool, user.id, {
+    entity_id:   payload.entity_id,
+    entity_type: payload.entity_type,
+  });
 
   res.json({ access_token: accessToken, refresh_token: refreshToken });
 });
@@ -329,6 +412,13 @@ router.post('/auth/invite/validate', async (req, res) => {
     job_title:    membership.job_title,
     inviter_name: membership.inviter_name || null,
     membership_id: membership.membership_id,
+    // Pre-fill data: invitee sees what the inviter typed. Read-only on
+    // the accept page so the team list stays consistent with what the
+    // inviter saw when they invited. NULLs surface on legacy rows
+    // (pre-022 / pre-040 migrations) — frontend falls back to free input.
+    invited_phone:      membership.invited_phone      || null,
+    invited_first_name: membership.invited_first_name || null,
+    invited_last_name:  membership.invited_last_name  || null,
   });
 });
 
@@ -360,6 +450,16 @@ router.post('/auth/invite/accept', async (req, res) => {
     // 2. Verify OTP
     const { normPhone } = await verifyOtp(phone, code, 'invite_accept');
 
+    // 2b. Hard phone-match: the invitee must accept on the phone the
+    // inviter typed. Closes the "anyone with the URL" loophole. Skipped
+    // for legacy rows where invited_phone wasn't captured (pre-040).
+    if (membership.invited_phone) {
+      const invitedNorm = normalisePhone(membership.invited_phone);
+      if (invitedNorm !== normPhone) {
+        return res.status(403).json({ error: 'phone_mismatch' });
+      }
+    }
+
     // 3. Find or create user
     let [users] = await pool.query(
       'SELECT * FROM users WHERE phone = ? AND deleted_at IS NULL LIMIT 1',
@@ -368,13 +468,23 @@ router.post('/auth/invite/accept', async (req, res) => {
     let user = users[0];
 
     if (!user) {
-      if (!full_name) return res.status(400).json({ error: 'full_name required for new users' });
+      // Authoritative name comes from what the inviter typed — the
+      // invitee no longer chooses. Legacy rows (no invited_first_name)
+      // fall back to the client-supplied full_name so old links still
+      // resolve.
+      const invitedFull = [membership.invited_first_name, membership.invited_last_name]
+        .filter((s) => s && s.trim())
+        .join(' ')
+        .trim();
+      const resolvedName = invitedFull || (full_name && full_name.trim());
+      if (!resolvedName) return res.status(400).json({ error: 'full_name required for new users' });
+
       const newId = uuidv4();
       const orgRole = membership.entity_type === 'contractor' ? 'contractor' : 'corporation';
       await pool.query(
         `INSERT INTO users (id, phone, full_name, role, auth_method)
          VALUES (?, ?, ?, ?, 'sms')`,
-        [newId, normPhone, full_name, orgRole]
+        [newId, normPhone, resolvedName, orgRole]
       );
       [users] = await pool.query('SELECT * FROM users WHERE id = ?', [newId]);
       user = users[0];
@@ -428,7 +538,10 @@ router.post('/auth/login', async (req, res) => {
 
   const payload = buildPayload(user, membership);
   const accessToken  = signAccess(payload);
-  const refreshToken = await issueRefreshToken(pool, user.id);
+  const refreshToken = await issueRefreshToken(pool, user.id, {
+    entity_id:   payload.entity_id,
+    entity_type: payload.entity_type,
+  });
 
   res.json({
     access_token:           accessToken,
@@ -467,12 +580,29 @@ router.post('/auth/refresh', async (req, res) => {
   const user = users[0];
   if (!user) return res.status(401).json({ error: 'user not found' });
 
+  // Restore the entity context the refresh token was minted with so
+  // refreshing doesn't drop the user out of contractor mode and back
+  // to their legacy users.role role. Falls back to the
+  // single-membership shortcut for legacy refresh tokens that don't
+  // carry entity context yet.
   const memberships = await getMemberships(pool, user.id);
-  const membership  = memberships.length === 1 ? memberships[0] : null;
-  const payload     = buildPayload(user, membership);
+  let membership = null;
+  if (decoded.entity_id && decoded.entity_type) {
+    membership = memberships.find(
+      (m) => m.entity_id === decoded.entity_id && m.entity_type === decoded.entity_type
+    ) || null;
+  }
+  if (!membership && memberships.length === 1) {
+    membership = memberships[0];
+  }
+  const payload = buildPayload(user, membership);
 
   const newAccess  = signAccess(payload);
-  const newRefresh = signRefresh({ sub: user.id });
+  const newRefresh = signRefresh({
+    sub: user.id,
+    ...(payload.entity_id   ? { entity_id:   payload.entity_id }   : {}),
+    ...(payload.entity_type ? { entity_type: payload.entity_type } : {}),
+  });
   const newHash    = crypto.createHash('sha256').update(newRefresh).digest('hex');
   const expiresAt  = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
   await pool.query(
@@ -512,6 +642,36 @@ router.get('/auth/me', async (req, res) => {
   } catch {
     return res.status(401).json({ error: 'invalid token' });
   }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /auth/memberships  — list the current user's active memberships
+// Used by the frontend to switch between contractor/corporation roles
+// without re-authenticating, by feeding the chosen membership into
+// /auth/select-entity.
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/auth/memberships', async (req, res) => {
+  const authHeader = req.headers.authorization || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  if (!token) return res.status(401).json({ error: 'no token' });
+
+  let decoded;
+  try {
+    decoded = jwt.verify(token, ACCESS_SECRET);
+  } catch {
+    return res.status(401).json({ error: 'invalid token' });
+  }
+
+  const memberships = await getMemberships(getPool(), decoded.sub);
+  res.json({
+    memberships: memberships.map((m) => ({
+      membership_id: m.membership_id,
+      entity_id:     m.entity_id,
+      entity_type:   m.entity_type,
+      entity_name:   m.entity_name,
+      role:          m.role,
+    })),
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -557,7 +717,7 @@ router.post('/auth/register', async (req, res) => {
           const u = { id: existing[0].id, phone: normPhone, email: undefined, full_name: refreshed[0]?.full_name || full_name || undefined, role, org_id: org_id || null, org_type: org_type || null };
           const membership = { entity_id: org_id, entity_type: org_type, role: 'owner' };
           const at = signAccess(buildPayload(u, membership));
-          const rt = await issueRefreshToken(pool, existing[0].id);
+          const rt = await issueRefreshToken(pool, existing[0].id, { entity_id: org_id, entity_type: org_type });
           return res.status(200).json({ id: existing[0].id, phone: normPhone, role, access_token: at, refresh_token: rt });
         }
         return res.status(200).json({ id: existing[0].id, phone: normPhone, role });
@@ -572,7 +732,7 @@ router.post('/auth/register', async (req, res) => {
         const u = { id, phone: normPhone, email: undefined, full_name: full_name || undefined, role, org_id: org_id || null, org_type: org_type || null };
         const membership = { entity_id: org_id, entity_type: org_type, role: 'owner' };
         const at = signAccess(buildPayload(u, membership));
-        const rt = await issueRefreshToken(pool, id);
+        const rt = await issueRefreshToken(pool, id, { entity_id: org_id, entity_type: org_type });
         return res.status(201).json({ id, phone: normPhone, role, access_token: at, refresh_token: rt });
       }
       return res.status(201).json({ id, phone: normPhone, role });
@@ -598,3 +758,4 @@ router.post('/auth/register', async (req, res) => {
 });
 
 module.exports = router;
+// Wave 4 deploy probe — 2026-05-07T09:12:51Z

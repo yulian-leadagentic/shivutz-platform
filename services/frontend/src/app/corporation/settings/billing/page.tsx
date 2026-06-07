@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { paymentApi, dealApi } from '@/lib/api';
 import { apiFetch } from '@/lib/api/client';
+import { dealRef } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type { PaymentMethod, Deal } from '@/types';
@@ -140,6 +141,12 @@ function BillingPageContent() {
   const [error, setError]         = useState('');
   const [addingCard, setAddingCard] = useState(false);
   const [cardAdded, setCardAdded] = useState(false);
+  // Invoice email captured at card-linking time. Pre-launch, Cardcom
+  // mas-kabala receipts were going out with no "To" address — collecting
+  // this on the platform-side and forwarding it through the cardcom-init
+  // payload (InvoiceHead.EmailAddress) so the corp actually receives the
+  // receipt (QA-R4 #D2).
+  const [invoiceEmail, setInvoiceEmail] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -163,10 +170,18 @@ function BillingPageContent() {
   }, []);
 
   async function handleAddCard() {
+    // Light client-side email check — backend validates too, but a
+    // bad-format email here would just bounce off Cardcom's InvoiceHead
+    // validation and the corp would think the whole link failed.
+    const email = invoiceEmail.trim();
+    if (email && !/^[^@\s]+@[^@\s.]+\.[^@\s]+$/.test(email)) {
+      setError('כתובת אימייל לחשבונית לא תקינה');
+      return;
+    }
     setAddingCard(true);
     setError('');
     try {
-      const { url } = await paymentApi.cardcomInit();
+      const { url } = await paymentApi.cardcomInit(email || undefined);
       // Redirect to Cardcom hosted form
       window.location.href = url;
     } catch (e) {
@@ -293,6 +308,29 @@ function BillingPageContent() {
                   פרטי הכרטיס לא עוברים דרך השרתים שלנו.
                 </p>
               </div>
+              {/* Invoice email — collected here so captured-charge
+                  mas-kabala receipts go to the corp's accounting
+                  inbox. Optional: empty just skips the InvoiceHead
+                  block on Cardcom's side. */}
+              <div className="max-w-sm mx-auto text-start space-y-1">
+                <label htmlFor="invoice-email" className="text-xs font-medium text-slate-600 block">
+                  אימייל לשליחת חשבוניות מס-קבלה
+                </label>
+                <input
+                  id="invoice-email"
+                  type="email"
+                  inputMode="email"
+                  dir="ltr"
+                  autoComplete="email"
+                  value={invoiceEmail}
+                  onChange={(e) => setInvoiceEmail(e.target.value)}
+                  placeholder="billing@company.co.il"
+                  className="w-full h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+                />
+                <p className="text-[11px] text-slate-400">
+                  אופציונלי. החשבונית תישלח לכתובת זו מיד לאחר כל חיוב מוצלח.
+                </p>
+              </div>
               <Button onClick={handleAddCard} disabled={addingCard}>
                 {addingCard
                   ? <><Loader2 className="h-4 w-4 animate-spin me-2" />מנתב...</>
@@ -335,11 +373,11 @@ function BillingPageContent() {
           </div>
           <div className="flex items-start gap-2">
             <span className="shrink-0 font-bold text-brand-600 w-5 text-center">3</span>
-            <p>לאחר 48 שעות קארדקום מבצעים חיוב אוטומטי באמצעות האסימון המוצפן של הכרטיס המחובר</p>
+            <p>לאחר 48 שעות <strong>או כאשר העסקה אושרה ע״י הקבלן</strong> — קארדקום מבצעים חיוב אוטומטי באמצעות האסימון המוצפן של הכרטיס המחובר</p>
           </div>
           <div className="flex items-start gap-2">
             <span className="shrink-0 font-bold text-brand-600 w-5 text-center">4</span>
-            <p>חשבונית תישלח לדוא״ל לאחר החיוב המוצלח</p>
+            <p>חשבונית מס-קבלה תישלח אוטומטית לכתובת הדוא״ל שצוינה בעת חיבור הכרטיס, מיד לאחר ביצוע החיוב</p>
           </div>
         </CardContent>
       </Card>
@@ -473,7 +511,7 @@ function DealsCard() {
                     return (
                       <li key={d.id} className="py-2.5 flex items-center justify-between gap-3 flex-wrap">
                         <Link href={`/corporation/deals/${d.id}`} className="flex-1 min-w-0 hover:underline">
-                          <span className="font-mono text-xs text-slate-400">#{d.id.slice(0, 8)}</span>
+                          <span className="font-mono text-xs text-slate-400">#{dealRef(d.id)}</span>
                           <span className="ms-2 text-sm font-medium text-slate-800">{DEAL_STATUS_LABEL[d.status] || d.status}</span>
                           <span className="ms-2 text-xs text-slate-500">{(d.worker_count ?? d.workers_count ?? 0)} עובדים</span>
                           {d.commission_amount != null && (
@@ -504,7 +542,7 @@ function DealsCard() {
                   {closed.map((d) => (
                     <li key={d.id} className="py-2.5 flex items-center justify-between gap-3 flex-wrap">
                       <Link href={`/corporation/deals/${d.id}`} className="flex-1 min-w-0 hover:underline">
-                        <span className="font-mono text-xs text-slate-400">#{d.id.slice(0, 8)}</span>
+                        <span className="font-mono text-xs text-slate-400">#{dealRef(d.id)}</span>
                         <span className="ms-2 text-xs text-slate-500">{(d.worker_count ?? d.workers_count ?? 0)} עובדים</span>
                         {d.commission_amount != null && (
                           <span className="ms-2 text-xs font-medium text-slate-700">₪{d.commission_amount.toLocaleString('he-IL')}</span>
@@ -533,7 +571,7 @@ function DealsCard() {
                 הבקשה תישלח למנהל המערכת לטיפול. אין החזר אוטומטי — מנהל יחזור אליך לבירור.
               </p>
               <p className="text-xs text-slate-500 bg-slate-50 rounded p-2">
-                עסקה: <span className="font-mono" dir="ltr">#{refundForm.id.slice(0, 8)}</span>
+                עסקה: <span className="font-mono" dir="ltr">#{dealRef(refundForm.id)}</span>
               </p>
               <div>
                 <label className="text-xs text-slate-500 block mb-1">סיבת הבקשה</label>

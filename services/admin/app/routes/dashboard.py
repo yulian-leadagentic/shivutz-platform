@@ -81,16 +81,20 @@ def _workers_per_profession(worker_cur, prof_cur) -> list:
 
 
 def _demand_per_profession(job_cur, prof_cur) -> list:
-    """Sum of open line-item quantities by profession_type — the demand backlog."""
+    """Sum of open worker-search quantities by profession_type — the
+    demand backlog. Was previously a JOIN on the old job_requests +
+    job_request_line_items pair; migration 024 dropped both, replacing
+    them with a single worker_searches table where each row is what
+    used to be a line item. The status enum on the new table covers
+    open / partially_matched / fully_matched / cancelled — we count
+    'open' and 'partially_matched' as still-pending demand."""
     job_cur.execute(
-        """SELECT li.profession_type,
-                  SUM(li.quantity) AS demand_qty,
-                  COUNT(DISTINCT jr.id) AS open_requests
-           FROM job_request_line_items li
-           JOIN job_requests jr ON jr.id = li.request_id
-           WHERE jr.deleted_at IS NULL
-             AND COALESCE(jr.status, 'open') IN ('open', 'matching')
-           GROUP BY li.profession_type"""
+        """SELECT profession_type,
+                  SUM(quantity)         AS demand_qty,
+                  COUNT(DISTINCT id)    AS open_requests
+           FROM worker_searches
+           WHERE status IN ('open', 'partially_matched')
+           GROUP BY profession_type"""
     )
     rows = job_cur.fetchall()
     if not rows:

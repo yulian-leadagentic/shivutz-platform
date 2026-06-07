@@ -81,7 +81,7 @@ export default function MarketplacePreview() {
                 <Store className="h-4 w-4 text-brand-600" />
               </div>
               <p className="text-xs font-semibold uppercase tracking-widest text-brand-600">
-                שוק תאגידים
+                שירותים נלווים
               </p>
             </div>
             <h2 className="text-3xl md:text-4xl font-extrabold text-slate-900">
@@ -108,9 +108,9 @@ export default function MarketplacePreview() {
         </div>
 
         {/* CTA strip */}
-        <div className="mt-12 text-center bg-gradient-to-r from-brand-50 via-indigo-50 to-violet-50 rounded-3xl border border-brand-100 py-8 px-6">
+        <div className="mt-12 text-center bg-brand-50 rounded-3xl border border-brand-100 py-8 px-6">
           <p className="text-lg font-bold text-slate-900 mb-2">
-            גם אתם רוצים לפרסם? — הצטרפו בחינם
+            גם אתם רוצים לפרסם? — הצטרפו
           </p>
           <p className="text-sm text-slate-500 mb-5">
             תאגידים מנויים מפרסמים ללא עלות נוספת. צרו חשבון ופרסמו תוך דקות.

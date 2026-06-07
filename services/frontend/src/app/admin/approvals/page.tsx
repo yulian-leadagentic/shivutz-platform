@@ -10,6 +10,8 @@ import { adminApi, type PendingOrg, type OrgEditPayload, type OrgAuditEntry } fr
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { TableToolbar } from '@/components/table/TableToolbar';
+import { useTableState } from '@/components/table/useTableState';
 
 const DEFAULT_COMMISSION = 500;
 
@@ -189,25 +191,28 @@ function OrgRow({
             ))}
           </div>
 
-          {/* Commission input — defaults to 500₪ per worker, editable per entity */}
+          {/* Commission input — defaults to 500₪ per worker, editable per entity.
+              Layout note: label sits ABOVE the input (block), default-hint
+              sits BELOW the input (separate line) — used to be flex-end
+              + side-by-side which caused the label to overlap the input
+              on narrow widths in RTL. Also dropped the redundant '(₪)'
+              from the label since the input already shows a ₪ icon. */}
           {!editing && (
-            <div className="flex items-end gap-3">
-              <div className="flex-1 max-w-xs">
-                <label className="text-xs text-slate-500 block mb-1">עמלת פלטפורמה לעובד (₪)</label>
-                <div className="relative">
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={commission}
-                    onChange={e => setCommission(e.target.value)}
-                    dir="ltr"
-                    className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 pe-8 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                  />
-                  <span className="absolute end-3 top-1/2 -translate-y-1/2 text-xs text-slate-400">₪</span>
-                </div>
+            <div className="max-w-xs">
+              <label className="text-xs text-slate-500 block mb-1">עמלת פלטפורמה לעובד</label>
+              <div className="relative">
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={commission}
+                  onChange={e => setCommission(e.target.value)}
+                  dir="ltr"
+                  className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 pe-8 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                />
+                <span className="absolute end-3 top-1/2 -translate-y-1/2 text-xs text-slate-400">₪</span>
               </div>
-              <p className="text-xs text-slate-400 pb-2">ברירת מחדל: ₪{DEFAULT_COMMISSION}</p>
+              <p className="text-xs text-slate-400 mt-1">ברירת מחדל: ₪{DEFAULT_COMMISSION}</p>
             </div>
           )}
 
@@ -351,6 +356,42 @@ function ApprovalsContent() {
   const [orgs, setOrgs] = useState<PendingOrg[]>([]);
   const [loading, setLoading] = useState(true);
   const [toasts, setToasts] = useState<string[]>([]);
+  const [typeFilter, setTypeFilter] = useState<'all' | 'contractor' | 'corporation'>('all');
+  const [search, setSearch] = useState('');
+
+  const filterPredicate = useCallback((o: PendingOrg) => {
+    if (typeFilter !== 'all' && o.org_type !== typeFilter) return false;
+    if (search) {
+      const q = search.toLowerCase();
+      if (
+        !(o.company_name || '').toLowerCase().includes(q) &&
+        !(o.contact_email || '').toLowerCase().includes(q) &&
+        !(o.business_number || '').includes(search)
+      ) return false;
+    }
+    return true;
+  }, [typeFilter, search]);
+
+  type ApprovalSortKey = 'sla' | 'created' | 'name';
+  const sortBy = useCallback((o: PendingOrg, key: ApprovalSortKey) => {
+    switch (key) {
+      case 'sla':     return new Date(o.approval_sla_deadline);
+      case 'created': return o.created_at ? new Date(o.created_at) : null;
+      case 'name':    return o.company_name || '';
+    }
+  }, []);
+
+  const { visible: visibleOrgs, sortKey, sortDir, setSortKey, flipSortDir } =
+    useTableState<PendingOrg, ApprovalSortKey>({
+      rows: orgs,
+      initialSortKey: 'sla',
+      initialSortDir: 'asc',   // closest SLA deadline first
+      filter: filterPredicate,
+      sortBy,
+    });
+
+  const hasActiveFilter = typeFilter !== 'all' || search.trim() !== '';
+  function clearFilters() { setTypeFilter('all'); setSearch(''); }
 
   const load = useCallback(() => {
     setLoading(true);
@@ -397,22 +438,50 @@ function ApprovalsContent() {
         </Button>
       </div>
 
+      <TableToolbar
+        pills={{
+          options: [
+            { key: 'all',         label: 'הכל',     count: orgs.length,                                            tone: 'bg-slate-900 text-white' },
+            { key: 'contractor',  label: 'קבלנים',  count: orgs.filter((o) => o.org_type === 'contractor').length, tone: 'bg-brand-600 text-white' },
+            { key: 'corporation', label: 'תאגידים', count: orgs.filter((o) => o.org_type === 'corporation').length, tone: 'bg-navy-600 text-white' },
+          ],
+          active: typeFilter,
+          onChange: setTypeFilter,
+        }}
+        searchValue={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="חיפוש: שם / אימייל / ע.מ"
+        sortOptions={[
+          { key: 'sla',     label: 'SLA (דחיפות)' },
+          { key: 'created', label: 'תאריך רישום' },
+          { key: 'name',    label: 'שם' },
+        ]}
+        sortKey={sortKey}
+        sortDir={sortDir}
+        onSortKeyChange={setSortKey}
+        onSortDirToggle={flipSortDir}
+        hasActiveFilter={hasActiveFilter}
+        onClear={clearFilters}
+      />
+
       {loading ? (
         <div className="space-y-3">
           {[1, 2, 3].map(i => (
             <div key={i} className="h-24 bg-slate-200 rounded-xl animate-pulse" />
           ))}
         </div>
-      ) : orgs.length === 0 ? (
+      ) : visibleOrgs.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center text-slate-500">
             <CheckCircle className="h-10 w-10 mx-auto text-green-500 mb-3" />
-            אין ארגונים הממתינים לאישור
+            {hasActiveFilter
+              ? 'אין ארגונים תואמים לסינון'
+              : 'אין ארגונים הממתינים לאישור'}
           </CardContent>
         </Card>
       ) : (
         <div className="space-y-3">
-          {orgs.map(org => (
+          {visibleOrgs.map(org => (
             <OrgRow
               key={org.id}
               org={org}

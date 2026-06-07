@@ -4,11 +4,14 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
   Clock, Briefcase, Handshake, Users, Building2, HardHat,
-  Loader2, AlertTriangle, ChevronLeft, ShieldCheck, Hourglass, Wallet, TrendingUp,
+  Loader2, AlertTriangle, ChevronLeft, ShieldCheck, Hourglass, Wallet, TrendingUp, Globe2,
 } from 'lucide-react';
 import { adminApi, type AdminDashboard, type AdminAlerts } from '@/lib/adminApi';
+import { tenderApi } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+
+type TenderSummary = { pending_publish: number; open_for_bids: number; awaiting_contact: number; in_progress: number };
 
 const DEAL_STATUS_LABEL: Record<string, string> = {
   proposed:           'הצעה נשלחה',
@@ -56,10 +59,21 @@ export default function AdminDashboard() {
   const [stats, setStats]   = useState<AdminDashboard | null>(null);
   const [alerts, setAlerts] = useState<AdminAlerts | null>(null);
   const [loading, setLoading] = useState(true);
+  // Count of `proposed` deals past the corp-response deadline.
+  // The notification cron also SMSes admins for each new overdue,
+  // but the in-app banner is independent and just polls the count
+  // so it's always current regardless of cron timing.
+  const [overdue, setOverdue] = useState<{ count: number; hours: number } | null>(null);
+  const [tenders, setTenders] = useState<TenderSummary | null>(null);
 
   useEffect(() => {
-    Promise.all([adminApi.dashboard(), adminApi.alerts()])
-      .then(([s, a]) => { setStats(s); setAlerts(a); })
+    Promise.all([
+      adminApi.dashboard(),
+      adminApi.alerts(),
+      adminApi.corpResponseOverdueCount().catch(() => ({ count: 0, hours: 48 })),
+      tenderApi.adminSummary().catch(() => null),
+    ])
+      .then(([s, a, o, t]) => { setStats(s); setAlerts(a); setOverdue(o); setTenders(t); })
       .catch(console.error)
       .finally(() => setLoading(false));
   }, []);
@@ -100,6 +114,37 @@ export default function AdminDashboard() {
         <p className="text-xs text-slate-400" dir="ltr">as of {fmtDate(stats.as_of)}</p>
       </div>
 
+      {/* Corp-response overdue banner — proposed deals past the
+          corp_response_hours deadline. SMS to admins is sent by
+          the notification cron once per deal; this banner is
+          purely informational and shows the cumulative count so
+          admin sees the load at a glance. */}
+      {overdue && overdue.count > 0 && (
+        <Card className="border-amber-300 bg-amber-50">
+          <CardContent className="pt-4 pb-4 flex items-start gap-3">
+            <div className="p-2 rounded-lg bg-amber-100 text-amber-700 shrink-0">
+              <AlertTriangle className="h-5 w-5" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-bold text-amber-900">
+                {overdue.count === 1
+                  ? 'בקשה אחת עברה את חלון התגובה'
+                  : `${overdue.count} בקשות עברו את חלון התגובה`}
+              </p>
+              <p className="text-xs text-amber-700 mt-0.5">
+                תאגיד לא הגיב לדרישת הקבלן בתוך {overdue.hours} שעות. ייתכן ויש צורך בליווי ידני.
+              </p>
+            </div>
+            <Link
+              href="/admin/deals"
+              className="inline-flex items-center gap-1 text-sm font-semibold text-amber-800 hover:text-amber-900 shrink-0"
+            >
+              עבור לעסקאות <ChevronLeft className="h-4 w-4" />
+            </Link>
+          </CardContent>
+        </Card>
+      )}
+
       {/* SLA WARNINGS — top of page when present */}
       {slaWarnings.length > 0 && (
         <Card className="border-amber-200 bg-amber-50">
@@ -136,7 +181,7 @@ export default function AdminDashboard() {
             icon={HardHat} color="text-blue-600" href="/admin/orgs?type=contractor" />
           <StatTile label="תאגידים"     value={stats.corporations.total}
             sub={`${stats.corporations.approved} מאושרים · ${stats.corporations.pending} ממתינים`}
-            icon={Building2} color="text-purple-600" href="/admin/orgs?type=corporation" />
+            icon={Building2} color="text-navy-600" href="/admin/orgs?type=corporation" />
           <StatTile label="עובדים"      value={stats.workers.total}
             sub={`${stats.workers.available} פנויים · ${stats.workers.assigned} משובצים`}
             icon={Users} color="text-emerald-600" />
@@ -162,6 +207,33 @@ export default function AdminDashboard() {
           sub="הקבלן אישר — חיוב יורד אוטומטית"
           icon={Wallet} color="text-emerald-600" />
       </div>
+
+      {/* FOREIGN-IMPORT REQUESTS — admin's two gates (publish + reveal) */}
+      {tenders && (
+        <div>
+          <h2 className="text-sm font-semibold text-slate-500 mb-2 flex items-center gap-1.5">
+            <Globe2 className="h-4 w-4 text-brand-600" /> בקשות ייבוא עובדים מחו״ל
+          </h2>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <StatTile label="ממתינות לאישור פרסום"
+              value={tenders.pending_publish}
+              sub="חדשות — אשר כדי לפרסם לתאגידים"
+              icon={Hourglass} color="text-slate-700" href="/admin/tenders" />
+            <StatTile label="בקשות קשר לאישורך"
+              value={tenders.awaiting_contact}
+              sub="הקבלן בחר — אשר וחשוף פרטים"
+              icon={ShieldCheck} color="text-amber-600" href="/admin/tenders" />
+            <StatTile label="פתוחות להצעות"
+              value={tenders.open_for_bids}
+              sub="מפורסמות — תאגידים מגישים"
+              icon={Globe2} color="text-sky-600" href="/admin/tenders" />
+            <StatTile label="בתהליך"
+              value={tenders.in_progress}
+              sub="אושרו ונחשפו"
+              icon={Handshake} color="text-emerald-600" href="/admin/tenders" />
+          </div>
+        </div>
+      )}
 
       {/* DEAL STATUS BREAKDOWN */}
       <Card>

@@ -4,9 +4,8 @@ import { useState } from 'react';
 import LandingNav from '@/components/landing/LandingNav';
 import HeroSection from '@/components/landing/HeroSection';
 import TrustBar from '@/components/landing/TrustBar';
+import LiveActivityFeed from '@/components/landing/LiveActivityFeed';
 import HowItWorksSection from '@/components/landing/HowItWorksSection';
-import MarketplacePreview from '@/components/landing/MarketplacePreview';
-import RegistrationCTASection from '@/components/landing/RegistrationCTASection';
 import LandingFooter from '@/components/landing/LandingFooter';
 import LeadCaptureModal from '@/components/landing/LeadCaptureModal';
 
@@ -18,28 +17,38 @@ export default function LandingPage() {
       {/* Fixed nav — sits above everything */}
       <LandingNav onLeadCapture={() => setLeadModalOpen(true)} />
 
-      <main>
-        {/* 1. Full-screen dark hero */}
-        <HeroSection onLeadCapture={() => setLeadModalOpen(true)} />
+      {/* Flex column with min-h-screen so the dark footer always sits at
+          the viewport bottom even on short content, and iOS overscroll
+          bounce doesn't reveal a white strip below it (R2 #3). */}
+      <div className="min-h-screen flex flex-col">
+        <main className="flex-1">
+          {/* 1. Full-screen dark hero */}
+          <HeroSection onLeadCapture={() => setLeadModalOpen(true)} />
 
-        {/* 2. Trust/stats bar */}
-        <TrustBar />
+          {/* 2. Trust/stats bar */}
+          <TrustBar />
 
-        {/* 3. How it works — 3-step visual */}
-        <HowItWorksSection />
+          {/* 3. How it works — 3-step visual */}
+          <HowItWorksSection />
 
-        {/* 4. Live marketplace preview */}
-        <MarketplacePreview />
+          {/* MarketplacePreview was removed — its "מה זמין עכשיו"
+              role was folded into the new LiveShowcase inside the hero,
+              which rotates through workers / requirements / housing /
+              services / matches every ~5s instead of showing a static
+              row of services-only category tiles. */}
+        </main>
 
-        {/* 5. Registration CTA — contractor / corporation */}
-        <RegistrationCTASection onLeadCapture={() => setLeadModalOpen(true)} />
-      </main>
-
-      {/* Footer */}
-      <LandingFooter />
+        {/* Footer */}
+        <LandingFooter />
+      </div>
 
       {/* Lead capture modal (portal-like, fixed) */}
       <LeadCaptureModal open={leadModalOpen} onClose={() => setLeadModalOpen(false)} />
+
+      {/* Floating live-activity bubble — pops up bottom-corner with a
+          new activity update every few seconds, then slides away. Pure
+          overlay; not part of document flow. Phase 1: mock data. */}
+      <LiveActivityFeed />
     </>
   );
 }

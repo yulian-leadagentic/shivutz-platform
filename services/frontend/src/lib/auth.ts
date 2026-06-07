@@ -4,7 +4,14 @@ const ACCESS_KEY = 'access_token';
 const REFRESH_KEY = 'refresh_token';
 
 export function saveTokens(access: string, refresh: string) {
-  Cookies.set(ACCESS_KEY, access, { expires: 1 / 96, sameSite: 'lax' }); // 15 min
+  // Cookie expiry has to match the JWT's actual lifetime. Auth service
+  // signs access tokens with 3h TTL by default (JWT_ACCESS_EXPIRES_IN),
+  // but the cookie was set to 15min — so the browser would drop the
+  // cookie 11 of every 12 active minutes and the user would bounce to
+  // /login while the server still considered the JWT valid. Bumping to
+  // 6h covers a normal workday + the silent-refresh fallback handles
+  // anything past the JWT's actual exp.
+  Cookies.set(ACCESS_KEY, access, { expires: 6 / 24, sameSite: 'lax' }); // 6 hours
   Cookies.set(REFRESH_KEY, refresh, { expires: 7, sameSite: 'lax' });
 }
 
@@ -28,7 +35,12 @@ export function decodeJwtPayload(token: string): Record<string, unknown> | null 
     const payload = parts[1];
     // Pad base64 if needed
     const padded = payload + '='.repeat((4 - (payload.length % 4)) % 4);
-    const decoded = atob(padded.replace(/-/g, '+').replace(/_/g, '/'));
+    // atob returns a binary string (one char per byte). Hebrew names are
+    // multi-byte UTF-8, so we have to round-trip through Uint8Array +
+    // TextDecoder to get the proper unicode string back.
+    const binary = atob(padded.replace(/-/g, '+').replace(/_/g, '/'));
+    const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+    const decoded = new TextDecoder('utf-8').decode(bytes);
     return JSON.parse(decoded) as Record<string, unknown>;
   } catch {
     return null;

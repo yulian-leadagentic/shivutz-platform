@@ -21,9 +21,21 @@ export const paymentApi = {
       { method: 'PATCH' }
     ),
 
-  /** Get a Cardcom LowProfile tokenization URL to redirect the user to. */
-  cardcomInit: () =>
-    apiFetch<{ url: string; low_profile_id: string }>('/payments/cardcom-init'),
+  /**
+   * Get a Cardcom LowProfile tokenization URL to redirect the user to.
+   *
+   * `invoice_email` (optional) is the address where future invoices for
+   * captured charges should be sent. Pre-launch, Cardcom invoices were
+   * being issued with no `To` address — the email goes through to
+   * Cardcom's InvoiceHead so the receipt actually reaches the corp.
+   */
+  cardcomInit: (invoice_email?: string) =>
+    apiFetch<{ url: string; low_profile_id: string }>(
+      '/payments/cardcom-init',
+      invoice_email
+        ? { method: 'POST', body: JSON.stringify({ invoice_email }) }
+        : { method: 'GET' },
+    ),
 
   /**
    * Initiate the J5 pre-authorization for a deal.
@@ -68,4 +80,22 @@ export const paymentApi = {
     apiFetch<{ deal_id: string; amounts: { base_amount: number; vat_rate: number; vat_amount: number; total_amount: number } }>(
       `/payments/deals/${dealId}/preview-commission`
     ),
+
+  /** Full transaction row. Used post-capture to surface the
+   *  invoice URL, clearance auth code and charge amount on the
+   *  deal detail page. The backend returns the full row from
+   *  payment_db.payment_transactions; we type-narrow to the
+   *  fields the UI actually consumes. */
+  getTransaction: (txId: string) =>
+    apiFetch<PaymentTransactionRow & {
+      invoice_number?: string | null;
+      invoice_url?: string | null;
+      invoice_issued_at?: string | null;
+      provider_response_code?: string | null;
+      provider_transaction_id?: string | null;
+      charged_at?: string | null;
+      base_amount?: number;
+      vat_amount?: number;
+      total_amount?: number;
+    }>(`/payments/transactions/${txId}`),
 };

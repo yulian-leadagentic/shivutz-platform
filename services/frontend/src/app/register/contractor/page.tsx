@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, FormEvent, useRef } from 'react';
+import { useEffect, useState, FormEvent, useRef, Suspense } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Loader2, CheckCircle2, AlertCircle, Mail, Smartphone, ShieldCheck } from 'lucide-react';
 import { orgApi, otpApi } from '@/lib/api';
 import { saveTokens } from '@/lib/auth';
@@ -10,6 +10,9 @@ import { useEnums } from '@/features/enums/EnumsContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { HomeLink } from '@/components/HomeLink';
+import Logo from '@/components/Logo';
+import { readProspect, readPendingSearch, clearProspect, clearPendingSearch } from '@/features/prospect/state';
 import type { RegistryChannel, RegistryLookupResult } from '@/types';
 
 const TOTAL_STEPS = 3;
@@ -41,12 +44,43 @@ interface Step1 {
 interface Step2 {
   company_name_he: string;
   business_number: string;
+  /** מספר רישיון קבלן — required. Backend cross-checks against
+   *  פנקס הקבלנים for the same business_number. Mismatch → admin
+   *  approval queue; the registration still completes. */
+  kablan_number: string;
   operating_regions: string[];
 }
-// Step 3 — optional contact email
+// Step 3 — optional contact email + T&C accept
 interface Step3 {
   contact_email: string;
+  tc_accepted: boolean;
 }
+
+const CONTRACTOR_TC_VERSION = '2026-06-04.v1';
+const CONTRACTOR_TC_TEXT = `
+תנאי שימוש בפלטפורמת BuildUp לקבלנים — גרסה ${CONTRACTOR_TC_VERSION}
+
+1. אישור והפעלה
+המערכת פתוחה לקבלן מיד עם הרישום. הגשת בקשות לעובדים וקבלת הצעות מתאגידים מותנית באימות הקבלן (מספר רישיון קבלן מול פנקס הקבלנים) או אישור ידני של מנהל המערכת.
+
+2. עמלות פלטפורמה
+הקבלן אינו משלם עמלת פלטפורמה לפי עסקה. עמלות הפלטפורמה נגבות מהתאגיד שמספק את העובדים, לפי הגדרת מנהל המערכת.
+
+3. תהליך החיוב והאישור
+לאחר שהקבלן רואה את רשימת העובדים שהתאגיד הציע, יש לו חלון של 48 שעות לאשר או לבטל את העסקה. במהלך החלון הזה תיאום פרטים מתבצע ישירות מול התאגיד.
+
+4. הסתרת פרטים עד אישור
+הקבלן והתאגיד רואים זה את פרטי זה רק לאחר שהעסקה אושרה. בשלב הראשון הקבלן רואה רק מקצוע, כמות, מדינת מוצא ואזור — שם התאגיד נחשף רק עם אישור העסקה.
+
+5. אחריות לבקשת העובדים
+פרטי הבקשה שמסופקים על ידי הקבלן (מקצוע, כמות, אזור, תאריכי תחילה) נכונים למיטב ידיעתו ובאחריותו. שינויים בבקשה לאחר פרסומה מחייבים יידוע התאגידים שהציעו הצעה.
+
+6. אימות צד נגדי והגבלת אחריות
+BuildUp עושה כמיטב יכולתה לאמת תאגידים ומשתמשים בפלטפורמה (רשם החברות, רשימת תאגידי כוח אדם מורשים של רשות האוכלוסין וההגירה, אימות טלפון ועוד), אולם האחריות הסופית לבדיקת התאגיד שמולו פועל הקבלן — לרבות רישיון העסקת עובדים זרים, יכולת אספקה, ועמידה בחוקי העבודה — חלה על הקבלן עצמו. BuildUp לא תישא בכל הוצאה או נזק, ישיר או עקיף, הנובע מהתקשרות בין הקבלן לתאגיד.
+
+7. תקשורת ויידוע
+על ידי הרישום הקבלן מסכים לקבל הודעות SMS, WhatsApp ואימייל הקשורות לעסקאות, אישורים ושינויי סטטוס.
+`.trim();
 // Verify — post-registration channel verification
 interface VerifyState {
   contractor_id: string;
@@ -64,22 +98,49 @@ function otpErrorMsg(msg: string): string {
   return 'שגיאה באימות. נסה שוב';
 }
 
-export default function RegisterContractorPage() {
+function RegisterContractorInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const fromTrial = searchParams?.get('from') === 'trial';
   const [step, setStep]       = useState<1 | 2 | 3 | 'verify'>(1);
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState('');
   const [success, setSuccess] = useState(false);
+  // Duplicate ח.פ outcome — see corp register for the same pattern.
+  const [duplicateExistingName, setDuplicateExistingName] = useState<string | null>(null);
   const { regions } = useEnums();
 
   const [step1, setStep1] = useState<Step1>({
     phone: '', normPhone: '', full_name: '',
     otpPhase: 'enter', code: '', otpVerified: false,
   });
+
+  // Trial bypass — when the user arrives here from /try/contractor/*,
+  // their phone has already passed OTP at /login. The backend marked
+  // that OTP as ALSO satisfying the 'register' purpose for 15 minutes,
+  // so we can skip Step 1 entirely. We seed step1 with the prospect's
+  // phone + `otpVerified: true` and jump straight to Step 2. The
+  // full-name input that used to live on Step 1 is rendered on Step 2
+  // instead (see Step 2 below). If the prospect session has expired
+  // or there's no prospect at all, the user falls back into the
+  // normal Step 1 flow — they'll re-OTP from there.
+  useEffect(() => {
+    if (!fromTrial) return;
+    const p = readProspect();
+    if (!p) return;          // expired / missing → fall back to normal flow
+    setStep1((s) => ({
+      ...s,
+      phone: p.phone,
+      normPhone: p.phone,
+      otpPhase: 'verify',    // skip the "enter phone" sub-step
+      otpVerified: true,     // skip the "enter code" sub-step too
+    }));
+    setStep(2);
+  }, [fromTrial]);
   const [step2, setStep2] = useState<Step2>({
-    company_name_he: '', business_number: '', operating_regions: [],
+    company_name_he: '', business_number: '', kablan_number: '', operating_regions: [],
   });
-  const [step3, setStep3] = useState<Step3>({ contact_email: '' });
+  const [step3, setStep3] = useState<Step3>({ contact_email: '', tc_accepted: false });
 
   const [lookup, setLookup]           = useState<RegistryLookupResult | null>(null);
   const [lookupLoading, setLookupLoading] = useState(false);
@@ -168,6 +229,9 @@ export default function RegisterContractorPage() {
     if (lookup?.blocked) {
       setError(`לא ניתן לרשום חברה במצב "${lookup.block_reason}".`); return;
     }
+    if (!step2.kablan_number.trim()) {
+      setError('יש להזין את מספר רישיון הקבלן'); return;
+    }
     if (step2.operating_regions.length === 0) {
       setError('יש לבחור לפחות אזור פעילות אחד'); return;
     }
@@ -177,11 +241,16 @@ export default function RegisterContractorPage() {
   // ── Step 3: final submit ──────────────────────────────────────────────────
   async function handleSubmit(e: FormEvent) {
     e.preventDefault(); setError('');
+    if (!step3.tc_accepted) {
+      setError('יש לאשר את תנאי השימוש כדי להמשיך');
+      return;
+    }
     setLoading(true);
     try {
       const result = await orgApi.registerContractor({
         company_name_he:    step2.company_name_he,
         business_number:    step2.business_number,
+        kablan_number:      step2.kablan_number.trim(),
         operating_regions:  step2.operating_regions,
         contact_name:       step1.full_name,
         contact_phone:      step1.normPhone,
@@ -192,22 +261,57 @@ export default function RegisterContractorPage() {
         saveTokens(result.access_token, result.refresh_token);
       }
 
-      const channels = result.available_channels || [];
-      if (channels.length > 0) {
-        // Continue inline to channel-chooser → confirm.
-        setVerify({
-          contractor_id: result.id,
-          channels,
-          picked: null,
-          code: '',
-          sent: false,
-        });
-        setStep('verify');
+      // Trial loop closure — if the prospect filled a search form at
+      // /try/contractor before being asked to register, replay it
+      // against the real /searches endpoint now that they're auth'd.
+      // We do this BEFORE any redirect so the search exists by the
+      // time the user lands on /contractor/deals.
+      const pending = fromTrial ? readPendingSearch() : null;
+      if (pending && result.access_token) {
+        try {
+          // Inline import — searchApi pulls the access token via the
+          // shared api client, which now sees the cookies we just
+          // saveTokens'd above. Failures are non-fatal: the user lands
+          // on the dashboard either way, and they can fill the form
+          // again from there.
+          const { searchApi } = await import('@/lib/api');
+          await searchApi.create(pending);
+        } catch {
+          // Swallow — see comment above.
+        }
+      }
+      // Cleanup — prospect session has served its purpose; the user
+      // is now a real registered contractor.
+      clearProspect();
+      clearPendingSearch();
+
+      // Branching on the kablan match result:
+      //   matched  → already tier_2; straight to dashboard (or deals if
+      //              they came from a trial-flow with a pending search).
+      //   mismatch → row is pending admin review; show the "ממתין לאישור"
+      //              screen so the user knows it's not a silent failure.
+      // The legacy email/SMS verify path is only reached on the explicit
+      // fallback for old kablan-less rows (not possible from this flow).
+      if (result.kablan_matched) {
+        if (pending) {
+          router.push('/contractor/deals');
+        } else {
+          router.push('/contractor/dashboard');
+        }
       } else {
-        router.push('/contractor/dashboard');
+        // Mismatch — pending admin queue. Surface the success-screen
+        // copy with the "ממתין לאישור" message.
+        setSuccess(true);
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'שגיאה בהרשמה';
+      // Duplicate ח.פ → inverted-invite flow. Backend already SMS'd
+      // the existing owner; land the user on the 'we asked' screen.
+      if (msg.includes('contractor_already_registered')) {
+        const m = msg.match(/"existing_company_name"\s*:\s*"([^"]+)"/);
+        setDuplicateExistingName(m ? m[1] : null);
+        return;
+      }
       setError(
         msg === 'phone_not_verified' ? 'אימות הטלפון פג תוקף. חזור לשלב הראשון' :
         msg === 'already_registered' ? 'מספר הטלפון כבר רשום. אנא התחבר' :
@@ -249,6 +353,29 @@ export default function RegisterContractorPage() {
     router.push('/contractor/dashboard');
   }
 
+  // Duplicate ח.פ → 'we asked the owner' screen
+  if (duplicateExistingName !== null) return (
+    <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
+      <Card className="w-full max-w-md shadow-md text-center border-2 border-emerald-300">
+        <CardContent className="pt-8 pb-8 flex flex-col items-center gap-3">
+          <CheckCircle2 className="h-16 w-16 text-emerald-500" />
+          <h2 className="text-xl font-bold text-slate-900">הבקשה נשלחה</h2>
+          <p className="text-slate-700 text-sm leading-relaxed">
+            הקבלן <strong>{duplicateExistingName || 'עם ח.פ זה'}</strong> כבר רשום במערכת.
+            <br />
+            שלחנו לבעלים הקיים הודעת SMS עם קישור לאישור הוספתך כחבר צוות.
+          </p>
+          <p className="text-slate-500 text-xs">
+            לאחר אישור, נשלח לך SMS עם פרטי הכניסה.
+          </p>
+          <Link href="/login" className="text-brand-600 font-medium hover:underline text-sm pt-1">
+            חזרה לכניסה
+          </Link>
+        </CardContent>
+      </Card>
+    </div>
+  );
+
   // ── Success screen (only when no tokens were returned — fallback) ────────
   if (success) return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
@@ -257,7 +384,7 @@ export default function RegisterContractorPage() {
           <CheckCircle2 className="h-16 w-16 text-green-500" />
           <h2 className="text-xl font-bold text-slate-900">הבקשה התקבלה!</h2>
           <p className="text-slate-600">ממתין לאישור מנהל — עד 48 שעות</p>
-          <p className="text-slate-500 text-sm">נשלח אליך SMS לאחר האישור</p>
+          <p className="text-slate-500 text-sm">נשלח אליך SMS / WhatsApp לאחר האישור</p>
           <Link href="/login" className="text-brand-600 font-medium hover:underline text-sm">
             חזרה לכניסה
           </Link>
@@ -273,12 +400,28 @@ export default function RegisterContractorPage() {
   const namePrefilledFromRegistry = !!(lookup?.ok && lookup.prefill?.company_name_he);
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4 py-8">
-      <div className="w-full max-w-lg">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 px-4 py-8">
+      <div className="w-full max-w-lg mb-3 flex justify-end">
+        <HomeLink />
+      </div>
+      <div className="w-full max-w-lg relative">
+        {/* Full-card loading overlay during the final registration
+            submit. Same pattern as the corporation register page —
+            users were double-clicking submit because the small button
+            spinner wasn't obvious enough. */}
+        {loading && step === 3 && (
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center
+                          bg-white/85 backdrop-blur-sm rounded-xl"
+               aria-live="polite" aria-busy="true">
+            <Loader2 className="h-12 w-12 animate-spin text-brand-600 mb-4" />
+            <p className="text-base font-semibold text-slate-800">מבצע רישום...</p>
+            <p className="text-sm text-slate-500 mt-1">אל תסגור את הדף</p>
+          </div>
+        )}
         <div className="h-2 rounded-t-xl bg-gradient-to-e from-brand-600 to-brand-400" />
         <Card className="rounded-t-none shadow-md">
           <CardHeader className="pb-2">
-            <div className="text-2xl font-bold text-brand-600 mb-1 text-center">שיבוץ</div>
+            <div className="flex justify-center mb-3"><Logo size="md" variant="on-light" /></div>
             <CardTitle className="text-center">הרשמת קבלן</CardTitle>
             <CardDescription className="text-center">
               {step === 'verify' ? 'אימות בעלות' : `שלב ${step} מתוך ${TOTAL_STEPS}`}
@@ -320,10 +463,13 @@ export default function RegisterContractorPage() {
                 <Button type="submit" disabled={loading} className="w-full">
                   {loading ? <><Loader2 className="h-4 w-4 animate-spin" /> שולח קוד...</> : 'שלח קוד אימות'}
                 </Button>
-                <p className="text-center text-sm text-slate-600">
-                  יש לך חשבון?{' '}
-                  <Link href="/login" className="text-brand-600 hover:underline">כניסה</Link>
-                </p>
+                {/* The "יש לך חשבון? כניסה" link was removed — the user
+                    is already inside the registration flow; the link
+                    only created confusion for first-time prospects. If
+                    a returning user lands here by mistake they'll see
+                    the "already registered" error from the backend
+                    after submitting, which is the natural place to
+                    point them at /login. */}
               </form>
             )}
 
@@ -367,6 +513,21 @@ export default function RegisterContractorPage() {
             {step === 2 && (
               <form onSubmit={handleNext} className="flex flex-col gap-4" noValidate>
                 <h3 className="font-semibold text-slate-800">פרטי חברה</h3>
+
+                {/* When the user arrived from the trial flow we skipped
+                    Step 1, so the full-name input never rendered. Show
+                    it here at the top of Step 2 so we still capture it
+                    before the final submit. */}
+                {fromTrial && (
+                  <Input
+                    label="שם מלא"
+                    placeholder="ישראל ישראלי"
+                    value={step1.full_name}
+                    onChange={(e) => setStep1((p) => ({ ...p, full_name: e.target.value }))}
+                    autoComplete="name"
+                  />
+                )}
+
                 <Input
                   label="מספר ע.מ / ח.פ (9 ספרות)"
                   placeholder="123456789"
@@ -444,6 +605,20 @@ export default function RegisterContractorPage() {
                   className={namePrefilledFromRegistry ? 'bg-slate-100 cursor-not-allowed' : ''}
                 />
 
+                {/* מספר רישיון קבלן — required. Backend verifies against
+                    פנקס הקבלנים for the same business_number. We don't
+                    pre-fill from the registry response (that would
+                    defeat the verification — the whole point is that
+                    the user proves they know their own license number). */}
+                <Input
+                  label="מספר רישיון קבלן"
+                  placeholder="לדוגמה: 3842"
+                  value={step2.kablan_number}
+                  onChange={(e) => setStep2((p) => ({ ...p, kablan_number: e.target.value.replace(/\D/g, '') }))}
+                  inputMode="numeric"
+                  dir="ltr"
+                />
+
                 <div className="flex flex-col gap-2">
                   <label className="text-sm font-medium text-slate-700">אזורי פעילות</label>
                   <div className="grid grid-cols-2 gap-2 max-h-44 overflow-y-auto border border-slate-200 rounded-md p-3">
@@ -493,9 +668,33 @@ export default function RegisterContractorPage() {
                   placeholder="info@company.co.il"
                   dir="ltr"
                   value={step3.contact_email}
-                  onChange={(e) => setStep3({ contact_email: e.target.value })}
+                  onChange={(e) => setStep3((p) => ({ ...p, contact_email: e.target.value }))}
                   autoComplete="email"
                 />
+
+                {/* T&C — scroll box + accept checkbox. BuildUp can't
+                    accept a contractor onto the platform without
+                    explicit consent to the liability + verification
+                    sections. */}
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-sm font-medium text-slate-700">תנאי שימוש</label>
+                  <div
+                    className="max-h-44 overflow-y-auto rounded-md border border-slate-300 bg-slate-50 px-3 py-2 text-xs text-slate-700 whitespace-pre-wrap leading-relaxed"
+                    dir="rtl"
+                  >
+                    {CONTRACTOR_TC_TEXT}
+                  </div>
+                  <label className="flex items-start gap-2 text-sm cursor-pointer mt-1">
+                    <input
+                      type="checkbox"
+                      checked={step3.tc_accepted}
+                      onChange={(e) => setStep3((p) => ({ ...p, tc_accepted: e.target.checked }))}
+                      className="rounded mt-0.5"
+                    />
+                    <span>קראתי ואני מאשר את תנאי השימוש (גרסה {CONTRACTOR_TC_VERSION})</span>
+                  </label>
+                </div>
+
                 {error && (
                   <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">{error}</p>
                 )}
@@ -508,7 +707,7 @@ export default function RegisterContractorPage() {
                   >
                     חזור
                   </Button>
-                  <Button type="submit" disabled={loading} className="flex-1">
+                  <Button type="submit" disabled={loading || !step3.tc_accepted} className="flex-1">
                     {loading ? <><Loader2 className="h-4 w-4 animate-spin" /> שולח...</> : 'הירשם'}
                   </Button>
                 </div>
@@ -537,7 +736,7 @@ export default function RegisterContractorPage() {
                         {c.type === 'email' ? <Mail className="h-5 w-5 text-brand-600" /> : <Smartphone className="h-5 w-5 text-brand-600" />}
                         <div className="flex flex-col">
                           <span className="text-xs text-slate-500">
-                            {c.type === 'email' ? 'אימות במייל' : 'אימות ב-SMS'}
+                            {c.type === 'email' ? 'אימות במייל' : 'אימות ב-SMS / WhatsApp'}
                           </span>
                           <span className="font-medium text-slate-800" dir="ltr">{c.target}</span>
                         </div>
@@ -601,5 +800,16 @@ export default function RegisterContractorPage() {
         </Card>
       </div>
     </div>
+  );
+}
+
+// useSearchParams (added for the trial-flow `?from=trial` query) must
+// be wrapped in a Suspense boundary or Next 16 fails the static-render
+// step for this page. Same pattern as /login.
+export default function RegisterContractorPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
+      <RegisterContractorInner />
+    </Suspense>
   );
 }

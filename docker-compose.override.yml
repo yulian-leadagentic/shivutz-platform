@@ -1,0 +1,56 @@
+# Local-dev overrides — auto-loaded by `docker compose up`.
+#
+# Replaces the production frontend image with a hot-reload `next dev` setup:
+#   • bind-mount of services/frontend into the container so file edits are seen
+#   • named volume for node_modules (host doesn't have linux-compatible binaries)
+#   • named volume for .next cache (avoids Windows bind-mount perf hit)
+#   • file-watcher polling — required for Windows + Docker bind-mount events
+#
+# To run the production-build frontend instead, ignore this file:
+#   docker compose -f docker-compose.yml up
+#
+# Backend services keep their production-style build — they don't have HMR
+# wired up in this codebase yet. (Add similar overrides if you need to
+# iterate on backend code without rebuilding.)
+
+services:
+  frontend:
+    build: !reset null
+    image: node:20-alpine
+    working_dir: /app
+    command: sh -c "npm install --no-audit --no-fund && npm run dev"
+    volumes:
+      - ./services/frontend:/app
+      - frontend_node_modules:/app/node_modules
+      - frontend_next_cache:/app/.next
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:3000/api
+      # Polling is required because Docker on Windows/macOS doesn't proxy
+      # native fs events through bind-mounts. With these on, save → HMR.
+      WATCHPACK_POLLING: "true"
+      CHOKIDAR_USEPOLLING: "true"
+      # Bump Node's V8 heap from the ~1.5GB default to 4GB. Without
+      # this, long-lived dev sessions (Watchpack scanning ~150 routes
+      # over polling + Turbopack chunk cache + HMR state) eventually
+      # hit "Watchpack Error (initial scan): ENOMEM" — the process
+      # runs out of heap mid-compile and starts dropping HTTP
+      # connections (browser sees ERR_CONNECTION_RESET). Container
+      # itself has 7.5GB; the bottleneck was the per-process limit.
+      NODE_OPTIONS: "--max-old-space-size=4096"
+
+  # Force stub SMS locally so OTPs don't drain the Vonage quota or fail
+  # silently when the account is rate-limited / out of credits. The
+  # generated 6-digit code is printed to the auth service logs:
+  #   docker compose logs -f auth | grep "OTP for"
+  # MASTER_OTP=999999 (already in .env) also works as an unconditional
+  # bypass for local development.
+  auth:
+    environment:
+      SMS_PROVIDER: stub
+  notification:
+    environment:
+      SMS_PROVIDER: stub
+
+volumes:
+  frontend_node_modules:
+  frontend_next_cache:
