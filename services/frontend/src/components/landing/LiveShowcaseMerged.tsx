@@ -190,9 +190,16 @@ export default function LiveShowcaseMerged() {
               copy with the rose-tinted section background as the only
               visual divider. */}
 
-          {/* Two combined cards. Grid identical to the original role-tiles
-              wrapper so the page footprint is unchanged. */}
-          <div className="grid grid-cols-2 gap-3 md:gap-6">
+          {/* Two combined cards. STACKED VERTICALLY ON MOBILE because
+              the merged card carries more vertical content than the
+              original tile-only design (Live strip + tile = ~250px
+              per card). At half-mobile-width that meant the Live
+              message got clipped with ellipses and the CTA shrank
+              into a tap-target nightmare. Single column on phones
+              gives each card the full width to breathe; side-by-side
+              at sm+ keeps the original "both choices visible at once"
+              behaviour the role tiles had. */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-6">
             <CombinedCard
               side="contractor"
               ctaHref={contractorHref}
