@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
@@ -9,6 +9,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { otpApi } from '@/lib/api';
 import { saveTokens } from '@/lib/auth';
 import LiveShowcase from './LiveShowcase';
+import LiveShowcaseSplit from './LiveShowcaseSplit';
 
 // Lead-capture button removed from the hero per user feedback —
 // the two role-specific tiles are clearer entry points and the
@@ -37,6 +38,22 @@ export default function HeroSection(_: HeroSectionProps) {
   // Tracks which tile is currently hot-swapping its entity context.
   // Used to disable both buttons and show a spinner on the active one.
   const [switching, setSwitching] = useState<'contractor' | 'corporation' | null>(null);
+
+  // ─── A/B test toggle for the Live section ────────────────────────
+  // Read `?live=` from the URL on mount and pick which Live variant to
+  // render. Default is the new split-by-role version; appending
+  // `?live=unified` falls back to the original single rotating card.
+  // Lives in state so a) SSR sees the default consistently, b) the
+  // switch only takes effect after hydration. Read from window.location
+  // directly to avoid pulling in Next's useSearchParams (which would
+  // require a Suspense boundary in the parent).
+  const [liveVariant, setLiveVariant] = useState<'split' | 'unified'>('split');
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const v = new URLSearchParams(window.location.search).get('live');
+    if (v === 'unified') setLiveVariant('unified');
+    else if (v === 'split') setLiveVariant('split');
+  }, []);
 
   const dashboardOf = (role: 'contractor' | 'corporation') =>
     role === 'corporation' ? '/corporation/dashboard' : '/contractor/dashboard';
@@ -163,8 +180,11 @@ export default function HeroSection(_: HeroSectionProps) {
 
       {/* ── Live showcase ── moved from below the tiles to above them so
           the social-proof signal lands BEFORE the user has to pick a
-          role. Renders as a slate-50 band breaking up the white hero. */}
-      <LiveShowcase />
+          role. Renders as a rose-tinted band breaking up the white hero.
+          A/B test: split (default) shows two role-segmented strips, one
+          above each role tile; unified shows the original single
+          rotating card. Toggle via ?live=unified in the URL. */}
+      {liveVariant === 'split' ? <LiveShowcaseSplit /> : <LiveShowcase />}
 
       {/* ── Role tiles ── */}
       <div className="relative">
