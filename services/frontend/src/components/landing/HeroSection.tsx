@@ -10,6 +10,7 @@ import { otpApi } from '@/lib/api';
 import { saveTokens } from '@/lib/auth';
 import LiveShowcase from './LiveShowcase';
 import LiveShowcaseSplit from './LiveShowcaseSplit';
+import LiveShowcaseMerged from './LiveShowcaseMerged';
 
 // Lead-capture button removed from the hero per user feedback —
 // the two role-specific tiles are clearer entry points and the
@@ -40,19 +41,25 @@ export default function HeroSection(_: HeroSectionProps) {
   const [switching, setSwitching] = useState<'contractor' | 'corporation' | null>(null);
 
   // ─── A/B test toggle for the Live section ────────────────────────
-  // Read `?live=` from the URL on mount and pick which Live variant to
-  // render. Default is the new split-by-role version; appending
-  // `?live=unified` falls back to the original single rotating card.
-  // Lives in state so a) SSR sees the default consistently, b) the
-  // switch only takes effect after hydration. Read from window.location
-  // directly to avoid pulling in Next's useSearchParams (which would
-  // require a Suspense boundary in the parent).
-  const [liveVariant, setLiveVariant] = useState<'split' | 'unified'>('split');
+  // Three variants, picked at runtime via the `?live=` query param:
+  //
+  //   merged   — Live mini-strip fused INTO each role tile; two combined
+  //              cards total. Click anywhere goes to /login?intent=<role>.
+  //              **DEFAULT** — what visitors see without the param.
+  //   split    — Live + role tile as separate stacked boxes (4 total).
+  //   unified  — original single rotating card + the two role tiles.
+  //
+  // When `merged` is active the legacy role-tiles row below is hidden
+  // (the merged cards include the tile content); the other two variants
+  // keep the original layout intact.
+  type LiveVariant = 'merged' | 'split' | 'unified';
+  const [liveVariant, setLiveVariant] = useState<LiveVariant>('merged');
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const v = new URLSearchParams(window.location.search).get('live');
     if (v === 'unified') setLiveVariant('unified');
     else if (v === 'split') setLiveVariant('split');
+    else if (v === 'merged') setLiveVariant('merged');
   }, []);
 
   const dashboardOf = (role: 'contractor' | 'corporation') =>
@@ -178,15 +185,19 @@ export default function HeroSection(_: HeroSectionProps) {
         </div>
       </div>
 
-      {/* ── Live showcase ── moved from below the tiles to above them so
-          the social-proof signal lands BEFORE the user has to pick a
-          role. Renders as a rose-tinted band breaking up the white hero.
-          A/B test: split (default) shows two role-segmented strips, one
-          above each role tile; unified shows the original single
-          rotating card. Toggle via ?live=unified in the URL. */}
-      {liveVariant === 'split' ? <LiveShowcaseSplit /> : <LiveShowcase />}
+      {/* ── Live showcase ── three variants picked by ?live= (see state
+          comment above). `merged` is the default and renders the
+          combined Live+tile cards — the legacy role-tiles div below is
+          skipped in that case. */}
+      {liveVariant === 'merged'  && <LiveShowcaseMerged />}
+      {liveVariant === 'split'   && <LiveShowcaseSplit />}
+      {liveVariant === 'unified' && <LiveShowcase />}
 
-      {/* ── Role tiles ── */}
+      {/* ── Role tiles ── only rendered for `split` and `unified`
+          variants. The `merged` variant includes the tile content
+          inside its combined cards above, so this block is skipped to
+          avoid duplicate-tile rendering. */}
+      {liveVariant !== 'merged' && (
       <div className="relative">
         <div className="max-w-6xl mx-auto px-6 w-full pt-3 md:pt-4 pb-6 md:pb-10">
           {/* Two tiles SIDE-BY-SIDE on every breakpoint — mobile users
@@ -252,6 +263,7 @@ export default function HeroSection(_: HeroSectionProps) {
           </div>
         </div>
       </div>
+      )}
 
     </section>
   );
