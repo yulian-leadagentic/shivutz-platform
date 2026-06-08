@@ -1,281 +1,221 @@
 'use client';
 
-// LiveShowcase — inline rotating showcase that sits directly under the
-// hero copy on the landing page. Visual contract:
-//   ┌───────────────────────────────────────────────────────────────┐
-//   │  ● Live  ·  מה קורה עכשיו ב-BuildUp                          │
-//   ├───────────────────────────────────────────────────────────────┤
-//   │  [big illustration] <one-line activity>                       │
-//   │                     <ago line>                                │
-//   │                                            [CTA pill →]      │
-//   └───────────────────────────────────────────────────────────────┘
-//                  הצטרף כדי לראות הכל בזמן אמת
-//                  [פתח חשבון בחינם →]
+// LiveShowcase — Live mini-strip fused INTO each role tile so each role
+// has a single combined card (Live message on top, role CTA below). The
+// whole card is one click target.
 //
-// Auto-rotates every ~5s ±0.5s. Pauses on hover and when the tab is
-// hidden. Honours prefers-reduced-motion. The card text is the only
-// string surfaced — meta is for icon picking — same redaction contract
-// as the floating LiveActivityFeed bubble (so when Phase 2 swaps in real
-// data, no name/amount can leak).
+//   ┌───────────────────────────────┐  ┌───────────────────────────────┐
+//   │ ●LIVE לקבלן · עובדים זמינים  │  │ ●LIVE לתאגיד · דרישה חדשה    │
+//   │ 250 מומחי בנייה ב-3 אזורים    │  │ 50 שלדים לאזור המרכז          │
+//   │ ─────────────────────────────  │  │ ─────────────────────────────  │
+//   │           קבלן                 │  │          תאגיד                │
+//   │           👥                   │  │           🏢                  │
+//   │        1,200+                  │  │  קבלנים מחפשים עובדים         │
+//   │     עובדים פעילים              │  │  אל תישאר בחוץ                │
+//   │     [חפש עובדים →]            │  │     [פרסם עובדים →]            │
+//   └───────────────────────────────┘  └───────────────────────────────┘
 //
-// Why TWO live surfaces (this + LiveActivityFeed bubble)?
-//   - LiveActivityFeed = micro-ticker bubble at corner, low cognitive
-//     load, runs in the background.
-//   - LiveShowcase     = above-the-fold inline section, larger card,
-//     stronger CTA — sells the platform breadth.
+// Replaces the legacy "single rotating card + two separate role tiles"
+// layout entirely — this is the only Live surface on the hero now.
+// HeroSection no longer renders standalone role tiles; both Live and
+// CTA live here.
+//
+// Click contract — for both halves of a card:
+//   - Anon visitor       → /login?intent=<role>
+//   - Logged-in matching → /<role>/dashboard
+//   - Logged-in other    → hot-swap entity via enterRole()
+// The role-choice modal is bypassed entirely (the role is implicit in
+// which card was clicked).
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import {
-  Users, Home, Briefcase, Handshake,
-  Sparkles, Building2, ClipboardList,
-} from 'lucide-react';
-import { ProfessionIcon } from '@/features/searches/ProfessionIcon';
+import { ArrowLeft, Users, Building2, Loader2 } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
-import { createPicker } from '@/features/live-activity/picker';
-import { MIX_SHOWCASE_BY_ROLE, MOCK_ITEMS } from '@/features/live-activity/mocks';
-import type { ActivityItem, AudienceRole } from '@/features/live-activity/types';
-import { RoleChoiceModal } from './RoleChoiceModal';
+import { otpApi } from '@/lib/api';
+import { saveTokens } from '@/lib/auth';
+import { LiveStripContent, useRoleLiveStrip } from '@/features/live-activity/RoleLiveStrip';
+import type { RoleSide } from '@/features/live-activity/RoleLiveStrip';
 
-function audienceFor(entityType: 'contractor' | 'corporation' | null): AudienceRole {
-  return entityType ?? 'anon';
+const HERO_STAT = { value: '1,200+', label: 'עובדים פעילים' };
+
+interface CombinedCardProps {
+  side: RoleSide;
+  ctaHref: string;
+  switching: 'contractor' | 'corporation' | null;
+  onClick: () => void;
 }
 
-const CATEGORY_ICON = {
-  workers_available:  Users,
-  requirement_new:    ClipboardList,
-  housing_new:        Home,
-  match_closed:       Handshake,
-  service_new:        Sparkles,
-  corp_active:        Building2,
-  contractor_active:  Briefcase,
-  platform_pulse:     Sparkles,
-} as const;
+function CombinedCard({ side, ctaHref, switching, onClick }: CombinedCardProps) {
+  const isContractor = side === 'contractor';
+  const { current, pause, resume } = useRoleLiveStrip(side);
 
-// Per-category accent — same palette as the floating bubble for visual
-// continuity. The bubble + showcase reading the same colour for the
-// same category type makes the platform feel coherent.
-const CATEGORY_ACCENT: Record<keyof typeof CATEGORY_ICON, {
-  iconBg: string; iconText: string; chip: string;
-}> = {
-  workers_available: { iconBg: 'bg-brand-50',   iconText: 'text-brand-700',   chip: 'bg-brand-100 text-brand-800' },
-  requirement_new:   { iconBg: 'bg-amber-50',   iconText: 'text-amber-700',   chip: 'bg-amber-100 text-amber-800' },
-  housing_new:       { iconBg: 'bg-emerald-50', iconText: 'text-emerald-700', chip: 'bg-emerald-100 text-emerald-800' },
-  match_closed:      { iconBg: 'bg-emerald-50', iconText: 'text-emerald-700', chip: 'bg-emerald-100 text-emerald-800' },
-  service_new:       { iconBg: 'bg-sky-50',     iconText: 'text-sky-700',     chip: 'bg-sky-100 text-sky-800' },
-  corp_active:       { iconBg: 'bg-navy-50',    iconText: 'text-navy-700',    chip: 'bg-navy-100 text-navy-800' },
-  contractor_active: { iconBg: 'bg-brand-50',   iconText: 'text-brand-700',   chip: 'bg-brand-100 text-brand-800' },
-  platform_pulse:    { iconBg: 'bg-slate-100',  iconText: 'text-slate-700',   chip: 'bg-slate-100 text-slate-700' },
-};
+  const cardClasses = isContractor
+    ? 'border-brand-200 bg-white hover:border-brand-400 hover:shadow-brand-200/40 shadow-brand-100/40'
+    : 'border-navy-200 bg-white hover:border-navy-400 hover:shadow-navy-200/40 shadow-navy-100/40';
 
-const CATEGORY_LABEL: Record<keyof typeof CATEGORY_ICON, string> = {
-  workers_available:  'עובדים זמינים',
-  requirement_new:    'דרישה חדשה',
-  housing_new:        'מגורים זמינים',
-  match_closed:       'עסקה נסגרה',
-  service_new:        'שירות חדש',
-  corp_active:        'תאגיד פעיל',
-  contractor_active:  'קבלן פעיל',
-  platform_pulse:     'פעילות בפלטפורמה',
-};
+  const liveAreaBg = isContractor ? 'bg-brand-50/40' : 'bg-navy-50/40';
+  const divider    = isContractor ? 'border-brand-100' : 'border-navy-100';
 
-// Per-category "why this matters" tagline. Replaces the time-ago line
-// (which the bubble already carries) so the showcase reads as a
-// substantive value highlight rather than a notification echo. Lines
-// are intentionally generic — they should hold even when Phase 2 swaps
-// the data source from mocks to real /api/marketplace/activity-feed.
-const CATEGORY_TAGLINE: Record<keyof typeof CATEGORY_ICON, string> = {
-  workers_available:  'המערכת מציעה התאמות מותאמות תוך שניות',
-  requirement_new:    'תאגידים מאומתים מגישים הצעות תוך 48 שעות בממוצע',
-  housing_new:        'עשרות מתחמי מגורים זמינים לעובדים שלך',
-  match_closed:       'עסקאות בפלטפורמה נסגרות בממוצע תוך 48 שעות',
-  service_new:        'ספקים מאומתים: לוגיסטיקה, ויזות, ביטוחים ועוד',
-  corp_active:        'תאגידים מורשים מעדכנים זמינות מדי יום',
-  contractor_active:  'מאות קבלנים פעילים מחפשים עובדים כרגע',
-  platform_pulse:     'הנתונים מתעדכנים בזמן אמת',
-};
+  const isSwitching = switching === side;
+  const isOtherSwitching = switching !== null && switching !== side;
 
-function nextInterval(baseMs: number): number {
-  const jitter = (Math.random() - 0.5) * 1000;
-  return baseMs + jitter;
-}
-
-interface Props {
-  /** Default 5000ms; jitter applied so the visible range is ~4–6s. */
-  intervalMs?: number;
-}
-
-export default function LiveShowcase({ intervalMs = 5000 }: Props) {
-  const auth = useAuth();
-  const router = useRouter();
-  const role = audienceFor(auth.entityType);
-  // Opens when an anon visitor clicks the card. Logged-in users skip
-  // it and route straight to their dashboard.
-  const [showRoleModal, setShowRoleModal] = useState(false);
-
-  const pickerRef = useRef<ReturnType<typeof createPicker> | null>(null);
-  const lastRoleRef = useRef<AudienceRole>(role);
-  if (!pickerRef.current || lastRoleRef.current !== role) {
-    // Showcase-specific weighting — pulls from breadth / opportunity
-    // categories so the surface reads as "what the platform offers"
-    // rather than echoing the bubble's "what just happened" tone.
-    pickerRef.current = createPicker(MOCK_ITEMS, MIX_SHOWCASE_BY_ROLE[role]);
-    lastRoleRef.current = role;
-  }
-
-  // SSR/CSR hydration defense — initialising `current` from
-  // pickerRef.current.next() runs the random pick once on the server
-  // and a SECOND time on the client, returning different items each
-  // call. React then aborts hydration because the rendered HTML
-  // diverges (different profession icon / fallback svg), and the
-  // recovery pass that regenerates the tree client-side can drop
-  // event handlers from other forms on the same page — that's been
-  // the silent breakage behind "click does nothing on /login".
-  // Defer the first pick to a useEffect so hydration sees `null`
-  // on both sides; the `if (!current) return null;` guard below
-  // hides the card until the client mounts and the picker resolves.
-  const [current, setCurrent] = useState<ActivityItem | null>(null);
-  const [paused, setPaused] = useState(false);
-  useEffect(() => {
-    if (pickerRef.current) setCurrent(pickerRef.current.next());
-  }, []);
-
-  const advance = useCallback(() => {
-    const next = pickerRef.current?.next();
-    if (next) setCurrent(next);
-  }, []);
-
-  useEffect(() => {
-    if (paused || !current) return;
-    const t = setTimeout(advance, nextInterval(intervalMs));
-    return () => clearTimeout(t);
-  }, [advance, current, intervalMs, paused]);
-
-  useEffect(() => {
-    function onVis() { setPaused(document.visibilityState === 'hidden'); }
-    document.addEventListener('visibilitychange', onVis);
-    return () => document.removeEventListener('visibilitychange', onVis);
-  }, []);
-
-  if (!current) return null;
-
-  const profCode = current.meta?.profession_code;
-  const FallbackIcon = CATEGORY_ICON[current.category];
-  const accent = CATEGORY_ACCENT[current.category];
-  const categoryLabel = CATEGORY_LABEL[current.category];
-  const categoryTagline = CATEGORY_TAGLINE[current.category];
-
-  /** Card click handler. Logged-in users go straight to their
-   *  dashboard; anon visitors get the role-choice popup since we
-   *  don't know if they're a contractor or corporation yet. */
-  function handleCardClick() {
-    if (role === 'contractor')  { router.push('/contractor/dashboard'); return; }
-    if (role === 'corporation') { router.push('/corporation/dashboard'); return; }
-    setShowRoleModal(true);
+  function handleClick(e: React.MouseEvent) {
+    e.preventDefault();
+    onClick();
   }
 
   return (
-    <section
-      aria-label="פעילות חיה בפלטפורמה"
-      // Rose-tinted band (was bg-slate-50/60) so the Live surface reads
-      // as visually distinct from the white hero above + tile band
-      // below. The hue echoes the pulsing rose dot in the header,
-      // tying the colour to the "live" semantic.
-      className="relative bg-rose-50/40"
+    <Link
+      href={ctaHref}
+      onClick={handleClick}
+      onMouseEnter={pause}
+      onMouseLeave={resume}
+      aria-disabled={switching !== null}
+      aria-label={isContractor ? 'כניסה כקבלן' : 'כניסה כתאגיד'}
+      className={`group block rounded-2xl md:rounded-3xl border-2 shadow-md transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5 cursor-pointer overflow-hidden ${cardClasses} ${isSwitching ? 'opacity-80' : ''} ${isOtherSwitching ? 'pointer-events-none opacity-50' : ''}`}
     >
-      {/* Vertical padding tightened (py-6 sm:py-8 → py-3 sm:py-4) and
-          the header→card gap halved so the showcase doesn't blow out
-          the hero's single-viewport budget now that it sits between
-          the headline and the role tiles.
-          Outer container mirrors the role-tiles wrapper exactly
-          (max-w-6xl + px-6 → max-w-5xl inner) so the Live card's edges
-          line up flush with the קבלן/תאגיד tiles below it. Previously
-          this section was max-w-5xl with its own px, which left the
-          card visibly narrower than the tiles. */}
-      <div className="max-w-6xl mx-auto px-6 w-full py-3 sm:py-4">
-       <div className="max-w-5xl mx-auto">
-
-        {/* Header — Live label + tagline. "Live" promoted to a rose
-            pill badge so it reads as a status indicator (not just text)
-            and ties the colour to the surrounding emphasis treatment. */}
-        <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-rose-500 text-white text-xs font-bold tracking-wide shadow-sm">
-              <span
-                aria-hidden="true"
-                className="h-1.5 w-1.5 rounded-full bg-white animate-live-dot"
-              />
-              LIVE
-            </span>
-            <span className="text-sm font-semibold text-slate-800">מה קורה עכשיו ב-BuildUp</span>
-          </div>
-          <p className="text-xs text-slate-500 leading-snug">
-            דרישות קבלנים, תאגידים פעילים, עובדים והתאמות — הכל בזמן אמת
-          </p>
-        </div>
-
-        {/* Rotating card — the whole card is now a button. Clicking it
-            either routes a logged-in user to their dashboard or opens
-            the role-choice popup for anon visitors. The previous
-            per-item inline CTA (resolveCta) was removed because the
-            popup is the single, role-agnostic entry point now. */}
-        <button
-          type="button"
-          onClick={handleCardClick}
-          onMouseEnter={() => setPaused(true)}
-          onMouseLeave={() => setPaused(false)}
-          aria-label="כניסה לפלטפורמה"
-          className="block w-full text-start rounded-2xl border-2 border-rose-200 bg-white shadow-md shadow-rose-100/60 hover:shadow-lg hover:shadow-rose-200/60 hover:border-rose-300 transition-all cursor-pointer"
-        >
-          <div
-            key={current.id}
-            aria-live="polite"
-            className="animate-live-card-enter p-2.5 sm:p-3.5"
-          >
-            <div className="flex flex-row items-center gap-3 sm:gap-4">
-              <div className="shrink-0">
-                {profCode ? (
-                  <div className={`h-12 w-12 sm:h-20 sm:w-20 rounded-xl sm:rounded-2xl ${accent.iconBg} flex items-center justify-center`}>
-                    <ProfessionIcon code={profCode} size={44} alt="" className="sm:hidden" />
-                    <ProfessionIcon code={profCode} size={68} alt="" className="hidden sm:block" />
-                  </div>
-                ) : (
-                  <div className={`h-12 w-12 sm:h-20 sm:w-20 rounded-xl sm:rounded-2xl ${accent.iconBg} ${accent.iconText} flex items-center justify-center`}>
-                    <FallbackIcon className="h-6 w-6 sm:h-10 sm:w-10" strokeWidth={2} />
-                  </div>
-                )}
-              </div>
-
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap mb-1.5">
-                  <span className={`inline-flex items-center text-[11px] font-bold px-2 py-0.5 rounded-full ${accent.chip}`}>
-                    {categoryLabel}
-                  </span>
-                </div>
-                <p className="text-sm sm:text-lg font-bold text-slate-900 leading-snug">
-                  {current.text}
-                </p>
-                <p className="text-xs sm:text-sm text-slate-500 leading-snug mt-1.5">
-                  {categoryTagline}
-                </p>
-              </div>
-            </div>
-          </div>
-        </button>
-
-        {/* The "פתח חשבון בחינם" conversion strip was removed — the
-            role-tiles in the hero just above already handle the
-            "create an account" signal, and the per-card CTA inside
-            the showcase already routes anonymous visitors through
-            /login. A second sign-up nudge here was duplicating that
-            ask without adding value at this stage. */}
-
-       </div>
+      {/* ── Live mini-strip (top half) ──────────────────────────────── */}
+      <div className={`${liveAreaBg} border-b ${divider}`}>
+        {current && <LiveStripContent side={side} current={current} compact />}
       </div>
 
-      {/* Role-choice popup for anon visitors. Logged-in users never
-          see it (handleCardClick skips it for them). */}
-      <RoleChoiceModal open={showRoleModal} onClose={() => setShowRoleModal(false)} />
+      {/* ── Role tile (bottom half) — content mirrors HeroSection's
+           original tile design but rendered inside the merged card,
+           without its own click handler (parent <Link> owns it). ── */}
+      {isContractor ? (
+        <div className="flex flex-col items-center text-center p-2.5 md:p-5">
+          <div className="text-lg md:text-3xl font-black text-brand-600 tracking-tight mb-1 md:mb-2">
+            קבלן
+          </div>
+          <div className="h-7 w-7 md:h-10 md:w-10 rounded-xl bg-brand-100 flex items-center justify-center mb-1 md:mb-2">
+            <Users className="h-3.5 w-3.5 md:h-5 md:w-5 text-brand-600" />
+          </div>
+          <div className="text-xl md:text-4xl font-extrabold text-slate-900 leading-none mb-0.5 group-hover:text-brand-700 transition-colors">
+            {HERO_STAT.value}
+          </div>
+          <div className="text-[11px] md:text-sm text-slate-500 mb-1.5 md:mb-3">{HERO_STAT.label}</div>
+          <div className="inline-flex items-center gap-1 md:gap-2 px-3 md:px-6 py-1.5 md:py-2.5 rounded-full bg-brand-600 text-xs md:text-base font-bold text-white shadow-md group-hover:bg-brand-700 transition-colors">
+            {isSwitching
+              ? <><Loader2 className="h-3.5 w-3.5 md:h-4 md:w-4 animate-spin" /> מעביר...</>
+              : <>חפש עובדים<ArrowLeft className="h-3.5 w-3.5 md:h-4 md:w-4 group-hover:-translate-x-1 transition-transform" /></>}
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-col items-center text-center p-2.5 md:p-5">
+          <div className="text-lg md:text-3xl font-black text-navy-600 tracking-tight mb-1 md:mb-2">
+            תאגיד
+          </div>
+          <div className="h-7 w-7 md:h-10 md:w-10 rounded-xl bg-navy-100 flex items-center justify-center mb-1 md:mb-2">
+            <Building2 className="h-3.5 w-3.5 md:h-5 md:w-5 text-navy-600" />
+          </div>
+          <div className="text-xs md:text-base text-slate-900 font-semibold leading-snug mb-0.5 md:mb-1.5 max-w-sm">
+            <span className="md:hidden">קבלנים פעילים מחפשים עובדים</span>
+            <span className="hidden md:inline">עשרות קבלנים כבר מנויים לשירותים שלנו ומחפשים עובדים</span>
+          </div>
+          <div className="text-xs md:text-lg text-navy-600 font-bold leading-snug mb-1.5 md:mb-3">
+            <span className="md:hidden">אל תישאר בחוץ</span>
+            <span className="hidden md:inline">מנהל תאגיד — אל תישאר בחוץ</span>
+          </div>
+          <div className="inline-flex items-center gap-1 md:gap-2 px-3 md:px-6 py-1.5 md:py-2.5 rounded-full bg-navy-600 text-xs md:text-base font-bold text-white shadow-md group-hover:bg-navy-700 transition-colors">
+            {isSwitching
+              ? <><Loader2 className="h-3.5 w-3.5 md:h-4 md:w-4 animate-spin" /> מעביר...</>
+              : <>פרסם עובדים<ArrowLeft className="h-3.5 w-3.5 md:h-4 md:w-4 group-hover:-translate-x-1 transition-transform" /></>}
+          </div>
+        </div>
+      )}
+    </Link>
+  );
+}
+
+export default function LiveShowcase() {
+  const router = useRouter();
+  const { isLoggedIn, entityType, refreshAuth } = useAuth();
+  const [switching, setSwitching] = useState<'contractor' | 'corporation' | null>(null);
+
+  const dashboardOf = (role: RoleSide) =>
+    role === 'corporation' ? '/corporation/dashboard' : '/contractor/dashboard';
+  const registerOf = (role: RoleSide) =>
+    role === 'corporation' ? '/register/corporation' : '/register/contractor';
+
+  // Same enterRole logic as HeroSection — hot-swaps entity context for
+  // logged-in users with a matching membership, falls back to login or
+  // registration otherwise. Duplicated here because the merged variant
+  // is self-contained; refactoring HeroSection to share isn't worth the
+  // churn while the A/B is still in flight.
+  async function enterRole(role: RoleSide) {
+    if (!isLoggedIn) {
+      router.push(`/login?intent=${role}`);
+      return;
+    }
+    setSwitching(role);
+    try {
+      const { memberships } = await otpApi.myMemberships();
+      const matching = memberships.filter((m) => m.entity_type === role);
+      if (matching.length === 0) {
+        router.push(registerOf(role));
+        return;
+      }
+      if (matching.length > 1) {
+        router.push(`/select-entity?intent=${role}`);
+        return;
+      }
+      const tokens = await otpApi.selectEntity(matching[0].entity_id, role);
+      saveTokens(tokens.access_token, tokens.refresh_token);
+      refreshAuth();
+      router.push(dashboardOf(role));
+    } catch {
+      router.push(`/login?intent=${role}`);
+    } finally {
+      setSwitching(null);
+    }
+  }
+
+  const contractorHref = !isLoggedIn
+    ? '/login?intent=contractor'
+    : (entityType === 'contractor' ? dashboardOf('contractor') : '/login?intent=contractor');
+  const corporationHref = !isLoggedIn
+    ? '/login?intent=corporation'
+    : (entityType === 'corporation' ? dashboardOf('corporation') : '/login?intent=corporation');
+
+  return (
+    <section
+      aria-label="פעילות חיה — בחירת תפקיד"
+      className="relative bg-rose-50/40"
+    >
+      <div className="max-w-6xl mx-auto px-6 w-full py-3 sm:py-4">
+        <div className="max-w-5xl mx-auto">
+          {/* No section header — the LIVE pill inside each card carries
+              the liveness signal per-role, and a duplicate header band
+              just adds visual noise. Cards go straight under the hero
+              copy with the rose-tinted section background as the only
+              visual divider. */}
+
+          {/* Two combined cards. STACKED VERTICALLY ON MOBILE because
+              the merged card carries more vertical content than the
+              original tile-only design (Live strip + tile = ~250px
+              per card). At half-mobile-width that meant the Live
+              message got clipped with ellipses and the CTA shrank
+              into a tap-target nightmare. Single column on phones
+              gives each card the full width to breathe; side-by-side
+              at sm+ keeps the original "both choices visible at once"
+              behaviour the role tiles had. */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-6">
+            <CombinedCard
+              side="contractor"
+              ctaHref={contractorHref}
+              switching={switching}
+              onClick={() => enterRole('contractor')}
+            />
+            <CombinedCard
+              side="corporation"
+              ctaHref={corporationHref}
+              switching={switching}
+              onClick={() => enterRole('corporation')}
+            />
+          </div>
+        </div>
+      </div>
     </section>
   );
 }
