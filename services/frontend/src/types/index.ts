@@ -157,6 +157,12 @@ export interface Deal {
   // Lifecycle (M2)
   commission_amount?: number | null;
   corp_committed_at?: string | null;
+  /** Contractor revealed corp identity (step 1 of post-proposal flow).
+   *  null = corp identity still hidden; truthy = corp details visible
+   *  and the "אשר עסקה" button is enabled. Deal status stays
+   *  'corp_committed' through reveal — only `approve` flips to
+   *  'approved'. */
+  corp_revealed_at?: string | null;
   approved_at?: string | null;
   rejected_at?: string | null;
   expires_at?: string | null;

@@ -70,6 +70,16 @@ export const dealApi = {
     apiFetch<{ id: string; status: string; expires_at: string; commission_amount: number }>(
       `/deals/${id}/commit`, { method: 'POST', body: JSON.stringify({ worker_ids: workerIds }) }
     ),
+  /** Step 1 of the contractor's post-proposal flow. Unlocks corp
+   *  identity without changing deal status (stays 'corp_committed').
+   *  Sets `corp_revealed_at` so the UI can route into the
+   *  "now-talk-to-them, then approve" view. */
+  revealCorp: (id: string) =>
+    apiFetch<{ id: string; status: string; corp_revealed_at: string }>(
+      `/deals/${id}/reveal-corp`, { method: 'POST' }
+    ),
+  /** Step 2 of the contractor's post-proposal flow. Formal commit —
+   *  status flips to 'approved', capture timer starts. */
   approve: (id: string) =>
     apiFetch<{ id: string; status: string; scheduled_capture_at: string }>(
       `/deals/${id}/approve`, { method: 'POST' }

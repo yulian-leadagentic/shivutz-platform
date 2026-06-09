@@ -193,7 +193,28 @@ export default function DealDetailPage() {
     finally { setSending(false); }
   }
 
+  // Step 1: reveal corp identity. Does NOT change deal status — the
+  // contractor can now see who proposed, call them, negotiate offline.
+  // The page re-renders with the corp details visible and the "אשר עסקה"
+  // button replacing the reveal button.
+  async function handleRevealCorp() {
+    setConfirming(true);
+    setConfirmError('');
+    try {
+      await dealApi.revealCorp(id);
+      await loadDeal();
+    } catch (e: unknown) {
+      setConfirmError(e instanceof Error ? e.message : 'שגיאה בחשיפת פרטי התאגיד');
+    } finally {
+      setConfirming(false);
+    }
+  }
+
+  // Step 2: formal approval — the click that flips status to 'approved'
+  // and starts the capture timer. Only reachable AFTER the contractor
+  // has revealed corp identity (the button is hidden until then).
   async function handleConfirm() {
+    if (!confirm('לאשר סופית את העסקה? לאחר אישור תחל ספירה לחיוב אוטומטי.')) return;
     setConfirming(true);
     setConfirmError('');
     try {
@@ -575,21 +596,27 @@ export default function DealDetailPage() {
             )}
             <div className="flex gap-2 flex-wrap">
               <Button
-                onClick={handleConfirm}
+                onClick={deal.corp_revealed_at ? handleConfirm : handleRevealCorp}
                 disabled={confirming || workers.length === 0}
                 className="bg-emerald-600 hover:bg-emerald-700 text-white"
               >
-                {/* Button label used to read "הצג פרטי תאגיד" — but
-                    the click actually fires dealApi.approve() and
-                    flips the deal to status='approved'. Contractors
-                    thought they were peeking at corp identity and
-                    accidentally committed. Renamed to match what
-                    really happens: approving the deal IS what reveals
-                    the corp. */}
-                {confirming
-                  ? <><Loader2 className="h-4 w-4 animate-spin me-2" />מעבד...</>
-                  : <><CheckCircle2 className="h-4 w-4 me-2" />אשר עסקה והצג פרטי תאגיד ({workers.length} עובדים)</>
-                }
+                {/* Two-step contractor flow:
+                    Step 1 — "הצג פרטי תאגיד" (reveal): unlocks corp
+                             identity, status stays 'corp_committed'.
+                             Contractor calls the corp, closes offline.
+                    Step 2 — "אשר עסקה" (approve): formal commit. The
+                             click that flips to 'approved' and starts
+                             the capture timer.
+                    Before today these were the same button, which
+                    silently approved the deal when the contractor
+                    thought they were just peeking. */}
+                {confirming ? (
+                  <><Loader2 className="h-4 w-4 animate-spin me-2" />מעבד...</>
+                ) : deal.corp_revealed_at ? (
+                  <><CheckCircle2 className="h-4 w-4 me-2" />אשר עסקה ({workers.length} עובדים)</>
+                ) : (
+                  <><CheckCircle2 className="h-4 w-4 me-2" />הצג פרטי תאגיד ({workers.length} עובדים)</>
+                )}
               </Button>
               <Button
                 onClick={handleReject}

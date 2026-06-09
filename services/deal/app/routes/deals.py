@@ -535,6 +535,77 @@ async def commit_deal(
         conn.close()
 
 
+@router.post("/{deal_id}/reveal-corp")
+async def reveal_corp(
+    deal_id: str,
+    x_org_id: Optional[str] = Header(default=None),
+    x_user_id: Optional[str] = Header(default=None),
+    x_user_role: Optional[str] = Header(default=None),
+):
+    """Contractor unlocks the corp's identity WITHOUT approving the deal.
+    Step 1 of 2 in the contractor's post-proposal flow:
+
+      1. (this endpoint) reveal-corp  → status stays 'corp_committed';
+         contractor sees corp name + contact info, can talk offline.
+      2. POST /approve                → contractor formally commits;
+         status flips to 'approved', capture timer starts.
+
+    Idempotent — re-calling on an already-revealed deal is a no-op (it
+    just re-asserts the same timestamp). RBAC matches /approve:
+    contractor of the deal, or admin.
+    """
+    if x_user_role not in ("contractor", "admin"):
+        raise HTTPException(status_code=403, detail="contractor_only")
+
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM deals WHERE id=%s AND deleted_at IS NULL", (deal_id,))
+        deal = cur.fetchone()
+        if not deal:
+            raise HTTPException(status_code=404, detail="deal_not_found")
+        if x_user_role != "admin" and deal["contractor_id"] != x_org_id:
+            raise HTTPException(status_code=403, detail="not_your_deal")
+        # Only allow reveal once the corp has committed workers. Earlier
+        # (e.g. status='proposed' before any worker selection) there
+        # isn't an "offer" worth revealing yet.
+        if deal["status"] not in ("corp_committed", "approved", "active", "reporting", "closed"):
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "wrong_state", "current": deal["status"],
+                        "message": "corp must have committed workers before reveal"},
+            )
+
+        # Idempotent: if already revealed, just return the existing
+        # timestamp. Avoids audit-log noise on accidental double-clicks.
+        if deal.get("corp_revealed_at"):
+            return {
+                "id":               deal_id,
+                "status":           deal["status"],
+                "corp_revealed_at": deal["corp_revealed_at"].isoformat() + "Z"
+                                    if hasattr(deal["corp_revealed_at"], "isoformat")
+                                    else deal["corp_revealed_at"],
+            }
+
+        now = datetime.utcnow()
+        cur.execute(
+            "UPDATE deals SET corp_revealed_at=%s WHERE id=%s",
+            (now, deal_id),
+        )
+        conn.commit()
+        audit.log("deal", deal_id, "corp_revealed", x_user_id or "unknown",
+                  new_value={"revealed_at": now.isoformat() + "Z"})
+        return {
+            "id":               deal_id,
+            "status":           deal["status"],
+            "corp_revealed_at": now.isoformat() + "Z",
+        }
+    except HTTPException:
+        raise
+    finally:
+        conn.close()
+
+
 @router.post("/{deal_id}/approve")
 async def approve_deal(
     deal_id: str,
