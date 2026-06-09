@@ -498,14 +498,23 @@ async def commit_deal(
 
         # Place the J5 hold via payment service. Failure here doesn't roll back
         # the commit — admin gets visibility via the payment_status field.
+        # The CORP is the paying party (per T&C: BuildUp commission is on
+        # the corp side; corp holds card on file, corp can cancel during
+        # the grace window). The previous code wrongly passed contractor_id
+        # — that caused the cancel-engagement, capture, void and refund
+        # endpoints (which all compare tx.charged_entity_id against the
+        # acting user's org_id) to return 403 Forbidden whenever the corp
+        # tried to manage the hold. Schema default for
+        # payment_transactions.charged_entity_type is already 'corporation';
+        # this brings deal-service in line with it.
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
                 await client.post(
                     f"{PAYMENT_URL}/payments/deals/{deal_id}/authorize",
                     json={
                         "amount": float(commission_amount),
-                        "charged_entity_type": "contractor",
-                        "charged_entity_id":   deal["contractor_id"],
+                        "charged_entity_type": "corporation",
+                        "charged_entity_id":   deal["corporation_id"],
                     },
                 )
         except httpx.HTTPError as e:

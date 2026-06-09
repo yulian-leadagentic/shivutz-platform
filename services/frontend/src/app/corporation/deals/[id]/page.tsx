@@ -1058,18 +1058,34 @@ function CorporationDealPageInner() {
                 <p className="text-slate-500 text-sm text-center py-4">אין עובדים משובצים</p>
               ) : (
                 <div className="space-y-2">
-                  {assignedWorkers.map((w) => (
-                    <div key={w.id} className="flex items-center gap-3 p-2.5 rounded-xl bg-slate-50 border border-slate-100">
-                      <div className="h-8 w-8 rounded-full bg-brand-100 flex items-center justify-center text-xs font-bold text-brand-700 shrink-0">
-                        {w.first_name?.[0]}{w.last_name?.[0]}
+                  {assignedWorkers.map((w, idx) => {
+                    // Fall back gracefully when test/legacy workers
+                    // were inserted without first/last name or visa
+                    // date — previously the card showed empty initial
+                    // circles, an empty name line, and "ויזה: —"
+                    // which looked like a load failure even though
+                    // the rows had loaded fine.
+                    const fullName = [w.first_name, w.last_name].filter(Boolean).join(' ').trim();
+                    const initials = fullName
+                      ? `${w.first_name?.[0] ?? ''}${w.last_name?.[0] ?? ''}`
+                      : String(idx + 1);
+                    const display  = fullName || `עובד #${idx + 1}`;
+                    const visa     = w.visa_valid_until ? fmtDate(w.visa_valid_until) : null;
+                    return (
+                      <div key={w.id} className="flex items-center gap-3 p-2.5 rounded-xl bg-slate-50 border border-slate-100">
+                        <div className="h-8 w-8 rounded-full bg-brand-100 flex items-center justify-center text-xs font-bold text-brand-700 shrink-0">
+                          {initials}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-slate-900">{display}</p>
+                          <p className="text-xs text-slate-500">{profMap[w.profession_type] ?? w.profession_type} · {expLabel(w)}</p>
+                        </div>
+                        {visa && (
+                          <span className="text-xs text-slate-400 shrink-0">ויזה: {visa}</span>
+                        )}
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-slate-900">{w.first_name} {w.last_name}</p>
-                        <p className="text-xs text-slate-500">{profMap[w.profession_type] ?? w.profession_type} · {expLabel(w)}</p>
-                      </div>
-                      <span className="text-xs text-slate-400 shrink-0">ויזה: {fmtDate(w.visa_valid_until)}</span>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </CardContent>

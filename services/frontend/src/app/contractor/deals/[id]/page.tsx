@@ -2,9 +2,11 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
+import Link from 'next/link';
 import {
   Loader2, Send, FileText, Users, Clock, CheckCircle2,
   Building2, Phone, Mail, UserCheck, HandshakeIcon, Download, X,
+  ArrowRight,
 } from 'lucide-react';
 import { dealApi, workerApi, orgApi } from '@/lib/api';
 import { dealRef } from '@/lib/utils';
@@ -218,7 +220,11 @@ export default function DealDetailPage() {
   // and starts the capture timer. Only reachable AFTER the contractor
   // has revealed corp identity (the button is hidden until then).
   async function handleConfirm() {
-    if (!confirm('להתקדם בעסקה? לאחר אישור התאגיד יחויב בעמלת BuildUp אוטומטית.')) return;
+    // No confirm dialog — the click on "התקדם בעסקה" IS the
+    // contractor's intent. Previously asked them again with a
+    // commission-warning copy ("התאגיד יחויב בעמלה") which felt
+    // out of place (the contractor doesn't pay the commission) and
+    // added an extra step to a flow that's already deliberate.
     setConfirming(true);
     setConfirmError('');
     try {
@@ -333,6 +339,18 @@ export default function DealDetailPage() {
 
   return (
     <div className="space-y-5 max-w-5xl">
+      {/* Back-link — always at the top of the page so a contractor can
+          bail out at any point. Specifically requested for the
+          post-approval state where the user kept asking "ok I clicked,
+          now how do I get back to the list?". */}
+      <Link
+        href="/contractor/deals"
+        className="inline-flex items-center gap-1.5 text-sm text-slate-600 hover:text-brand-600 transition-colors"
+      >
+        <ArrowRight className="h-3.5 w-3.5" />
+        חזרה למסך עסקאות
+      </Link>
+
       {/* Header */}
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div className="space-y-1">
@@ -388,6 +406,62 @@ export default function DealDetailPage() {
           {statusInfo.icon}
           {statusInfo.text}
         </div>
+      )}
+
+      {/* Post-approval corp details — once the contractor has clicked
+          "התקדם בעסקה", the showConfirm block disappears (because
+          status flips away from 'corp_committed'), but they still
+          need the corp contact info visible to actually close the
+          deal. Renders the same data as the inside-showConfirm card,
+          gated on `corp_revealed_at && status='approved'`. */}
+      {deal.status === 'approved' && deal.corp_revealed_at && corp && (
+        <Card className="border-emerald-200 bg-white">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base text-emerald-800">
+              <Building2 className="h-5 w-5" />
+              פרטי התאגיד שאישרת
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-base text-slate-900">
+                <Building2 className="h-5 w-5 text-emerald-600 shrink-0" />
+                <span className="font-bold">{corpName}</span>
+              </div>
+              {corp.contact_name && (
+                <div className="flex items-center gap-2 text-sm text-slate-700">
+                  <UserCheck className="h-4 w-4 text-slate-400 shrink-0" />
+                  <span>{corp.contact_name}</span>
+                </div>
+              )}
+              {corp.contact_phone && (
+                <div className="flex items-center gap-2 text-sm text-slate-700">
+                  <Phone className="h-4 w-4 text-slate-400 shrink-0" />
+                  <a href={`tel:${corp.contact_phone}`} className="text-brand-600 hover:underline font-semibold text-base">
+                    {corp.contact_phone}
+                  </a>
+                </div>
+              )}
+              {corp.contact_email && (
+                <div className="flex items-center gap-2 text-sm text-slate-700">
+                  <Mail className="h-4 w-4 text-slate-400 shrink-0" />
+                  <a href={`mailto:${corp.contact_email}`} className="text-brand-600 hover:underline">
+                    {corp.contact_email}
+                  </a>
+                </div>
+              )}
+            </div>
+            <div className="mt-4 pt-4 border-t border-emerald-100">
+              <Link
+                href="/contractor/deals"
+                className="inline-flex items-center gap-1.5 text-sm font-medium text-brand-700 hover:text-brand-800"
+              >
+                <ArrowRight className="h-4 w-4" />
+                חזרה למסך עסקאות
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       {/* Approved → contractor close-the-loop. The contractor has
