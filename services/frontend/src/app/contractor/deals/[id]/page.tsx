@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   Loader2, Send, FileText, Users, Clock, CheckCircle2,
@@ -83,6 +83,7 @@ const STATUS_LABEL_HE: Record<string, string> = {
 
 export default function DealDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const router = useRouter();
 
   const [deal, setDeal]         = useState<Deal | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -245,7 +246,13 @@ export default function DealDetailPage() {
     setConfirmError('');
     try {
       await dealApi.approve(id);
-      await Promise.all([loadDeal(), loadMessages(), loadWorkers()]);
+      // Per user feedback: after "התקדם בעסקה" succeeds, the
+      // contractor wants to be sent back to the requests list rather
+      // than left on the detail page. The list re-fetches on focus
+      // (visibilitychange listener added in QA-R5) so the deal lands
+      // in its new status group immediately.
+      router.push('/contractor/deals');
+      return;
     } catch (e: unknown) {
       setConfirmError(e instanceof Error ? e.message : 'שגיאה באישור ההתקשרות');
     } finally {
@@ -800,7 +807,7 @@ export default function DealDetailPage() {
                   <p className="text-[11px] text-slate-400 mb-3 leading-relaxed">
                     פרטי הזיהוי של העובדים יוצגו לאחר אישור הרשימה. כעת מוצגים מקצוע, ניסיון וארץ מוצא בלבד.
                     {requestedOrigins.length > 0 && (
-                      <> מוצא מבוקש לבקשה זו: <strong className="text-slate-600">{requestedOrigins.join(', ')}</strong>.</>
+                      <> מוצא מבוקש לבקשה זו: <strong className="text-slate-600">{requestedOrigins.map((c) => heOrigin(c)).join(', ')}</strong>.</>
                     )}
                   </p>
                   <div className="space-y-2">

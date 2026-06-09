@@ -279,27 +279,34 @@ interface StateMeta {
 }
 
 const STATE_META: Record<CardState, StateMeta> = {
+  // QA-R5 colour scheme on the request card (parent) ─────────────────
+  //   BLUE   → waiting on corp     (proposed)
+  //   YELLOW → waiting on you      (awaiting — corp committed workers)
+  //   ORANGE → התקשרות אושרה        (toClose — approved/accepted/active)
+  //   GREEN  → נסגרה               (closed)
+  // Matches the per-deal pill colours below so the parent card and the
+  // child corp rows tell the same story at a glance.
   awaiting:  {
-    // Corp committed workers, contractor hasn't yet clicked
-    // "לחשיפת פרטי תאגיד". Amber = "action needed, you've got
-    // good news waiting" but kept distinct from the post-approve
-    // green so the contractor sees clear progress on click.
-    badge: 'תאגיד אישר זמינות', badgeCls: 'bg-amber-100 text-amber-800',
-    illoCls: 'bg-amber-500 text-white', IlloIcon: Bell,
-    cardRing: 'border-amber-400 ring-2 ring-amber-200',
+    // Corp committed workers, contractor hasn't yet clicked reveal —
+    // ball is in the contractor's court. Yellow draws the eye to a
+    // pending action without screaming "danger".
+    badge: 'ממתין לאישורך', badgeCls: 'bg-yellow-400 text-yellow-900',
+    illoCls: 'bg-yellow-400 text-yellow-900', IlloIcon: Bell,
+    cardRing: 'border-yellow-400 ring-2 ring-yellow-200',
   },
   toClose:   {
-    // Contractor has approved the engagement: corp contact info
-    // is revealed and the only step left is reporting whether
-    // the deal actually closed. Green to confirm progress.
-    badge: 'התקשרות אושרה', badgeCls: 'bg-emerald-100 text-emerald-800',
-    illoCls: 'bg-emerald-500 text-white', IlloIcon: CheckCircle2,
-    cardRing: 'border-emerald-400 ring-2 ring-emerald-200',
+    // Contractor approved → engagement running, contractor will close
+    // off-platform and come back to mark "כן, נסגרה". Distinct ORANGE
+    // (was emerald) — product asked for a separate status from
+    // truly-closed so "still in motion" reads differently from "done".
+    badge: 'התקשרות אושרה', badgeCls: 'bg-orange-500 text-white',
+    illoCls: 'bg-orange-500 text-white', IlloIcon: CheckCircle2,
+    cardRing: 'border-orange-400 ring-2 ring-orange-200',
   },
   proposed:  {
-    badge: 'ממתין לאישור התאגיד', badgeCls: 'bg-sky-100 text-sky-800',
-    illoCls: 'bg-sky-100 text-sky-700', IlloIcon: MessageSquare,
-    cardRing: 'border-slate-200',
+    badge: 'ממתין לאישור התאגיד', badgeCls: 'bg-sky-500 text-white',
+    illoCls: 'bg-sky-500 text-white', IlloIcon: MessageSquare,
+    cardRing: 'border-sky-300 ring-2 ring-sky-100',
   },
   searching: {
     badge: 'מחפשים עובדים', badgeCls: 'bg-slate-100 text-slate-700',
@@ -332,21 +339,32 @@ const STATE_META: Record<CardState, StateMeta> = {
 // Settled states (closed/cancelled/rejected) are intentionally saturated —
 // once a deal is final the contractor should read its outcome
 // at-a-glance from the corp row, not have to drill in.
+// QA-R5 color scheme (per user feedback):
+//   BLUE   → ממתין לתאגיד          (request sent, corp hasn't committed)
+//   YELLOW → ממתין לאישורך          (corp committed workers; ball is in
+//                                    the contractor's court)
+//   ORANGE → התקשרות אושרה          (contractor approved; deal running
+//                                    until off-platform closure)
+//   GREEN  → נסגרה                  (final, work delivered/closed)
+// The user explicitly asked for a distinct "התקשרות אושרה" status
+// because the previous design conflated approved-running with closed
+// (both emerald) and they couldn't see at a glance which deals still
+// needed off-platform follow-up vs which were truly done.
 const DEAL_STATUS_PILL: Record<string, { cls: string; label: string }> = {
-  proposed:                { cls: 'bg-sky-50 text-sky-700 border-sky-200',                    label: 'ממתין לאישור התאגיד' },
-  counter_proposed:        { cls: 'bg-sky-50 text-sky-700 border-sky-200',                    label: 'הצעה נגדית' },
-  corp_committed:          { cls: 'bg-amber-500 text-white border-amber-500',                 label: 'התאגיד אישר' },
-  approved:                { cls: 'bg-emerald-500 text-white border-emerald-500',             label: 'אושר' },
-  accepted:                { cls: 'bg-emerald-500 text-white border-emerald-500',             label: 'אושר' },
-  active:                  { cls: 'bg-emerald-500 text-white border-emerald-500',             label: 'אושר' },
-  reporting:               { cls: 'bg-emerald-500 text-white border-emerald-500',             label: 'אושר' },
+  proposed:                { cls: 'bg-sky-500 text-white border-sky-500',                     label: 'ממתין לאישור התאגיד' },
+  counter_proposed:        { cls: 'bg-sky-500 text-white border-sky-500',                     label: 'הצעה נגדית' },
+  corp_committed:          { cls: 'bg-yellow-400 text-yellow-900 border-yellow-400',          label: 'ממתין לאישורך' },
+  approved:                { cls: 'bg-orange-500 text-white border-orange-500',               label: 'התקשרות אושרה' },
+  accepted:                { cls: 'bg-orange-500 text-white border-orange-500',               label: 'התקשרות אושרה' },
+  active:                  { cls: 'bg-orange-500 text-white border-orange-500',               label: 'התקשרות אושרה' },
+  reporting:               { cls: 'bg-orange-500 text-white border-orange-500',               label: 'התקשרות אושרה' },
   closed:                  { cls: 'bg-emerald-500 text-white border-emerald-500',             label: 'נסגרה' },
   completed:               { cls: 'bg-emerald-500 text-white border-emerald-500',             label: 'נסגרה' },
-  rejected:                { cls: 'bg-rose-500 text-white border-rose-500',                   label: 'לא נסגר' },
-  cancelled_by_corp:       { cls: 'bg-rose-500 text-white border-rose-500',                   label: 'לא נסגר' },
-  cancelled_by_contractor: { cls: 'bg-rose-500 text-white border-rose-500',                   label: 'לא נסגר' },
-  cancelled:               { cls: 'bg-rose-500 text-white border-rose-500',                   label: 'לא נסגר' },
-  expired:                 { cls: 'bg-rose-500 text-white border-rose-500',                   label: 'לא נסגר' },
+  rejected:                { cls: 'bg-rose-500 text-white border-rose-500',                   label: 'לא נסגרה' },
+  cancelled_by_corp:       { cls: 'bg-rose-500 text-white border-rose-500',                   label: 'לא נסגרה' },
+  cancelled_by_contractor: { cls: 'bg-rose-500 text-white border-rose-500',                   label: 'לא נסגרה' },
+  cancelled:               { cls: 'bg-rose-500 text-white border-rose-500',                   label: 'לא נסגרה' },
+  expired:                 { cls: 'bg-rose-500 text-white border-rose-500',                   label: 'לא נסגרה' },
 };
 
 function DealTileSkeleton() {
@@ -466,30 +484,25 @@ function DealCard({
   // Identity reveal only after the contractor approves.
   const REVEALED = ['approved', 'accepted', 'active', 'reporting', 'completed', 'closed'];
 
-  // Lazy-fetch corp contact info for whichever revealed deal is
-  // currently expanded. One-shot per deal_id; cached in corpById.
+  // Fetch corp identity for EVERY revealed deal up-front, not only the
+  // one currently expanded. User asked for the corp name to be
+  // visible on the collapsed tile header so they can scan the list
+  // without expanding each row. Each id is fetched once and cached
+  // in corpById; subsequent renders short-circuit on the cache.
   useEffect(() => {
-    if (!expandedDealId) return;
-    const deal = group.find((d) => d.id === expandedDealId);
-    if (!deal) return; // group can be stale relative to expandedDealId
-    // Trigger corp identity lookup when the deal is either approved
-    // onwards (REVEALED) OR has corp_revealed_at set (contractor
-    // clicked the reveal button on the detail page but hasn't yet
-    // formally approved). Same gate as the inline panel below.
-    // (Previously read `.corp_revealed_at` BEFORE the !deal guard —
-    // when expandedDealId pointed at a deal that had since been
-    // filtered out of `group`, that threw
-    // "Cannot read properties of undefined (reading
-    // 'corp_revealed_at')" and crashed the whole list.)
-    const revealedHere = (deal as { corp_revealed_at?: string | null }).corp_revealed_at;
-    if ((!REVEALED.includes(deal.status) && !revealedHere) || !deal.corporation_id) return;
-    if (corpById[deal.id] || loadingCorp[deal.id]) return;
-    setLoadingCorp((s) => ({ ...s, [deal.id]: true }));
-    orgApi.getCorporation(deal.corporation_id)
-      .then((c) => setCorpById((s) => ({ ...s, [deal.id]: c })))
-      .catch(() => {/* leave empty — panel will show a fallback */})
-      .finally(() => setLoadingCorp((s) => ({ ...s, [deal.id]: false })));
-  }, [expandedDealId, group, corpById, loadingCorp]);
+    group.forEach((deal) => {
+      if (!deal || !deal.corporation_id) return;
+      const revealedHere = (deal as { corp_revealed_at?: string | null }).corp_revealed_at;
+      if (!REVEALED.includes(deal.status) && !revealedHere) return;
+      if (corpById[deal.id] || loadingCorp[deal.id]) return;
+      setLoadingCorp((s) => ({ ...s, [deal.id]: true }));
+      orgApi.getCorporation(deal.corporation_id)
+        .then((c) => setCorpById((s) => ({ ...s, [deal.id]: c })))
+        .catch(() => {/* leave empty — panel will show a fallback */})
+        .finally(() => setLoadingCorp((s) => ({ ...s, [deal.id]: false })));
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [group]);
 
   // Hand-off target for the card-wide "בדוק ואשר" CTA.
   const awaitingDealId = group.find((d) => d.status === 'corp_committed')?.id;
