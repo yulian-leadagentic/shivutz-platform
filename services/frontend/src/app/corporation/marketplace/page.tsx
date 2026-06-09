@@ -14,6 +14,7 @@ import {
 import type { MarketplaceListing } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { Badge } from '@/components/ui/badge';
 
 const STATUS_LABELS: Record<string, { label: string; cls: string }> = {
@@ -38,6 +39,10 @@ export default function CorporationMarketplacePage() {
   const [loading, setLoading]           = useState(true);
   const [error, setError]               = useState('');
   const [actionId, setActionId]         = useState<string | null>(null);
+  // Native confirm → styled dialog. Same rationale as the admin
+  // confirm sweep — Hebrew RTL UI shouldn't break to a browser-
+  // chrome prompt with English domain prefix.
+  const [pendingDelete, setPendingDelete] = useState<MarketplaceListing | null>(null);
 
   async function load() {
     setLoading(true);
@@ -67,12 +72,14 @@ export default function CorporationMarketplacePage() {
     finally { setActionId(null); }
   }
 
-  async function handleDelete(id: string) {
-    if (!confirm('למחוק את המודעה?')) return;
-    setActionId(id);
+  function handleDelete(l: MarketplaceListing) { setPendingDelete(l); }
+  async function confirmDelete() {
+    if (!pendingDelete) return;
+    setActionId(pendingDelete.id);
     try {
-      await marketplaceApi.remove(id);
-      setListings((prev) => prev.filter((p) => p.id !== id));
+      await marketplaceApi.remove(pendingDelete.id);
+      setListings((prev) => prev.filter((p) => p.id !== pendingDelete.id));
+      setPendingDelete(null);
     } catch { /* silent */ }
     finally { setActionId(null); }
   }
@@ -211,7 +218,7 @@ export default function CorporationMarketplacePage() {
                           </Button>
                           <Button
                             size="sm" variant="ghost"
-                            onClick={() => handleDelete(l.id)}
+                            onClick={() => handleDelete(l)}
                             disabled={actionId === l.id}
                             className="h-7 w-7 p-0"
                           >
@@ -227,6 +234,19 @@ export default function CorporationMarketplacePage() {
           )}
         </CardContent>
       </Card>
+
+      <ConfirmDialog
+        open={!!pendingDelete}
+        title="מחיקת מודעה"
+        message={pendingDelete
+          ? `למחוק את המודעה "${pendingDelete.title}"? פעולה זו אינה הפיכה — קבלנים שצפו בה לא יוכלו לפנות אליך עוד דרך המודעה הזו.`
+          : ''}
+        confirmLabel="מחק מודעה"
+        variant="destructive"
+        busy={actionId === pendingDelete?.id}
+        onConfirm={confirmDelete}
+        onCancel={() => setPendingDelete(null)}
+      />
     </div>
   );
 }

@@ -12,6 +12,7 @@ import { apiFetch } from '@/lib/api/client';
 import { dealRef } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import type { PaymentMethod, Deal } from '@/types';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -139,6 +140,10 @@ function BillingPageContent() {
   const [loading, setLoading]     = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError]         = useState('');
+  // Native confirm → styled dialog. Removing a card mid-deal cycle
+  // can lock the corp out of capture / cancellation, so the dialog
+  // spells out the consequence.
+  const [pendingDeletePm, setPendingDeletePm] = useState<PaymentMethod | null>(null);
   const [addingCard, setAddingCard] = useState(false);
   const [cardAdded, setCardAdded] = useState(false);
   // Invoice email captured at card-linking time. Pre-launch, Cardcom
@@ -190,12 +195,14 @@ function BillingPageContent() {
     }
   }
 
-  async function handleDelete(pmId: string) {
-    if (!confirm('להסיר את אמצעי התשלום הזה?')) return;
+  function handleDelete(pm: PaymentMethod) { setPendingDeletePm(pm); }
+  async function confirmDeletePm() {
+    if (!pendingDeletePm) return;
     setActionLoading(true);
     try {
-      await paymentApi.deleteMethod(pmId);
-      setMethods((prev) => prev.filter((p) => p.id !== pmId));
+      await paymentApi.deleteMethod(pendingDeletePm.id);
+      setMethods((prev) => prev.filter((p) => p.id !== pendingDeletePm.id));
+      setPendingDeletePm(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'שגיאה בהסרת הכרטיס');
     } finally {
@@ -344,7 +351,10 @@ function BillingPageContent() {
                 <CardChip
                   key={pm.id}
                   pm={pm}
-                  onDelete={handleDelete}
+                  onDelete={(id) => {
+                    const target = methods.find((m) => m.id === id);
+                    if (target) handleDelete(target);
+                  }}
                   onSetDefault={handleSetDefault}
                   loading={actionLoading}
                 />
@@ -404,6 +414,19 @@ function BillingPageContent() {
           </span>
         </div>
       )}
+
+      <ConfirmDialog
+        open={!!pendingDeletePm}
+        title="הסרת אמצעי תשלום"
+        message={pendingDeletePm
+          ? `להסיר את הכרטיס שמסתיים ב-${pendingDeletePm.last_4_digits || '----'}? אם זה אמצעי התשלום היחיד שלך, עסקאות פעילות לא יוכלו להיחתם או להתקבל עד שתוסיף אמצעי חדש.`
+          : ''}
+        confirmLabel="הסר כרטיס"
+        variant="destructive"
+        busy={actionLoading}
+        onConfirm={confirmDeletePm}
+        onCancel={() => setPendingDeletePm(null)}
+      />
     </div>
   );
 }
