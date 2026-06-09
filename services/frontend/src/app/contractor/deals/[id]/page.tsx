@@ -29,7 +29,11 @@ const STATUS_EXPLANATION: Record<string, { icon: React.ReactNode; text: string; 
   },
   corp_committed: {
     icon: <Users className="h-4 w-4 shrink-0" />,
-    text: 'התאגיד הציג רשימת עובדים — בדוק ואשר תוך 7 ימים',
+    // Wording deliberately omits a deadline ("תוך X ימים") until the
+    // backend timing rules are pinned down — `expires_at` was rendering
+    // "165 hours" (~7 days) while the corp-side billing window is 48
+    // hours, and that mismatch was confusing during STG testing.
+    text: 'התאגיד הציג רשימת עובדים — בדוק את ההצעה והתקדם בעסקה',
     color: 'bg-amber-50 border-amber-200 text-amber-800',
   },
   approved: {
@@ -44,7 +48,7 @@ const STATUS_EXPLANATION: Record<string, { icon: React.ReactNode; text: string; 
   },
   expired: {
     icon: <Clock className="h-4 w-4 shrink-0" />,
-    text: 'ההצעה פגה (לא אושרה תוך 7 ימים) — הבקשה נשארת פתוחה',
+    text: 'ההצעה פגה — הבקשה נשארת פתוחה',
     color: 'bg-slate-50 border-slate-200 text-slate-700',
   },
   cancelled_by_corp: {
@@ -214,7 +218,7 @@ export default function DealDetailPage() {
   // and starts the capture timer. Only reachable AFTER the contractor
   // has revealed corp identity (the button is hidden until then).
   async function handleConfirm() {
-    if (!confirm('לאשר סופית את העסקה? לאחר אישור תחל ספירה לחיוב אוטומטי.')) return;
+    if (!confirm('להתקדם בעסקה? לאחר אישור התאגיד יחויב בעמלת BuildUp אוטומטית.')) return;
     setConfirming(true);
     setConfirmError('');
     try {
@@ -370,21 +374,13 @@ export default function DealDetailPage() {
         </div>
       </div>
 
-      {/* 7-day countdown for corp_committed */}
-      {deal.status === 'corp_committed' && expiresHours !== null && (
-        <div className={`flex items-center gap-2 text-sm rounded-xl px-4 py-2.5 border ${
-          expiresHours < 24
-            ? 'bg-red-50 border-red-200 text-red-800'
-            : 'bg-amber-50 border-amber-200 text-amber-800'
-        }`}>
-          <Clock className="h-4 w-4 shrink-0" />
-          <span>
-            {expiresHours > 0
-              ? `נותרו ${expiresHours} שעות לאישור — לאחר מכן ההצעה תפוג והעובדים ישוחררו`
-              : 'ההצעה פגה'}
-          </span>
-        </div>
-      )}
+      {/* Countdown banner hidden until we pin down the right timing
+          rule. The data here came from `deal.expires_at` which was
+          showing ~165 hours (7-day default) while the corp-side
+          billing window is 48 hours — we don't want to publish a
+          deadline before product agrees which one the contractor is
+          actually under. Re-enable when the source of truth is
+          confirmed. */}
 
       {/* Status banner */}
       {statusInfo && (
@@ -509,16 +505,20 @@ export default function DealDetailPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {/* Corporation contact */}
-            {corp && (
-              <div className="bg-white rounded-xl border border-emerald-100 p-4">
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
-                  פרטי יצירת קשר — תאגיד
+            {/* Corporation contact — gated on `corp_revealed_at`. The
+                contractor sees "Step 1: reveal" first; corp identity
+                stays hidden until they click. After reveal, the
+                contact card appears with a clear "what next" hint so
+                the path forward isn't ambiguous. */}
+            {corp && deal.corp_revealed_at && (
+              <div className="bg-white rounded-xl border-2 border-emerald-300 p-4 shadow-sm">
+                <p className="text-xs font-semibold text-emerald-700 uppercase tracking-wider mb-3">
+                  פרטי התאגיד שהציע
                 </p>
                 <div className="space-y-2">
-                  <div className="flex items-center gap-2 text-sm text-slate-700">
-                    <Building2 className="h-4 w-4 text-slate-400 shrink-0" />
-                    <span className="font-medium">{corpName}</span>
+                  <div className="flex items-center gap-2 text-base text-slate-900">
+                    <Building2 className="h-5 w-5 text-emerald-600 shrink-0" />
+                    <span className="font-bold">{corpName}</span>
                   </div>
                   {corp.contact_name && (
                     <div className="flex items-center gap-2 text-sm text-slate-700">
@@ -529,7 +529,7 @@ export default function DealDetailPage() {
                   {corp.contact_phone && (
                     <div className="flex items-center gap-2 text-sm text-slate-700">
                       <Phone className="h-4 w-4 text-slate-400 shrink-0" />
-                      <a href={`tel:${corp.contact_phone}`} className="text-brand-600 hover:underline font-medium">
+                      <a href={`tel:${corp.contact_phone}`} className="text-brand-600 hover:underline font-semibold text-base">
                         {corp.contact_phone}
                       </a>
                     </div>
@@ -542,6 +542,15 @@ export default function DealDetailPage() {
                       </a>
                     </div>
                   )}
+                </div>
+                {/* "What now" cue — before this banner the contractor
+                    didn't know what the next button does, just that
+                    they revealed details. Spelling out the
+                    talk-then-commit flow removes the ambiguity. */}
+                <div className="mt-4 p-3 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-900 leading-relaxed">
+                  <strong className="block mb-1">השלב הבא:</strong>
+                  צור קשר עם התאגיד, ודא את פרטי העובדים והתנאים. כשתגיע להסכמה — לחץ על
+                  &nbsp;<strong>״התקדם בעסקה״</strong>&nbsp; כדי להמשיך.
                 </div>
               </div>
             )}
@@ -604,16 +613,15 @@ export default function DealDetailPage() {
                     Step 1 — "הצג פרטי תאגיד" (reveal): unlocks corp
                              identity, status stays 'corp_committed'.
                              Contractor calls the corp, closes offline.
-                    Step 2 — "אשר עסקה" (approve): formal commit. The
-                             click that flips to 'approved' and starts
-                             the capture timer.
-                    Before today these were the same button, which
-                    silently approved the deal when the contractor
-                    thought they were just peeking. */}
+                    Step 2 — "התקדם בעסקה" (approve): formal commit.
+                             Wording chosen with user — "אשר עסקה" was
+                             too final-sounding; "התקדם" makes it clear
+                             this is the next step in a process, after
+                             which the corp gets billed. */}
                 {confirming ? (
                   <><Loader2 className="h-4 w-4 animate-spin me-2" />מעבד...</>
                 ) : deal.corp_revealed_at ? (
-                  <><CheckCircle2 className="h-4 w-4 me-2" />אשר עסקה ({workers.length} עובדים)</>
+                  <><CheckCircle2 className="h-4 w-4 me-2" />התקדם בעסקה</>
                 ) : (
                   <><CheckCircle2 className="h-4 w-4 me-2" />הצג פרטי תאגיד ({workers.length} עובדים)</>
                 )}
