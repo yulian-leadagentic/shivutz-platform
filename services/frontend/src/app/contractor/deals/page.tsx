@@ -471,7 +471,12 @@ function DealCard({
   useEffect(() => {
     if (!expandedDealId) return;
     const deal = group.find((d) => d.id === expandedDealId);
-    if (!deal || !REVEALED.includes(deal.status) || !deal.corporation_id) return;
+    // Trigger corp identity lookup when the deal is either approved
+    // onwards (REVEALED) OR has corp_revealed_at set (contractor
+    // clicked the reveal button on the detail page but hasn't yet
+    // formally approved). Same gate as the inline panel below.
+    const revealedHere = (deal as { corp_revealed_at?: string | null }).corp_revealed_at;
+    if (!deal || (!REVEALED.includes(deal.status) && !revealedHere) || !deal.corporation_id) return;
     if (corpById[deal.id] || loadingCorp[deal.id]) return;
     setLoadingCorp((s) => ({ ...s, [deal.id]: true }));
     orgApi.getCorporation(deal.corporation_id)
@@ -700,7 +705,20 @@ function DealCard({
               </div>
               {group
                 .slice()
-                .sort((a, b) => parseUtcMs(b.created_at) - parseUtcMs(a.created_at))
+                .sort((a, b) => {
+                  // Sort corps by best-match first so the contractor
+                  // sees the strongest proposals at the top. Match
+                  // score = number of workers attached (treating
+                  // "this corp matched everything you asked for" as
+                  // the simplest proxy until per-worker mismatch info
+                  // lands in this list view). Ties break on
+                  // created_at descending (newest first), preserving
+                  // the previous behaviour for unmatched cases.
+                  const wa = a.worker_count ?? 0;
+                  const wb = b.worker_count ?? 0;
+                  if (wa !== wb) return wb - wa;
+                  return parseUtcMs(b.created_at) - parseUtcMs(a.created_at);
+                })
                 .map((d, idx) => {
                   // Anonymous "תאגיד N" until the contractor approves
                   // → then swap to the real company name once the
@@ -792,10 +810,17 @@ function DealCard({
 
                       {proposalOpen && (
                         <div className="px-3 pb-3 pt-1 bg-slate-50 border-t border-slate-100 space-y-2">
-                          {/* Inline corp contact panel — only after
-                              contractor has approved the deal (status
-                              accepted/active/reporting/closed). */}
-                          {REVEALED.includes(d.status) && (
+                          {/* Inline corp contact panel — shown when
+                              the contractor has either approved the
+                              deal (status in REVEALED) OR has clicked
+                              "הצג פרטי תאגיד" on the deal detail page
+                              (corp_revealed_at set; status still
+                              corp_committed). Without the second
+                              condition, the contractor would reveal
+                              the corp, navigate back to /deals, and
+                              find the corp still anonymous in the
+                              list — confusing. */}
+                          {(REVEALED.includes(d.status) || (d as { corp_revealed_at?: string | null }).corp_revealed_at) && (
                             <CorpContactPanel
                               corp={corpById[d.id]}
                               loading={!!loadingCorp[d.id] && !corpById[d.id]}

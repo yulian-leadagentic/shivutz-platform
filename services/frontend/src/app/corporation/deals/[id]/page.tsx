@@ -48,6 +48,11 @@ interface ProfessionSlot {
   needed: number;
   minExpMonths: number; // min experience from proposed workers of this prof
   proposedWorkerIds: Set<string>;
+  // Contractor's requested origin countries (ISO codes) from the
+  // worker_searches row. Empty = the contractor accepts any origin.
+  // Used by the worker picker to (a) flag the requested countries in
+  // the slot header and (b) score / sort candidates by origin match.
+  requestedOrigins: string[];
 }
 
 interface ReportForm {
@@ -62,12 +67,18 @@ function WorkerCard({
   worker,
   profName,
   minExpMonths,
+  requestedOrigins,
+  originMap,
   selected,
   onToggle,
 }: {
   worker: Worker;
   profName: string;
   minExpMonths: number;
+  /** Contractor's requested origins. Empty = any origin OK. */
+  requestedOrigins: string[];
+  /** ISO → Hebrew label map (from useEnums). */
+  originMap: Record<string, string>;
   selected: boolean;
   onToggle: () => void;
 }) {
@@ -77,19 +88,31 @@ function WorkerCard({
     ? (new Date(worker.visa_valid_until).getTime() - Date.now()) / 86_400_000
     : 999;
   const visaOk = visaDays > 30;
+  // Origin match: if the contractor specified any origin preferences,
+  // the worker must come from one of them. Empty preference list =
+  // no constraint, so always passes.
+  const originOk = requestedOrigins.length === 0
+    || (worker.origin_country
+        ? requestedOrigins.includes(worker.origin_country)
+        : false);
+  const workerOriginHe = worker.origin_country
+    ? (originMap[worker.origin_country] ?? worker.origin_country)
+    : null;
 
   const score =
     (meetsExp ? 2 : 0) +
-    (visaOk   ? 1 : 0);
+    (visaOk   ? 1 : 0) +
+    (originOk ? 1 : 0);
 
+  // 4 = perfect, 3 = small miss, ≤2 = bad
   const matchColor =
-    score === 3 ? 'border-emerald-200 bg-emerald-50/40' :
-    score === 2 ? 'border-amber-200 bg-amber-50/30' :
+    score === 4 ? 'border-emerald-200 bg-emerald-50/40' :
+    score === 3 ? 'border-amber-200 bg-amber-50/30' :
                   'border-red-200 bg-red-50/20';
 
   const matchBadge =
-    score === 3 ? { icon: BadgeCheck, text: 'מתאים', cls: 'text-emerald-700 bg-emerald-100' } :
-    score === 2 ? { icon: CircleAlert, text: 'חלקי',   cls: 'text-amber-700  bg-amber-100'  } :
+    score === 4 ? { icon: BadgeCheck, text: 'מתאים', cls: 'text-emerald-700 bg-emerald-100' } :
+    score === 3 ? { icon: CircleAlert, text: 'חלקי',   cls: 'text-amber-700  bg-amber-100'  } :
                   { icon: AlertTriangle, text: 'לא מתאים', cls: 'text-red-700 bg-red-100'  };
 
   const MB = matchBadge;
@@ -121,11 +144,16 @@ function WorkerCard({
         </p>
         <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
           <span className="text-xs text-slate-500">{profName}</span>
+          {workerOriginHe && (
+            <span className={`text-xs font-medium ${originOk ? 'text-slate-600' : 'text-red-600'}`}>
+              {workerOriginHe}{!originOk && ' ⚠ לא במוצא המבוקש'}
+            </span>
+          )}
           <span className={`text-xs font-medium ${meetsExp ? 'text-emerald-700' : 'text-amber-700'}`}>
             {expLabel(worker)} {!meetsExp && minExpMonths > 0 && '⚠'}
           </span>
           <span className={`text-xs ${visaOk ? 'text-slate-500' : 'text-red-600 font-medium'}`}>
-            ויזה: {fmtDate(worker.visa_valid_until)}{!visaOk && ' ⚠'}
+            ויזה: {fmtDate(worker.visa_valid_until)}{!visaOk && ' ⚠ פג/יפוג בקרוב'}
           </span>
         </div>
       </div>
@@ -145,11 +173,15 @@ function ProfessionSection({
   slot,
   candidates,
   selectedIds,
+  originMap,
   onToggle,
 }: {
   slot: ProfessionSlot;
   candidates: Worker[];
   selectedIds: Set<string>;
+  /** ISO → Hebrew label for resolving worker.origin_country + the
+   *  contractor's requested origins shown in the section header. */
+  originMap: Record<string, string>;
   onToggle: (wid: string) => void;
 }) {
   const [expanded, setExpanded] = useState(true);
@@ -157,6 +189,32 @@ function ProfessionSection({
   const selectedInSlot = candidates.filter((w) => selectedIds.has(w.id)).length;
   const filled = selectedInSlot >= slot.needed;
   const over   = selectedInSlot > slot.needed;
+
+  // Sort candidates so best-matching workers float to the top. Match
+  // score combines: meets experience floor (+2), visa valid >30d (+1),
+  // origin within the contractor's preference list (+1). Ties break
+  // on years_in_israel descending (more tenure = more reliable
+  // signal). The corp explicitly asked for this sort because they
+  // were scrolling past unsuitable workers to find the ones the
+  // contractor actually wants.
+  const sortedCandidates = [...candidates].sort((a, b) => {
+    const scoreFor = (w: Worker) => {
+      const months = expMonths(w);
+      const meetsExp = months >= slot.minExpMonths;
+      const visaDays = w.visa_valid_until
+        ? (new Date(w.visa_valid_until).getTime() - Date.now()) / 86_400_000
+        : 999;
+      const visaOk = visaDays > 30;
+      const originOk = slot.requestedOrigins.length === 0
+        || (w.origin_country
+            ? slot.requestedOrigins.includes(w.origin_country)
+            : false);
+      return (meetsExp ? 2 : 0) + (visaOk ? 1 : 0) + (originOk ? 1 : 0);
+    };
+    const diff = scoreFor(b) - scoreFor(a);
+    if (diff !== 0) return diff;
+    return (b.years_in_israel ?? 0) - (a.years_in_israel ?? 0);
+  });
 
   return (
     <div className="border border-slate-200 rounded-2xl overflow-hidden">
@@ -204,26 +262,45 @@ function ProfessionSection({
       {/* Candidates */}
       {expanded && (
         <div className="p-3 space-y-2">
-          {/* Experience hint */}
-          {slot.minExpMonths > 0 && (
-            <p className="text-xs text-slate-500 px-1">
-              דרישת ניסיון מינימלי: <strong className="text-slate-700">{EXP_LABELS[
-                Object.entries(EXP_MONTHS).find(([, v]) => v === slot.minExpMonths)?.[0] ?? ''
-              ] ?? `${Math.round(slot.minExpMonths / 12)} שנים`}</strong>
-            </p>
-          )}
+          {/* Contractor's requirements summary — surfaces what the
+              contractor asked for so the corp doesn't have to scroll
+              back to the deal header to check. Each pill = one
+              required origin. Empty list = "any origin". */}
+          <div className="flex flex-wrap gap-2 px-1">
+            {slot.requestedOrigins.length > 0 ? (
+              <div className="text-xs text-slate-600 inline-flex items-center gap-1.5 flex-wrap">
+                <span>מוצא מבוקש:</span>
+                {slot.requestedOrigins.map((code) => (
+                  <span key={code} className="inline-flex items-center px-2 py-0.5 rounded-full bg-brand-50 text-brand-700 border border-brand-200 font-medium">
+                    {originMap[code] ?? code}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <span className="text-xs text-slate-500">מוצא: כל מוצא מתקבל</span>
+            )}
+            {slot.minExpMonths > 0 && (
+              <span className="text-xs text-slate-500">
+                · ניסיון מינימלי: <strong className="text-slate-700">{EXP_LABELS[
+                  Object.entries(EXP_MONTHS).find(([, v]) => v === slot.minExpMonths)?.[0] ?? ''
+                ] ?? `${Math.round(slot.minExpMonths / 12)} שנים`}</strong>
+              </span>
+            )}
+          </div>
 
-          {candidates.length === 0 ? (
+          {sortedCandidates.length === 0 ? (
             <div className="text-center py-4 text-sm text-slate-400">
               אין עובדים זמינים במקצוע זה
             </div>
           ) : (
-            candidates.map((w) => (
+            sortedCandidates.map((w) => (
               <WorkerCard
                 key={w.id}
                 worker={w}
                 profName={slot.profName}
                 minExpMonths={slot.minExpMonths}
+                requestedOrigins={slot.requestedOrigins}
+                originMap={originMap}
                 selected={selectedIds.has(w.id)}
                 onToggle={() => onToggle(w.id)}
               />
@@ -316,7 +393,7 @@ function CorporationDealPageInner() {
   // empty section on a deal that does have workers attached).
   const [assignedWorkers, setAssignedWorkers] = useState<Worker[]>([]);
   const [slots, setSlots]       = useState<ProfessionSlot[]>([]);
-  const { professionMap: profMap } = useEnums();
+  const { professionMap: profMap, originMap } = useEnums();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [msgInput, setMsgInput] = useState('');
   const [sending, setSending]   = useState(false);
@@ -445,15 +522,31 @@ function CorporationDealPageInner() {
           // would throw and bubble up to the outer catch as a generic
           // "שגיאה בטעינת העסקה" on every fresh open.
           const builtSlots: ProfessionSlot[] = [];
-          const dealAny = d as unknown as { profession_type?: string; profession_he?: string; requested_count?: number };
+          // Pull the contractor's requirements off the deal payload so
+          // the worker picker can score + sort candidates against them.
+          // `requested_origins` was added in services/deal/app/routes/
+          // deals.py — it's the parsed JSON list from
+          // worker_searches.origin_preference. Empty array = "any
+          // origin OK", which the WorkerCard handles by short-
+          // circuiting the originOk check.
+          const dealAny = d as unknown as {
+            profession_type?: string;
+            profession_he?: string;
+            requested_count?: number;
+            requested_origins?: string[];
+            requested_min_experience_months?: number;
+          };
+          const requestedOrigins = Array.isArray(dealAny.requested_origins) ? dealAny.requested_origins : [];
+          const requestedMinExp = dealAny.requested_min_experience_months || 0;
           if (dealAny.profession_type && dealAny.requested_count) {
             const code = dealAny.profession_type;
             builtSlots.push({
               profCode: code,
               profName: dealAny.profession_he || profMap[code] || code,
               needed: dealAny.requested_count,
-              minExpMonths: 0,
+              minExpMonths: requestedMinExp,
               proposedWorkerIds: new Set(proposed.filter((w) => w.profession_type === code).map((w) => w.id)),
+              requestedOrigins,
             });
           } else {
             // Legacy fallback: group proposed workers by their profession
@@ -471,6 +564,7 @@ function CorporationDealPageInner() {
                 needed: pws.length,
                 minExpMonths: minExp,
                 proposedWorkerIds: new Set(pws.map((w) => w.id)),
+                requestedOrigins,
               });
             }
           }
@@ -1042,6 +1136,8 @@ function CorporationDealPageInner() {
                       worker={w}
                       profName={profMap[w.profession_type] ?? w.profession_type}
                       minExpMonths={0}
+                      requestedOrigins={slots[0]?.requestedOrigins ?? []}
+                      originMap={originMap}
                       selected={selectedIds.has(w.id)}
                       onToggle={() => toggleWorker(w.id)}
                     />
@@ -1055,6 +1151,7 @@ function CorporationDealPageInner() {
                   slot={slot}
                   candidates={candidatesByProf[slot.profCode] ?? []}
                   selectedIds={selectedIds}
+                  originMap={originMap}
                   onToggle={toggleWorker}
                 />
               ))

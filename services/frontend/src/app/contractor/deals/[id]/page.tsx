@@ -735,38 +735,116 @@ export default function DealDetailPage() {
                 are unlocked AFTER the contractor approves the list
                 — that block lives further down in this page (search
                 for "post-disclosure"). */}
-            {workers.length > 0 && (
-              <div className="bg-white rounded-xl border border-emerald-100 p-4">
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
-                  רשימת עובדים שהוצעה ({workers.length})
-                </p>
-                <p className="text-[11px] text-slate-400 mb-3 leading-relaxed">
-                  פרטי הזיהוי של העובדים יוצגו לאחר אישור הרשימה. כעת מוצגים מקצוע, ניסיון וארץ מוצא בלבד.
-                </p>
-                <div className="space-y-2">
-                  {workers.map((w, idx) => {
-                    const wAny = w as unknown as { years_in_israel?: number; experience_range?: string };
-                    return (
-                      <div key={w.id} className="flex items-center gap-3 py-1.5 border-b border-slate-50 last:border-0">
-                        <div className="h-8 w-8 rounded-full bg-brand-100 flex items-center justify-center shrink-0 text-xs font-bold text-brand-700">
-                          {idx + 1}
+            {workers.length > 0 && (() => {
+              // Pull the contractor's own request fields off the deal
+              // payload (newly exposed in services/deal/app/routes/
+              // deals.py). Used to flag mismatches per worker —
+              // contractor asked for the corp's proposal to be
+              // checked at a glance: "which workers don't fit my
+              // requirements, and why?" Pre-tonight the contractor
+              // saw a raw list with no match indicators.
+              const dAny = deal as unknown as {
+                requested_origins?: string[];
+                requested_min_experience_months?: number;
+              };
+              const requestedOrigins = Array.isArray(dAny.requested_origins) ? dAny.requested_origins : [];
+              const requestedMinExp = dAny.requested_min_experience_months || 0;
+
+              // Per-worker mismatch evaluator. Returns the set of
+              // reasons this row doesn't fit, in Hebrew, plus a sort
+              // score (lower = worse). The card highlights amber on
+              // any miss; the chip lists the reasons inline.
+              function evalWorker(w: Worker) {
+                const reasons: string[] = [];
+                let score = 0;
+                // Origin check
+                if (requestedOrigins.length > 0) {
+                  if (!w.origin_country || !requestedOrigins.includes(w.origin_country)) {
+                    reasons.push('מוצא לא מתאים');
+                  } else {
+                    score += 2;
+                  }
+                } else {
+                  score += 2;
+                }
+                // Visa check — invalid or expiring within 30 days
+                if (w.visa_valid_until) {
+                  const days = (new Date(w.visa_valid_until).getTime() - Date.now()) / 86_400_000;
+                  if (days <= 30) {
+                    reasons.push(days < 0 ? 'ויזה פגה' : 'ויזה פגה בקרוב');
+                  } else {
+                    score += 1;
+                  }
+                }
+                // Experience check
+                const months = w.experience_years != null ? (w.experience_years * 12) : 0;
+                if (requestedMinExp > 0 && months < requestedMinExp) {
+                  reasons.push('ניסיון מתחת לדרישה');
+                } else {
+                  score += 1;
+                }
+                return { reasons, score };
+              }
+
+              // Sort: best-match first, worst at the bottom. Stable on
+              // the natural workers order otherwise.
+              const sortedWorkers = workers
+                .map((w, i) => ({ w, i, ...evalWorker(w) }))
+                .sort((a, b) => b.score - a.score || a.i - b.i);
+
+              return (
+                <div className="bg-white rounded-xl border border-emerald-100 p-4">
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
+                    רשימת עובדים שהוצעה ({workers.length})
+                  </p>
+                  <p className="text-[11px] text-slate-400 mb-3 leading-relaxed">
+                    פרטי הזיהוי של העובדים יוצגו לאחר אישור הרשימה. כעת מוצגים מקצוע, ניסיון וארץ מוצא בלבד.
+                    {requestedOrigins.length > 0 && (
+                      <> מוצא מבוקש לבקשה זו: <strong className="text-slate-600">{requestedOrigins.join(', ')}</strong>.</>
+                    )}
+                  </p>
+                  <div className="space-y-2">
+                    {sortedWorkers.map(({ w, i, reasons }) => {
+                      const wAny = w as unknown as { years_in_israel?: number; experience_range?: string };
+                      const hasMismatch = reasons.length > 0;
+                      return (
+                        <div
+                          key={w.id}
+                          className={`flex items-start gap-3 py-1.5 px-2 rounded-lg border last:border-b
+                            ${hasMismatch
+                              ? 'bg-amber-50/40 border-amber-200'
+                              : 'bg-white border-slate-100'}`}
+                        >
+                          <div className={`h-8 w-8 rounded-full flex items-center justify-center shrink-0 text-xs font-bold
+                            ${hasMismatch ? 'bg-amber-100 text-amber-800' : 'bg-brand-100 text-brand-700'}`}>
+                            {i + 1}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-slate-900">עובד #{i + 1}</p>
+                            <p className="text-xs text-slate-500">
+                              {w.profession_type}
+                              {wAny.experience_range && <> · ניסיון {wAny.experience_range}</>}
+                              {!wAny.experience_range && w.experience_years != null && <> · {w.experience_years} שנים ניסיון</>}
+                              {w.origin_country && <> · {w.origin_country}</>}
+                              {wAny.years_in_israel != null && <> · {wAny.years_in_israel} שנים בישראל</>}
+                            </p>
+                            {hasMismatch && (
+                              <div className="mt-1 flex flex-wrap gap-1">
+                                {reasons.map((r) => (
+                                  <span key={r} className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full border border-amber-200">
+                                    ⚠ {r}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-slate-900">עובד #{idx + 1}</p>
-                          <p className="text-xs text-slate-500">
-                            {w.profession_type}
-                            {wAny.experience_range && <> · ניסיון {wAny.experience_range}</>}
-                            {!wAny.experience_range && w.experience_years != null && <> · {w.experience_years} שנים ניסיון</>}
-                            {w.origin_country && <> · {w.origin_country}</>}
-                            {wAny.years_in_israel != null && <> · {wAny.years_in_israel} שנים בישראל</>}
-                          </p>
-                        </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
             {/* Approve / Reject actions */}
             {confirmError && (

@@ -170,6 +170,19 @@ def _serialize_deal(row: dict) -> dict:
             row[k] = float(v)
         elif hasattr(v, "isoformat"):
             row[k] = v.isoformat()
+    # MySQL JSON columns come back as strings from PyMySQL — parse them
+    # so the frontend gets actual arrays. Currently only
+    # requested_origins (from worker_searches.origin_preference) is
+    # joined into the deal payload; expand the list as needed.
+    import json as _json
+    raw_origins = row.get("requested_origins")
+    if isinstance(raw_origins, str):
+        try:
+            row["requested_origins"] = _json.loads(raw_origins) or []
+        except Exception:
+            row["requested_origins"] = []
+    elif raw_origins is None:
+        row["requested_origins"] = []
     return row
 
 
@@ -1526,7 +1539,11 @@ def get_deal(
                       ws.profession_type,
                       ws.quantity AS requested_count,
                       COALESCE(pt.name_he, ws.profession_type) AS profession_he,
-                      ws.region AS region_he
+                      ws.region AS region_he,
+                      ws.origin_preference AS requested_origins,
+                      ws.min_experience AS requested_min_experience_months,
+                      ws.start_date AS requested_start_date,
+                      ws.end_date   AS requested_end_date
                FROM deals d
                LEFT JOIN job_db.worker_searches ws       ON ws.id = d.search_id
                LEFT JOIN worker_db.profession_types pt   ON pt.code = ws.profession_type
