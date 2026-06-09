@@ -906,15 +906,23 @@ function DealCard({
                             </div>
                           ) : canViewCorp ? (
                             <div className="flex justify-end">
+                              {/* Take the contractor to the deal detail
+                                  page rather than firing dealApi.approve()
+                                  inline. The detail page is the home of
+                                  the two-step reveal → approve flow, so
+                                  this button must hand off there — clicking
+                                  it on the list used to silently approve
+                                  the deal in one shot, bypassing the
+                                  reveal step we wired the rest of the UX
+                                  around. */}
                               <Button
+                                asChild
                                 size="sm"
                                 className="h-9 text-sm bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-sm shadow-emerald-200"
-                                onClick={() => onApprove(d.id)}
-                                disabled={actingId === d.id}
                               >
-                                {actingId === d.id
-                                  ? <Loader2 className="h-4 w-4 animate-spin" />
-                                  : <>לחשיפת פרטי תאגיד <ArrowLeft className="h-4 w-4" /></>}
+                                <Link href={`/contractor/deals/${d.id}`}>
+                                  לחשיפת פרטי תאגיד <ArrowLeft className="h-4 w-4" />
+                                </Link>
                               </Button>
                             </div>
                           ) : null}
@@ -929,15 +937,29 @@ function DealCard({
           {/* Card-wide green CTA for stage 2 — fastest path to the
               corp the contractor should call. The per-row buttons
               still exist for multi-corp situations where the
-              contractor wants to pick a specific corp. */}
-          {state === 'awaiting' && (
-            <Button asChild className="w-full mt-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-sm shadow-emerald-200">
-              <Link href={`/contractor/deals/${group.find((d) => d.status === 'corp_committed')?.id}`}>
-                לחשיפת פרטי תאגיד
-                <ArrowLeft className="h-4 w-4" />
-              </Link>
-            </Button>
-          )}
+              contractor wants to pick a specific corp.
+
+              Bug fix: the previous version interpolated
+              `group.find(...)?.id` directly — when the classifier
+              flagged the card as 'awaiting' but the data shifted
+              between classification and render (e.g. the only
+              corp_committed deal was promoted to approved by another
+              tab), the URL became `/contractor/deals/undefined` and
+              the contractor landed on a Next.js 404. Now we resolve
+              the id up-front and only render the link when it
+              actually exists. */}
+          {state === 'awaiting' && (() => {
+            const awaitingId = group.find((d) => d.status === 'corp_committed')?.id;
+            if (!awaitingId) return null;
+            return (
+              <Button asChild className="w-full mt-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-sm shadow-emerald-200">
+                <Link href={`/contractor/deals/${awaitingId}`}>
+                  לחשיפת פרטי תאגיד
+                  <ArrowLeft className="h-4 w-4" />
+                </Link>
+              </Button>
+            );
+          })()}
           {/* Stage 3 doesn't need a card-wide CTA — the per-row
               "האם נסגרה עסקה?" question is exact enough. */}
 
@@ -1272,7 +1294,12 @@ function ContractorDealsPageInner() {
   // Sort dropdown — defaults to 'priority' which preserves the existing
   // urgent-first behavior (action-required deals at top, then by recency).
   type DealSortKey = 'priority' | 'newest' | 'oldest' | 'most_proposals';
-  const [sortKey, setSortKey]               = useState<DealSortKey>('priority');
+  // User asked for "newest at the top" as the default — they expect
+  // recently-submitted requests to appear first when they open the
+  // page. Previously defaulted to 'priority' which mixed older
+  // action-required cards in with the newest, making "what did I
+  // submit yesterday?" hard to find.
+  const [sortKey, setSortKey]               = useState<DealSortKey>('newest');
   const [expandedDealId, setExpandedDealId] = useState<string | null>(null);
   const [workersById, setWorkersById]       = useState<Record<string, Worker[]>>({});
   const [loadingWorkers, setLoadingWorkers] = useState<Record<string, boolean>>({});

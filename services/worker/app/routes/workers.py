@@ -107,6 +107,11 @@ class WorkerUpdate(BaseModel):
     profession_type: Optional[str] = None
     experience_years: Optional[int] = None
     experience_range: Optional[str] = None
+    # Were missing — silently dropped by Pydantic on inbound PATCH
+    # despite both being writable workers columns. Reported by the
+    # corp users table where editing the origin column had no effect.
+    origin_country: Optional[str] = None
+    years_in_israel: Optional[int] = None
     languages: Optional[List[str]] = None
     visa_valid_until: Optional[date] = None
     status: Optional[str] = None
@@ -423,6 +428,12 @@ async def update_worker(worker_id: str, data: WorkerUpdate):
         updates, params = [], []
         if data.profession_type  is not None: updates.append("profession_type=%s");  params.append(data.profession_type)
         if exp_years             is not None: updates.append("experience_years=%s"); params.append(exp_years)
+        # Origin + years-in-israel were never wired in (also missing
+        # from the Pydantic model until now). The corp users were
+        # editing the country column and seeing "no error", but the
+        # value never landed in the DB.
+        if data.origin_country   is not None: updates.append("origin_country=%s");   params.append(data.origin_country)
+        if data.years_in_israel  is not None: updates.append("years_in_israel=%s");  params.append(data.years_in_israel)
         if data.languages        is not None: updates.append("languages=%s");        params.append(json.dumps(data.languages))
         if data.visa_valid_until is not None: updates.append("visa_valid_until=%s"); params.append(data.visa_valid_until)
         if data.status           is not None: updates.append("status=%s");           params.append(data.status)
