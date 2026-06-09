@@ -494,7 +494,8 @@ def list_corporation_users(org_id: str):
         cur = conn.cursor()
         cur.execute(
             """SELECT em.membership_id, em.user_id, em.role, em.job_title,
-                      em.is_active, em.invitation_accepted_at, em.created_at,
+                      em.is_active, em.is_deal_contact, em.invitation_accepted_at,
+                      em.created_at,
                       em.invited_first_name, em.invited_last_name,
                       COALESCE(u.phone, em.invited_phone) AS phone,
                       u.full_name, u.email
@@ -658,6 +659,43 @@ async def update_corporation_user(
         caller_role=x_user_role,
         entity_name=org.get("company_name_he"),
     )
+
+
+# ── Deal contacts (per-membership flag) ───────────────────────────────
+# Toggle which members are exposed to the other party as a contact
+# point on approved deals. The corp deal page renders the contractor's
+# deal contacts; mirror endpoint on the contractor router.
+
+class DealContactPatch(BaseModel):
+    is_deal_contact: bool
+
+
+@router.patch("/{org_id}/users/{membership_id}/deal-contact")
+def set_corporation_deal_contact(
+    org_id: str,
+    membership_id: str,
+    data: DealContactPatch,
+    x_user_id:   Optional[str] = Header(default=None),
+    x_user_role: Optional[str] = Header(default=None),
+):
+    return team_mgmt.set_deal_contact(
+        entity_type="corporation",
+        entity_id=org_id,
+        membership_id=membership_id,
+        is_deal_contact=data.is_deal_contact,
+        caller_user_id=x_user_id,
+        caller_role=x_user_role,
+    )
+
+
+@router.get("/{org_id}/deal-contacts")
+def list_corporation_deal_contacts(org_id: str):
+    """Public-ish read used by deal screens — returns the active list
+    of people the OTHER party (a contractor on a deal with this corp)
+    should call. No auth gate beyond the deal context — by the time a
+    contractor is rendering this they've already passed reveal and the
+    corp's identity is unlocked anyway."""
+    return team_mgmt.list_deal_contacts("corporation", org_id)
 
 
 # ── Notification recipients ──────────────────────────────────────────

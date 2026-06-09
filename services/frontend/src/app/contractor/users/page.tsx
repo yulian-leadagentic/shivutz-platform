@@ -39,6 +39,24 @@ export default function ContractorUsersPage() {
   const [deleting, setDeleting]   = useState(false);
   const [editing, setEditing]     = useState<TeamMember | null>(null);
 
+  // Per-row toggle for is_deal_contact — mirrors the corp users page.
+  // Server enforces min-1 deal contact per entity; failure surfaces
+  // via the page-level `error` channel.
+  async function handleToggleDealContact(m: TeamMember, next: boolean) {
+    if (!entityId) return;
+    setError('');
+    const prev = members;
+    setMembers((cur) => cur.map((x) => x.membership_id === m.membership_id ? { ...x, is_deal_contact: next } : x));
+    try {
+      await memberApi.setDealContact('contractors', entityId, m.membership_id, next);
+    } catch (e) {
+      setMembers(prev);
+      const msg = e instanceof Error ? e.message : 'שגיאה בעדכון איש קשר';
+      setError(msg);
+      setTimeout(() => setError(''), 5000);
+    }
+  }
+
   async function handleDelete() {
     if (!entityId || !pendingDelete) return;
     setDeleting(true); setError('');
@@ -263,6 +281,7 @@ export default function ContractorUsersPage() {
                   <th className="px-4 py-3 text-start font-medium">תפקיד</th>
                   <th className="px-4 py-3 text-start font-medium">טלפון</th>
                   <th className="px-4 py-3 text-start font-medium">הרשאה</th>
+                  <th className="px-4 py-3 text-start font-medium">איש קשר לעסקאות</th>
                   <th className="px-4 py-3 text-start font-medium">הצטרף</th>
                   <th className="px-4 py-3 text-end font-medium w-12" aria-label="פעולות" />
                 </tr>
@@ -277,6 +296,23 @@ export default function ContractorUsersPage() {
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${ROLE_COLORS[m.role] ?? 'bg-slate-100 text-slate-600'}`}>
                         {ROLE_LABELS[m.role] ?? m.role}
                       </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      {/* Toggle: is this member exposed to the corp as
+                          a contact on approved deals? At least one
+                          row must stay on; server enforces. */}
+                      <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={!!m.is_deal_contact}
+                          onChange={(e) => handleToggleDealContact(m, e.target.checked)}
+                          className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                          aria-label={`סמן את ${m.full_name ?? 'המשתמש'} כאיש קשר לעסקאות`}
+                        />
+                        <span className="text-xs text-slate-500">
+                          {m.is_deal_contact ? 'מוצג לתאגיד' : 'לא מוצג'}
+                        </span>
+                      </label>
                     </td>
                     <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{fmt(m.invitation_accepted_at)}</td>
                     <td className="px-3 py-3 text-end whitespace-nowrap">

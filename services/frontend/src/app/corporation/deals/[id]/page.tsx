@@ -7,7 +7,7 @@ import {
   AlertTriangle, MessageSquare, ChevronDown, ChevronUp,
   BadgeCheck, CircleAlert, UserCheck, CreditCard, ShieldCheck,
 } from 'lucide-react';
-import { dealApi, workerApi, paymentApi } from '@/lib/api';
+import { dealApi, workerApi, paymentApi, memberApi } from '@/lib/api';
 import { orgApi } from '@/lib/api/organizations';
 import { dealRef } from '@/lib/utils';
 import { useEnums } from '@/features/enums/EnumsContext';
@@ -289,6 +289,17 @@ function CorporationDealPageInner() {
   // where the contractor has approved (accepted / active / reporting /
   // completed). Before that the corp sees an anonymous "the contractor"
   // and only the request meta (profession, region, quantity).
+  // Multi-contact list (the contractor's flagged deal-contact members).
+  // Falls back to the single `contractor.contact_*` legacy fields when
+  // none are flagged — preserves the existing UI for entities that
+  // haven't had backfill applied yet.
+  const [contractorContacts, setContractorContacts] = useState<Array<{
+    membership_id: string;
+    full_name: string | null;
+    phone: string | null;
+    email: string | null;
+    job_title: string | null;
+  }>>([]);
   const [contractor, setContractor] = useState<{
     company_name_he?: string | null;
     company_name?: string | null;
@@ -375,6 +386,13 @@ function CorporationDealPageInner() {
         contact_phone: c.contact_phone,
       }))
       .catch((e) => console.error('[corp/deal] getContractor failed:', e));
+    // Fan-out: also fetch the contractor's deal-contact list so we
+    // can show all marked members (replacing the single contact_*
+    // legacy field). Fails silently — render falls back to the
+    // single legacy contact in `contractor` state.
+    memberApi.listDealContacts('contractors', cid)
+      .then((list) => setContractorContacts(list || []))
+      .catch(() => setContractorContacts([]));
   }, [deal, contractor]);
 
   useEffect(() => {
@@ -782,33 +800,74 @@ function CorporationDealPageInner() {
               <CheckCircle className="h-3 w-3" /> נחשפו לאחר אישור
             </span>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="space-y-3">
             <div>
-              <p className="text-xs text-slate-500 mb-0.5">תאגיד הקבלן</p>
+              <p className="text-xs text-slate-500 mb-0.5">חברת הקבלן</p>
               <p className="text-base font-bold text-slate-900">
                 {contractor.company_name_he || contractor.company_name || '—'}
               </p>
             </div>
-            <div>
-              <p className="text-xs text-slate-500 mb-0.5">איש קשר</p>
-              <p className="text-base font-bold text-slate-900">
-                {contractor.contact_name || '—'}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs text-slate-500 mb-0.5">טלפון</p>
-              {contractor.contact_phone ? (
-                <a
-                  href={`tel:${contractor.contact_phone}`}
-                  className="text-base font-bold text-emerald-700 hover:text-emerald-800 underline underline-offset-2"
-                  dir="ltr"
-                >
-                  {contractor.contact_phone}
-                </a>
-              ) : (
-                <p className="text-base font-bold text-slate-900">—</p>
-              )}
-            </div>
+            {/* Multi-contact list: render every member the contractor
+                has flagged as a deal contact (via /contractor/users).
+                Falls back to the single legacy contact_* fields when
+                no member is flagged. Layout differs from the grid we
+                had before — a vertical list is friendlier when there
+                are 2-3 contacts (the common case) and the inline
+                tap-to-call works on mobile. */}
+            {contractorContacts.length > 0 ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {contractorContacts.map((c) => (
+                  <div key={c.membership_id} className="rounded-lg bg-white border border-emerald-200 p-3">
+                    {c.full_name && (
+                      <p className="text-sm font-bold text-slate-900">
+                        {c.full_name}
+                        {c.job_title && <span className="text-xs font-normal text-slate-500"> · {c.job_title}</span>}
+                      </p>
+                    )}
+                    {c.phone && (
+                      <a
+                        href={`tel:${c.phone}`}
+                        className="block mt-1 text-base font-bold text-emerald-700 hover:text-emerald-800 underline underline-offset-2"
+                        dir="ltr"
+                      >
+                        {c.phone}
+                      </a>
+                    )}
+                    {c.email && (
+                      <a
+                        href={`mailto:${c.email}`}
+                        className="block mt-0.5 text-xs text-emerald-700 hover:underline"
+                      >
+                        {c.email}
+                      </a>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <p className="text-xs text-slate-500 mb-0.5">איש קשר</p>
+                  <p className="text-base font-bold text-slate-900">
+                    {contractor.contact_name || '—'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500 mb-0.5">טלפון</p>
+                  {contractor.contact_phone ? (
+                    <a
+                      href={`tel:${contractor.contact_phone}`}
+                      className="text-base font-bold text-emerald-700 hover:text-emerald-800 underline underline-offset-2"
+                      dir="ltr"
+                    >
+                      {contractor.contact_phone}
+                    </a>
+                  ) : (
+                    <p className="text-base font-bold text-slate-900">—</p>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

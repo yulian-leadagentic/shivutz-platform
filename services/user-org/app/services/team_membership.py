@@ -283,3 +283,119 @@ async def update_membership(
         })
 
     return updated
+
+
+# ── Deal-contact flag (per-membership) ──────────────────────────────
+#
+# Each entity must keep at least one active deal contact at all times,
+# so the other party in a deal always has someone to reach. Toggle
+# enforces this: unmarking the last remaining contact returns 409 and
+# leaves the flag untouched.
+
+def set_deal_contact(
+    entity_type: str,
+    entity_id: str,
+    membership_id: str,
+    is_deal_contact: bool,
+    caller_user_id: Optional[str],
+    caller_role: Optional[str],
+) -> Dict[str, Any]:
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        _ensure_caller_can_manage(cur, entity_type, entity_id, caller_user_id, caller_role)
+
+        # Sanity: the target membership belongs to the claimed entity
+        # AND is active. Pending/disabled members can't be contacts.
+        cur.execute(
+            """SELECT membership_id, is_active, is_deal_contact
+               FROM auth_db.entity_memberships
+               WHERE membership_id = %s
+                 AND entity_type   = %s
+                 AND entity_id     = %s""",
+            (membership_id, entity_type, entity_id),
+        )
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="membership_not_found")
+        if not row["is_active"]:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "inactive_member",
+                        "message": "חבר לא פעיל לא יכול לשמש כאיש קשר לעסקאות"},
+            )
+
+        # Min-1 guard: when unmarking, make sure SOME other active
+        # member of this entity still carries the flag.
+        if not is_deal_contact and row["is_deal_contact"]:
+            cur.execute(
+                """SELECT COUNT(*) AS c
+                   FROM auth_db.entity_memberships
+                   WHERE entity_type = %s
+                     AND entity_id   = %s
+                     AND is_active   = TRUE
+                     AND is_deal_contact = TRUE
+                     AND membership_id  <> %s""",
+                (entity_type, entity_id, membership_id),
+            )
+            others = int((cur.fetchone() or {}).get("c") or 0)
+            if others == 0:
+                raise HTTPException(
+                    status_code=409,
+                    detail={"code": "need_at_least_one_contact",
+                            "message": "חייב להישאר לפחות איש קשר אחד לעסקאות. סמן חבר אחר תחילה."},
+                )
+
+        cur.execute(
+            """UPDATE auth_db.entity_memberships
+               SET is_deal_contact = %s
+               WHERE membership_id = %s""",
+            (bool(is_deal_contact), membership_id),
+        )
+        conn.commit()
+
+        return {"membership_id": membership_id, "is_deal_contact": bool(is_deal_contact)}
+    finally:
+        conn.close()
+
+
+def list_deal_contacts(entity_type: str, entity_id: str) -> list[Dict[str, Any]]:
+    """Return the entity's active deal contacts — name + phone + email
+    of every member who's flagged. Used by the deal screens to show
+    the other party "who to call". Pending invites are excluded.
+
+    Empty list shouldn't happen in practice (migration backfills + API
+    guarantees min-1) but if it does, the deal page falls back to the
+    legacy contact_* fields on the entity row.
+    """
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT em.membership_id,
+                      em.job_title,
+                      em.invited_first_name, em.invited_last_name,
+                      COALESCE(u.phone, em.invited_phone) AS phone,
+                      u.full_name,
+                      u.email
+               FROM auth_db.entity_memberships em
+               LEFT JOIN auth_db.users u ON u.id = em.user_id
+               WHERE em.entity_type      = %s
+                 AND em.entity_id        = %s
+                 AND em.is_active        = TRUE
+                 AND em.is_deal_contact  = TRUE
+                 AND em.invitation_accepted_at IS NOT NULL
+               ORDER BY em.created_at""",
+            (entity_type, entity_id),
+        )
+        rows = cur.fetchall() or []
+        for r in rows:
+            if not r.get("full_name"):
+                fn = r.get("invited_first_name") or ""
+                ln = r.get("invited_last_name") or ""
+                joined = f"{fn} {ln}".strip()
+                if joined:
+                    r["full_name"] = joined
+        return rows
+    finally:
+        conn.close()

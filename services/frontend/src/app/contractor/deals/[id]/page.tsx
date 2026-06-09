@@ -8,7 +8,7 @@ import {
   Building2, Phone, Mail, UserCheck, HandshakeIcon, Download, X,
   ArrowRight,
 } from 'lucide-react';
-import { dealApi, workerApi, orgApi } from '@/lib/api';
+import { dealApi, workerApi, orgApi, memberApi } from '@/lib/api';
 import { dealRef } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -88,6 +88,16 @@ export default function DealDetailPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [workers, setWorkers]   = useState<Worker[]>([]);
   const [corp, setCorp]         = useState<Corporation | null>(null);
+  // Members the corp has marked as deal contacts — these are the
+  // names + phone + email the contractor sees post-reveal. Replaces
+  // the single legacy corp.contact_* fallback used to render.
+  const [corpContacts, setCorpContacts] = useState<Array<{
+    membership_id: string;
+    full_name: string | null;
+    phone: string | null;
+    email: string | null;
+    job_title: string | null;
+  }>>([]);
   const [msgInput, setMsgInput] = useState('');
   const [sending, setSending]   = useState(false);
   const [loading, setLoading]   = useState(true);
@@ -117,6 +127,12 @@ export default function DealDetailPage() {
       orgApi.getCorporation(d.corporation_id)
         .then((c) => setCorp(c))
         .catch(() => {});
+      // Fetch the corp's designated deal contacts. Fires in parallel
+      // with the corp lookup. Empty list = no flagged members; the
+      // render falls back to the single corp.contact_* fields.
+      memberApi.listDealContacts('corporations', d.corporation_id)
+        .then((list) => setCorpContacts(list || []))
+        .catch(() => setCorpContacts([]));
     }
     return d;
   }
@@ -423,32 +439,71 @@ export default function DealDetailPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-2">
+            <div className="space-y-3">
               <div className="flex items-center gap-2 text-base text-slate-900">
                 <Building2 className="h-5 w-5 text-emerald-600 shrink-0" />
                 <span className="font-bold">{corpName}</span>
               </div>
-              {corp.contact_name && (
-                <div className="flex items-center gap-2 text-sm text-slate-700">
-                  <UserCheck className="h-4 w-4 text-slate-400 shrink-0" />
-                  <span>{corp.contact_name}</span>
+              {/* Same multi-contact pattern as the pre-approval card.
+                  After the contractor has approved, they likely want
+                  the full list of contacts for follow-up. */}
+              {corpContacts.length > 0 ? (
+                <div className="space-y-3">
+                  {corpContacts.map((c) => (
+                    <div key={c.membership_id} className="space-y-1 pb-2 border-b border-emerald-50 last:border-0 last:pb-0">
+                      {c.full_name && (
+                        <div className="flex items-center gap-2 text-sm text-slate-700">
+                          <UserCheck className="h-4 w-4 text-slate-400 shrink-0" />
+                          <span className="font-medium">{c.full_name}</span>
+                          {c.job_title && (
+                            <span className="text-xs text-slate-400">· {c.job_title}</span>
+                          )}
+                        </div>
+                      )}
+                      {c.phone && (
+                        <div className="flex items-center gap-2 text-sm text-slate-700">
+                          <Phone className="h-4 w-4 text-slate-400 shrink-0" />
+                          <a href={`tel:${c.phone}`} className="text-brand-600 hover:underline font-semibold" dir="ltr">
+                            {c.phone}
+                          </a>
+                        </div>
+                      )}
+                      {c.email && (
+                        <div className="flex items-center gap-2 text-sm text-slate-700">
+                          <Mail className="h-4 w-4 text-slate-400 shrink-0" />
+                          <a href={`mailto:${c.email}`} className="text-brand-600 hover:underline">
+                            {c.email}
+                          </a>
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </div>
-              )}
-              {corp.contact_phone && (
-                <div className="flex items-center gap-2 text-sm text-slate-700">
-                  <Phone className="h-4 w-4 text-slate-400 shrink-0" />
-                  <a href={`tel:${corp.contact_phone}`} className="text-brand-600 hover:underline font-semibold text-base">
-                    {corp.contact_phone}
-                  </a>
-                </div>
-              )}
-              {corp.contact_email && (
-                <div className="flex items-center gap-2 text-sm text-slate-700">
-                  <Mail className="h-4 w-4 text-slate-400 shrink-0" />
-                  <a href={`mailto:${corp.contact_email}`} className="text-brand-600 hover:underline">
-                    {corp.contact_email}
-                  </a>
-                </div>
+              ) : (
+                <>
+                  {corp.contact_name && (
+                    <div className="flex items-center gap-2 text-sm text-slate-700">
+                      <UserCheck className="h-4 w-4 text-slate-400 shrink-0" />
+                      <span>{corp.contact_name}</span>
+                    </div>
+                  )}
+                  {corp.contact_phone && (
+                    <div className="flex items-center gap-2 text-sm text-slate-700">
+                      <Phone className="h-4 w-4 text-slate-400 shrink-0" />
+                      <a href={`tel:${corp.contact_phone}`} className="text-brand-600 hover:underline font-semibold text-base">
+                        {corp.contact_phone}
+                      </a>
+                    </div>
+                  )}
+                  {corp.contact_email && (
+                    <div className="flex items-center gap-2 text-sm text-slate-700">
+                      <Mail className="h-4 w-4 text-slate-400 shrink-0" />
+                      <a href={`mailto:${corp.contact_email}`} className="text-brand-600 hover:underline">
+                        {corp.contact_email}
+                      </a>
+                    </div>
+                  )}
+                </>
               )}
             </div>
             <div className="mt-4 pt-4 border-t border-emerald-100">
@@ -589,32 +644,74 @@ export default function DealDetailPage() {
                 <p className="text-xs font-semibold text-emerald-700 uppercase tracking-wider mb-3">
                   פרטי התאגיד שהציע
                 </p>
-                <div className="space-y-2">
+                <div className="space-y-3">
                   <div className="flex items-center gap-2 text-base text-slate-900">
                     <Building2 className="h-5 w-5 text-emerald-600 shrink-0" />
                     <span className="font-bold">{corpName}</span>
                   </div>
-                  {corp.contact_name && (
-                    <div className="flex items-center gap-2 text-sm text-slate-700">
-                      <UserCheck className="h-4 w-4 text-slate-400 shrink-0" />
-                      <span>{corp.contact_name}</span>
+                  {/* Multi-contact rendering: when the corp has marked
+                      one or more team members as deal contacts (via
+                      /corporation/users), show ALL of them. Falls back
+                      to the legacy single corp.contact_* fields only
+                      when no member is flagged (shouldn't happen for
+                      newly-onboarded entities — backfill seeds one). */}
+                  {corpContacts.length > 0 ? (
+                    <div className="space-y-3">
+                      {corpContacts.map((c) => (
+                        <div key={c.membership_id} className="space-y-1 pb-2 border-b border-emerald-50 last:border-0 last:pb-0">
+                          {c.full_name && (
+                            <div className="flex items-center gap-2 text-sm text-slate-700">
+                              <UserCheck className="h-4 w-4 text-slate-400 shrink-0" />
+                              <span className="font-medium">{c.full_name}</span>
+                              {c.job_title && (
+                                <span className="text-xs text-slate-400">· {c.job_title}</span>
+                              )}
+                            </div>
+                          )}
+                          {c.phone && (
+                            <div className="flex items-center gap-2 text-sm text-slate-700">
+                              <Phone className="h-4 w-4 text-slate-400 shrink-0" />
+                              <a href={`tel:${c.phone}`} className="text-brand-600 hover:underline font-semibold" dir="ltr">
+                                {c.phone}
+                              </a>
+                            </div>
+                          )}
+                          {c.email && (
+                            <div className="flex items-center gap-2 text-sm text-slate-700">
+                              <Mail className="h-4 w-4 text-slate-400 shrink-0" />
+                              <a href={`mailto:${c.email}`} className="text-brand-600 hover:underline">
+                                {c.email}
+                              </a>
+                            </div>
+                          )}
+                        </div>
+                      ))}
                     </div>
-                  )}
-                  {corp.contact_phone && (
-                    <div className="flex items-center gap-2 text-sm text-slate-700">
-                      <Phone className="h-4 w-4 text-slate-400 shrink-0" />
-                      <a href={`tel:${corp.contact_phone}`} className="text-brand-600 hover:underline font-semibold text-base">
-                        {corp.contact_phone}
-                      </a>
-                    </div>
-                  )}
-                  {corp.contact_email && (
-                    <div className="flex items-center gap-2 text-sm text-slate-700">
-                      <Mail className="h-4 w-4 text-slate-400 shrink-0" />
-                      <a href={`mailto:${corp.contact_email}`} className="text-brand-600 hover:underline">
-                        {corp.contact_email}
-                      </a>
-                    </div>
+                  ) : (
+                    <>
+                      {corp.contact_name && (
+                        <div className="flex items-center gap-2 text-sm text-slate-700">
+                          <UserCheck className="h-4 w-4 text-slate-400 shrink-0" />
+                          <span>{corp.contact_name}</span>
+                        </div>
+                      )}
+                      {corp.contact_phone && (
+                        <div className="flex items-center gap-2 text-sm text-slate-700">
+                          <Phone className="h-4 w-4 text-slate-400 shrink-0" />
+                          <a href={`tel:${corp.contact_phone}`} className="text-brand-600 hover:underline font-semibold text-base">
+                            {corp.contact_phone}
+                          </a>
+                        </div>
+                      )}
+                      {corp.contact_email && (
+                        <div className="flex items-center gap-2 text-sm text-slate-700">
+                          <Mail className="h-4 w-4 text-slate-400 shrink-0" />
+                          <a href={`mailto:${corp.contact_email}`} className="text-brand-600 hover:underline">
+                            {corp.contact_email}
+                          </a>
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
                 {/* "What now" cue — before this banner the contractor
