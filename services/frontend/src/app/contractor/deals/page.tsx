@@ -136,12 +136,17 @@ type EnrichedDeal = Deal & {
 // Order per QA-R3 #2: "ממתינות לתאגיד" comes BEFORE "ממתינות לאישורך"
 // so the contractor's eye lands first on what they're waiting on the
 // corp to deliver, then on items needing their own action.
-const CONTRACTOR_FILTERS: Filter[] = ['all', 'proposed', 'awaiting_approval', 'completed', 'cancelled'];
+// QA-R5: added `engaged` to the chip row so contractors can see
+// "התקשרות אושרה — still running" separately from "נסגרה". Reads
+// left-to-right in RTL exactly like the user's workflow:
+//   ALL → ממתינות לתאגיד → ממתינות לאישורך → התקשרות אושרה → נסגרו → בוטל
+const CONTRACTOR_FILTERS: Filter[] = ['all', 'proposed', 'awaiting_approval', 'engaged', 'completed', 'cancelled'];
 
 const CONTRACTOR_STATUS_GROUP: Record<Exclude<Filter, 'all' | 'active'>, string[]> = {
   awaiting_approval: ['corp_committed'],
   proposed:          ['proposed', 'counter_proposed'],
-  completed:         ['approved', 'accepted', 'active', 'reporting', 'completed', 'closed'],
+  engaged:           ['approved', 'accepted', 'active', 'reporting'],
+  completed:         ['completed', 'closed'],
   cancelled:         ['cancelled', 'cancelled_by_corp', 'cancelled_by_contractor', 'rejected', 'expired', 'disputed'],
 };
 
@@ -165,10 +170,14 @@ const FILTER_TONE: Record<Filter, {
     badgeOff: 'bg-slate-100 text-slate-600',
   },
   awaiting_approval: {
-    active:   'bg-amber-500 text-white border-amber-500',
-    idle:     'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100',
-    badgeOn:  'bg-white/25 text-white',
-    badgeOff: 'bg-amber-200 text-amber-900',
+    // Yellow to match the per-deal pill (DEAL_STATUS_PILL.corp_committed).
+    // User asked for "yellow = ball is in your court" to be visually
+    // distinct from blue "ball is in their court" and from the new
+    // orange "engaged" bucket.
+    active:   'bg-yellow-400 text-yellow-900 border-yellow-400',
+    idle:     'bg-yellow-50 text-yellow-900 border-yellow-300 hover:bg-yellow-100',
+    badgeOn:  'bg-yellow-900/15 text-yellow-900',
+    badgeOff: 'bg-yellow-200 text-yellow-900',
   },
   proposed: {
     active:   'bg-sky-600 text-white border-sky-600',
@@ -178,6 +187,14 @@ const FILTER_TONE: Record<Filter, {
   },
   active: { // unused on contractor pills, included for type completeness
     active: '', idle: '', badgeOn: '', badgeOff: '',
+  },
+  engaged: {
+    // התקשרות אושרה — approved+running. Orange to match the per-deal
+    // pill colour for the same statuses (DEAL_STATUS_PILL).
+    active:   'bg-orange-500 text-white border-orange-500',
+    idle:     'bg-orange-50 text-orange-800 border-orange-200 hover:bg-orange-100',
+    badgeOn:  'bg-white/25 text-white',
+    badgeOff: 'bg-orange-100 text-orange-700',
   },
   completed: {
     active:   'bg-emerald-600 text-white border-emerald-600',
@@ -783,19 +800,20 @@ function DealCard({
                   const canViewCorp     = d.status === 'corp_committed';
                   const canConfirmClose = IN_FIELD.has(d.status);
                   const fresh = canViewCorp && isRecent(d.created_at);
-                  // Settled outcomes also get a coloured ring so the
-                  // contractor can scan the corp list and see win /
-                  // loss without reading the pill text:
-                  //   pre-approve (corp committed) = amber
-                  //   post-approve, in flight       = light emerald
-                  //   closed / completed            = saturated emerald
-                  //   any cancellation / rejected   = saturated rose
+                  // QA-R5 ring colours — match the per-deal pill palette
+                  // so the corp row reads the same colour-language as
+                  // the status pill itself:
+                  //   corp_committed     → YELLOW  (ball in your court)
+                  //   approved/accepted/ → ORANGE  (התקשרות אושרה,
+                  //   active/reporting              still running)
+                  //   closed/completed   → GREEN   (נסגרה — done)
+                  //   cancelled/rejected → RED
                   const isSettledClosed = CLOSED.has(d.status);
                   const isCancelled     = CANCELLED_S.has(d.status);
                   const rowRing = canViewCorp
-                    ? 'border-amber-400 bg-amber-50/70 ring-2 ring-amber-100'
+                    ? 'border-yellow-400 bg-yellow-50/70 ring-2 ring-yellow-200'
                     : canConfirmClose
-                      ? 'border-emerald-400 bg-emerald-50/70 ring-2 ring-emerald-100'
+                      ? 'border-orange-400 bg-orange-50/70 ring-2 ring-orange-200'
                       : isSettledClosed
                         ? 'border-emerald-500 bg-emerald-50 ring-2 ring-emerald-200'
                         : isCancelled
@@ -1492,7 +1510,7 @@ function ContractorDealsPageInner() {
   // except "הכל" which counts unique searches (one card each).
   const counts = useMemo(() => {
     const out: Record<Filter, number> = {
-      all: 0, awaiting_approval: 0, proposed: 0, active: 0, completed: 0, cancelled: 0,
+      all: 0, awaiting_approval: 0, proposed: 0, active: 0, engaged: 0, completed: 0, cancelled: 0,
     };
     out.all = liveSearches.length;
     // Only count deals tied to live searches — deals whose parent search
@@ -1502,6 +1520,7 @@ function ContractorDealsPageInner() {
       if (d.search_id && !liveSearchIds.has(d.search_id)) continue;
       if (contractorMatchesFilter(d.status, 'awaiting_approval')) out.awaiting_approval++;
       else if (contractorMatchesFilter(d.status, 'proposed'))     out.proposed++;
+      else if (contractorMatchesFilter(d.status, 'engaged'))      out.engaged++;
       else if (contractorMatchesFilter(d.status, 'completed'))    out.completed++;
       else if (contractorMatchesFilter(d.status, 'cancelled'))    out.cancelled++;
     }

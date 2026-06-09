@@ -17,18 +17,24 @@ export type DealStatus =
 // Superset — each surface picks the subset it shows. Contractor-side
 // (re)design uses awaiting_approval / proposed / completed / cancelled;
 // corp-side keeps proposed / active / completed.
+// QA-R5 — split the post-approval status into two buckets so the
+// contractor can distinguish "התקשרות אושרה but still running" from
+// truly-closed deals. `engaged` covers approved/accepted/active/
+// reporting; `completed` is reserved for completed/closed.
 export type DealFilter =
   | 'all'
   | 'awaiting_approval' // contractor-side: corp committed, contractor must act
   | 'proposed'          // sent to corp, awaiting first response
   | 'active'            // corp-side: workers in field
-  | 'completed'         // closed / done
+  | 'engaged'           // contractor-side: approved/active — התקשרות אושרה (orange)
+  | 'completed'         // closed / done (green)
   | 'cancelled';        // cancelled / rejected / expired
 
 export const DEAL_FILTER_LABEL: Partial<Record<DealFilter, string>> = {
   all:               'הכל',
   awaiting_approval: 'ממתינות לאישורך',
   proposed:          'ממתינות לתאגיד',
+  engaged:           'התקשרות אושרה',
   completed:         'נסגרו',
   cancelled:         'בוטל',
 };
@@ -42,6 +48,7 @@ export const DEAL_STATUS_GROUP: Record<Exclude<DealFilter, 'all'>, string[]> = {
   awaiting_approval: ['corp_committed'],
   proposed:          ['proposed', 'counter_proposed'],
   active:            ['accepted', 'active', 'reporting'],
+  engaged:           ['approved', 'accepted', 'active', 'reporting'],
   completed:         ['completed', 'closed'],
   cancelled:         ['cancelled', 'cancelled_by_corp', 'cancelled_by_contractor', 'rejected', 'expired', 'disputed'],
 };
