@@ -364,9 +364,31 @@ export default function FindFormPage() {
           {/* 4 + 5 — start date + employment duration, side-by-side */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                תאריך תחילת עבודה <span className="text-red-500">*</span>
-              </label>
+              <div className="flex items-baseline justify-between mb-1.5 gap-2">
+                <label className="block text-xs font-semibold text-slate-700">
+                  תאריך תחילת עבודה/העסקה <span className="text-red-500">*</span>
+                </label>
+                {/* R5 #7 — quick "immediate availability" checkbox.
+                    Auto-fills today's date so the contractor doesn't
+                    have to open the date picker for the common "I need
+                    workers right now" case. Unchecking just leaves the
+                    current value in place; the user can pick a date
+                    manually if they un-toggle. */}
+                <label className="inline-flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={!!startDate && startDate === new Date().toISOString().slice(0, 10)}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setStartDate(new Date().toISOString().slice(0, 10));
+                        if (errorField === 'startDate') { setError(''); setErrorField(null); }
+                      }
+                    }}
+                    className="h-3.5 w-3.5 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                  />
+                  <span>זמינות מיידית</span>
+                </label>
+              </div>
               <input
                 id="field-startDate"
                 type="date"

@@ -178,7 +178,21 @@ export default function TopBar({ mobileNav }: TopBarProps = {}) {
         </h1>
       </div>
 
-      {name && (
+      {name && (() => {
+        // Resolve the active entity's display name from the
+        // memberships list. Per QA-R5 R1#1, the top-right of every
+        // management screen should surface "which entity am I acting
+        // as right now". The user's personal name still shows
+        // underneath as a secondary line so we don't lose that
+        // identity. Before this change the trigger button rendered
+        // ONLY the user's name, which left "which corp am I logged
+        // into?" answerable only by opening the dropdown.
+        const active = memberships.find(
+          (m) => m.entity_id === entityId && m.entity_type === entityType,
+        );
+        const activeEntityName = active?.entity_name
+          || (entityType ? ENTITY_ROLE_LABELS[entityType] : '');
+        return (
         <div className="relative" ref={menuRef}>
           <button
             type="button"
@@ -186,9 +200,16 @@ export default function TopBar({ mobileNav }: TopBarProps = {}) {
             className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-slate-100 transition-colors"
             aria-label="תפריט משתמש"
           >
-            <span className="text-lg sm:text-xl text-slate-900 font-bold hidden sm:block max-w-[260px] truncate">{name}</span>
+            <div className="hidden sm:flex flex-col items-end leading-tight max-w-[260px]">
+              <span className="text-base sm:text-lg text-slate-900 font-bold truncate w-full text-end">
+                {activeEntityName || name}
+              </span>
+              {activeEntityName && (
+                <span className="text-[11px] text-slate-500 truncate w-full text-end">{name}</span>
+              )}
+            </div>
             <div className="h-11 w-11 rounded-full bg-primary-600 flex items-center justify-center shrink-0">
-              <span className="text-white text-base font-bold">{getInitials(name)}</span>
+              <span className="text-white text-base font-bold">{getInitials(activeEntityName || name)}</span>
             </div>
             <ChevronDown className={`h-5 w-5 text-slate-500 transition-transform ${menuOpen ? 'rotate-180' : ''}`} />
           </button>
@@ -262,7 +283,8 @@ export default function TopBar({ mobileNav }: TopBarProps = {}) {
             </div>
           )}
         </div>
-      )}
+        );
+      })()}
     </header>
   );
 }
