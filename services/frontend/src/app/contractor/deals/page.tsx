@@ -791,6 +791,31 @@ function DealCard({
                   return (
                     <div key={d.id}
                          className={`rounded-lg border overflow-hidden ${rowRing}`}>
+                      {/* Loud action banner for corp_committed (pre-
+                          reveal) deals — product asked for stronger
+                          emphasis than the in-header pill. Sits ABOVE
+                          the corp tile button as a full-width emerald
+                          bar that scales-pulses, has a ping ring,
+                          a bell icon, and an arrow into the tile.
+                          One per tile, so even in a list of mixed
+                          states it draws the eye immediately. */}
+                      {canViewCorp && d.worker_count != null && (
+                        <button
+                          type="button"
+                          onClick={() => onToggleDeal(d.id)}
+                          className="relative w-full bg-gradient-to-l from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white px-3.5 py-2.5 flex items-center gap-2.5 shadow-md shadow-emerald-400/50 transition-all"
+                          style={{ animation: 'attentionPulse 1.6s ease-in-out infinite' }}
+                        >
+                          <span className="relative inline-flex">
+                            <span className="absolute inset-0 rounded-full bg-white/40 animate-ping" aria-hidden />
+                            <Bell className="h-4 w-4 relative" />
+                          </span>
+                          <span className="flex-1 text-start text-sm font-extrabold leading-tight tracking-tight">
+                            תאגיד אישר {d.worker_count} עובדים — לחץ להמשך תהליך
+                          </span>
+                          <ArrowLeft className="h-4 w-4 shrink-0" />
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={() => onToggleDeal(d.id)}
@@ -800,21 +825,10 @@ function DealCard({
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-semibold text-slate-900 text-sm">{corpLabel}</span>
-                            {/* For corp_committed (pre-reveal) deals,
-                                surface a pulsing "אישר N עובדים — לחץ
-                                להמשך תהליך" call-to-action so the
-                                contractor knows where the next step
-                                is. R2#10 — product wanted the message
-                                to blink so the tile stands out in a
-                                list of mixed states. corpSuffix (the
-                                post-approval "אישר N עובדים") still
-                                renders for already-approved deals. */}
-                            {canViewCorp && d.worker_count != null && (
-                              <span className="inline-flex items-center gap-1.5 text-sm text-emerald-700 font-semibold animate-pulse">
-                                <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" aria-hidden />
-                                אישר {d.worker_count} עובדים — לחץ להמשך תהליך
-                              </span>
-                            )}
+                            {/* (corp_committed banner above takes over
+                                the "click to advance" prompt; this
+                                inline post-approval marker still
+                                renders for already-approved deals.) */}
                             {corpSuffix && (
                               <span className="text-sm text-emerald-700 font-semibold">{corpSuffix}</span>
                             )}

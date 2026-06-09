@@ -317,3 +317,22 @@ body {
   animation-fill-mode: forwards;
   will-change: transform, opacity;
 }
+
+/* attentionPulse — used by the corp-committed banner on
+   /contractor/deals to draw the contractor's eye to a deal that's
+   waiting on their next click. Combines a soft scale + an emerald
+   shadow pulse for a glow effect. Honours
+   prefers-reduced-motion. */
+@keyframes attentionPulse {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 4px 14px 0 rgba(16, 185, 129, 0.35);
+  }
+  50% {
+    transform: scale(1.018);
+    box-shadow: 0 6px 24px 0 rgba(16, 185, 129, 0.65);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  [style*="attentionPulse"] { animation: none !important; }
+}
