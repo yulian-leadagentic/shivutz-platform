@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { OrgSummaryHeader } from '@/components/admin/OrgSummaryHeader';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 
 type OrgType = 'contractor' | 'corporation';
 
@@ -72,6 +73,11 @@ function OrgDetailContent() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving]   = useState(false);
   const [statusBusy, setStatusBusy] = useState(false);
+  // Native confirm replaced with styled dialog. Suspending an org has
+  // cascading consequences (deal queue freezes, member logins fail
+  // mid-session) so the dialog spells out what'll happen instead of
+  // showing the browser's curt "staging.buildupai.net says ...".
+  const [pendingSuspend, setPendingSuspend] = useState(false);
   const [uploading, setUploading]   = useState(false);
   const [error, setError]     = useState('');
   const [toast, setToast]     = useState('');
@@ -131,12 +137,27 @@ function OrgDetailContent() {
   }
 
   async function setStatus(status: 'approved' | 'suspended') {
-    if (status === 'suspended' && !confirm('להשהות את הארגון? לא יוכל להגיש פניות / לפרסם עובדים.')) return;
+    // Reroute suspension through the confirm dialog. Other transitions
+    // (e.g. re-activation) don't need a confirm.
+    if (status === 'suspended') { setPendingSuspend(true); return; }
     setStatusBusy(true);
     try {
       await adminApi.setOrgStatus(id, orgType, status);
-      pushToast(status === 'suspended' ? '✓ הארגון הושהה' : '✓ הארגון הופעל מחדש');
+      pushToast('✓ הארגון הופעל מחדש');
       load();
+    } catch (err) {
+      pushToast(`✗ ${err instanceof Error ? err.message : 'שגיאה'}`);
+    } finally {
+      setStatusBusy(false);
+    }
+  }
+  async function confirmSuspend() {
+    setStatusBusy(true);
+    try {
+      await adminApi.setOrgStatus(id, orgType, 'suspended');
+      pushToast('✓ הארגון הושהה');
+      load();
+      setPendingSuspend(false);
     } catch (err) {
       pushToast(`✗ ${err instanceof Error ? err.message : 'שגיאה'}`);
     } finally {
@@ -450,6 +471,17 @@ function OrgDetailContent() {
           ← חזרה לרשימת הארגונים
         </Link>
       </p>
+
+      <ConfirmDialog
+        open={pendingSuspend}
+        title="השהיית ארגון"
+        message="להשהות את הארגון? משתמשים שמחוברים כרגע ינותקו, עסקאות פתוחות יוקפאו, והארגון לא יוכל להגיש פניות או לפרסם עובדים עד שתשחרר אותו מההשהיה."
+        confirmLabel="השהה"
+        variant="destructive"
+        busy={statusBusy}
+        onConfirm={confirmSuspend}
+        onCancel={() => setPendingSuspend(false)}
+      />
     </div>
   );
 }

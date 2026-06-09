@@ -5,6 +5,7 @@ import { Loader2, Percent, Save, Info, Trash2, Plus, Calendar } from 'lucide-rea
 import { adminApi, type VATPeriod } from '@/lib/adminApi';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 
 function fmtDate(iso: string | null) {
   if (!iso) return 'ללא תאריך סיום';
@@ -151,6 +152,11 @@ function VATPeriodsCard() {
   const [saving, setSaving]   = useState(false);
   const [adding, setAdding]   = useState(false);
   const [form, setForm]       = useState({ percent: '18', valid_from: '', valid_until: '', notes: '' });
+  // Native confirm → in-app ConfirmDialog. Period deletion can affect
+  // historical billing calculations so we want a styled, focused
+  // confirm instead of the browser's "staging.buildupai.net says".
+  const [pendingDelete, setPendingDelete] = useState<VATPeriod | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const today = new Date().toISOString().slice(0, 10);
 
   function load() {
@@ -184,12 +190,15 @@ function VATPeriodsCard() {
     } finally { setSaving(false); }
   }
 
-  async function remove(id: string) {
-    if (!confirm('למחוק את התקופה הזאת?')) return;
+  async function confirmRemove() {
+    if (!pendingDelete) return;
+    setDeleting(true);
     try {
-      await adminApi.deleteVatPeriod(id);
+      await adminApi.deleteVatPeriod(pendingDelete.id);
       load();
+      setPendingDelete(null);
     } catch (e) { setError(e instanceof Error ? e.message : 'שגיאה'); }
+    finally { setDeleting(false); }
   }
 
   function isActive(p: VATPeriod): boolean {
@@ -236,7 +245,7 @@ function VATPeriodsCard() {
                     <td className="px-3 py-2.5 text-slate-600" dir="ltr">{fmtDate(p.valid_until)}</td>
                     <td className="px-3 py-2.5 text-slate-500 text-xs">{p.notes || '—'}</td>
                     <td className="px-3 py-2.5 text-end">
-                      <button onClick={() => remove(p.id)} className="text-red-500 hover:text-red-700" title="מחק">
+                      <button onClick={() => setPendingDelete(p)} className="text-red-500 hover:text-red-700" title="מחק">
                         <Trash2 className="h-4 w-4" />
                       </button>
                     </td>
@@ -292,6 +301,18 @@ function VATPeriodsCard() {
           </form>
         )}
       </CardContent>
+      <ConfirmDialog
+        open={!!pendingDelete}
+        title="מחיקת תקופת מע״מ"
+        message={pendingDelete
+          ? `למחוק את תקופת המע״מ של ${pendingDelete.percent}% (${pendingDelete.valid_from} → ${pendingDelete.valid_until || '∞'})? פעולה זו עלולה להשפיע על חישובי חיוב היסטוריים.`
+          : ''}
+        confirmLabel="מחק תקופה"
+        variant="destructive"
+        busy={deleting}
+        onConfirm={confirmRemove}
+        onCancel={() => setPendingDelete(null)}
+      />
     </Card>
   );
 }

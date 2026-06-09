@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { TableToolbar } from '@/components/table/TableToolbar';
 import { useTableState } from '@/components/table/useTableState';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 
 type Filter = 'false' | 'true' | 'all';
 const FILTER_LABEL: Record<Filter, string> = {
@@ -37,6 +38,10 @@ export default function AdminLeadsPage() {
   const [error, setError]     = useState('');
   const [busyId, setBusyId]   = useState<string | null>(null);
   const [toast, setToast]     = useState('');
+  // Replaces the native confirm() for destructive lead deletion.
+  // Native confirm shows "staging.buildupai.net says ..." prefix +
+  // can't be styled to match the RTL Hebrew look.
+  const [pendingDelete, setPendingDelete] = useState<Lead | null>(null);
 
   function pushToast(msg: string) { setToast(msg); setTimeout(() => setToast(''), 3000); }
 
@@ -104,16 +109,17 @@ export default function AdminLeadsPage() {
       pushToast(`✗ ${e instanceof Error ? e.message : 'שגיאה'}`);
     } finally { setBusyId(null); }
   }
-  async function remove(l: Lead) {
-    if (!confirm('למחוק את הליד? פעולה זו אינה הפיכה.')) return;
-    setBusyId(l.id);
+  function requestRemove(l: Lead) { setPendingDelete(l); }
+  async function confirmRemove() {
+    if (!pendingDelete) return;
+    setBusyId(pendingDelete.id);
     try {
-      await adminApi.deleteLead(l.id);
+      await adminApi.deleteLead(pendingDelete.id);
       pushToast('✓ נמחק');
       load();
     } catch (e) {
       pushToast(`✗ ${e instanceof Error ? e.message : 'שגיאה'}`);
-    } finally { setBusyId(null); }
+    } finally { setBusyId(null); setPendingDelete(null); }
   }
 
   return (
@@ -212,7 +218,7 @@ export default function AdminLeadsPage() {
                             <Check className="h-3 w-3" /> סמן כטופל
                           </Button>
                         )}
-                        <Button size="sm" variant="ghost" onClick={() => remove(l)} disabled={busyId === l.id}
+                        <Button size="sm" variant="ghost" onClick={() => requestRemove(l)} disabled={busyId === l.id}
                                 className="text-red-600 hover:bg-red-50">
                           <Trash2 className="h-3 w-3" />
                         </Button>
@@ -231,6 +237,17 @@ export default function AdminLeadsPage() {
           {toast}
         </div>
       )}
+
+      <ConfirmDialog
+        open={!!pendingDelete}
+        title="מחיקת ליד"
+        message={pendingDelete ? `למחוק את הליד של ${pendingDelete.full_name}? פעולה זו אינה הפיכה.` : ''}
+        confirmLabel="מחק"
+        variant="destructive"
+        busy={!!busyId && busyId === pendingDelete?.id}
+        onConfirm={confirmRemove}
+        onCancel={() => setPendingDelete(null)}
+      />
     </div>
   );
 }

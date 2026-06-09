@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { TableToolbar, type PillOption } from '@/components/table/TableToolbar';
 import { useTableState } from '@/components/table/useTableState';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 
 const ROLE_LABEL: Record<string, string> = {
   admin:       'מנהל',
@@ -31,6 +32,11 @@ export default function AdminUsersPage() {
   const [addingBusy, setAddingBusy] = useState(false);
   const [addError, setAddError] = useState('');
   const [toasts, setToasts]     = useState<string[]>([]);
+  // Confirm dialog for "השבת" — disabling a user can kick them out of
+  // a live session mid-deal. Need to surface that consequence before
+  // an accidental click.
+  const [pendingDisable, setPendingDisable] = useState<AdminUser | null>(null);
+  const [toggling, setToggling] = useState(false);
 
   function pushToast(msg: string) {
     setToasts((t) => [...t, msg]);
@@ -70,14 +76,29 @@ export default function AdminUsersPage() {
   }
 
   async function toggle(u: AdminUser) {
-    const op = u.is_active ? 'disable' : 'enable';
+    // Re-activations don't need confirmation; only the destructive
+    // path needs a dialog.
+    if (u.is_active) { setPendingDisable(u); return; }
     try {
-      if (u.is_active) await adminApi.disableUser(u.id);
-      else             await adminApi.enableUser(u.id);
-      pushToast(op === 'disable' ? '✓ המשתמש הושבת' : '✓ המשתמש הופעל');
-      setUsers((arr) => arr.map((x) => (x.id === u.id ? { ...x, is_active: !x.is_active } : x)));
+      await adminApi.enableUser(u.id);
+      pushToast('✓ המשתמש הופעל');
+      setUsers((arr) => arr.map((x) => (x.id === u.id ? { ...x, is_active: true } : x)));
     } catch (e) {
       pushToast(`✗ ${e instanceof Error ? e.message : 'שגיאה'}`);
+    }
+  }
+  async function confirmDisable() {
+    if (!pendingDisable) return;
+    setToggling(true);
+    try {
+      await adminApi.disableUser(pendingDisable.id);
+      pushToast('✓ המשתמש הושבת');
+      setUsers((arr) => arr.map((x) => (x.id === pendingDisable.id ? { ...x, is_active: false } : x)));
+      setPendingDisable(null);
+    } catch (e) {
+      pushToast(`✗ ${e instanceof Error ? e.message : 'שגיאה'}`);
+    } finally {
+      setToggling(false);
     }
   }
 
@@ -279,6 +300,19 @@ export default function AdminUsersPage() {
           </div>
         ))}
       </div>
+
+      <ConfirmDialog
+        open={!!pendingDisable}
+        title="השבתת משתמש"
+        message={pendingDisable
+          ? `להשבית את ${pendingDisable.full_name || pendingDisable.phone}? המשתמש לא יוכל להתחבר; אם הוא מחובר כרגע — הסשן ינותק בבקשת ה-API הבאה. ניתן להפעיל מחדש בכל עת.`
+          : ''}
+        confirmLabel="השבת"
+        variant="destructive"
+        busy={toggling}
+        onConfirm={confirmDisable}
+        onCancel={() => setPendingDisable(null)}
+      />
     </div>
   );
 }

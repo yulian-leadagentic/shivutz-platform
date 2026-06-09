@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 
 // ── Empty-row helper ────────────────────────────────────────────────────
 
@@ -231,6 +232,10 @@ function TiersPanel({
   const [draft, setDraft] = useState<TierInput>(emptyTierInput());
   const [savingId, setSavingId] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  // Styled confirm in place of native — tier deletion can break
+  // existing corp subscriptions; an explicit dialog with the tier
+  // name reduces fat-finger risk.
+  const [pendingDelete, setPendingDelete] = useState<MarketplaceTier | null>(null);
 
   async function handleAdd() {
     if (!categoryCode) return;
@@ -258,12 +263,14 @@ function TiersPanel({
     }
   }
 
-  async function handleDelete(t: MarketplaceTier) {
-    if (!confirm(`למחוק את המסלול "${t.name_he}"?`)) return;
-    setSavingId(t.id); setErr(null);
+  function handleDelete(t: MarketplaceTier) { setPendingDelete(t); }
+  async function confirmDelete() {
+    if (!pendingDelete) return;
+    setSavingId(pendingDelete.id); setErr(null);
     try {
-      await marketplaceAdminApi.deleteTier(t.id);
+      await marketplaceAdminApi.deleteTier(pendingDelete.id);
       onChange();
+      setPendingDelete(null);
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'delete_failed');
     } finally {
@@ -327,6 +334,18 @@ function TiersPanel({
           </div>
         )}
       </CardContent>
+      <ConfirmDialog
+        open={!!pendingDelete}
+        title="מחיקת מסלול שיווק"
+        message={pendingDelete
+          ? `למחוק את המסלול "${pendingDelete.name_he}"? תאגידים שכרגע מנויים על המסלול הזה לא יוכלו יותר לראות אותו.`
+          : ''}
+        confirmLabel="מחק מסלול"
+        variant="destructive"
+        busy={savingId === pendingDelete?.id}
+        onConfirm={confirmDelete}
+        onCancel={() => setPendingDelete(null)}
+      />
     </Card>
   );
 }
