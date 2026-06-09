@@ -5,8 +5,10 @@ import Link from 'next/link';
 import {
   Clock, Briefcase, Handshake, Users, Building2, HardHat,
   Loader2, AlertTriangle, ChevronLeft, ShieldCheck, Hourglass, Wallet, TrendingUp, Globe2,
+  BarChart3, Inbox,
 } from 'lucide-react';
 import { adminApi, type AdminDashboard, type AdminAlerts } from '@/lib/adminApi';
+import { EmptyState } from '@/components/admin/EmptyState';
 import { tenderApi } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -300,7 +302,11 @@ export default function AdminDashboard() {
         </CardHeader>
         <CardContent className="p-0">
           {profMerged.length === 0 ? (
-            <p className="text-center text-slate-400 py-8">אין נתונים</p>
+            <EmptyState
+              icon={BarChart3}
+              title="אין נתונים על מקצועות"
+              description="כשיגיעו דרישות לעובדים, יוצג כאן ביקוש מול היצע לפי מקצוע."
+            />
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -393,7 +399,7 @@ function QueueCard({ title, subtitle, rows }: {
       </CardHeader>
       <CardContent className="p-0">
         {rows.length === 0 ? (
-          <p className="text-center text-slate-400 py-6 text-sm">אין רישומים</p>
+          <EmptyState icon={Inbox} title="התור ריק" description="אין רישומים שדורשים מעקב כרגע." />
         ) : (
           <div className="divide-y divide-slate-100 max-h-72 overflow-y-auto">
             {rows.map((r) => (

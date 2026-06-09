@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { TableToolbar } from '@/components/table/TableToolbar';
 import { useTableState } from '@/components/table/useTableState';
 import { OrgSummaryHeader } from '@/components/admin/OrgSummaryHeader';
+import { EmptyState } from '@/components/admin/EmptyState';
 
 type StatusFilter = 'all' | 'approved' | 'pending' | 'rejected' | 'suspended';
 const STATUS_FILTER_LABEL: Record<StatusFilter, string> = {
@@ -199,7 +200,11 @@ export default function AdminOrgsPage() {
               <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
             </div>
           ) : filtered.length === 0 ? (
-            <p className="text-center text-slate-400 py-8">לא נמצאו ארגונים</p>
+            <EmptyState
+              icon={Building2}
+              title="לא נמצאו ארגונים"
+              description="נסה לשנות את הסינון או החיפוש כדי לראות תוצאות נוספות."
+            />
           ) : (
             <div className="-mx-4 sm:mx-0 overflow-x-auto">
             <table className="w-full text-sm min-w-[640px] sm:min-w-0">

@@ -9,6 +9,8 @@ import { Badge } from '@/components/ui/badge';
 import { TableToolbar, type PillOption } from '@/components/table/TableToolbar';
 import { useTableState } from '@/components/table/useTableState';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { EmptyState } from '@/components/admin/EmptyState';
+import { Users } from 'lucide-react';
 
 const ROLE_LABEL: Record<string, string> = {
   admin:       'מנהל',
@@ -244,7 +246,11 @@ export default function AdminUsersPage() {
           ) : error ? (
             <p className="p-4 text-sm text-red-600">{error}</p>
           ) : filtered.length === 0 ? (
-            <p className="text-center text-slate-400 py-10">אין משתמשים תואמים</p>
+            <EmptyState
+              icon={Users}
+              title="לא נמצאו משתמשים"
+              description="אין משתמשים שתואמים את הסינון או החיפוש הנוכחי."
+            />
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">

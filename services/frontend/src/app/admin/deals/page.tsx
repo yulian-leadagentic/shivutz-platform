@@ -9,8 +9,9 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import {
   Loader2, AlertTriangle, Building2, HardHat, Phone, Mail, User,
-  Filter as FilterIcon, ArrowDown, ArrowUp, Clock, X,
+  Filter as FilterIcon, ArrowDown, ArrowUp, Clock, X, Inbox,
 } from 'lucide-react';
+import { EmptyState } from '@/components/admin/EmptyState';
 import { adminApi, type AdminDealRow } from '@/lib/adminApi';
 import { dealRef } from '@/lib/utils';
 import { Card, CardContent } from '@/components/ui/card';
@@ -356,7 +357,11 @@ export default function AdminDealsPage() {
               <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
             </div>
           ) : filtered.length === 0 ? (
-            <p className="text-center text-slate-400 py-12">אין עסקאות תואמות לסינון</p>
+            <EmptyState
+              icon={Inbox}
+              title="לא נמצאו עסקאות"
+              description="אין עסקאות שתואמות את הסינון הנוכחי. נקה את הסינון או שנה את החיפוש כדי לראות תוצאות."
+            />
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm min-w-[1100px]">
