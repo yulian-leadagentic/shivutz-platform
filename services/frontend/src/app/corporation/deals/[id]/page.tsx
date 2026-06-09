@@ -5,7 +5,7 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import {
   Loader2, Send, FileText, Users, CheckCircle, XCircle,
   AlertTriangle, MessageSquare, ChevronDown, ChevronUp,
-  BadgeCheck, CircleAlert, UserCheck, CreditCard, ShieldCheck,
+  BadgeCheck, CircleAlert, UserCheck, CreditCard, ShieldCheck, Lock,
 } from 'lucide-react';
 import { dealApi, workerApi, paymentApi, memberApi } from '@/lib/api';
 import { orgApi } from '@/lib/api/organizations';
@@ -1248,7 +1248,35 @@ function CorporationDealPageInner() {
           </Card>
         )}
 
-        {/* Messages */}
+        {/* Messages — gated on `corp_revealed_at` per R5 item #5.
+            Until the contractor has clicked "הצג פרטי תאגיד" the
+            two parties don't yet have a working channel; opening
+            the chat before the reveal would leak corp identity in
+            messages (the sender label, profile info, etc.). Once
+            the contractor has revealed (corp_revealed_at set) OR
+            the deal is past corp_committed (already accepted /
+            active / etc.), the chat opens. Until then we show a
+            placeholder explaining the contract: "wait for the
+            contractor to view your details, then the chat opens". */}
+        {(() => {
+          const dealAny = deal as { corp_revealed_at?: string | null; status?: string };
+          const chatUnlocked = !!dealAny.corp_revealed_at
+            || (dealAny.status && !['proposed', 'corp_committed'].includes(dealAny.status));
+          if (!chatUnlocked) {
+            return (
+              <Card style={{ minHeight: 120 }}>
+                <CardHeader className="pb-3 border-b border-slate-100">
+                  <CardTitle className="text-base flex items-center gap-2 text-slate-500">
+                    <Lock className="h-4 w-4" /> צ׳אט עם הקבלן
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="py-6 text-center text-sm text-slate-500 leading-relaxed">
+                  הצ׳אט יפתח לאחר שהקבלן יציג את פרטי איש הקשר.
+                </CardContent>
+              </Card>
+            );
+          }
+          return (
         <Card className={`flex flex-col ${isProposed ? '' : ''}`} style={{ minHeight: 340 }}>
           <CardHeader className="pb-3 border-b border-slate-100">
             <CardTitle className="text-base">צ׳אט עם הקבלן</CardTitle>
@@ -1294,6 +1322,8 @@ function CorporationDealPageInner() {
             </div>
           </CardContent>
         </Card>
+          );
+        })()}
       </div>
 
       {/* ── Report section ── */}

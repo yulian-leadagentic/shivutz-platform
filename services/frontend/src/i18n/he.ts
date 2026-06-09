@@ -66,20 +66,29 @@ export const EXPERIENCE_RANGES: readonly { code: ExperienceRange; label: string 
 // Label/number maps are typed as `Record<string, ...>` so callers can index with
 // raw API strings; the `ExperienceRange` union is exported separately for
 // call sites that want strict typing.
+// R2#6 — Product simplified the experience picker to a binary
+// "ללא ניסיון" / "עם ניסיון". The 5-bucket scale (0-6/6-12/12-24/
+// 24-36/36+ months) is kept in the keys for backward compatibility
+// with existing data + the matcher's `min_experience` floor, but
+// they all collapse to one of two labels here:
+//   '0-6'  → ללא ניסיון   (any of the "0-something" buckets)
+//   '6+'   → עם ניסיון   (anything past the 6-month floor)
+// Old keys map onto the new labels so legacy worker rows render
+// without producing "—".
 export const EXPERIENCE_LABEL: Record<string, string> = {
-  '0-6':   '0–6 חודשים',
-  '6-12':  '6–12 חודשים',
-  '12-24': '12–24 חודשים',
-  '24-36': '24–36 חודשים',
-  '36+':   '36+ חודשים',
+  '0-6':   'ללא ניסיון',
+  '6-12':  'עם ניסיון',
+  '12-24': 'עם ניסיון',
+  '24-36': 'עם ניסיון',
+  '36+':   'עם ניסיון',
 };
 
 export const EXPERIENCE_LABEL_SHORT: Record<string, string> = {
-  '0-6':   '0–6 ח׳',
-  '6-12':  '6–12 ח׳',
-  '12-24': '12–24 ח׳',
-  '24-36': '24–36 ח׳',
-  '36+':   '36+ ח׳',
+  '0-6':   'ללא',
+  '6-12':  'עם',
+  '12-24': 'עם',
+  '24-36': 'עם',
+  '36+':   'עם',
 };
 
 export const EXPERIENCE_LOWER_MONTHS: Record<string, number> = {

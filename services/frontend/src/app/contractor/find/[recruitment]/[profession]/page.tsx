@@ -323,10 +323,17 @@ export default function FindFormPage() {
             </div>
           </div>
 
-          {/* 3. Experience range pills — multi-select */}
+          {/* 3. Experience picker — collapsed per R2#6 to a binary
+              "ללא ניסיון" / "עם ניסיון". Internally we still write
+              into the same `expRanges` state so the matcher's
+              min_experience floor logic in handleSubmit() works
+              without changes: empty array → min 0 (no constraint),
+              ['6+'] → min 6 months (anything past entry-level). The
+              old 5-range UI confused contractors who weren't sure
+              what bucket their needs fell into. */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-              ניסיון <span className="text-[10px] font-normal text-slate-500">(אפשר לבחור כמה)</span>
+              ניסיון
             </label>
             <div className="flex flex-wrap gap-1.5">
               <button
@@ -340,23 +347,17 @@ export default function FindFormPage() {
               >
                 ללא ניסיון
               </button>
-              {EXPERIENCE_RANGES.map((r) => {
-                const active = expRanges.includes(r.code);
-                return (
-                  <button
-                    type="button"
-                    key={r.code}
-                    onClick={() => toggleExpRange(r.code)}
-                    className={`text-xs px-3 py-1.5 rounded-full border transition ${
-                      active
-                        ? 'bg-brand-600 text-white border-brand-600'
-                        : 'bg-white text-slate-700 border-slate-300 hover:border-brand-400'
-                    }`}
-                  >
-                    {r.label}
-                  </button>
-                );
-              })}
+              <button
+                type="button"
+                onClick={() => setExpRanges(['6-12'])}
+                className={`text-xs px-3 py-1.5 rounded-full border transition ${
+                  expRanges.length > 0
+                    ? 'bg-brand-600 text-white border-brand-600'
+                    : 'bg-white text-slate-700 border-slate-300 hover:border-brand-400'
+                }`}
+              >
+                עם ניסיון
+              </button>
             </div>
           </div>
 

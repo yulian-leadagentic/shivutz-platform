@@ -692,10 +692,26 @@ function DealCard({
           {group.length === 0 ? (
             <div className="rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2.5 inline-flex items-start gap-2">
               <MessageSquare className="h-4 w-4 text-slate-400 shrink-0 mt-0.5" />
+              {/* Copy split per R2#8 — product wanted the no-match
+                  state to read as "system is actively working on it"
+                  rather than "we've already given up and notified
+                  everyone". The previous "נשלחה הודעה" wording felt
+                  passive. New text emphasises the active search +
+                  the BuildUp agent broadcasting the request, plus a
+                  WhatsApp follow-up promise so the contractor knows
+                  what to expect next. */}
               <p className="text-sm text-slate-700 leading-snug">
-                {state === 'noMatch'
-                  ? 'נשלחה הודעה לכל התאגידים הרשומים'
-                  : <>הדרישה שלך לעובדים בתחום <span className="font-bold text-slate-900">{profLabel}</span> הופצה לכל התאגידים הרשומים אצלינו</>}
+                {state === 'noMatch' ? (
+                  <>
+                    <span className="font-semibold">המערכת מחפשת התאמות</span>
+                    {' — '}
+                    הסוכן שלנו מפיץ את הבקשה לכל התאגידים הרשומים במערכת.
+                    <br />
+                    <span className="text-xs text-slate-500">תקבל הודעת וואטסאפ ברגע שתאגיד יציע עובדים.</span>
+                  </>
+                ) : (
+                  <>הדרישה שלך לעובדים בתחום <span className="font-bold text-slate-900">{profLabel}</span> הופצה לכל התאגידים הרשומים אצלינו</>
+                )}
               </p>
             </div>
           ) : (
@@ -778,6 +794,21 @@ function DealCard({
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-semibold text-slate-900 text-sm">{corpLabel}</span>
+                            {/* For corp_committed (pre-reveal) deals,
+                                surface a pulsing "אישר N עובדים — לחץ
+                                להמשך תהליך" call-to-action so the
+                                contractor knows where the next step
+                                is. R2#10 — product wanted the message
+                                to blink so the tile stands out in a
+                                list of mixed states. corpSuffix (the
+                                post-approval "אישר N עובדים") still
+                                renders for already-approved deals. */}
+                            {canViewCorp && d.worker_count != null && (
+                              <span className="inline-flex items-center gap-1.5 text-sm text-emerald-700 font-semibold animate-pulse">
+                                <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" aria-hidden />
+                                אישר {d.worker_count} עובדים — לחץ להמשך תהליך
+                              </span>
+                            )}
                             {corpSuffix && (
                               <span className="text-sm text-emerald-700 font-semibold">{corpSuffix}</span>
                             )}
