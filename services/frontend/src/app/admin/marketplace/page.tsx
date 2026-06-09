@@ -163,9 +163,18 @@ function CategoriesPanel({
       <CardContent className="p-0">
         {creating && (
           <div className="px-4 py-3 border-y border-slate-100 bg-slate-50/60 space-y-2">
-            <Input placeholder="code (e.g. vehicles)" value={newCode} onChange={e => setNewCode(e.target.value)} dir="ltr" />
+            {/* Field hints in Hebrew above each input; the value
+                itself is the only English string in the form
+                (codes + English name are technical fields). */}
+            <div>
+              <Input placeholder="vehicles" value={newCode} onChange={e => setNewCode(e.target.value)} dir="ltr" />
+              <p className="text-[10px] text-slate-400 mt-0.5">קוד טכני באנגלית — ללא רווחים, באותיות קטנות</p>
+            </div>
             <Input placeholder="שם בעברית" value={newHe} onChange={e => setNewHe(e.target.value)} />
-            <Input placeholder="Name (English)" value={newEn} onChange={e => setNewEn(e.target.value)} dir="ltr" />
+            <div>
+              <Input placeholder="Vehicles" value={newEn} onChange={e => setNewEn(e.target.value)} dir="ltr" />
+              <p className="text-[10px] text-slate-400 mt-0.5">שם באנגלית — מוצג לתאגידים שבחרו ממשק באנגלית</p>
+            </div>
             {err && <p className="text-xs text-red-600">{err}</p>}
             <div className="flex gap-2">
               <Button size="sm" onClick={handleCreate} disabled={saving || !newCode || !newHe || !newEn}>
@@ -430,7 +439,7 @@ function TierEditor({
           <Input value={value.name_he} onChange={e => set('name_he', e.target.value)} placeholder="בסיסי" />
         </div>
         <div className="space-y-1">
-          <Label>Name (English)</Label>
+          <Label>שם באנגלית</Label>
           <Input value={value.name_en} onChange={e => set('name_en', e.target.value)} placeholder="Basic" dir="ltr" />
         </div>
       </div>
