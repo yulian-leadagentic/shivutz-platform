@@ -199,6 +199,44 @@ func (h *Handler) CreateSearch(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// ── Server-side dedupe window ─────────────────────────────────
+	// Before inserting, look for an identical worker_search this
+	// contractor created in the last 90 seconds. If found, return
+	// it instead of creating a duplicate. Covers:
+	//   - Frontend double-click race (the primary cause — frontend
+	//     guard helps too but a network blip can race past it)
+	//   - Backend retries when the gateway times out at exactly
+	//     the wrong moment
+	//   - Legitimate "I submitted the same thing again by accident"
+	// 90s is short enough that the same contractor genuinely
+	// wanting to re-post (e.g. fix a typo + resubmit minutes later)
+	// can still do so.
+	var existingID string
+	dedupeRow := h.db.QueryRow(
+		`SELECT id FROM worker_searches
+		  WHERE contractor_id   = ?
+		    AND recruitment_type = ?
+		    AND COALESCE(region, '')          = COALESCE(?, '')
+		    AND profession_type = ?
+		    AND start_date      = ?
+		    AND status         IN ('open', 'partially_matched')
+		    AND created_at     >= DATE_SUB(NOW(), INTERVAL 90 SECOND)
+		  ORDER BY created_at DESC
+		  LIMIT 1`,
+		contractorID, recruitment, nullStr(body.Region),
+		body.ProfessionType, body.StartDate,
+	)
+	if err := dedupeRow.Scan(&existingID); err == nil && existingID != "" {
+		// Idempotent — return the existing search rather than insert
+		// a duplicate. Status code is 200 (not 201) so a careful
+		// caller can tell the difference, but the body shape is
+		// identical so the existing frontend path doesn't break.
+		writeJSON(w, 200, map[string]any{"id": existingID, "status": "open", "deduped": true})
+		return
+	}
+	// (err == sql.ErrNoRows is the expected path — no existing
+	// match, fall through to insert below.)
+
 	id := uuid.NewString()
 	origins, _ := json.Marshal(body.OriginPreference)
 	langs := normalizeLangs(body.RequiredLanguages)
