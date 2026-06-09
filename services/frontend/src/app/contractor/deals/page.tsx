@@ -471,12 +471,18 @@ function DealCard({
   useEffect(() => {
     if (!expandedDealId) return;
     const deal = group.find((d) => d.id === expandedDealId);
+    if (!deal) return; // group can be stale relative to expandedDealId
     // Trigger corp identity lookup when the deal is either approved
     // onwards (REVEALED) OR has corp_revealed_at set (contractor
     // clicked the reveal button on the detail page but hasn't yet
     // formally approved). Same gate as the inline panel below.
+    // (Previously read `.corp_revealed_at` BEFORE the !deal guard —
+    // when expandedDealId pointed at a deal that had since been
+    // filtered out of `group`, that threw
+    // "Cannot read properties of undefined (reading
+    // 'corp_revealed_at')" and crashed the whole list.)
     const revealedHere = (deal as { corp_revealed_at?: string | null }).corp_revealed_at;
-    if (!deal || (!REVEALED.includes(deal.status) && !revealedHere) || !deal.corporation_id) return;
+    if ((!REVEALED.includes(deal.status) && !revealedHere) || !deal.corporation_id) return;
     if (corpById[deal.id] || loadingCorp[deal.id]) return;
     setLoadingCorp((s) => ({ ...s, [deal.id]: true }));
     orgApi.getCorporation(deal.corporation_id)

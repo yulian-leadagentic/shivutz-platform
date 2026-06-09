@@ -600,6 +600,30 @@ def get_contractor(org_id: str):
         row = cur.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Contractor not found")
+        # Defensive serialization — mirrors get_corporation. The
+        # contractors table has Decimal commission_per_worker_amount,
+        # datetime fields, and a JSON gov_registry_snapshot column
+        # (added in migration 045) that PyMySQL returns as a raw
+        # string. Normalise everything up-front so FastAPI's JSON
+        # encoder doesn't hit a value it can't walk and bubble a 500.
+        import json as _json
+        from decimal import Decimal
+        for k, v in list(row.items()):
+            if isinstance(v, Decimal):
+                row[k] = float(v)
+            elif hasattr(v, "isoformat"):
+                row[k] = v.isoformat()
+            elif isinstance(v, (bytes, bytearray)):
+                try:
+                    row[k] = v.decode("utf-8")
+                except Exception:
+                    row[k] = None
+        # gov_registry_snapshot is JSON-as-string on the wire; parse it.
+        if isinstance(row.get("gov_registry_snapshot"), str):
+            try:
+                row["gov_registry_snapshot"] = _json.loads(row["gov_registry_snapshot"])
+            except Exception:
+                row["gov_registry_snapshot"] = None
         return row
     finally:
         conn.close()

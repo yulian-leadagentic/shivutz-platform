@@ -481,6 +481,32 @@ def get_corporation(org_id: str):
         row = cur.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Corporation not found")
+        # Defensive serialization — the corporations table accreted
+        # mixed-type columns over time (DECIMAL commission_per_worker_amount,
+        # DATETIME created_at/verification_*, JSON threshold_requirements).
+        # FastAPI's default encoder handles datetime + Decimal but mid-
+        # version regressions in Pydantic / PyMySQL surfaced 500s in
+        # prod where the encoder couldn't walk a particular row. Normalise
+        # everything to JSON-friendly primitives up-front so the route
+        # never bubbles an encoder error.
+        import json as _json
+        from decimal import Decimal
+        for k, v in list(row.items()):
+            if isinstance(v, Decimal):
+                row[k] = float(v)
+            elif hasattr(v, "isoformat"):
+                row[k] = v.isoformat()
+            elif isinstance(v, (bytes, bytearray)):
+                try:
+                    row[k] = v.decode("utf-8")
+                except Exception:
+                    row[k] = None
+        # Parse JSON columns (PyMySQL returns them as raw strings).
+        if isinstance(row.get("threshold_requirements"), str):
+            try:
+                row["threshold_requirements"] = _json.loads(row["threshold_requirements"])
+            except Exception:
+                row["threshold_requirements"] = None
         return row
     finally:
         conn.close()
