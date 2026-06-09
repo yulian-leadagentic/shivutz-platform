@@ -32,13 +32,18 @@ const STUCK_FILTERS: { key: StuckFilter; label: string; tone: string }[] = [
   { key: 'neither',    label: 'סגור / לא תקוע',    tone: 'bg-emerald-500 text-white' },
 ];
 
+// QA-R5 — labels mirror StatusBadge's canonical Hebrew so the admin
+// reads the same vocabulary across every surface. Previously this
+// filter row said "הצעה נכנסה" / "התאגיד הגיב" / "הקבלן אישר" while
+// the dashboard, /admin/deals/[id] StatusBadge, and the contractor
+// app all said different things for the same statuses.
 const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
   { key: 'all',            label: 'כל הסטטוסים' },
-  { key: 'proposed',       label: 'הצעה נכנסה' },
-  { key: 'corp_committed', label: 'התאגיד הגיב' },
-  { key: 'approved',       label: 'הקבלן אישר' },
+  { key: 'proposed',       label: 'ממתין לאישור התאגיד' },
+  { key: 'corp_committed', label: 'ממתין לאישור הקבלן' },
+  { key: 'approved',       label: 'התקשרות אושרה' },
   { key: 'closed',         label: 'נסגרה' },
-  { key: 'cancelled',      label: 'בוטלה / נדחתה' },
+  { key: 'cancelled',      label: 'לא נסגרה' },
   { key: 'disputed',       label: 'במחלוקת' },
 ];
 

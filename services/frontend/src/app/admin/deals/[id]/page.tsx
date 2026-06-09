@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import StatusBadge from '@/components/StatusBadge';
+import { dealRef } from '@/lib/utils';
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
@@ -328,7 +329,7 @@ export default function AdminDealDetailPage() {
       {/* Header */}
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">עסקה #{id.slice(0, 8)}</h1>
+          <h1 className="text-2xl font-bold text-slate-900">עסקה #{dealRef(id)}</h1>
           <p className="text-sm text-slate-500 mt-0.5">נוצרה: {fmt(deal.created_at)}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -453,13 +454,33 @@ export default function AdminDealDetailPage() {
             </div>
           )}
 
-          {/* Discrepancy highlight */}
+          {/* Discrepancy highlight — QA-R5: was rendering the raw
+              JSON ({"reported_workers":3,"actual":5}) which made the
+              admin parse string-as-data on the dispute resolution
+              screen. Now formats each numeric field as a labelled
+              cell so admins can see the diff at a glance. */}
           {deal.discrepancy_flag && deal.discrepancy_details && (
             <div className="mt-4 flex items-start gap-3 bg-red-50 border border-red-200 rounded-lg p-3">
               <AlertTriangle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
-              <div>
-                <p className="text-sm font-semibold text-red-800">אי-התאמה בין הדוחות</p>
-                <p className="text-xs text-red-700 mt-0.5">{JSON.stringify(deal.discrepancy_details)}</p>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-red-800 mb-1.5">אי-התאמה בין הדוחות</p>
+                {typeof deal.discrepancy_details === 'object' && deal.discrepancy_details !== null ? (
+                  <dl className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-0.5 text-xs">
+                    {Object.entries(deal.discrepancy_details as Record<string, unknown>).map(([k, v]) => {
+                      const rendered = (v === null || v === undefined) ? '—'
+                        : typeof v === 'object' ? JSON.stringify(v)
+                        : String(v);
+                      return (
+                        <div key={k} className="contents">
+                          <dt className="text-red-600 font-medium">{k}</dt>
+                          <dd className="text-red-900">{rendered}</dd>
+                        </div>
+                      );
+                    })}
+                  </dl>
+                ) : (
+                  <p className="text-xs text-red-700">{String(deal.discrepancy_details)}</p>
+                )}
               </div>
             </div>
           )}

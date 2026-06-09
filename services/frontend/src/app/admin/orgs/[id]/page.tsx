@@ -409,8 +409,26 @@ function OrgDetailContent() {
                       <span className="font-medium">{h.action}</span>
                       <span className="text-xs text-slate-400" dir="ltr">{fmtDate(h.created_at)}</span>
                     </div>
-                    {h.metadata && (
-                      <pre className="mt-1 text-xs text-slate-500 bg-slate-50 rounded p-2 overflow-x-auto" dir="ltr">{JSON.stringify(h.metadata, null, 2)}</pre>
+                    {/* QA-R5 — was rendering the raw JSON metadata
+                        as `<pre>{JSON.stringify(...)}</pre>` which made
+                        the audit log nearly unreadable. Now formats
+                        each key as a labelled dl row. Falls back to
+                        stringify only when the value isn't a flat
+                        object (e.g. nested {old, new} diffs). */}
+                    {h.metadata && typeof h.metadata === 'object' && (
+                      <dl className="mt-1.5 grid grid-cols-[max-content_1fr] gap-x-3 gap-y-0.5 text-xs">
+                        {Object.entries(h.metadata as Record<string, unknown>).map(([k, v]) => {
+                          const rendered = (v === null || v === undefined) ? '—'
+                            : typeof v === 'object' ? JSON.stringify(v)
+                            : String(v);
+                          return (
+                            <div key={k} className="contents">
+                              <dt className="text-slate-400 font-medium">{k}</dt>
+                              <dd className="text-slate-700 break-all">{rendered}</dd>
+                            </div>
+                          );
+                        })}
+                      </dl>
                     )}
                   </li>
                 ))}

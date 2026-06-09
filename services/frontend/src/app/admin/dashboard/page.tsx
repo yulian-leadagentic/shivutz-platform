@@ -10,18 +10,20 @@ import { adminApi, type AdminDashboard, type AdminAlerts } from '@/lib/adminApi'
 import { tenderApi } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { resolveStatus } from '@/components/StatusBadge';
 
 type TenderSummary = { pending_publish: number; open_for_bids: number; awaiting_contact: number; in_progress: number };
 
-const DEAL_STATUS_LABEL: Record<string, string> = {
-  proposed:           'הצעה נשלחה',
-  corp_committed:     'תאגיד הציג רשימה',
-  approved:           'הקבלן אישר',
-  rejected:           'נדחתה',
-  expired:            'פגה',
-  cancelled_by_corp:  'בוטלה ע״י תאגיד',
-  closed:             'נסגרה',
-};
+// QA-R5 — replaced the hand-rolled label map with the canonical
+// StatusBadge resolver so this dashboard reads the SAME label +
+// colour for each status as every other admin / corp / contractor
+// surface. Previously the dashboard called "proposed" → "הצעה
+// נשלחה" while /admin/deals called it "הצעה נכנסה" — admins were
+// effectively learning three vocabularies for the same data.
+const DEAL_STATUS_CODES = [
+  'proposed', 'corp_committed', 'approved', 'closed',
+  'cancelled_by_corp', 'rejected', 'expired',
+] as const;
 
 function fmtDate(iso: string | null | undefined) {
   if (!iso) return '—';
@@ -111,7 +113,7 @@ export default function AdminDashboard() {
     <div className="space-y-6">
       <div className="flex items-baseline justify-between flex-wrap gap-2">
         <h1 className="text-2xl font-bold text-slate-900">לוח בקרה</h1>
-        <p className="text-xs text-slate-400" dir="ltr">as of {fmtDate(stats.as_of)}</p>
+        <p className="text-xs text-slate-400">נכון ל-{fmtDate(stats.as_of)}</p>
       </div>
 
       {/* Corp-response overdue banner — proposed deals past the
@@ -242,12 +244,24 @@ export default function AdminDashboard() {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {Object.entries(DEAL_STATUS_LABEL).map(([code, label]) => (
-              <div key={code} className="p-3 rounded-md bg-slate-50 border border-slate-200">
-                <p className="text-xs text-slate-500">{label}</p>
-                <p className="text-2xl font-bold text-slate-800 mt-0.5">{queues.by_status[code] ?? 0}</p>
-              </div>
-            ))}
+            {DEAL_STATUS_CODES.map((code) => {
+              const { label, variant } = resolveStatus(code, 'admin');
+              // Tile colours match the variant — paint the tile with
+              // the same colour story as the status badge would.
+              const tileTone =
+                variant === 'sky'         ? 'bg-sky-50 border-sky-200 text-sky-900' :
+                variant === 'yellow'      ? 'bg-yellow-50 border-yellow-200 text-yellow-900' :
+                variant === 'orange'      ? 'bg-orange-50 border-orange-200 text-orange-900' :
+                variant === 'success'     ? 'bg-emerald-50 border-emerald-200 text-emerald-900' :
+                variant === 'destructive' ? 'bg-red-50 border-red-200 text-red-900' :
+                                            'bg-slate-50 border-slate-200 text-slate-800';
+              return (
+                <div key={code} className={`p-3 rounded-md border ${tileTone}`}>
+                  <p className="text-xs opacity-70">{label}</p>
+                  <p className="text-2xl font-bold mt-0.5">{queues.by_status[code] ?? 0}</p>
+                </div>
+              );
+            })}
           </div>
         </CardContent>
       </Card>

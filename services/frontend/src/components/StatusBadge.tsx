@@ -7,38 +7,67 @@ interface StatusConfig {
   variant: BadgeVariant;
 }
 
+// QA-R5: SINGLE SOURCE OF TRUTH for deal/proposal/org status
+// labels + colours. The cross-app palette is:
+//
+//   BLUE   (sky)    → ממתינות לתאגיד          (proposed)
+//   YELLOW          → ממתינות לאישורך         (corp_committed)
+//   ORANGE          → התקשרות אושרה           (approved+running)
+//   GREEN  (success)→ נסגרה                  (closed / completed)
+//   RED  (destructive) → לא נסגרה            (cancelled / rejected)
+//   PURPLE (navy)   → במחלוקת                 (disputed)
+//
+// All three deal-status surfaces (admin dashboard, /admin/deals,
+// /admin/deals/[id], /contractor/deals, /corporation/deals,
+// OrgSummaryHeader) MUST go through StatusBadge so the language and
+// colour story stays consistent. Pre-tonight every page had a
+// hand-rolled mini-map and they had drifted into 3 different Hebrew
+// labels for the same status ("הצעה נשלחה" vs "הצעה נכנסה" vs
+// "הוצע") and 3 different colour stories (sky vs slate vs primary).
+
 // Default labels — written from the contractor / admin / neutral
 // point of view. The corporation page passes perspective="corporation"
-// to override the entries that read as third-person from the corp's
-// own screen (e.g. "תאגיד הגיב" makes sense to a contractor reading
-// "the other side responded" — not to a corp reading about itself).
+// to override entries that read awkwardly from the corp's own screen.
 const STATUS_MAP: Record<string, StatusConfig> = {
-  // Job request statuses
-  open:               { label: 'פתוח',           variant: 'default' },
+  // ── Job request statuses ─────────────────────────────────────
+  open:               { label: 'פתוח',           variant: 'sky' },
   draft:              { label: 'טיוטה',          variant: 'secondary' },
   matched:            { label: 'מותאם',          variant: 'purple' },
-  in_negotiation:     { label: 'במשא ומתן',      variant: 'warning' },
+  in_negotiation:     { label: 'במשא ומתן',      variant: 'yellow' },
   fulfilled:          { label: 'הושלם',          variant: 'success' },
   cancelled:          { label: 'בוטל',           variant: 'destructive' },
 
-  // Deal / proposal statuses
-  proposed:           { label: 'הוצע',           variant: 'default' },
-  corp_committed:     { label: 'תאגיד הגיב',     variant: 'warning' },
-  counter_proposed:   { label: 'הצעה נגדית',     variant: 'warning' },
-  accepted:           { label: 'אושר',           variant: 'success' },
-  active:             { label: 'פעיל',           variant: 'success' },
-  reporting:          { label: 'בדיווח',         variant: 'warning' },
-  completed:          { label: 'הסתיים',         variant: 'success' },
-  closed:             { label: 'סגור',           variant: 'success' },
-  disputed:           { label: 'במחלוקת',        variant: 'destructive' },
-  rejected:           { label: 'נדחה',           variant: 'destructive' },
-  cancelled_by_corp:  { label: 'בוטל ע״י תאגיד', variant: 'destructive' },
-  cancelled_by_contractor: { label: 'לא נסגרה',  variant: 'secondary' },
-  expired:            { label: 'פג תוקף',        variant: 'destructive' },
+  // ── Deal / proposal statuses ────────────────────────────────
+  // BLUE — request sent to corp, no commitment yet.
+  proposed:           { label: 'ממתין לאישור התאגיד', variant: 'sky' },
+  counter_proposed:   { label: 'הצעה נגדית',         variant: 'sky' },
 
-  // Org approval statuses
-  pending:            { label: 'ממתין לאישור',   variant: 'warning' },
-  approved:           { label: 'מאושר',          variant: 'success' },
+  // YELLOW — corp committed workers, contractor must act.
+  corp_committed:     { label: 'ממתין לאישורך',      variant: 'yellow' },
+
+  // ORANGE — contractor approved; engagement is running off-platform.
+  // The four backend statuses below are the same UX bucket from the
+  // user's perspective and product asked for the consolidated label
+  // "התקשרות אושרה" instead of the historical mix.
+  approved:           { label: 'התקשרות אושרה',      variant: 'orange' },
+  accepted:           { label: 'התקשרות אושרה',      variant: 'orange' },
+  active:             { label: 'התקשרות אושרה',      variant: 'orange' },
+  reporting:          { label: 'התקשרות אושרה',      variant: 'orange' },
+
+  // GREEN — work delivered, contractor confirmed close.
+  completed:          { label: 'נסגרה',             variant: 'success' },
+  closed:             { label: 'נסגרה',             variant: 'success' },
+
+  // RED — terminated states.
+  disputed:           { label: 'במחלוקת',           variant: 'purple' },
+  rejected:           { label: 'לא נסגרה',          variant: 'destructive' },
+  cancelled_by_corp:  { label: 'בוטל ע״י תאגיד',    variant: 'destructive' },
+  cancelled_by_contractor: { label: 'לא נסגרה',     variant: 'destructive' },
+  expired:            { label: 'פג תוקף',           variant: 'destructive' },
+
+  // ── Org approval statuses ───────────────────────────────────
+  pending:            { label: 'ממתין לאישור',      variant: 'yellow' },
+  approved_org:       { label: 'מאושר',             variant: 'success' }, // namespaced — 'approved' alone is deal-side
 };
 
 // Corp-screen overrides. Only override statuses that read awkwardly
@@ -47,7 +76,7 @@ const STATUS_MAP: Record<string, StatusConfig> = {
 const CORPORATION_OVERRIDES: Record<string, StatusConfig> = {
   // Corp has already committed workers — from the corp's own POV
   // the deal is now sitting on the contractor's desk for approval.
-  corp_committed:    { label: 'ממתין לאישור קבלן', variant: 'warning' },
+  corp_committed:    { label: 'ממתין לאישור קבלן', variant: 'yellow' },
   // Corp cancelled their own deal — "by the corp" is impersonal.
   cancelled_by_corp: { label: 'בוטלה על ידך',       variant: 'destructive' },
 };
@@ -71,4 +100,15 @@ export default function StatusBadge({ status, className, perspective }: StatusBa
       {config.label}
     </Badge>
   );
+}
+
+/** Public helper for surfaces that can't use the JSX badge (e.g.
+ *  hand-built classes on table cells). Returns the resolved label +
+ *  variant so callers stay in sync with the canonical map. */
+export function resolveStatus(
+  status: string,
+  perspective?: Perspective,
+): StatusConfig {
+  const override = perspective === 'corporation' ? CORPORATION_OVERRIDES[status] : undefined;
+  return override ?? STATUS_MAP[status] ?? { label: status, variant: 'secondary' };
 }

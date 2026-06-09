@@ -15,6 +15,12 @@ const badgeVariants = cva(
         purple:      'bg-navy-50 text-navy-700 ring-1 ring-navy-200/60',
         blue:        'bg-blue-50 text-blue-700 ring-1 ring-blue-200/60',
         outline:     'border border-slate-200 text-slate-600 bg-white',
+        // QA-R5 cross-app deal status palette. Maps directly to the
+        // STATE_META / DEAL_STATUS_PILL colours on /contractor/deals
+        // so a status reads the same colour everywhere it appears.
+        sky:         'bg-sky-50 text-sky-700 ring-1 ring-sky-200/60',
+        yellow:      'bg-yellow-50 text-yellow-900 ring-1 ring-yellow-300/60',
+        orange:      'bg-orange-50 text-orange-700 ring-1 ring-orange-200/60',
       },
     },
     defaultVariants: {
