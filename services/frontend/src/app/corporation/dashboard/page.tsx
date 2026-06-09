@@ -202,7 +202,7 @@ export default function CorporationDashboard() {
         <Tile
           href="/corporation/deals"
           icon={<Zap className="h-9 w-9" />}
-          title="דרישה לעובדים בזמינות מיידית"
+          title="קבלנים מחפשים עובדים בזמינות מיידית"
           subtitle="כל הדרישות הפעילות של קבלנים + העסקאות שלך — במקום אחד"
           badge={pendingDeals}
           accent="amber"

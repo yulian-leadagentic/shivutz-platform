@@ -195,7 +195,7 @@ export function GraceBadge({ dealId, graceExpiresAt, holdPlacedAt, approvedAt, o
             <>
               <p className="text-sm font-bold text-emerald-900">הסכום הוקפא — ממתין לאישור הקבלן</p>
               <p className="text-[11px] text-emerald-700/80 mt-0.5">
-                כרטיס האשראי שלך תופס את סכום העמלה אך עוד לא חויב. החיוב יתבצע רק לאחר שהקבלן יאשר את רשימת העובדים.
+                כרטיס האשראי שלך תופס בשלב זה את סכום העמלה בלבד, אך טרם בוצע חיוב בפועל. החיוב יתבצע רק לאחר אישור העסקה על ידי הקבלן ואישור רשימת העובדים מטעמו.
               </p>
             </>
           )}
@@ -209,11 +209,14 @@ export function GraceBadge({ dealId, graceExpiresAt, holdPlacedAt, approvedAt, o
         )}
       </div>
 
-      {/* Timeline strip — three distinct events, each with its own
-          line, so the corp can read the full payment story at a
-          glance. The previous one-line "הוקפא ב X" conflated two
-          separate moments (hold-placed vs contractor-approved). */}
-      <div className="ms-8 grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+      {/* Timeline strip — per user feedback, dropped the "חיוב צפוי"
+          column. Corps were confusing the projected-capture timestamp
+          with "money is being charged at this exact time" and asking
+          why we were already showing a charge date before the deal
+          was final. Now we only surface the events that have actually
+          occurred (hold placed / contractor approved). The countdown
+          below carries the "time remaining" message. */}
+      <div className="ms-8 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
         {holdPlacedAt && (
           <div className="space-y-0.5">
             <p className="text-[10px] uppercase tracking-widest font-bold text-emerald-700/70 inline-flex items-center gap-1">
@@ -230,13 +233,6 @@ export function GraceBadge({ dealId, graceExpiresAt, holdPlacedAt, approvedAt, o
             <p className="text-emerald-900 font-semibold">{formatDateTime(approvedAt)}</p>
           </div>
         )}
-        <div className="space-y-0.5">
-          <p className="text-[10px] uppercase tracking-widest font-bold text-emerald-700/70 inline-flex items-center gap-1">
-            <Clock className="h-3 w-3" />
-            {expired ? 'החיוב היה צפוי' : 'חיוב צפוי'}
-          </p>
-          <p className="text-emerald-900 font-semibold">{formatDateTime(graceExpiresAt)}</p>
-        </div>
       </div>
 
       {/* Countdown row — only when there's actually time left. The
@@ -245,13 +241,13 @@ export function GraceBadge({ dealId, graceExpiresAt, holdPlacedAt, approvedAt, o
       {!expired && (
         <div className="ms-8 flex items-center gap-2 pt-1 border-t border-emerald-100">
           <Clock className="h-3.5 w-3.5 shrink-0 text-emerald-700" />
-          <span className="text-xs text-emerald-700">נותר לחיוב אוטומטי:</span>
           <span
             dir="ltr"
             className="font-mono font-extrabold tabular-nums text-base leading-none text-emerald-800"
           >
             {formatHMS(remaining)}
           </span>
+          <span className="text-xs text-emerald-700">זמן שנותר לסגירת העסקה</span>
         </div>
       )}
     </div>

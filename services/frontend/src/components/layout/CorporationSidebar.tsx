@@ -23,7 +23,7 @@ const navItems = [
     // view. Hosts the open-search browse + the deal lifecycle in one
     // page. /corporation/requests redirects here for any in-flight
     // bookmarks.
-    label: 'דרישה לעובדים בזמינות מיידית',
+    label: 'קבלנים מחפשים עובדים בזמינות מיידית',
     href: '/corporation/deals',
     icon: Zap,
   },

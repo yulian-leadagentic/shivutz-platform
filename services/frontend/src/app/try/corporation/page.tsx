@@ -35,7 +35,7 @@ const CATEGORIES: Category[] = [
   {
     slug: 'immediate',
     href: '/try/corporation/immediate',
-    title: 'דרישה לעובדים בזמינות מיידית',
+    title: 'קבלנים מחפשים עובדים בזמינות מיידית',
     subtitle: 'רשימת קבלנים שמחפשים עובדים זמינים כרגע',
     icon: Zap,
   },

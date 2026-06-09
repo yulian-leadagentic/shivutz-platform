@@ -575,7 +575,7 @@ async function handle(routingKey, payload, sendEmail) {
         await sendSmsInternal(
           payload.contractor_contact_phone,
           `BuildUp — ${firstName}, תאגיד הציע ${vars.worker_count} עובדי ${vars.profession_he} לבקשתך. ` +
-          `יש לך 7 ימים לאשר. כניסה: ${dealUrl}`
+          `יש לך 48 שעות לאשר. כניסה: ${dealUrl}`
         );
       }
       break;

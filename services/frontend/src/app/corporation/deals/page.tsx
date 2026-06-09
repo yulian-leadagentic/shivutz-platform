@@ -564,7 +564,7 @@ function CorporationDealsPageContent() {
     <div className="max-w-6xl mx-auto px-4 py-6 space-y-5">
       <header className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-bold text-slate-900">דרישה לעובדים בזמינות מיידית</h1>
+          <h1 className="text-2xl font-bold text-slate-900">קבלנים מחפשים עובדים בזמינות מיידית</h1>
           {pendingCount > 0 && (
             <span className="text-xs bg-amber-100 text-amber-700 font-semibold px-2 py-1 rounded-full">
               {pendingCount} דרישות ממתינות לאישורך
