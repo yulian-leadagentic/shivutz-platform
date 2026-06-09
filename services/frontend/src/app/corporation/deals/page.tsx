@@ -71,7 +71,12 @@ const FILTER_LABELS: Record<Filter, string> = {
 const CORP_STATUS_GROUP: Record<Exclude<Filter, 'all'>, string[]> = {
   proposed:   ['proposed', 'counter_proposed'],
   active:     ['corp_committed'],
-  completed:  ['accepted', 'active', 'reporting', 'completed', 'closed'],
+  // 'approved' was missing — meant any deal the contractor approved
+  // dropped out of every bucket and out of `counts.all` entirely,
+  // leaving the corp side thinking the deal had vanished. Now it
+  // groups with 'accepted'/'active' as a contractor-approved-and-
+  // running deal.
+  completed:  ['approved', 'accepted', 'active', 'reporting', 'completed', 'closed'],
   no_workers: [],
 };
 
@@ -338,6 +343,19 @@ function CorporationDealsPageContent() {
       });
   }
   useEffect(() => { reload(); }, []);
+
+  // Refetch when the tab becomes visible again. Without this, a corp
+  // that committed workers + completed J5 auth on the /[id] detail
+  // page would navigate back to this list and see the deal still
+  // pinned to 'proposed' — the list state was captured on first
+  // mount and never refreshed. Most reports of "the deal didn't
+  // transition to 'ממתין לאישור קבלן'" trace back here.
+  useEffect(() => {
+    function onVis() { if (document.visibilityState === 'visible') reload(); }
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // R9 — open searches list + worker count, independent of the deal
   // list. Each renders the moment it arrives so a slow workers fetch

@@ -177,10 +177,28 @@ export function GraceBadge({ dealId, graceExpiresAt, holdPlacedAt, approvedAt, o
       <div className="flex items-start gap-3">
         <ShieldCheck className="h-5 w-5 text-emerald-600 shrink-0 mt-0.5" />
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-bold text-emerald-900">עסקה אושרה ע״י הקבלן — הסכום מוקפא</p>
-          <p className="text-[11px] text-emerald-700/80 mt-0.5">
-            ניתן עדיין לבטל ללא חיוב עד תום חלון הביטול (48 שעות מאישור הקבלן).
-          </p>
+          {/* Title was hardcoded to "עסקה אושרה ע״י הקבלן" regardless
+              of whether the contractor had actually approved. The
+              badge renders the moment the J5 hold is placed (right
+              after the corp commits workers + card auth), so corps
+              were seeing "contractor approved" minutes — sometimes
+              hours — before the contractor even saw the proposal.
+              Gate on `approvedAt` so the headline matches reality. */}
+          {approvedAt ? (
+            <>
+              <p className="text-sm font-bold text-emerald-900">עסקה אושרה ע״י הקבלן — הסכום מוקפא</p>
+              <p className="text-[11px] text-emerald-700/80 mt-0.5">
+                ניתן עדיין לבטל ללא חיוב עד תום חלון הביטול (48 שעות מאישור הקבלן).
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="text-sm font-bold text-emerald-900">הסכום הוקפא — ממתין לאישור הקבלן</p>
+              <p className="text-[11px] text-emerald-700/80 mt-0.5">
+                כרטיס האשראי שלך תופס את סכום העמלה אך עוד לא חויב. החיוב יתבצע רק לאחר שהקבלן יאשר את רשימת העובדים.
+              </p>
+            </>
+          )}
         </div>
         {!expired && (
           <Button size="sm" variant="outline" onClick={() => setConfirming(true)}

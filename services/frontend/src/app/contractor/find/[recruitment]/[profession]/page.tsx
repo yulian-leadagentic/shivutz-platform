@@ -123,12 +123,22 @@ export default function FindFormPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    // Block the second click BEFORE validation runs so a fast double-
+    // submit can't create two worker_searches. Previously setSubmitting
+    // was only flipped after validation passed, leaving a race window
+    // where a double-click sent two POSTs and the search-creation
+    // endpoint (no DB-level dedupe on contractor/profession/region/
+    // start_date) accepted both, producing duplicate rows the corp
+    // then saw as duplicate proposals.
+    if (submitting) return;
+    setSubmitting(true);
     setError('');
     setErrorField(null);
     if (quantity < 1) {
       setError('יש להזין כמות עובדים של לפחות 1');
       setErrorField('quantity');
       document.getElementById('field-quantity')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setSubmitting(false); // release the early-set lock so the user can fix + resubmit
       return;
     }
     if (!startDate) {
@@ -137,6 +147,7 @@ export default function FindFormPage() {
       const el = document.getElementById('field-startDate');
       el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       el?.focus();
+      setSubmitting(false);
       return;
     }
 
@@ -150,7 +161,8 @@ export default function FindFormPage() {
       ? 0
       : Math.min(...expRanges.map((r) => EXPERIENCE_LOWER_MONTHS[r] ?? 0));
 
-    setSubmitting(true);
+    // (submitting was already flipped to true at the top of this
+    // function — the redundant set used to live here.)
     try {
       const created = await searchApi.create({
         recruitment_type:   recruitment,

@@ -579,9 +579,16 @@ export default function DealDetailPage() {
                 disabled={confirming || workers.length === 0}
                 className="bg-emerald-600 hover:bg-emerald-700 text-white"
               >
+                {/* Button label used to read "הצג פרטי תאגיד" — but
+                    the click actually fires dealApi.approve() and
+                    flips the deal to status='approved'. Contractors
+                    thought they were peeking at corp identity and
+                    accidentally committed. Renamed to match what
+                    really happens: approving the deal IS what reveals
+                    the corp. */}
                 {confirming
                   ? <><Loader2 className="h-4 w-4 animate-spin me-2" />מעבד...</>
-                  : <><CheckCircle2 className="h-4 w-4 me-2" />הצג פרטי תאגיד ({workers.length} עובדים)</>
+                  : <><CheckCircle2 className="h-4 w-4 me-2" />אשר עסקה והצג פרטי תאגיד ({workers.length} עובדים)</>
                 }
               </Button>
               <Button
