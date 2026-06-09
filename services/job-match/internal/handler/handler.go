@@ -290,7 +290,25 @@ func (h *Handler) ListOpenSearches(w http.ResponseWriter, r *http.Request) {
 		        DATE_FORMAT(ws.start_date,'%Y-%m-%d') AS start_date,
 		        COALESCE(DATE_FORMAT(ws.end_date,'%Y-%m-%d'),'') AS end_date,
 		        COALESCE(ws.origin_preference,'[]') AS origin_preference,
-		        ws.status, ws.created_at
+		        ws.status, ws.created_at,
+		        -- R5 #6 — count distinct corps + total workers already
+		        -- committed against this search so the frontend can
+		        -- render "עסקה בתהליכי סגירה" when the cap is hit.
+		        (SELECT COUNT(DISTINCT d.corporation_id)
+		           FROM deal_db.deals d
+		          WHERE d.search_id = ws.id
+		            AND d.deleted_at IS NULL
+		            AND d.status IN ('corp_committed','approved','accepted','active','reporting','completed','closed')
+		        ) AS committed_corp_count,
+		        (SELECT COALESCE(SUM(
+		             (SELECT COUNT(*) FROM deal_db.deal_workers dw
+		               WHERE dw.deal_id = d.id AND dw.removed_at IS NULL)
+		           ), 0)
+		           FROM deal_db.deals d
+		          WHERE d.search_id = ws.id
+		            AND d.deleted_at IS NULL
+		            AND d.status IN ('corp_committed','approved','accepted','active','reporting','completed','closed')
+		        ) AS committed_worker_sum
 		   FROM worker_searches ws
 		  WHERE ws.status IN ('open','partially_matched')
 		    AND NOT EXISTS (
@@ -309,17 +327,23 @@ func (h *Handler) ListOpenSearches(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 
 	type row struct {
-		ID               string    `json:"id"`
-		AnonLabel        string    `json:"anon_label"`
-		RecruitmentType  string    `json:"recruitment_type"`
-		Region           string    `json:"region"`
-		ProfessionType   string    `json:"profession_type"`
-		Quantity         int       `json:"quantity"`
-		StartDate        string    `json:"start_date"`
-		EndDate          string    `json:"end_date"`
-		OriginPreference []string  `json:"origin_preference"`
-		Status           string    `json:"status"`
-		CreatedAt        time.Time `json:"created_at"`
+		ID                   string    `json:"id"`
+		AnonLabel            string    `json:"anon_label"`
+		RecruitmentType      string    `json:"recruitment_type"`
+		Region               string    `json:"region"`
+		ProfessionType       string    `json:"profession_type"`
+		Quantity             int       `json:"quantity"`
+		StartDate            string    `json:"start_date"`
+		EndDate              string    `json:"end_date"`
+		OriginPreference     []string  `json:"origin_preference"`
+		Status               string    `json:"status"`
+		CreatedAt            time.Time `json:"created_at"`
+		// R5 #6 — surface the 3-corp cap state so the corp browse
+		// list can mark "עסקה בתהליכי סגירה — לא ניתן להציע" without
+		// the frontend having to refetch deals per search.
+		CommittedCorpCount   int  `json:"committed_corp_count"`
+		CommittedWorkerSum   int  `json:"committed_worker_sum"`
+		SearchLocked         bool `json:"search_locked"`
 	}
 	result := []row{}
 	anonMap := map[string]int{}
@@ -329,9 +353,11 @@ func (h *Handler) ListOpenSearches(w http.ResponseWriter, r *http.Request) {
 		var contractorID, originsJSON string
 		if err := rows.Scan(&x.ID, &contractorID, &x.RecruitmentType,
 			&x.Region, &x.ProfessionType, &x.Quantity,
-			&x.StartDate, &x.EndDate, &originsJSON, &x.Status, &x.CreatedAt); err != nil {
+			&x.StartDate, &x.EndDate, &originsJSON, &x.Status, &x.CreatedAt,
+			&x.CommittedCorpCount, &x.CommittedWorkerSum); err != nil {
 			continue
 		}
+		x.SearchLocked = x.CommittedCorpCount >= 3 && x.CommittedWorkerSum >= x.Quantity
 		idx, ok := anonMap[contractorID]
 		if !ok {
 			idx = nextIdx

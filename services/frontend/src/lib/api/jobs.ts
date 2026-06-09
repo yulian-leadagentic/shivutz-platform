@@ -24,6 +24,18 @@ export interface OpenSearchRow {
   origin_preference: string[];
   status: string;
   created_at: string;
+  /** R5 #6 — corps that already moved a deal to corp_committed or
+   *  later for this search. Stops counting at 'closed'. */
+  committed_corp_count: number;
+  /** Sum of workers attached across the corps in
+   *  `committed_corp_count`. */
+  committed_worker_sum: number;
+  /** True when 3+ corps have already committed AND the sum of their
+   *  committed workers >= the requested quantity. The 3-corp cap from
+   *  product: late corps are locked out so the contractor doesn't
+   *  juggle 5+ identical proposals. Backend enforces the rule on
+   *  POST /deals/{id}/commit; UI surfaces the lock visually. */
+  search_locked: boolean;
 }
 
 export const searchApi = {

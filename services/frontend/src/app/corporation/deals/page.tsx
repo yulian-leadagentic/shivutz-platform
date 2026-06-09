@@ -831,6 +831,20 @@ function CorporationDealsPageContent() {
                         טען עובדים למערכת
                         <ArrowLeft className="w-3.5 h-3.5" />
                       </Link>
+                    ) : r.search_locked ? (
+                      /* R5 #6 — 3 corps already committed enough
+                         workers to fulfill this search. Show a
+                         disabled "search closed" state instead of the
+                         normal "respond" CTA. The contractor isn't
+                         expecting more proposals here; the cap
+                         protects them from being flooded. */
+                      <div
+                        className="rounded-lg py-3 px-4 text-center bg-slate-100 border border-slate-200 text-xs text-slate-600 leading-snug"
+                        title={`${r.committed_corp_count} תאגידים כבר הציעו ${r.committed_worker_sum} עובדים מתוך ${r.quantity}`}
+                      >
+                        <p className="font-bold mb-0.5">עסקה בתהליכי סגירה</p>
+                        <p>לא ניתן להציע עובדים לדרישה זו</p>
+                      </div>
                     ) : (
                       <button
                         type="button"

@@ -454,6 +454,53 @@ async def commit_deal(
                 detail={"code": "wrong_state", "message": f"Deal already in state '{deal['status']}'"},
             )
 
+        # ── R5 #6 — 3-corp commitment cap ──────────────────────────
+        # Block commitments past the third corp once the requested
+        # worker count has been met by earlier corps. Rule:
+        #   - count distinct corps that already have this search's
+        #     deal in 'corp_committed' (or later) status
+        #   - sum their committed worker_count
+        #   - if N_corps >= 3 AND sum_workers >= requested → reject:
+        #     the search is full, late corps are locked out so the
+        #     contractor doesn't get 5 competing identical proposals.
+        #   - else (sum < requested, contractor still needs more
+        #     workers) → allow even when N_corps >= 3 — the escape
+        #     hatch from product: "if the first 3 corps' offers
+        #     don't cover the contractor's qty, more corps may
+        #     still propose."
+        # Admin bypasses the cap (manual corrections, support).
+        if x_user_role != "admin" and deal.get("search_id"):
+            cur.execute(
+                """SELECT COUNT(DISTINCT d.corporation_id) AS n_corps,
+                          COALESCE(SUM(
+                            (SELECT COUNT(*) FROM deal_workers dw
+                             WHERE dw.deal_id = d.id AND dw.removed_at IS NULL)
+                          ), 0) AS sum_workers,
+                          ws.quantity AS requested_qty
+                   FROM deals d
+                   LEFT JOIN job_db.worker_searches ws ON ws.id = d.search_id
+                   WHERE d.search_id = %s
+                     AND d.id <> %s
+                     AND d.deleted_at IS NULL
+                     AND d.status IN ('corp_committed','approved','accepted','active','reporting','completed','closed')
+                   GROUP BY ws.quantity""",
+                (deal["search_id"], deal_id),
+            )
+            row = cur.fetchone() or {}
+            n_corps_other = int(row.get("n_corps") or 0)
+            sum_workers   = int(row.get("sum_workers") or 0)
+            requested     = int(row.get("requested_qty") or 0)
+            # This corp is about to become the (N+1)-th corp; check.
+            if requested > 0 and n_corps_other >= 3 and sum_workers >= requested:
+                raise HTTPException(
+                    status_code=409,
+                    detail={"code":    "search_full",
+                            "message": "עסקה בתהליכי סגירה — לא ניתן להציע עובדים לדרישה זו",
+                            "n_corps": n_corps_other,
+                            "sum_workers": sum_workers,
+                            "requested":   requested},
+                )
+
         # Validate each worker belongs to this corp and isn't locked elsewhere.
         placeholders = ",".join(["%s"] * len(body.worker_ids))
         cur.execute(
