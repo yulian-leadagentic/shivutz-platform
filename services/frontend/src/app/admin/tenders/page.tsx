@@ -16,7 +16,7 @@ import { tenderApi, orgApi, type Tender } from '@/lib/api';
 import { useEnums } from '@/features/enums/EnumsContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { TypeToConfirmDialog } from '@/components/ui/TypeToConfirmDialog';
 import { TableToolbar } from '@/components/table/TableToolbar';
 import { useTableState } from '@/components/table/useTableState';
 
@@ -526,13 +526,24 @@ export default function AdminTendersPage() {
         );
       })}
 
-      <ConfirmDialog
+      {/* Type-to-confirm dialog — tender delete is permanent (no
+          soft-delete on this table) and wipes every bid attached.
+          The admin must type the short ID of the tender they're
+          about to nuke before the "מחק לצמיתות" button enables.
+          Stops "I clicked the wrong row" mistakes without making
+          the legitimate delete impossible. */}
+      <TypeToConfirmDialog
         open={confirmDelete !== null}
-        title="מחיקת בקשה"
-        message="הבקשה תימחק לצמיתות יחד עם כל ההצעות. לא ניתן לשחזר. האם להמשיך?"
+        title="מחיקת בקשה לצמיתות"
+        message={(() => {
+          const t = tenders.find((x) => x.id === confirmDelete);
+          const title = t?.title || 'בקשה ללא כותרת';
+          const bidCount = t?.bids?.length ?? 0;
+          return `אתה עומד למחוק לצמיתות את "${title}".\n\nכל ${bidCount} ההצעות שצורפו לבקשה יימחקו יחד איתה. אין שחזור.\n\nאם הבקשה רק בלא נכונה — שקול "דחה בקשה" במקום מחיקה.`;
+        })()}
+        confirmPhrase={confirmDelete ? confirmDelete.slice(0, 6) : ''}
         confirmLabel="מחק לצמיתות"
         cancelLabel="חזרה"
-        variant="destructive"
         onConfirm={() => confirmDelete && doDelete(confirmDelete)}
         onCancel={() => setConfirmDelete(null)}
       />

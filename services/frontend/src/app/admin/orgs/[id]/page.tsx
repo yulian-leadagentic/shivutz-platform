@@ -118,6 +118,17 @@ function OrgDetailContent() {
   }, [id, orgType]);
 
   useEffect(() => { load(); }, [load]);
+  // QA-R5 — auto-load audit history on mount so the last 3 changes
+  // surface near the top of the page. Was on-demand via the
+  // "היסטוריה" button, which buried the most common admin question
+  // ("who flipped this org from pending → approved?") behind a click.
+  useEffect(() => {
+    let cancelled = false;
+    adminApi.orgAudit(id, orgType)
+      .then((rows) => { if (!cancelled) setHistory(rows); })
+      .catch(() => { /* button is the fallback */ });
+    return () => { cancelled = true; };
+  }, [id, orgType]);
 
   function pushToast(msg: string) { setToast(msg); setTimeout(() => setToast(''), 4000); }
 
@@ -255,6 +266,40 @@ function OrgDetailContent() {
           gov data + recent deals. Sits above the edit form so the
           admin sees the state of the org before they edit it. */}
       <OrgSummaryHeader orgId={id} orgType={orgType} />
+
+      {/* QA-R5 — last 3 audit entries inline so the admin's most
+          common question ("who flipped this org from pending →
+          approved?") is answered before they have to click
+          "היסטוריה". Falls back silently if the audit endpoint
+          fails. Full log still available via the כפתור below. */}
+      {history && history.length > 0 && (
+        <Card className="border-slate-200 bg-slate-50/50">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-semibold text-slate-600 flex items-center gap-2">
+              <HistoryIcon className="h-3.5 w-3.5" /> שינויים אחרונים
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <ul className="text-sm divide-y divide-slate-200">
+              {history.slice(0, 3).map((h) => (
+                <li key={h.log_id} className="py-2 first:pt-0 last:pb-0">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="font-medium text-slate-800">{h.action}</span>
+                    <span className="text-xs text-slate-500 whitespace-nowrap" dir="ltr">{fmtDate(h.created_at)}</span>
+                  </div>
+                  {/* Actor identity not yet returned by orgAudit (only
+                      actor_id) — add when the API surfaces actor_name. */}
+                </li>
+              ))}
+            </ul>
+            {history.length > 3 && (
+              <p className="text-xs text-slate-400 mt-2">
+                ועוד {history.length - 3} שינויים — לחץ "היסטוריה" בראש הדף לראות הכל.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Edit form */}
       <Card>

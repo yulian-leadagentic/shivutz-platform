@@ -176,6 +176,50 @@ export default function AdminDashboard() {
         </Card>
       )}
 
+      {/* QA-R5 — common admin shortcuts surfaced near the top so
+          they're not buried inside the sidebar. The four below cover
+          the most-frequent admin entry points: pending approvals
+          (the daily queue), gov-corps registry upload (monthly
+          import), commissions (tariff tweaks), and a new admin user
+          (rarely used but high-impact). */}
+      <div>
+        <h2 className="text-sm font-semibold text-slate-500 mb-2">פעולות מהירות</h2>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <Link
+            href="/admin/approvals"
+            className="rounded-2xl border-2 border-amber-200 bg-amber-50 hover:bg-amber-100 transition-colors p-4 flex flex-col gap-1.5"
+          >
+            <ShieldCheck className="h-5 w-5 text-amber-700" aria-hidden />
+            <p className="text-sm font-bold text-amber-900">אישור ארגונים</p>
+            <p className="text-xs text-amber-700/70">תור ההמתנה היומי</p>
+          </Link>
+          <Link
+            href="/admin/gov-corps-registry"
+            className="rounded-2xl border-2 border-slate-200 bg-white hover:bg-slate-50 transition-colors p-4 flex flex-col gap-1.5"
+          >
+            <Building2 className="h-5 w-5 text-slate-700" aria-hidden />
+            <p className="text-sm font-bold text-slate-900">העלאת רשימת תאגידים</p>
+            <p className="text-xs text-slate-500">פנקס משרד הפנים</p>
+          </Link>
+          <Link
+            href="/admin/commissions"
+            className="rounded-2xl border-2 border-slate-200 bg-white hover:bg-slate-50 transition-colors p-4 flex flex-col gap-1.5"
+          >
+            <Wallet className="h-5 w-5 text-slate-700" aria-hidden />
+            <p className="text-sm font-bold text-slate-900">עמלות ומע״מ</p>
+            <p className="text-xs text-slate-500">תעריפים ותקופות מע״מ</p>
+          </Link>
+          <Link
+            href="/admin/users"
+            className="rounded-2xl border-2 border-slate-200 bg-white hover:bg-slate-50 transition-colors p-4 flex flex-col gap-1.5"
+          >
+            <Users className="h-5 w-5 text-slate-700" aria-hidden />
+            <p className="text-sm font-bold text-slate-900">משתמשי מערכת</p>
+            <p className="text-xs text-slate-500">ניהול אדמינים והרשאות</p>
+          </Link>
+        </div>
+      </div>
+
       {/* HIGH-LEVEL COUNTS — orgs / workers / activity */}
       <div>
         <h2 className="text-sm font-semibold text-slate-500 mb-2">סך הכל במערכת</h2>
