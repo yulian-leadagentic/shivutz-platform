@@ -20,6 +20,7 @@
  * dance in 17 different files.
  */
 
+import { useEffect } from 'react';
 import { ArrowUp, ArrowDown, Filter as FilterIcon, X, Search } from 'lucide-react';
 
 export interface PillOption<K extends string = string> {
@@ -98,6 +99,28 @@ export function TableToolbar<P extends string = string, S extends string = strin
   const showSelects = selects && selects.length > 0;
   const showControl = showSearch || showSort || showSelects || hasActiveFilter;
 
+  // QA-R5 — global "/" focuses the table search. Skipped when the
+  // user is already typing in a form field (input/textarea/contentE)
+  // so it doesn't hijack normal Hebrew/English typing. Each toolbar
+  // installs its own listener but the `data-table-search` attribute
+  // is unique-per-toolbar so only ONE input gains focus even with
+  // multiple tables on the page (rare).
+  useEffect(() => {
+    if (!showSearch) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== '/') return;
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement | null)?.isContentEditable) return;
+      const el = document.querySelector<HTMLInputElement>('input[data-table-search="true"]');
+      if (!el) return;
+      e.preventDefault();
+      el.focus();
+      el.select();
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [showSearch]);
+
   return (
     <div className="space-y-3">
       {pills && (
@@ -160,15 +183,32 @@ export function TableToolbar<P extends string = string, S extends string = strin
               // The search is the ONLY element that flex-grows. On
               // very narrow viewports it'll shrink to its min-width
               // and the toolbar gets a horizontal scrollbar.
+              // QA-R5 — pressing "/" anywhere on the page focuses this
+              // input (see the global useEffect below); Esc inside
+              // the input clears it. The data-table-search attribute
+              // is the marker the global handler looks for.
               <div className="relative flex-1 min-w-[140px]">
                 <Search className="h-4 w-4 text-slate-400 absolute top-1/2 -translate-y-1/2 start-2.5 pointer-events-none" />
                 <input
                   type="search"
+                  data-table-search="true"
                   placeholder={searchPlaceholder}
                   value={searchValue || ''}
                   onChange={(e) => onSearchChange?.(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape' && searchValue) {
+                      e.stopPropagation();
+                      onSearchChange?.('');
+                    }
+                  }}
                   className="h-9 w-full ps-8 pe-2 text-sm rounded-md border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
                 />
+                <span
+                  className="absolute end-2 top-1/2 -translate-y-1/2 text-[10px] text-slate-300 font-mono pointer-events-none select-none hidden sm:inline-block"
+                  aria-hidden
+                >
+                  /
+                </span>
               </div>
             )}
 
