@@ -9,9 +9,11 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import {
   Loader2, AlertTriangle, Building2, HardHat, Phone, Mail, User,
-  Filter as FilterIcon, ArrowDown, ArrowUp, Clock, X, Inbox,
+  Filter as FilterIcon, ArrowDown, ArrowUp, Clock, X, Inbox, Download,
 } from 'lucide-react';
 import { EmptyState } from '@/components/admin/EmptyState';
+import { exportCsv } from '@/lib/csv';
+import { resolveStatus } from '@/components/StatusBadge';
 import { adminApi, type AdminDealRow } from '@/lib/adminApi';
 import { dealRef } from '@/lib/utils';
 import { Card, CardContent } from '@/components/ui/card';
@@ -281,8 +283,41 @@ export default function AdminDealsPage() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-xl font-bold text-slate-900">לוח עסקאות — אדמין</h2>
-          <p className="text-xs text-slate-500 mt-0.5">{deals.length} עסקאות במערכת</p>
+          <p className="text-xs text-slate-500 mt-0.5">{deals.length} עסקאות במערכת · {filtered.length} בסינון</p>
         </div>
+        {/* QA-R5 — CSV export of the currently-filtered rows. Useful
+            for "give finance a list of all deals stuck on payment".
+            Exports what the admin currently sees (filter+sort applied)
+            instead of the raw 1000+ rows. UTF-8 BOM ensures Hebrew
+            opens correctly in Excel. */}
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            const today = new Date().toISOString().slice(0, 10);
+            exportCsv(
+              `deals-${today}`,
+              ['מס׳ עסקה', 'סטטוס', 'תקוע על', 'תאגיד', 'קבלן', 'מקצוע', 'כמות עובדים',
+                'סכום עמלה', 'נוצר', 'עודכן', 'שעות בתור'],
+              filtered.map((d) => [
+                dealRef(d.id),
+                resolveStatus(d.status, 'admin').label,
+                d.stuck_on,
+                d.corporation_name || '',
+                d.contractor_name || '',
+                d.profession_he || '',
+                d.worker_count ?? '',
+                d.payment_amount_estimated ?? d.commission_amount ?? '',
+                d.created_at || '',
+                d.updated_at || '',
+                d.hours_in_stage ?? '',
+              ]),
+            );
+          }}
+          disabled={filtered.length === 0}
+        >
+          <Download className="h-4 w-4" /> ייצוא ל-CSV
+        </Button>
       </div>
 
       {/* Stuck-stage filter chips — primary axis the admin scans on */}

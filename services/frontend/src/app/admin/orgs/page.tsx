@@ -13,6 +13,9 @@ import { TableToolbar } from '@/components/table/TableToolbar';
 import { useTableState } from '@/components/table/useTableState';
 import { OrgSummaryHeader } from '@/components/admin/OrgSummaryHeader';
 import { EmptyState } from '@/components/admin/EmptyState';
+import { Download } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { exportCsv } from '@/lib/csv';
 
 type StatusFilter = 'all' | 'approved' | 'pending' | 'rejected' | 'suspended';
 const STATUS_FILTER_LABEL: Record<StatusFilter, string> = {
@@ -149,7 +152,35 @@ export default function AdminOrgsPage() {
 
   return (
     <div className="space-y-4">
-      <h2 className="text-xl font-bold text-slate-900">כל הארגונים</h2>
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <h2 className="text-xl font-bold text-slate-900">כל הארגונים</h2>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            const today = new Date().toISOString().slice(0, 10);
+            exportCsv(
+              `orgs-${today}`,
+              ['שם החברה', 'סוג', 'מס׳ חברה', 'איש קשר', 'דוא״ל', 'טלפון',
+                'סטטוס אישור', 'דרגת אימות', 'נרשם'],
+              orgs.map((o) => [
+                o.company_name_he || o.company_name || '',
+                o.org_type === 'contractor' ? 'קבלן' : 'תאגיד',
+                o.business_number || '',
+                o.contact_name || '',
+                o.contact_email || '',
+                o.contact_phone || '',
+                o.approval_status || '',
+                o.verification_tier || '',
+                o.created_at || '',
+              ]),
+            );
+          }}
+          disabled={orgs.length === 0}
+        >
+          <Download className="h-4 w-4" /> ייצוא ל-CSV
+        </Button>
+      </div>
 
       <TableToolbar
         pills={{

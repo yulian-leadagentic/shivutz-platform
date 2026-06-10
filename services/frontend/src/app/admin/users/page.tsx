@@ -10,7 +10,8 @@ import { TableToolbar, type PillOption } from '@/components/table/TableToolbar';
 import { useTableState } from '@/components/table/useTableState';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { EmptyState } from '@/components/admin/EmptyState';
-import { Users } from 'lucide-react';
+import { Users, Download } from 'lucide-react';
+import { exportCsv } from '@/lib/csv';
 
 const ROLE_LABEL: Record<string, string> = {
   admin:       'מנהל',
@@ -157,9 +158,34 @@ export default function AdminUsersPage() {
           <h1 className="text-2xl font-bold text-slate-900">משתמשים</h1>
           <p className="text-sm text-slate-500 mt-1">כל המשתמשים הרשומים במערכת — קבלנים, תאגידים, מנהלים.</p>
         </div>
-        <Button onClick={() => setAdding(true)} className="shrink-0">
-          <UserPlus className="h-4 w-4" /> הוסף מנהל
-        </Button>
+        <div className="flex items-center gap-2 shrink-0">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              const today = new Date().toISOString().slice(0, 10);
+              exportCsv(
+                `users-${today}`,
+                ['שם מלא', 'טלפון', 'דוא״ל', 'תפקיד', 'ארגון', 'פעיל', 'התחבר לאחרונה'],
+                users.map((u) => [
+                  u.full_name || '',
+                  u.phone || '',
+                  u.email || '',
+                  u.role,
+                  u.org_name || '',
+                  u.is_active ? 'כן' : 'לא',
+                  u.last_login_at || '',
+                ]),
+              );
+            }}
+            disabled={users.length === 0}
+          >
+            <Download className="h-4 w-4" /> ייצוא ל-CSV
+          </Button>
+          <Button onClick={() => setAdding(true)} className="shrink-0">
+            <UserPlus className="h-4 w-4" /> הוסף מנהל
+          </Button>
+        </div>
       </div>
 
       {/* KPI strip */}
