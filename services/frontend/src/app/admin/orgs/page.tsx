@@ -16,6 +16,7 @@ import { EmptyState } from '@/components/admin/EmptyState';
 import { Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { exportCsv } from '@/lib/csv';
+import { useTableKeyNav } from '@/hooks/useTableKeyNav';
 
 type StatusFilter = 'all' | 'approved' | 'pending' | 'rejected' | 'suspended';
 const STATUS_FILTER_LABEL: Record<StatusFilter, string> = {
@@ -55,6 +56,7 @@ type FullOrg = PendingOrg & {
 };
 
 export default function AdminOrgsPage() {
+  useTableKeyNav();
   const [orgs, setOrgs] = useState<(PendingOrg & { approval_status?: string })[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -258,7 +260,9 @@ export default function AdminOrgsPage() {
                     <Fragment key={o.id}>
                     <tr
                       onClick={() => toggleRow(o)}
-                      className={`border-b border-slate-50 last:border-0 cursor-pointer transition-colors ${isOpen ? 'bg-slate-50' : 'hover:bg-slate-50'}`}
+                      data-table-row="true"
+                      tabIndex={-1}
+                      className={`border-b border-slate-50 last:border-0 cursor-pointer transition-colors focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-inset ${isOpen ? 'bg-slate-50' : 'hover:bg-slate-50 focus:bg-amber-50'}`}
                     >
                       <td className="py-3 px-4 sm:px-0 text-slate-400">
                         <ChevronDown

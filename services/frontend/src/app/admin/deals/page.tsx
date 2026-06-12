@@ -20,6 +20,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import StatusBadge from '@/components/StatusBadge';
+import { useTableKeyNav } from '@/hooks/useTableKeyNav';
 
 type StuckFilter   = 'all' | 'corp' | 'contractor' | 'system' | 'admin' | 'neither';
 type StatusFilter  = 'all' | 'proposed' | 'corp_committed' | 'approved' | 'closed' | 'cancelled' | 'disputed';
@@ -201,6 +202,7 @@ function ContactPopover({ kind, name, contact, onClose }: ContactPopoverProps) {
 }
 
 export default function AdminDealsPage() {
+  useTableKeyNav();
   const [deals, setDeals]       = useState<AdminDealRow[]>([]);
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState(false);
@@ -417,7 +419,12 @@ export default function AdminDealsPage() {
                 </thead>
                 <tbody>
                   {filtered.map((d) => (
-                    <tr key={d.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/60">
+                    <tr
+                      key={d.id}
+                      data-table-row="true"
+                      tabIndex={-1}
+                      className="border-b border-slate-100 last:border-0 hover:bg-slate-50/60 focus:bg-amber-50 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-inset"
+                    >
                       <td className="py-3 px-3 font-mono text-xs text-slate-600 whitespace-nowrap">
                         #{dealRef(d.id)}
                         {d.status === 'disputed' && (
@@ -491,6 +498,7 @@ export default function AdminDealsPage() {
                       <td className="py-3 px-3">
                         <Link
                           href={`/admin/deals/${d.id}`}
+                          data-table-row-action
                           className="text-brand-600 hover:underline text-xs whitespace-nowrap"
                         >
                           פרטי עסקה →

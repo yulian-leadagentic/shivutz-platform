@@ -12,6 +12,7 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { EmptyState } from '@/components/admin/EmptyState';
 import { Users, Download } from 'lucide-react';
 import { exportCsv } from '@/lib/csv';
+import { useTableKeyNav } from '@/hooks/useTableKeyNav';
 
 const ROLE_LABEL: Record<string, string> = {
   admin:       'מנהל',
@@ -25,6 +26,7 @@ function fmtDate(iso: string | null) {
 }
 
 export default function AdminUsersPage() {
+  useTableKeyNav();
   const [users, setUsers]       = useState<AdminUser[]>([]);
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState('');
@@ -294,7 +296,12 @@ export default function AdminUsersPage() {
                 </thead>
                 <tbody>
                   {filtered.map((u) => (
-                    <tr key={u.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50">
+                    <tr
+                      key={u.id}
+                      data-table-row="true"
+                      tabIndex={-1}
+                      className="border-b border-slate-50 last:border-0 hover:bg-slate-50 focus:bg-amber-50 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-inset"
+                    >
                       <td className="px-3 py-2.5 text-slate-800 font-medium">{u.full_name || '—'}</td>
                       <td className="px-3 py-2.5 text-slate-600" dir="ltr">{u.phone || '—'}</td>
                       <td className="px-3 py-2.5 text-slate-600" dir="ltr">{u.email || '—'}</td>
@@ -311,7 +318,7 @@ export default function AdminUsersPage() {
                           : <span className="inline-flex items-center gap-1 text-xs text-red-700"><ShieldAlert className="h-3 w-3" /> מושבת</span>}
                       </td>
                       <td className="px-3 py-2.5 text-end">
-                        <Button size="sm" variant="outline" onClick={() => toggle(u)}>
+                        <Button size="sm" variant="outline" data-table-row-action onClick={() => toggle(u)}>
                           {u.is_active ? 'השבת' : 'הפעל'}
                         </Button>
                       </td>
