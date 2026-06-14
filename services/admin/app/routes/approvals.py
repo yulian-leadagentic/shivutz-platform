@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Header
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List, Literal
 import os, httpx
 
 from app.db import get_db
@@ -101,6 +101,23 @@ class ApprovalDecision(BaseModel):
     commission_per_worker_amount: Optional[float] = None  # if set, override entity commission at approval time
 
 
+class BulkApprovalItem(BaseModel):
+    id: str
+    org_type: Literal["contractor", "corporation"]
+
+
+class BulkApprovalDecision(BaseModel):
+    items: List[BulkApprovalItem]
+    approved: bool
+    reason: Optional[str] = None
+    commission_per_worker_amount: Optional[float] = None
+
+
+class BulkApprovalResult(BaseModel):
+    ok: List[dict]
+    failed: List[dict]
+
+
 class OrgEdit(BaseModel):
     company_name_he: Optional[str] = None
     company_name: Optional[str] = None
@@ -140,21 +157,24 @@ def _audit(conn, entity_type: str, entity_id: str, actor_id: str,
     )
 
 
-@router.patch("/approvals/{org_id}")
-async def decide(
+async def _decide_one(
     org_id: str,
-    body: ApprovalDecision,
-    org_type: str = "contractor",
-    x_user_id: Optional[str] = Header(default=None),
-):
-    admin_user_id = x_user_id or "admin"
-    status = "approved" if body.approved else "rejected"
+    org_type: str,
+    approved: bool,
+    reason: Optional[str],
+    commission_per_worker_amount: Optional[float],
+    admin_user_id: str,
+) -> dict:
+    """Core approval/rejection logic — shared by the single-org PATCH
+    endpoint and the bulk POST endpoint. Opens its own DB connection so
+    each decision commits independently (one failure can't poison the
+    rest of a bulk batch). Raises HTTPException(404) on missing org."""
+    status_str = "approved" if approved else "rejected"
     conn = get_db("org_db")
     try:
         cur = conn.cursor()
         table = "contractors" if org_type == "contractor" else "corporations"
 
-        # Snapshot before state for the audit row.
         cur.execute(
             f"SELECT approval_status, verification_tier, commission_per_worker_amount FROM {table} WHERE id=%s",
             (org_id,),
@@ -164,7 +184,7 @@ async def decide(
         # Manual approval is the path that bumps verification_tier to tier_2.
         # For contractors:  tier_2 = identity-verified principal (can submit to corp).
         # For corporations: tier_2 = "תאגיד מאושר" (only path to publish/offer workers).
-        if body.approved:
+        if approved:
             sets = [
                 "approval_status='approved'",
                 "approved_by_user_id=%s",
@@ -175,12 +195,12 @@ async def decide(
                 "verified_at=NOW()",
                 "revalidate_at=DATE_ADD(NOW(), INTERVAL 183 DAY)",
             ]
-            params = [admin_user_id, body.reason]
-            if body.commission_per_worker_amount is not None:
+            params = [admin_user_id, reason]
+            if commission_per_worker_amount is not None:
                 sets += ["commission_per_worker_amount=%s",
                          "commission_set_by_user_id=%s",
                          "commission_set_at=NOW()"]
-                params += [body.commission_per_worker_amount, admin_user_id]
+                params += [commission_per_worker_amount, admin_user_id]
             params.append(org_id)
             cur.execute(
                 f"UPDATE {table} SET {', '.join(sets)} WHERE id=%s AND deleted_at IS NULL",
@@ -192,26 +212,26 @@ async def decide(
                     SET approval_status=%s, approved_by_user_id=%s,
                         approved_at=NOW(), rejection_reason=%s
                     WHERE id=%s AND deleted_at IS NULL""",
-                (status, admin_user_id, body.reason, org_id),
+                (status_str, admin_user_id, reason, org_id),
             )
         if cur.rowcount == 0:
             raise HTTPException(status_code=404, detail="Organisation not found")
 
         new_state = {
-            "approval_status": "approved" if body.approved else "rejected",
-            "verification_tier": "tier_2" if body.approved else before.get("verification_tier"),
-            "commission_per_worker_amount": body.commission_per_worker_amount
-                if body.commission_per_worker_amount is not None
+            "approval_status": "approved" if approved else "rejected",
+            "verification_tier": "tier_2" if approved else before.get("verification_tier"),
+            "commission_per_worker_amount": commission_per_worker_amount
+                if commission_per_worker_amount is not None
                 else (float(before["commission_per_worker_amount"]) if before.get("commission_per_worker_amount") is not None else None),
         }
         _audit(conn, org_type, org_id, admin_user_id,
-               "decided" if body.approved else "rejected",
+               "decided" if approved else "rejected",
                {k: (float(v) if hasattr(v, "as_tuple") else v) for k, v in (before or {}).items()},
                new_state)
         conn.commit()
 
         cur.execute(
-            f"SELECT company_name, contact_email, contact_name FROM {table} WHERE id=%s",
+            f"SELECT company_name FROM {table} WHERE id=%s",
             (org_id,),
         )
         org = cur.fetchone()
@@ -223,8 +243,8 @@ async def decide(
                     f"{USER_ORG_URL}/admin/approvals/{org_id}",
                     params={"org_type": org_type},
                     json={
-                        "approved": body.approved,
-                        "reason": body.reason or "",
+                        "approved": approved,
+                        "reason": reason or "",
                         "admin_user_id": admin_user_id,
                     },
                 )
@@ -234,11 +254,68 @@ async def decide(
         return {
             "id": org_id,
             "org_type": org_type,
-            "status": status,
+            "status": status_str,
             "company_name": org["company_name"] if org else "",
         }
     finally:
         conn.close()
+
+
+@router.patch("/approvals/{org_id}")
+async def decide(
+    org_id: str,
+    body: ApprovalDecision,
+    org_type: str = "contractor",
+    x_user_id: Optional[str] = Header(default=None),
+):
+    admin_user_id = x_user_id or "admin"
+    return await _decide_one(
+        org_id=org_id,
+        org_type=org_type,
+        approved=body.approved,
+        reason=body.reason,
+        commission_per_worker_amount=body.commission_per_worker_amount,
+        admin_user_id=admin_user_id,
+    )
+
+
+@router.post("/approvals/bulk")
+async def decide_bulk(
+    body: BulkApprovalDecision,
+    x_user_id: Optional[str] = Header(default=None),
+):
+    """Approve or reject up to N orgs in one click. Each item commits
+    independently — one bad ID doesn't poison the batch. The frontend
+    pre-confirms with the admin; bulk is hard to undo.
+
+    The per-row commission override applies to ALL items in this call
+    (typically left blank so each row keeps its own commission). A
+    single rejection reason applies to all rejected items.
+    """
+    if not body.items:
+        raise HTTPException(status_code=400, detail="no_items")
+    if len(body.items) > 50:
+        raise HTTPException(status_code=400, detail="too_many_items_max_50")
+
+    admin_user_id = x_user_id or "admin"
+    ok: list = []
+    failed: list = []
+    for it in body.items:
+        try:
+            result = await _decide_one(
+                org_id=it.id,
+                org_type=it.org_type,
+                approved=body.approved,
+                reason=body.reason,
+                commission_per_worker_amount=body.commission_per_worker_amount,
+                admin_user_id=admin_user_id,
+            )
+            ok.append(result)
+        except HTTPException as e:
+            failed.append({"id": it.id, "org_type": it.org_type, "error": str(e.detail)})
+        except Exception as e:
+            failed.append({"id": it.id, "org_type": it.org_type, "error": str(e)})
+    return {"ok": ok, "failed": failed}
 
 
 # ── Admin edit + document upload + audit history ────────────────────────────

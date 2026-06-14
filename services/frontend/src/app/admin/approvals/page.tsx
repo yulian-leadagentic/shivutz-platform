@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useState, useCallback, Suspense, useRef } from 'react';
+import { useEffect, useState, useCallback, useMemo, Suspense, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import {
   Loader2, CheckCircle, XCircle, Clock, ChevronDown, ChevronUp,
-  Pencil, Upload, History,
+  Pencil, Upload, History, CheckSquare, Square,
 } from 'lucide-react';
 import { adminApi, type PendingOrg, type OrgEditPayload, type OrgAuditEntry } from '@/lib/adminApi';
 import { Button } from '@/components/ui/button';
@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { TableToolbar } from '@/components/table/TableToolbar';
 import { useTableState } from '@/components/table/useTableState';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 
 const DEFAULT_COMMISSION = 500;
 
@@ -26,12 +27,16 @@ function hoursLeft(iso: string) {
 function OrgRow({
   org,
   highlighted,
+  selected,
+  onToggleSelected,
   onDecide,
   onLocalEdit,
   onToast,
 }: {
   org: PendingOrg;
   highlighted: boolean;
+  selected: boolean;
+  onToggleSelected: () => void;
   onDecide: (id: string, orgType: string, approved: boolean, reason: string | undefined,
              commission: number) => Promise<void>;
   onLocalEdit: (id: string, patch: Partial<PendingOrg>) => void;
@@ -126,7 +131,7 @@ function OrgRow({
   }
 
   return (
-    <Card className={`transition-all ${highlighted ? 'ring-2 ring-amber-400' : ''}`}>
+    <Card className={`transition-all ${selected ? 'ring-2 ring-brand-500 bg-brand-50/40' : highlighted ? 'ring-2 ring-amber-400' : ''}`}>
       {/* Header row */}
       <CardHeader
         className="pb-3 cursor-pointer select-none"
@@ -134,6 +139,19 @@ function OrgRow({
       >
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-3 flex-wrap">
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onToggleSelected(); }}
+              aria-label={selected ? 'הסר מהבחירה' : 'הוסף לבחירה'}
+              aria-pressed={selected}
+              className={`shrink-0 inline-flex items-center justify-center w-6 h-6 rounded-md border transition-colors ${
+                selected
+                  ? 'bg-brand-600 border-brand-600 text-white'
+                  : 'bg-white border-slate-300 text-slate-400 hover:border-brand-500 hover:text-brand-600'
+              }`}
+            >
+              {selected ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4" />}
+            </button>
             <Badge variant={org.org_type === 'contractor' ? 'default' : 'secondary'}>
               {org.org_type === 'contractor' ? 'קבלן' : 'תאגיד'}
             </Badge>
@@ -358,6 +376,14 @@ function ApprovalsContent() {
   const [toasts, setToasts] = useState<string[]>([]);
   const [typeFilter, setTypeFilter] = useState<'all' | 'contractor' | 'corporation'>('all');
   const [search, setSearch] = useState('');
+  // Bulk selection. Keep as a Set so toggling is O(1); the rendered
+  // count drives the bulk-action toolbar's visibility.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  // Two-step bulk confirm — admins approve/reject a batch all at once,
+  // there's no per-item undo. Pre-confirmation is mandatory.
+  const [pendingBulk, setPendingBulk] = useState<'approve' | 'reject' | null>(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkReason, setBulkReason] = useState('');
 
   const filterPredicate = useCallback((o: PendingOrg) => {
     if (typeFilter !== 'all' && o.org_type !== typeFilter) return false;
@@ -395,6 +421,7 @@ function ApprovalsContent() {
 
   const load = useCallback(() => {
     setLoading(true);
+    setSelectedIds(new Set()); // clear stale selection on refresh
     adminApi.pendingApprovals()
       .then(setOrgs)
       .catch(console.error)
@@ -408,21 +435,85 @@ function ApprovalsContent() {
     setTimeout(() => setToasts(t => t.slice(1)), 4000);
   }
 
+  function toggleSelected(id: string) {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  const selectedOrgs = useMemo(
+    () => visibleOrgs.filter(o => selectedIds.has(o.id)),
+    [visibleOrgs, selectedIds],
+  );
+
+  function toggleSelectAllVisible() {
+    const visibleIds = visibleOrgs.map(o => o.id);
+    const allSelected = visibleIds.every(id => selectedIds.has(id));
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (allSelected) {
+        visibleIds.forEach(id => next.delete(id));
+      } else {
+        visibleIds.forEach(id => next.add(id));
+      }
+      return next;
+    });
+  }
+
   async function handleDecide(id: string, orgType: string, approved: boolean,
                               reason: string | undefined, commission: number) {
     try {
       const result = await adminApi.decide(id, orgType, approved, reason, commission);
       pushToast(approved ? `✓ ${result.company_name} אושר בהצלחה` : `✗ ${result.company_name} נדחה`);
       setOrgs(prev => prev.filter(o => o.id !== id));
+      setSelectedIds(prev => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
     } catch (e) {
       pushToast(`✗ ${e instanceof Error ? e.message : 'שגיאה'}`);
       console.error(e);
     }
   }
 
+  async function runBulk() {
+    if (!pendingBulk || selectedOrgs.length === 0) return;
+    const approved = pendingBulk === 'approve';
+    setBulkBusy(true);
+    try {
+      const items = selectedOrgs.map(o => ({ id: o.id, org_type: o.org_type }));
+      const result = await adminApi.decideBulk(
+        items,
+        approved,
+        approved ? undefined : (bulkReason || undefined),
+      );
+      const okIds = new Set(result.ok.map(r => r.id));
+      setOrgs(prev => prev.filter(o => !okIds.has(o.id)));
+      setSelectedIds(new Set());
+      const okN = result.ok.length;
+      const failN = result.failed.length;
+      pushToast(failN === 0
+        ? (approved ? `✓ ${okN} ארגונים אושרו` : `✗ ${okN} ארגונים נדחו`)
+        : `${approved ? '✓ אושרו' : '✗ נדחו'} ${okN}, ${failN} נכשלו`);
+      setPendingBulk(null);
+      setBulkReason('');
+    } catch (e) {
+      pushToast(`✗ ${e instanceof Error ? e.message : 'שגיאת bulk'}`);
+      console.error(e);
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
   function handleLocalEdit(id: string, patch: Partial<PendingOrg>) {
     setOrgs(prev => prev.map(o => o.id === id ? { ...o, ...patch } : o));
   }
+
+  const allVisibleSelected = visibleOrgs.length > 0 && visibleOrgs.every(o => selectedIds.has(o.id));
+  const someVisibleSelected = visibleOrgs.some(o => selectedIds.has(o.id));
 
   return (
     <div className="space-y-4 max-w-3xl">
@@ -464,6 +555,51 @@ function ApprovalsContent() {
         onClear={clearFilters}
       />
 
+      {/* Bulk-action header: select-all checkbox + count, plus the
+       *  action toolbar that slides in once 1+ rows are selected.
+       *  The toolbar is positioned in the same row so the admin can
+       *  scan "23 ממתינים · 5 נבחרו → [אשר נבחרים]" at a glance. */}
+      {!loading && visibleOrgs.length > 0 && (
+        <div className="flex items-center gap-3 px-2 py-1">
+          <button
+            type="button"
+            onClick={toggleSelectAllVisible}
+            aria-label={allVisibleSelected ? 'הסר את כל הבחירות' : 'בחר את כל המוצגים'}
+            aria-pressed={allVisibleSelected}
+            className={`inline-flex items-center justify-center w-6 h-6 rounded-md border transition-colors ${
+              allVisibleSelected
+                ? 'bg-brand-600 border-brand-600 text-white'
+                : someVisibleSelected
+                  ? 'bg-brand-100 border-brand-400 text-brand-700'
+                  : 'bg-white border-slate-300 text-slate-400 hover:border-brand-500 hover:text-brand-600'
+            }`}
+          >
+            {allVisibleSelected ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4" />}
+          </button>
+          <span className="text-xs text-slate-500">
+            {selectedOrgs.length > 0
+              ? `${selectedOrgs.length} נבחרו מתוך ${visibleOrgs.length}`
+              : `${visibleOrgs.length} ארגונים מוצגים`}
+          </span>
+          {selectedOrgs.length > 0 && (
+            <div className="ms-auto flex items-center gap-2">
+              <Button size="sm" className="bg-green-600 hover:bg-green-700"
+                      onClick={() => setPendingBulk('approve')} disabled={bulkBusy}>
+                <CheckCircle className="h-3 w-3" /> אשר {selectedOrgs.length}
+              </Button>
+              <Button size="sm" variant="destructive"
+                      onClick={() => setPendingBulk('reject')} disabled={bulkBusy}>
+                <XCircle className="h-3 w-3" /> דחה {selectedOrgs.length}
+              </Button>
+              <Button size="sm" variant="ghost"
+                      onClick={() => setSelectedIds(new Set())} disabled={bulkBusy}>
+                נקה
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+
       {loading ? (
         <div className="space-y-3">
           {[1, 2, 3].map(i => (
@@ -486,11 +622,65 @@ function ApprovalsContent() {
               key={org.id}
               org={org}
               highlighted={org.id === highlight}
+              selected={selectedIds.has(org.id)}
+              onToggleSelected={() => toggleSelected(org.id)}
               onDecide={handleDecide}
               onLocalEdit={handleLocalEdit}
               onToast={pushToast}
             />
           ))}
+        </div>
+      )}
+
+      {/* Bulk confirm dialog. The "reject" variant shows a textarea
+       *  for a shared reason that's applied to every rejected row. */}
+      {pendingBulk && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          onClick={(e) => { if (e.target === e.currentTarget && !bulkBusy) { setPendingBulk(null); setBulkReason(''); } }}
+        >
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-xl overflow-hidden">
+            <div className="px-5 pt-4 pb-3 border-b border-slate-100">
+              <h2 className="text-base font-bold text-slate-900">
+                {pendingBulk === 'approve' ? 'אישור קבוצתי' : 'דחייה קבוצתית'}
+              </h2>
+            </div>
+            <div className="px-5 py-4 space-y-3">
+              <p className="text-sm text-slate-700">
+                {pendingBulk === 'approve'
+                  ? `לאשר ${selectedOrgs.length} ארגונים? כל ארגון יקבל את העמלה שכבר הוגדרה לו בכרטיס.`
+                  : `לדחות ${selectedOrgs.length} ארגונים? אם תזין סיבה, היא תופיע באותו טקסט בכל ההתראות.`}
+              </p>
+              {pendingBulk === 'reject' && (
+                <label className="block">
+                  <span className="text-xs font-medium text-slate-600">סיבת דחייה (אופציונלי)</span>
+                  <textarea
+                    rows={2}
+                    autoFocus
+                    value={bulkReason}
+                    onChange={(e) => setBulkReason(e.target.value)}
+                    className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  />
+                </label>
+              )}
+            </div>
+            <div className="px-5 py-3 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2">
+              <Button variant="outline" size="sm" disabled={bulkBusy}
+                      onClick={() => { setPendingBulk(null); setBulkReason(''); }}>
+                ביטול
+              </Button>
+              <Button size="sm" disabled={bulkBusy} onClick={runBulk}
+                      className={pendingBulk === 'approve'
+                        ? 'bg-green-600 hover:bg-green-700 text-white'
+                        : 'bg-rose-600 hover:bg-rose-700 text-white'}>
+                {bulkBusy
+                  ? <Loader2 className="h-3 w-3 animate-spin" />
+                  : (pendingBulk === 'approve' ? 'אשר את כולם' : 'דחה את כולם')}
+              </Button>
+            </div>
+          </div>
         </div>
       )}
 

@@ -353,6 +353,27 @@ export const adminApi = {
       }
     ),
 
+  /** Bulk approve or reject. The frontend MUST pre-confirm with the
+   *  admin (a styled ConfirmDialog) before calling — there's no
+   *  per-item undo. Returns split lists so the UI can toast OKs and
+   *  surface failures inline. Max 50 items per call (backend cap). */
+  decideBulk: (
+    items: Array<{ id: string; org_type: 'contractor' | 'corporation' }>,
+    approved: boolean,
+    reason?: string,
+  ) =>
+    apiFetch<{
+      ok: Array<{ id: string; org_type: string; status: string; company_name: string }>;
+      failed: Array<{ id: string; org_type: string; error: string }>;
+    }>('/admin/approvals/bulk', {
+      method: 'POST',
+      body: JSON.stringify({
+        items,
+        approved,
+        reason: reason || null,
+      }),
+    }),
+
   editOrg: (id: string, orgType: string, data: OrgEditPayload) =>
     apiFetch<{ id: string; updated_fields: string[] }>(
       `/admin/orgs/${id}/edit?org_type=${orgType}`,
