@@ -52,7 +52,7 @@ function Tile({
                   active:scale-[0.99] transition shadow-sm`}
     >
       {badge != null && badge > 0 && (
-        <div className="absolute top-3 left-3 min-w-[28px] h-7 px-2 rounded-full
+        <div className="absolute top-3 end-3 min-w-[28px] h-7 px-2 rounded-full
                         bg-amber-500 text-white text-xs font-bold flex items-center
                         justify-center">
           {badge}

@@ -52,10 +52,10 @@ export default function FindCategoriesPage() {
           const inner = (
             <>
               {cat.comingSoon && (
-                <div className="absolute top-3 left-3 inline-flex items-center bg-slate-900/85
+                <div className="absolute top-3 end-3 inline-flex items-center bg-slate-900/85
                                 text-white text-[11px] font-semibold px-2.5 py-1 rounded-full
                                 tracking-wide">
-                  Coming Soon
+                  בקרוב
                 </div>
               )}
               <div className={`w-16 h-16 rounded-full flex items-center justify-center mb-4

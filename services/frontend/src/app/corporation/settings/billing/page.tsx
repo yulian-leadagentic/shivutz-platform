@@ -465,6 +465,9 @@ function DealsCard() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [refundForm, setRefundForm] = useState<{ id: string; reason: string } | null>(null);
   const [toast, setToast] = useState('');
+  // Cancel-with-reason modal — replaces the legacy prompt() which
+  // prefixed the message with "staging.buildupai.net says".
+  const [cancelForm, setCancelForm] = useState<{ id: string; reason: string } | null>(null);
 
   function pushToast(msg: string) { setToast(msg); setTimeout(() => setToast(''), 4000); }
 
@@ -478,12 +481,17 @@ function DealsCard() {
 
   useEffect(() => { load(); }, []);
 
-  async function cancel(id: string) {
-    const reason = prompt('סיבת ביטול (אופציונלי):') || '';
-    setBusyId(id);
+  function cancel(id: string) {
+    setCancelForm({ id, reason: '' });
+  }
+
+  async function submitCancel() {
+    if (!cancelForm) return;
+    setBusyId(cancelForm.id);
     try {
-      await dealApi.cancel(id, reason);
+      await dealApi.cancel(cancelForm.id, cancelForm.reason);
       pushToast('✓ העסקה בוטלה');
+      setCancelForm(null);
       load();
     } catch (e) {
       pushToast(`✗ ${e instanceof Error ? e.message : 'שגיאה'}`);
@@ -608,6 +616,45 @@ function DealsCard() {
                 <Button onClick={submitRefund} disabled={busyId === refundForm.id}>
                   {busyId === refundForm.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Undo2 className="h-3 w-3" />}
                   שלח בקשה
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {cancelForm && (
+          <div
+            className="fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-4"
+            role="dialog"
+            aria-modal="true"
+            onClick={(e) => { if (e.target === e.currentTarget) setCancelForm(null); }}
+          >
+            <div className="bg-white rounded-2xl w-full max-w-md shadow-xl overflow-hidden">
+              <div className="px-5 pt-4 pb-3 border-b border-slate-100">
+                <h2 className="text-base font-bold text-slate-900">ביטול עסקה</h2>
+              </div>
+              <div className="px-5 py-4 space-y-3">
+                <p className="text-sm text-slate-600">העסקה תבוטל. ניתן להוסיף סיבה לצורך תיעוד פנימי.</p>
+                <label className="block">
+                  <span className="text-xs font-medium text-slate-600">סיבת ביטול (אופציונלי)</span>
+                  <textarea
+                    rows={3}
+                    autoFocus
+                    value={cancelForm.reason}
+                    onChange={(e) => setCancelForm({ ...cancelForm, reason: e.target.value })}
+                    className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                    placeholder="לדוגמה: הלקוח חזר בו, אי-התאמה בתאריכים..."
+                  />
+                </label>
+              </div>
+              <div className="px-5 py-3 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2">
+                <Button variant="outline" size="sm" onClick={() => setCancelForm(null)} disabled={busyId === cancelForm.id}>
+                  סגירה
+                </Button>
+                <Button size="sm" onClick={submitCancel} disabled={busyId === cancelForm.id}
+                        className="bg-rose-600 hover:bg-rose-700 text-white">
+                  {busyId === cancelForm.id ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+                  אישור ביטול
                 </Button>
               </div>
             </div>

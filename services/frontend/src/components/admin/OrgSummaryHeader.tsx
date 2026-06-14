@@ -32,11 +32,11 @@ const DEAL_STATUS_GROUPS: Array<{
   statuses: string[];
   tone: string;
 }> = [
-  { key: 'proposed',       label: 'הצעה נכנסה',   statuses: ['proposed'],                                          tone: 'bg-sky-500 text-white' },
-  { key: 'corp_committed', label: 'התאגיד הגיב',  statuses: ['corp_committed'],                                    tone: 'bg-amber-500 text-white' },
-  { key: 'approved',       label: 'בעבודה',       statuses: ['approved', 'active', 'counter_proposed', 'accepted'], tone: 'bg-emerald-500 text-white' },
-  { key: 'closed',         label: 'נסגרו',        statuses: ['closed'],                                            tone: 'bg-slate-700 text-white' },
-  { key: 'cancelled',      label: 'בוטלו / נדחו', statuses: ['cancelled', 'cancelled_by_corp', 'cancelled_by_contractor', 'rejected', 'expired'], tone: 'bg-rose-500 text-white' },
+  { key: 'proposed',       label: 'ממתין לאישור התאגיד', statuses: ['proposed'],                                          tone: 'bg-sky-500 text-white' },
+  { key: 'corp_committed', label: 'ממתין לאישורך',       statuses: ['corp_committed'],                                    tone: 'bg-yellow-500 text-white' },
+  { key: 'approved',       label: 'התקשרות אושרה',       statuses: ['approved', 'active', 'counter_proposed', 'accepted'], tone: 'bg-orange-500 text-white' },
+  { key: 'closed',         label: 'נסגרה',               statuses: ['closed'],                                            tone: 'bg-emerald-600 text-white' },
+  { key: 'cancelled',      label: 'בוטלו / נדחו',        statuses: ['cancelled', 'cancelled_by_corp', 'cancelled_by_contractor', 'rejected', 'expired'], tone: 'bg-rose-500 text-white' },
 ];
 
 function fmtDate(iso?: string | null) {

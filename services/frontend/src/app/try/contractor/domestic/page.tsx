@@ -50,7 +50,7 @@ export default function TryProfessionTilesPage() {
 
       <header className="space-y-1">
         <Link href="/try/contractor" className="inline-flex items-center text-xs text-slate-500 hover:text-slate-700">
-          <ChevronRight className="w-3 h-3 ml-1" /> חזרה
+          <ChevronRight className="w-3 h-3 me-1" /> חזרה
         </Link>
         <h1 className="text-2xl font-bold text-slate-900">גיוס עובדים מהארץ</h1>
         <p className="text-sm text-slate-600">בחר מקצוע</p>

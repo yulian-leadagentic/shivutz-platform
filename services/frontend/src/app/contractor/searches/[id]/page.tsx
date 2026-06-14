@@ -78,7 +78,7 @@ export default function SearchDetailPage() {
     <div className="max-w-3xl mx-auto px-4 py-6 space-y-5">
       <header className="space-y-2">
         <Link href="/contractor/searches" className="inline-flex items-center text-xs text-slate-500 hover:text-slate-700">
-          <ChevronRight className="w-3 h-3 ml-1" /> חזרה לחיפושים שלי
+          <ChevronRight className="w-3 h-3 me-1" /> חזרה לחיפושים שלי
         </Link>
         <div className="flex items-center gap-3">
           <ProfessionIcon code={search.profession_type} size={56} alt={profDef?.name_he} />
@@ -118,7 +118,7 @@ export default function SearchDetailPage() {
 
         {matching && (
           <div className="text-sm text-slate-500 text-center py-6">
-            <Loader2 className="w-5 h-5 animate-spin inline ml-2" /> מחפש התאמות...
+            <Loader2 className="w-5 h-5 animate-spin inline me-2" /> מחפש התאמות...
           </div>
         )}
 

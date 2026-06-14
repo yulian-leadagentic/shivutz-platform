@@ -13,7 +13,8 @@ import { dealRef } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import StatusBadge from '@/components/StatusBadge';
+import StatusBadge, { resolveStatus } from '@/components/StatusBadge';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import type { Deal, Message, Worker, Corporation } from '@/types';
 import { EXPERIENCE_LABEL as EXP_LABELS, heOrigin } from '@/i18n/he';
 
@@ -70,16 +71,6 @@ const STATUS_EXPLANATION: Record<string, { icon: React.ReactNode; text: string; 
   },
 };
 
-const STATUS_LABEL_HE: Record<string, string> = {
-  proposed:                  'הפנייה נשלחה',
-  corp_committed:            'תאגיד הציג רשימה',
-  approved:                  'אושר',
-  rejected:                  'נדחה',
-  expired:                   'פג תוקף',
-  cancelled_by_corp:         'בוטל ע״י התאגיד',
-  cancelled_by_contractor:   'לא נסגרה',
-  closed:                    'נסגר',
-};
 
 export default function DealDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -105,6 +96,8 @@ export default function DealDetailPage() {
   const [error, setError]       = useState('');
   const [confirming, setConfirming] = useState(false);
   const [confirmError, setConfirmError] = useState('');
+  // Two-step reject confirm — replaces the legacy native confirm().
+  const [confirmRejectOpen, setConfirmRejectOpen] = useState(false);
   // Close-the-loop (status='approved' → contractor confirms whether
   // the deal actually closed off-platform).
   const [closing, setClosing] = useState<'confirm' | 'decline' | null>(null);
@@ -260,12 +253,16 @@ export default function DealDetailPage() {
     }
   }
 
-  async function handleReject() {
-    if (!confirm('לדחות את הרשימה? הבקשה תישאר פתוחה ונחפש מענה במקום אחר.')) return;
+  function handleReject() {
+    setConfirmRejectOpen(true);
+  }
+
+  async function performReject() {
     setConfirming(true);
     setConfirmError('');
     try {
       await dealApi.reject(id);
+      setConfirmRejectOpen(false);
       await Promise.all([loadDeal(), loadMessages()]);
     } catch (e: unknown) {
       setConfirmError(e instanceof Error ? e.message : 'שגיאה בדחיית ההצעה');
@@ -380,7 +377,7 @@ export default function DealDetailPage() {
           <div className="flex items-center gap-2 flex-wrap">
             <h1 className="text-2xl font-bold text-slate-900">עסקה #{dealRef(id)}</h1>
             <span className="text-xs font-medium px-2.5 py-0.5 rounded-full border border-slate-300 bg-slate-50 text-slate-700">
-              {STATUS_LABEL_HE[deal.status] || deal.status}
+              {resolveStatus(deal.status).label}
             </span>
           </div>
           <div className="flex items-center gap-3 text-sm text-slate-500">
@@ -1035,6 +1032,17 @@ export default function DealDetailPage() {
           </CardContent>
         </Card>
       )}
+
+      <ConfirmDialog
+        open={confirmRejectOpen}
+        title="דחיית הרשימה"
+        message="לדחות את הרשימה? הבקשה תישאר פתוחה ונחפש מענה במקום אחר."
+        confirmLabel="דחה רשימה"
+        variant="destructive"
+        busy={confirming}
+        onConfirm={performReject}
+        onCancel={() => setConfirmRejectOpen(false)}
+      />
     </div>
   );
 }

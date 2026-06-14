@@ -218,8 +218,8 @@ function DateCell({ workerId, value, updateKey, onSaved }: {
         {saving
           ? <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400 shrink-0" />
           : <>
-              <button onClick={save} className="text-green-600 hover:text-green-700 shrink-0"><Check className="h-3.5 w-3.5" /></button>
-              <button onClick={() => setEditing(false)} className="text-slate-400 hover:text-red-500 shrink-0"><X className="h-3.5 w-3.5" /></button>
+              <button onClick={save} aria-label="שמור" title="שמור" className="text-green-600 hover:text-green-700 shrink-0"><Check className="h-3.5 w-3.5" /></button>
+              <button onClick={() => setEditing(false)} aria-label="ביטול" title="ביטול" className="text-slate-400 hover:text-red-500 shrink-0"><X className="h-3.5 w-3.5" /></button>
             </>
         }
       </div>
@@ -280,8 +280,8 @@ function EmpNumCell({ workerId, value, onSaved }: {
         {saving
           ? <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400 shrink-0" />
           : <>
-              <button onClick={save} className="text-green-600 hover:text-green-700 shrink-0"><Check className="h-3.5 w-3.5" /></button>
-              <button onClick={cancel} className="text-slate-400 hover:text-red-500 shrink-0"><X className="h-3.5 w-3.5" /></button>
+              <button onClick={save} aria-label="שמור" title="שמור" className="text-green-600 hover:text-green-700 shrink-0"><Check className="h-3.5 w-3.5" /></button>
+              <button onClick={cancel} aria-label="ביטול" title="ביטול" className="text-slate-400 hover:text-red-500 shrink-0"><X className="h-3.5 w-3.5" /></button>
             </>
         }
       </div>

@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { TableToolbar } from '@/components/table/TableToolbar';
 import { useTableState } from '@/components/table/useTableState';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 
 const CONTRACTOR_LICENSE = 'contractor_license';
 const OTHER_DOC_TYPES = Object.entries(DOC_TYPE_LABELS).filter(([k]) => k !== CONTRACTOR_LICENSE);
@@ -50,6 +51,7 @@ function LicenseSection({
   const [notes, setNotes]       = useState('');
   const [saving, setSaving]     = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [error, setError]       = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -89,12 +91,12 @@ function LicenseSection({
     } finally { setSaving(false); }
   }
 
-  async function handleDelete() {
+  async function performDelete() {
     if (!license || !entityId) return;
-    if (!window.confirm('למחוק את רישיון הקבלן? נדרש רישיון מעודכן לפעילות.')) return;
     setDeleting(true);
     try {
       await documentApi.delete('contractors', entityId, license.doc_id);
+      setConfirmingDelete(false);
       await onChanged();
     } catch { /* ignore */ } finally { setDeleting(false); }
   }
@@ -136,9 +138,9 @@ function LicenseSection({
                 title="החלפה">
                 <RefreshCw className="h-4 w-4" />
               </button>
-              <button onClick={handleDelete} disabled={deleting}
+              <button onClick={() => setConfirmingDelete(true)} disabled={deleting}
                 className="p-2 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-600 transition-colors disabled:opacity-50"
-                title="מחיקה">
+                title="מחיקה" aria-label="מחיקה">
                 {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
               </button>
             </div>
@@ -226,6 +228,17 @@ function LicenseSection({
           </div>
         )}
       </CardContent>
+
+      <ConfirmDialog
+        open={confirmingDelete}
+        title="מחיקת רישיון קבלן"
+        message="למחוק את רישיון הקבלן? נדרש רישיון מעודכן לפעילות — ללא רישיון תקף לא תוכל לפתוח בקשות עובדים חדשות."
+        confirmLabel="מחק רישיון"
+        variant="destructive"
+        busy={deleting}
+        onConfirm={performDelete}
+        onCancel={() => setConfirmingDelete(false)}
+      />
     </Card>
   );
 }

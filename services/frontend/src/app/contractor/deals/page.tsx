@@ -437,6 +437,9 @@ function DealCard({
   void onReject; // kept on the API for the deal-detail page; not surfaced here
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirmCancelOthersOpen, setConfirmCancelOthersOpen] = useState(false);
+  // Two-step delete confirm — replaces the legacy native confirm() which
+  // prefixed the message with "staging.buildupai.net says".
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   // Corp contact panel — lazy-fetched once per deal when its row
   // expands AND the deal is past the disclosure point.
   const [corpById, setCorpById] = useState<Record<string, Corporation>>({});
@@ -608,12 +611,8 @@ function DealCard({
                         disabled={!canDelete || deletingSearch}
                         onClick={() => {
                           if (!canDelete) return;
-                          const msg = cancellableForDelete.length === 0
-                            ? 'למחוק את הבקשה לצמיתות? היא לא תוצג יותר ברשימת העסקאות שלך.'
-                            : `למחוק את הבקשה לצמיתות? ${cancellableForDelete.length} הצעות שטרם אושרו יבוטלו אוטומטית, העובדים והאשראי ישוחררו לתאגידים, והכרטיס יוסר מהרשימה שלך.`;
-                          if (!confirm(msg)) return;
                           setMenuOpen(false);
-                          onDeleteSearch(cancellableForDelete);
+                          setConfirmDeleteOpen(true);
                         }}
                         title={canDelete ? undefined : 'לא ניתן למחוק בקשה כאשר יש עסקה פעילה. סיים או בטל אותה תחילה.'}
                         className={`w-full text-start flex items-center gap-2 px-3 py-2 text-sm font-medium transition-colors ${
@@ -1086,6 +1085,22 @@ function DealCard({
           )}
         </div>
       </div>
+
+      <ConfirmDialog
+        open={confirmDeleteOpen}
+        title="מחיקת בקשה לצמיתות"
+        message={cancellableForDelete.length === 0
+          ? 'למחוק את הבקשה לצמיתות? היא לא תוצג יותר ברשימת העסקאות שלך.'
+          : `למחוק את הבקשה לצמיתות? ${cancellableForDelete.length} הצעות שטרם אושרו יבוטלו אוטומטית, העובדים והאשראי ישוחררו לתאגידים, והכרטיס יוסר מהרשימה שלך.`}
+        confirmLabel="מחק לצמיתות"
+        variant="destructive"
+        busy={deletingSearch}
+        onConfirm={() => {
+          setConfirmDeleteOpen(false);
+          onDeleteSearch(cancellableForDelete);
+        }}
+        onCancel={() => setConfirmDeleteOpen(false)}
+      />
     </div>
   );
 }

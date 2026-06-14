@@ -13,6 +13,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 
 function fmtPrice(nis: number): string {
   return `₪${nis.toLocaleString('he-IL', { maximumFractionDigits: 2 })}`;
@@ -41,6 +42,9 @@ function SubscribePageInner() {
   const [loading, setLoading]               = useState(true);
   const [error, setError]                   = useState<string | null>(null);
   const [purchasingTier, setPurchasingTier] = useState<string | null>(null);
+  // Two-step purchase confirm — replaces the legacy native confirm()
+  // which prefixed messages with "staging.buildupai.net says".
+  const [pendingBuy, setPendingBuy] = useState<{ tier: CatalogTier; autoRenew: boolean } | null>(null);
 
   async function reload() {
     setLoading(true); setError(null);
@@ -67,16 +71,17 @@ function SubscribePageInner() {
     return m;
   }, [mySubs]);
 
-  async function handleBuy(tier: CatalogTier, autoRenew: boolean) {
-    if (!confirm(
-      autoRenew
-        ? `לרכוש את "${tier.name_he}" ב-${fmtPrice(tier.price_nis)} עם חידוש אוטומטי?`
-        : `לרכוש את "${tier.name_he}" ב-${fmtPrice(tier.price_nis)} ללא חידוש אוטומטי?`,
-    )) return;
+  function handleBuy(tier: CatalogTier, autoRenew: boolean) {
+    setPendingBuy({ tier, autoRenew });
+  }
 
+  async function confirmBuy() {
+    if (!pendingBuy) return;
+    const { tier, autoRenew } = pendingBuy;
     setPurchasingTier(tier.id); setError(null);
     try {
       await marketplaceSubscriptionsApi.purchase(tier.id, autoRenew);
+      setPendingBuy(null);
       // Push back to the user's marketplace dashboard with the new sub active
       router.push(`/corporation/marketplace?subscribed=${tier.category_code}`);
     } catch (e) {
@@ -207,6 +212,19 @@ function SubscribePageInner() {
           </Button>
         </Link>
       </div>
+
+      <ConfirmDialog
+        open={!!pendingBuy}
+        title="אישור רכישה"
+        message={pendingBuy
+          ? `לרכוש את "${pendingBuy.tier.name_he}" ב-${fmtPrice(pendingBuy.tier.price_nis)} ${pendingBuy.autoRenew ? 'עם חידוש אוטומטי' : 'ללא חידוש אוטומטי'}?`
+          : ''}
+        confirmLabel="אשר רכישה"
+        variant="primary"
+        busy={purchasingTier !== null}
+        onConfirm={confirmBuy}
+        onCancel={() => setPendingBuy(null)}
+      />
     </div>
   );
 }

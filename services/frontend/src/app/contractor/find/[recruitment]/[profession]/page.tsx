@@ -248,7 +248,7 @@ export default function FindFormPage() {
           href={`/contractor/find/${recruitment}`}
           className="inline-flex items-center text-xs text-slate-500 hover:text-slate-700"
         >
-          <ChevronRight className="w-3 h-3 ml-1" /> חזרה למקצועות
+          <ChevronRight className="w-3 h-3 me-1" /> חזרה למקצועות
         </Link>
         <div className="flex items-center gap-3">
           <ProfessionIcon code={profession} size={56} alt={profDef?.name_he} />
