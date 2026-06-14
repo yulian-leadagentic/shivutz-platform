@@ -30,10 +30,32 @@ import type { NextRequest } from 'next/server';
 // excludes these — the function body has an extra safety check for
 // good measure.
 
-const GATE_ENABLED = process.env.COMING_SOON_MODE === '1';
+// Three sources of truth for whether the gate is on, in priority order:
+//   1. COMING_SOON_MODE env var explicitly set ('1' or '0') — wins.
+//   2. Otherwise: gate ON for prod hostnames (buildupai.net) and OFF
+//      everywhere else (staging, localhost, previews).
+//
+// The hostname fallback exists because the previous version relied
+// entirely on the env var, and a missing var on Railway prod silently
+// left the platform fully open. Defaulting to "gated on prod" makes
+// the safer behaviour the default.
+const ENV_FLAG = process.env.COMING_SOON_MODE;
+
+function gateEnabledFor(host: string | null): boolean {
+  if (ENV_FLAG === '1') return true;
+  if (ENV_FLAG === '0') return false;
+  // No explicit flag — apply hostname default.
+  if (!host) return false;
+  const h = host.toLowerCase();
+  // Prod = buildupai.net (with or without www); staging.buildupai.net
+  // explicitly stays open for internal QA.
+  if (h === 'buildupai.net' || h === 'www.buildupai.net') return true;
+  return false;
+}
 
 export function middleware(req: NextRequest) {
-  if (!GATE_ENABLED) return NextResponse.next();
+  const host = req.headers.get('host');
+  if (!gateEnabledFor(host)) return NextResponse.next();
 
   const { pathname } = req.nextUrl;
 
