@@ -74,10 +74,19 @@ export default function ContractorUsersPage() {
   }
 
   useEffect(() => {
-    if (!entityId) return;
+    if (!entityId) {
+      // No entity context (admin role, or multi-entity user yet to
+      // pick one). Don't leave the spinner running forever — render
+      // the empty state instead. The "select an entity" CTA in the
+      // TopBar covers the recovery path.
+      setLoading(false);
+      return;
+    }
     memberApi.list('contractors', entityId)
       .then(setMembers)
-      .catch(console.error)
+      .catch((e) => {
+        console.error('memberApi.list contractor failed', e);
+      })
       .finally(() => setLoading(false));
   }, [entityId]);
 

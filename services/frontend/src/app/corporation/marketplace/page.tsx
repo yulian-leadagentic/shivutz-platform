@@ -46,16 +46,28 @@ export default function CorporationMarketplacePage() {
 
   async function load() {
     setLoading(true);
-    try {
-      const [listingsData, subsData] = await Promise.all([
-        marketplaceApi.list({ mine: true }),
-        marketplaceSubscriptionsApi.mine().catch(() => [] as Subscription[]),
-      ]);
-      setListings(listingsData);
-      setSubscriptions(subsData);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'שגיאה');
-    } finally { setLoading(false); }
+    setError('');
+    // allSettled so a failure on one panel doesn't blank the other —
+    // previously a single rejected promise inside Promise.all blocked
+    // both panels and left them in skeleton state.
+    const [listingsRes, subsRes] = await Promise.allSettled([
+      marketplaceApi.list({ mine: true }),
+      marketplaceSubscriptionsApi.mine(),
+    ]);
+    if (listingsRes.status === 'fulfilled') {
+      setListings(listingsRes.value ?? []);
+    } else {
+      console.error('corp marketplace list failed', listingsRes.reason);
+      setListings([]);
+      setError(listingsRes.reason instanceof Error ? listingsRes.reason.message : 'שגיאה בטעינת המודעות');
+    }
+    if (subsRes.status === 'fulfilled') {
+      setSubscriptions(subsRes.value ?? []);
+    } else {
+      console.error('corp subscriptions list failed', subsRes.reason);
+      setSubscriptions([]);
+    }
+    setLoading(false);
   }
 
   useEffect(() => { load(); }, []);

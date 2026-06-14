@@ -79,10 +79,19 @@ export default function CorporationUsersPage() {
   }
 
   useEffect(() => {
-    if (!entityId) return;
+    if (!entityId) {
+      // No entity context (admin role, or multi-entity user yet to
+      // pick one). Don't leave the spinner running forever — render
+      // the empty state instead. The "select an entity" CTA in the
+      // TopBar covers the recovery path.
+      setLoading(false);
+      return;
+    }
     memberApi.list('corporations', entityId)
       .then(setMembers)
-      .catch(console.error)
+      .catch((e) => {
+        console.error('memberApi.list corporation failed', e);
+      })
       .finally(() => setLoading(false));
   }, [entityId]);
 

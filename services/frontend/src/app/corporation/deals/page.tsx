@@ -28,6 +28,20 @@ import { CorpResponseCountdown } from '@/components/CorpResponseCountdown';
 // uses the DB setting; this constant matches the migration default.
 const CORP_RESPONSE_HOURS = 48;
 
+// Hebrew fallback for the region codes we know. The /enums/regions
+// endpoint should populate the same labels but occasionally it lags
+// or fails — without this fallback the deal cards leaked raw English
+// codes ("south" / "center" / "national") into the Hebrew UI.
+const REGION_LABEL_FALLBACK: Record<string, string> = {
+  north:    'צפון',
+  center:   'מרכז',
+  south:    'דרום',
+  jerusalem:'ירושלים',
+  national: 'ארצי',
+  shfela:   'שפלה',
+  sharon:   'שרון',
+};
+
 // R17 — corp-side staleness cut-off. Items the corp has had visibility
 // on for longer than this without acting (proposed deals + open
 // browseable searches) are hidden from the page. corp_committed and
@@ -702,7 +716,9 @@ function CorporationDealsPageContent() {
           {visibleOpenSearches.map((r) => {
             const profCode    = r.profession_type;
             const profLabel   = professionMap[r.profession_type] ?? r.profession_type;
-            const regionLabel = r.region ? (regionMap[r.region] ?? r.region) : '';
+            const regionLabel = r.region
+              ? (regionMap[r.region] ?? REGION_LABEL_FALLBACK[r.region] ?? r.region)
+              : '';
             const originsHe   = (r.origin_preference ?? [])
               .map((c) => originMap[c] ?? c)
               .filter(Boolean);

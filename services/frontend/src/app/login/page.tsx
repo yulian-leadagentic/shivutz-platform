@@ -297,8 +297,12 @@ function LoginPageInner() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 px-4 py-6">
-      <div className="w-full max-w-md mb-3 flex justify-end">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 px-4 py-6 relative">
+      {/* HomeLink lives in the top-right corner instead of stacked
+       *  above the card. Keeping it in flow pushed the card visibly
+       *  below the vertical center on desktop. Absolute keeps the
+       *  card geometrically centered. */}
+      <div className="absolute top-4 end-4">
         <HomeLink />
       </div>
       <div className="w-full max-w-md">

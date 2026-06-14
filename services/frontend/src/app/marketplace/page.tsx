@@ -47,16 +47,27 @@ export default function MarketplacePage() {
   const [search, setSearch]     = useState('');
   const [searchInput, setSearchInput] = useState('');
 
+  const [loadError, setLoadError] = useState<string | null>(null);
+
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const data = await marketplaceApi.list({
         category: category || undefined,
         region:   region   || undefined,
         search:   search   || undefined,
       });
-      setListings(data);
-    } catch { /* silent */ }
+      setListings(data ?? []);
+    } catch (e) {
+      // Was silently swallowed; that made the page indistinguishable
+      // from "no results" when the API was actually failing. Surface
+      // it so the admin can spot it AND so the skeletons can give
+      // way to a friendly error block.
+      console.error('marketplace list failed', e);
+      setLoadError(e instanceof Error ? e.message : 'שגיאה בטעינת המודעות');
+      setListings([]);
+    }
     finally { setLoading(false); }
   }, [category, region, search]);
 
@@ -163,6 +174,15 @@ export default function MarketplacePage() {
         {loading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {Array.from({ length: 8 }).map((_, i) => <SkeletonCard key={i} />)}
+          </div>
+        ) : loadError ? (
+          <div className="text-center py-20">
+            <Building2 className="h-16 w-16 text-rose-200 mx-auto mb-4" />
+            <p className="text-rose-700 font-medium">תקלה בטעינת המודעות</p>
+            <p className="text-rose-500 text-sm mt-1 max-w-md mx-auto">{loadError}</p>
+            <button onClick={load} className="mt-4 text-sm text-brand-600 underline">
+              נסה שוב
+            </button>
           </div>
         ) : listings.length === 0 ? (
           <div className="text-center py-20">
