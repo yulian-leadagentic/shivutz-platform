@@ -9,7 +9,11 @@
 -- This is the only system_settings row we touch — capture_delay_hours
 -- and grace_period_hours stay where they are.
 
-USE deal_db;
+-- system_settings lives in payment_db (created by migration 014, which
+-- inserted the original approval_deadline_hours=168 row there). Earlier
+-- versions of this migration USEd deal_db by mistake and crashed the
+-- runner.
+USE payment_db;
 
 UPDATE system_settings
    SET setting_value = '48',
