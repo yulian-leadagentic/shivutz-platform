@@ -25,6 +25,11 @@ const HAS_IMAGE: Record<string, boolean> = {
   electricity: true,
   plumbing:    true,
   general:     true,
+  // Wave 4 — new profession_types rows from migration 050
+  // (חשמלאי + בנאי). The illustrated PNGs live under V2/ in the
+  // marketing assets folder; copied into public/profession-icons/.
+  electrician: true,
+  mason:       true,
 };
 
 const LUCIDE_FALLBACK: Record<string, LucideIcon> = {
@@ -37,6 +42,10 @@ const LUCIDE_FALLBACK: Record<string, LucideIcon> = {
   electricity: Zap,
   plumbing:    PipetteIcon,
   general:     HardHat,
+  // Reuse existing glyphs — these fire only when the PNG fails to
+  // load, so semantic precision matters less than guaranteed presence.
+  electrician: Zap,
+  mason:       Hammer,
 };
 
 interface Props {
