@@ -12,7 +12,7 @@ import type { NextRequest } from 'next/server';
 //   - Staging: leave unset (full app accessible — internal testing)
 //
 // Bypass mechanism — for our own team to QA prod behind the gate:
-//   1. Visit https://www.buildupai.net/coming-soon?key=<PREVIEW_KEY>
+//   1. Visit https://www.tagidai.com/coming-soon?key=<PREVIEW_KEY>
 //   2. The coming-soon page sees `?key=` matching `COMING_SOON_PREVIEW_KEY`
 //      env var and sets a `coming_soon_bypass=1` cookie (handled in the
 //      page component).
@@ -32,25 +32,37 @@ import type { NextRequest } from 'next/server';
 
 // Three sources of truth for whether the gate is on, in priority order:
 //   1. COMING_SOON_MODE env var explicitly set ('1' or '0') — wins.
-//   2. Otherwise: gate ON for prod hostnames (buildupai.net) and OFF
-//      everywhere else (staging, localhost, previews).
+//   2. Otherwise: gate ON for prod hostnames and OFF everywhere else
+//      (staging.*, localhost, Railway previews).
 //
 // The hostname fallback exists because the previous version relied
 // entirely on the env var, and a missing var on Railway prod silently
 // left the platform fully open. Defaulting to "gated on prod" makes
 // the safer behaviour the default.
+//
+// Prod hostnames:
+//   - tagidai.com / www.tagidai.com — the current production domain
+//   - buildupai.net / www.buildupai.net — the legacy domain; kept in
+//     the list during the transition so a visitor on the old URL
+//     still sees the gate (and not the full app) before DNS for the
+//     old domain is removed from Railway. Safe to drop once the
+//     legacy domain is fully decommissioned.
 const ENV_FLAG = process.env.COMING_SOON_MODE;
+
+const PROD_HOSTS = new Set([
+  'tagidai.com',
+  'www.tagidai.com',
+  'buildupai.net',
+  'www.buildupai.net',
+]);
 
 function gateEnabledFor(host: string | null): boolean {
   if (ENV_FLAG === '1') return true;
   if (ENV_FLAG === '0') return false;
-  // No explicit flag — apply hostname default.
+  // No explicit flag — apply hostname default. staging.* and any
+  // non-prod hostname fall through to OFF.
   if (!host) return false;
-  const h = host.toLowerCase();
-  // Prod = buildupai.net (with or without www); staging.buildupai.net
-  // explicitly stays open for internal QA.
-  if (h === 'buildupai.net' || h === 'www.buildupai.net') return true;
-  return false;
+  return PROD_HOSTS.has(host.toLowerCase());
 }
 
 export function middleware(req: NextRequest) {
