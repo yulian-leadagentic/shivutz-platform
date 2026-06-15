@@ -7,16 +7,16 @@ import './globals.css';
 const heebo = Heebo({ subsets: ['hebrew', 'latin'], variable: '--font-heebo' });
 
 export const metadata: Metadata = {
-  title: 'BuildUp — גיוס עובדים זרים לבנייה',
-  description: 'BuildUp — מערכת מבוססת AI להתאמת עובדים זרים, שיבוץ וניהול תהליך הגיוס בענף הבנייה.',
-  applicationName: 'BuildUp',
+  title: 'TagidAI — גיוס עובדים זרים לבנייה',
+  description: 'TagidAI — מערכת מבוססת AI להתאמת עובדים זרים, שיבוץ וניהול תהליך הגיוס בענף הבנייה.',
+  applicationName: 'TagidAI',
   icons: {
     icon: '/brand/buildup-icon.png',
     apple: '/brand/buildup-icon.png',
   },
   appleWebApp: {
     capable: true,
-    title: 'BuildUp',
+    title: 'TagidAI',
     statusBarStyle: 'default',
   },
 };

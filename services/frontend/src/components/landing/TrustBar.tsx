@@ -191,7 +191,7 @@ export default function TrustBar() {
             className="uppercase mb-1.5"
             style={{ color: '#F7941D', fontSize: 11, fontWeight: 500, letterSpacing: '0.12em' }}
           >
-            למה בוחרים ב-BUILDUP?
+            למה בוחרים ב-TAGIDAI?
           </p>
           <h2
             className="text-lg sm:text-xl md:text-2xl"

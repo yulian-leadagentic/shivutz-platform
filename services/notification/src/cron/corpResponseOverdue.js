@@ -53,7 +53,7 @@ async function runCorpResponseOverdueCron() {
     const link = `${FRONTEND_URL}/admin/dashboard`;
     const noun = deals.length === 1 ? 'בקשה אחת' : `${deals.length} בקשות`;
     const message =
-      `BuildUp — ${noun} עברו את חלון התגובה (${hours} שעות) ללא מענה תאגיד.\n` +
+      `TagidAI — ${noun} עברו את חלון התגובה (${hours} שעות) ללא מענה תאגיד.\n` +
       `פתח את לוח הבקרה לבדיקה:\n${link}`;
     for (const a of admins) {
       if (!a.phone) continue;

@@ -189,7 +189,7 @@ export default function MembershipRequestAcceptPage() {
             </div>
             <div>
               <h1 className="text-lg font-bold text-slate-900">בקשה להצטרפות לצוות</h1>
-              <p className="text-xs text-slate-500">דרך BuildUp · בקשה ל{entityKindHe} שלך</p>
+              <p className="text-xs text-slate-500">דרך TagidAI · בקשה ל{entityKindHe} שלך</p>
             </div>
           </div>
 

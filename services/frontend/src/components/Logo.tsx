@@ -56,7 +56,7 @@ export default function Logo({
   return (
     <Image
       src={src}
-      alt={decorative ? '' : 'BuildUp'}
+      alt={decorative ? '' : 'TagidAI'}
       aria-hidden={decorative || undefined}
       width={w}
       height={h}

@@ -94,7 +94,7 @@ async function notifyMatchFound(result, sendEmail) {
   const matchUrl   = `${FRONTEND_URL}/contractor/searches/${result.search_id}`;
   const profession = result.profession || 'החיפוש שלך';
   const workerCt   = result.worker_count || 0;
-  const smsBody    = `BuildUp — נמצאה התאמה מלאה לחיפוש "${profession}" (${workerCt} עובדים). לצפייה: ${matchUrl}`;
+  const smsBody    = `TagidAI — נמצאה התאמה מלאה לחיפוש "${profession}" (${workerCt} עובדים). לצפייה: ${matchUrl}`;
 
   // Fan-out across the contractor's notification recipients (Phase 1).
   // Falls back to the single contact_phone / contact_email pair when
@@ -219,7 +219,7 @@ async function materialiseNewDeals(result, sendEmail) {
       const corpLink = `${FRONTEND_URL}/corporation/deals`;
       await sendSmsInternal(
         corpPhone,
-        `BuildUp — יש דרישה חדשה ממתינה לעובדי ${profHe}. אנא פתח את לוח העסקאות: ${corpLink}`
+        `TagidAI — יש דרישה חדשה ממתינה לעובדי ${profHe}. אנא פתח את לוח העסקאות: ${corpLink}`
       );
     }
   }
@@ -230,7 +230,7 @@ async function materialiseNewDeals(result, sendEmail) {
     const firstName = (result.contact_name || '').split(' ')[0] || 'שלום';
     await sendSmsInternal(
       result.contact_phone,
-      `BuildUp — ${firstName}, תאגיד נוסף יכול לתת מענה לדרישה שלך ל-${profHe}. היכנס לבדוק: ${dealsLink}`
+      `TagidAI — ${firstName}, תאגיד נוסף יכול לתת מענה לדרישה שלך ל-${profHe}. היכנס לבדוק: ${dealsLink}`
     );
   }
 }
@@ -315,7 +315,7 @@ async function handle(routingKey, payload, sendEmail) {
         const firstName = (payload.contact_name || '').split(' ')[0] || 'שלום';
         await sendSmsInternal(
           payload.contact_phone,
-          `${firstName}, החשבון שלך בפורטל BuildUp אושר ✓\n${payload.org_type === 'contractor' ? 'לאיתור עובדים: ' : 'כניסה לחשבון: '}${link}`
+          `${firstName}, החשבון שלך בפורטל TagidAI אושר ✓\n${payload.org_type === 'contractor' ? 'לאיתור עובדים: ' : 'כניסה לחשבון: '}${link}`
         );
       }
       break;
@@ -441,7 +441,7 @@ async function handle(routingKey, payload, sendEmail) {
       const inviteUrl   = `${FRONTEND_URL}/invite/accept/${payload.invite_token}`;
       const inviterName = payload.inviter_name || 'המנהל';
       const entityName  = payload.entity_name  || 'הארגון';
-      const message     = `שלום! ${inviterName} מזמין אותך להצטרף לצוות "${entityName}" בפורטל BuildUp בתפקיד ${roleLabel}.\nלהתחברות והצטרפות לפלטפורמה:\n${inviteUrl}`;
+      const message     = `שלום! ${inviterName} מזמין אותך להצטרף לצוות "${entityName}" בפורטל TagidAI בתפקיד ${roleLabel}.\nלהתחברות והצטרפות לפלטפורמה:\n${inviteUrl}`;
       await sendSmsInternal(payload.phone, message);
       break;
     }
@@ -456,7 +456,7 @@ async function handle(routingKey, payload, sendEmail) {
       const entityKindHe = payload.entity_type === 'contractor' ? 'הקבלן' : 'התאגיד';
       const ownerName    = (payload.owner_name || '').split(' ')[0] || 'שלום';
       const message =
-        `BuildUp — ${ownerName}, ${payload.requester_name} (${payload.requester_phone}) מבקש להצטרף לצוות ${entityKindHe} "${payload.entity_name}".\n` +
+        `TagidAI — ${ownerName}, ${payload.requester_name} (${payload.requester_phone}) מבקש להצטרף לצוות ${entityKindHe} "${payload.entity_name}".\n` +
         `לאישור בלחיצה אחת:\n${approveUrl}`;
       await sendSmsInternal(payload.owner_phone, message);
       break;
@@ -467,7 +467,7 @@ async function handle(routingKey, payload, sendEmail) {
       const entityKindHe = payload.entity_type === 'contractor' ? 'הקבלן' : 'התאגיד';
       const firstName = (payload.requester_name || '').split(' ')[0] || 'שלום';
       const message =
-        `BuildUp — ${firstName}, בקשתך להצטרף לצוות ${entityKindHe} אושרה. תוכל להיכנס למערכת עם מספר הטלפון שלך.\n` +
+        `TagidAI — ${firstName}, בקשתך להצטרף לצוות ${entityKindHe} אושרה. תוכל להיכנס למערכת עם מספר הטלפון שלך.\n` +
         `${FRONTEND_URL}/login`;
       await sendSmsInternal(payload.requester_phone, message);
       break;
@@ -479,7 +479,7 @@ async function handle(routingKey, payload, sendEmail) {
       const firstName = (payload.requester_name || '').split(' ')[0] || 'שלום';
       const reasonSuffix = payload.reason ? `\nהערה: ${payload.reason}` : '';
       const message =
-        `BuildUp — ${firstName}, בקשתך להצטרף לצוות ${entityKindHe} נדחתה על ידי הבעלים.` +
+        `TagidAI — ${firstName}, בקשתך להצטרף לצוות ${entityKindHe} נדחתה על ידי הבעלים.` +
         reasonSuffix +
         '\nלשאלות, פנה לתמיכה.';
       await sendSmsInternal(payload.requester_phone, message);
@@ -497,7 +497,7 @@ async function handle(routingKey, payload, sendEmail) {
     case 'contractor.verify.sms_code': {
       const firstName = (payload.contact_name || '').split(' ')[0] || 'שלום';
       const message =
-        `BuildUp — קוד אימות בעלות לעסק שלך: ${payload.code}\n` +
+        `TagidAI — קוד אימות בעלות לעסק שלך: ${payload.code}\n` +
         `הזן את הקוד באתר כדי להשלים את הרישום. תקף ל-30 דקות.\n` +
         `אם לא ביקשת — התעלם מההודעה (${firstName}).`;
       await sendSmsInternal(payload.phone, message);
@@ -525,7 +525,7 @@ async function handle(routingKey, payload, sendEmail) {
         const firstName = (payload.contact_name || '').split(' ')[0] || 'שלום';
         await sendSmsInternal(
           payload.contact_phone,
-          `BuildUp — ${firstName}, הרישום של ${payload.company_name || 'העסק שלך'} כבר לא מופיע בפנקס הקבלנים. ` +
+          `TagidAI — ${firstName}, הרישום של ${payload.company_name || 'העסק שלך'} כבר לא מופיע בפנקס הקבלנים. ` +
           `הגשת בקשות לתאגידים מושהית עד שנעדכן את האימות. היכנס לאתר ובחר "אמת מחדש" בהגדרות.`
         );
       }
@@ -549,7 +549,7 @@ async function handle(routingKey, payload, sendEmail) {
         const firstName = (payload.contact_name || '').split(' ')[0] || 'שלום';
         await sendSmsInternal(
           payload.contact_phone,
-          `BuildUp — ${firstName}, החשבון שלך אומת בהצלחה ✓ אתה יכול עכשיו להגיש בקשות לתאגידים. ` +
+          `TagidAI — ${firstName}, החשבון שלך אומת בהצלחה ✓ אתה יכול עכשיו להגיש בקשות לתאגידים. ` +
           `כניסה: ${FRONTEND_URL}/contractor/dashboard`
         );
       }
@@ -574,7 +574,7 @@ async function handle(routingKey, payload, sendEmail) {
         const firstName = (payload.contractor_contact_name || '').split(' ')[0] || 'שלום';
         await sendSmsInternal(
           payload.contractor_contact_phone,
-          `BuildUp — ${firstName}, תאגיד הציע ${vars.worker_count} עובדי ${vars.profession_he} לבקשתך. ` +
+          `TagidAI — ${firstName}, תאגיד הציע ${vars.worker_count} עובדי ${vars.profession_he} לבקשתך. ` +
           `יש לך 48 שעות לאשר. כניסה: ${dealUrl}`
         );
       }
@@ -611,7 +611,7 @@ async function handle(routingKey, payload, sendEmail) {
         const firstName = (payload.contractor_contact_name || '').split(' ')[0] || 'שלום';
         await sendSmsInternal(
           payload.contractor_contact_phone,
-          `BuildUp — ${firstName}, אישרת רשימה של ${payload.worker_count} עובדים. ` +
+          `TagidAI — ${firstName}, אישרת רשימה של ${payload.worker_count} עובדים. ` +
           `חיוב יבוצע ב-${captureFmt} (אלא אם התאגיד יבטל בחלון הזמן).`
         );
       }
@@ -674,7 +674,7 @@ async function handle(routingKey, payload, sendEmail) {
         const firstName = (payload.contractor_contact_name || '').split(' ')[0] || 'שלום';
         await sendSmsInternal(
           payload.contractor_contact_phone,
-          `BuildUp — ${firstName}, ${payload.corp_name || 'התאגיד'} ביטל את העסקה לפני החיוב. לא חויבת. ` +
+          `TagidAI — ${firstName}, ${payload.corp_name || 'התאגיד'} ביטל את העסקה לפני החיוב. לא חויבת. ` +
           `הבקשה שלך נשארת פתוחה.`
         );
       }
@@ -822,7 +822,7 @@ async function broadcastNoMatch(payload) {
 
   const uploadLink = `${FRONTEND_URL}/corporation/workers/new`;
   const message =
-    `BuildUp — קבלן מחפש ${qty} עובדי ${profHe} ${recruitment}${region}, ולא נמצאו התאמות פעילות.\n` +
+    `TagidAI — קבלן מחפש ${qty} עובדי ${profHe} ${recruitment}${region}, ולא נמצאו התאמות פעילות.\n` +
     `אם יש לכם עובדים זמינים — זה הזמן להעלות אותם למערכת:\n${uploadLink}`;
 
   for (const c of corps) {
@@ -889,7 +889,7 @@ async function broadcastTender(payload) {
 
   const link = `${FRONTEND_URL}/corporation/tenders`;
   const message =
-    `BuildUp — מכרז ייבוא חדש: קבלן מבקש ${qty} עובדים מחו״ל ` +
+    `TagidAI — מכרז ייבוא חדש: קבלן מבקש ${qty} עובדים מחו״ל ` +
     `(${profCount} מקצועות). אם תוכלו לספק — הגישו הצעה: ${link}`;
 
   for (const c of corps) {
@@ -908,7 +908,7 @@ async function notifyContractorOfBid(payload) {
   const link = `${FRONTEND_URL}/contractor/tenders/${payload.tender_id}`;
   await sendSmsInternal(
     phone,
-    `BuildUp — התקבלה הצעה חדשה למכרז הייבוא שלך. היכנס לבדוק ולבחור: ${link}`,
+    `TagidAI — התקבלה הצעה חדשה למכרז הייבוא שלך. היכנס לבדוק ולבחור: ${link}`,
   );
 }
 
@@ -925,7 +925,7 @@ async function notifyTenderRevealed(payload) {
     if (cPhone) {
       await sendSmsInternal(
         cPhone,
-        `BuildUp — מכרז הייבוא אושר ע״י מנהל המערכת. פרטי התאגיד הזוכה נחשפו: ${contractorLink}`,
+        `TagidAI — מכרז הייבוא אושר ע״י מנהל המערכת. פרטי התאגיד הזוכה נחשפו: ${contractorLink}`,
       );
     }
   }
@@ -934,7 +934,7 @@ async function notifyTenderRevealed(payload) {
     if (phone) {
       await sendSmsInternal(
         phone,
-        `BuildUp — זכיתם במכרז ייבוא עובדים! פרטי הקבלן נחשפו, ניתן ליצור קשר: ${corpLink}`,
+        `TagidAI — זכיתם במכרז ייבוא עובדים! פרטי הקבלן נחשפו, ניתן ליצור קשר: ${corpLink}`,
       );
     }
   }

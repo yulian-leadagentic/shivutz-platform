@@ -39,7 +39,7 @@ export default function LandingFooter() {
         </div>
 
         <div className="border-t border-slate-200 pt-6 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500">
-          <span>© {new Date().getFullYear()} BuildUp פלטפורמה בע"מ — כל הזכויות שמורות</span>
+          <span>© {new Date().getFullYear()} TagidAI פלטפורמה בע"מ — כל הזכויות שמורות</span>
           <span>מורשה ופועל לפי חוקי הגנת העובד הזר בישראל</span>
         </div>
       </div>

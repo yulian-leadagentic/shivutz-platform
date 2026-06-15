@@ -60,7 +60,7 @@ async function runContractorApprovalReminderCron() {
       ? `${pending} הצעות תאגיד`
       : 'הצעת תאגיד אחת';
     const message =
-      `BuildUp — ${greeting}יש לך ${dealsLabel} (${requestsLabel}) הממתינות לאישור שלך מעל 24 שעות.\n` +
+      `TagidAI — ${greeting}יש לך ${dealsLabel} (${requestsLabel}) הממתינות לאישור שלך מעל 24 שעות.\n` +
       `יש להיכנס ולאשר או לדחות כדי לסגור את העסקה:\n${link}`;
     await sendSmsInternal(t.contact_phone, message);
     sent++;
