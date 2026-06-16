@@ -50,10 +50,13 @@ function ComingSoonContent() {
           height={400}
           priority
           unoptimized
-          className="h-28 md:h-36 w-auto object-contain mb-6"
+          className="h-56 md:h-72 w-auto object-contain mb-8"
         />
-        <p className="text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight">
+        <p className="text-3xl md:text-5xl font-extrabold text-slate-900 tracking-tight">
           ההשקה בקרוב
+        </p>
+        <p className="text-xl md:text-2xl font-semibold text-slate-500 tracking-wide mt-2">
+          Coming Soon
         </p>
       </div>
     </main>
