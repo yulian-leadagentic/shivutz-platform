@@ -24,6 +24,8 @@ type HistoryEntry = {
   detail: string;
 };
 
+const HISTORY_KEY = 'tagidai_notif_test_history_v1';
+
 export default function NotificationTestPanel() {
   const [events, setEvents]       = useState<CatalogEvent[]>([]);
   const [crons, setCrons]         = useState<CatalogCron[]>([]);
@@ -35,7 +37,30 @@ export default function NotificationTestPanel() {
   const [overridePhone, setOverridePhone] = useState<string>('');
   const [overrideEmail, setOverrideEmail] = useState<string>('');
   const [firing, setFiring] = useState(false);
-  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  // History persists across refreshes via localStorage so the admin
+  // can leave the page and come back without losing what was fired.
+  // Capped at 50 entries; older ones drop off the bottom.
+  const [history, setHistory] = useState<HistoryEntry[]>(() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const raw = window.localStorage.getItem(HISTORY_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed.slice(0, 50) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  // Mirror history to localStorage on every change. Wrapped in
+  // try/catch because Safari's private mode can throw QuotaExceeded.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+    } catch {
+      /* private mode / quota — silent skip is fine for an admin tool */
+    }
+  }, [history]);
 
   useEffect(() => {
     adminApi.testNotifCatalog()
@@ -257,7 +282,17 @@ export default function NotificationTestPanel() {
             </section>
 
             <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <h2 className="text-base font-semibold text-slate-800 mb-3">היסטוריה (50 אחרונים)</h2>
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-base font-semibold text-slate-800">היסטוריה (50 אחרונים)</h2>
+                {history.length > 0 && (
+                  <button
+                    onClick={() => setHistory([])}
+                    className="text-xs text-slate-500 hover:text-rose-600 underline"
+                  >
+                    נקה
+                  </button>
+                )}
+              </div>
               {history.length === 0 ? (
                 <div className="text-sm text-slate-500">אין עדיין שליחות.</div>
               ) : (
