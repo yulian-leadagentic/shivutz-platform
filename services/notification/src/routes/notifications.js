@@ -204,4 +204,40 @@ router.get('/admin/inbound-sms-log', async (_, res) => {
   res.json(rows);
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Vonage Messages API — WhatsApp / RCS / Messenger / Viber
+//
+// The Messages API is a SEPARATE Vonage product from the SMS REST API used
+// above. Inbound and status webhooks land here.
+//
+// CURRENT STATE: stubs. They accept the POST so the Vonage dashboard can
+// save the application config (it sometimes validates the URL on save).
+// The real handlers ship in WhatsApp P1: parse the inbound payload, store
+// in support_messages / whatsapp_message_log, run signature verification
+// against VONAGE_SIGNATURE_SECRET, etc.
+//
+// Auth: deliberately UNAUTHENTICATED in the stubs — once we wire signature
+// verification, the same vonageWebhookAuth middleware used by SMS DLR can
+// be applied here.
+// ─────────────────────────────────────────────────────────────────────────────
+
+router.post('/webhooks/vonage/messages/inbound', (req, res) => {
+  console.log('[vonage-messages-inbound] stub received', {
+    from:    req.body?.from,
+    channel: req.body?.channel,
+    msgType: req.body?.message_type,
+    msgId:   req.body?.message_uuid,
+  });
+  res.status(200).json({ ok: true });
+});
+
+router.post('/webhooks/vonage/messages/status', (req, res) => {
+  console.log('[vonage-messages-status] stub received', {
+    msgId:   req.body?.message_uuid,
+    status:  req.body?.status,
+    channel: req.body?.channel,
+  });
+  res.status(200).json({ ok: true });
+});
+
 module.exports = router;
