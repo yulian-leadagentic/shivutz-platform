@@ -368,7 +368,7 @@ async function handle(routingKey, payload, sendEmail) {
         },
         smsText: `דרישה חדשה לתאגיד — ${prof}. לצפייה ותגובה: ${dealUrl}`,
         sendEmail, sendSms: sendSmsInternal,
-        fallback: { email: payload.corporation_email },
+        fallback: { email: payload.corporation_email, phone: payload.corporation_phone },
       });
       break;
     }
@@ -390,7 +390,7 @@ async function handle(routingKey, payload, sendEmail) {
         },
         smsText: `העסקה אושרה — ${corp}. פרטים: ${dealUrl}`,
         sendEmail, sendSms: sendSmsInternal,
-        fallback: { email: payload.contractor_email },
+        fallback: { email: payload.contractor_email, phone: payload.contractor_phone },
       });
       break;
     }
@@ -420,7 +420,7 @@ async function handle(routingKey, payload, sendEmail) {
           emailVars: { deal_id: payload.deal_id, sender_name: senderLabel, link: dealUrl },
           smsText:   `הודעה חדשה מ${senderLabel} בעסקה. צפייה: ${dealUrl}`,
           sendEmail, sendSms: sendSmsInternal,
-          fallback: { email: payload.recipient_email },
+          fallback: { email: payload.recipient_email, phone: payload.recipient_phone },
         });
       } else if (payload.recipient_email) {
         // Legacy path before the deal-service started attaching ids.
