@@ -3,6 +3,9 @@ const { v4: uuidv4 } = require('uuid');
 const { getPool }    = require('../db');
 const { sendSms }    = require('../sms');
 const { sendMessage } = require('../messaging');
+const { sendEmail }  = require('../mailer/sendgrid');
+const { handle: handleEvent } = require('../consumers/handlers');
+const { TEST_CATALOG, TEST_CRONS } = require('../testCatalog');
 const { vonageWebhookAuth, captureRawBody } = require('../sms/vonageWebhookAuth');
 
 // Meta-approved WhatsApp template name registered with Vonage. Until the
@@ -361,6 +364,61 @@ router.post('/webhooks/vonage/messages/status', captureRawBody, vonageWebhookAut
   }
 
   res.status(200).json({ ok: true });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Internal test endpoints — used by the admin "test notifications" panel
+// to fire any event with a chosen payload + recipient override. NOT
+// gateway-exposed; admin service proxies to these from /admin/notifications/*
+// which IS gated as admin-only.
+// ─────────────────────────────────────────────────────────────────────────────
+
+router.get('/internal/test/catalog', (_req, res) => {
+  res.json({ events: TEST_CATALOG, crons: TEST_CRONS.map(c => ({ name: c.name, description: c.description })) });
+});
+
+router.post('/internal/test/event', async (req, res) => {
+  const { event_type, payload, override_phone, override_email } = req.body || {};
+  if (!event_type) return res.status(400).json({ error: 'event_type required' });
+
+  const entry = TEST_CATALOG.find(e => e.event_type === event_type);
+  if (!entry) return res.status(404).json({ error: `unknown event_type: ${event_type}` });
+
+  const finalPayload = { ...entry.payload, ...(payload || {}) };
+  if (override_phone) {
+    for (const key of entry.override_keys || []) {
+      if (key.toLowerCase().includes('phone')) finalPayload[key] = override_phone;
+    }
+  }
+  if (override_email) {
+    for (const key of entry.override_keys || []) {
+      if (key.toLowerCase().includes('email')) finalPayload[key] = override_email;
+    }
+  }
+
+  try {
+    await handleEvent(event_type, finalPayload, sendEmail);
+    res.json({ fired: true, event_type, payload: finalPayload });
+  } catch (err) {
+    console.error('[test/event] handler error:', err);
+    res.status(500).json({ error: 'handler_failed', detail: err.message });
+  }
+});
+
+router.post('/internal/test/cron/:name', async (req, res) => {
+  const cronDef = TEST_CRONS.find(c => c.name === req.params.name);
+  if (!cronDef) return res.status(404).json({ error: `unknown cron: ${req.params.name}` });
+
+  try {
+    const mod = require(cronDef.module);
+    const fn  = mod[cronDef.fn];
+    if (typeof fn !== 'function') throw new Error(`${cronDef.fn} not exported by ${cronDef.module}`);
+    await fn();
+    res.json({ ran: true, cron: cronDef.name });
+  } catch (err) {
+    console.error('[test/cron] error:', err);
+    res.status(500).json({ error: 'cron_failed', detail: err.message });
+  }
 });
 
 module.exports = router;
