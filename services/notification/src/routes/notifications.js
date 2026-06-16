@@ -205,38 +205,119 @@ router.get('/admin/inbound-sms-log', async (_, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Vonage Messages API — WhatsApp / RCS / Messenger / Viber
+// Vonage Messages API — WhatsApp inbound + status webhooks
 //
 // The Messages API is a SEPARATE Vonage product from the SMS REST API used
-// above. Inbound and status webhooks land here.
+// above. Auth is the same Signature Secret JWT as SMS webhooks (verified
+// by the shared vonageWebhookAuth middleware).
 //
-// CURRENT STATE: stubs. They accept the POST so the Vonage dashboard can
-// save the application config (it sometimes validates the URL on save).
-// The real handlers ship in WhatsApp P1: parse the inbound payload, store
-// in support_messages / whatsapp_message_log, run signature verification
-// against VONAGE_SIGNATURE_SECRET, etc.
+// Payload shape differences from SMS:
+//   - inbound:  message_uuid, from, to, channel, message_type, text, timestamp
+//   - status:   message_uuid, to, from, channel, status, timestamp, error?
 //
-// Auth: deliberately UNAUTHENTICATED in the stubs — once we wire signature
-// verification, the same vonageWebhookAuth middleware used by SMS DLR can
-// be applied here.
+// Vonage retries non-2xx responses, so we ALWAYS return 200 once we've
+// successfully stored the row (or surfaced a non-retryable error). Storage
+// failures are logged but still return 200 so we don't pile up retries on
+// transient DB issues.
 // ─────────────────────────────────────────────────────────────────────────────
 
-router.post('/webhooks/vonage/messages/inbound', (req, res) => {
-  console.log('[vonage-messages-inbound] stub received', {
-    from:    req.body?.from,
-    channel: req.body?.channel,
-    msgType: req.body?.message_type,
-    msgId:   req.body?.message_uuid,
-  });
+router.post('/webhooks/vonage/messages/inbound', captureRawBody, vonageWebhookAuth, async (req, res) => {
+  const body = req.body || {};
+  const {
+    message_uuid: messageUuid,
+    from,
+    to,
+    channel,
+    message_type: messageType = 'text',
+    text,
+    timestamp,
+  } = body;
+
+  if (!messageUuid || !from) {
+    console.warn('[vonage-messages-inbound] missing required fields');
+    return res.status(400).json({ error: 'missing_required_fields' });
+  }
+
+  // Only persist text inbound for now. Media (image/video/audio/document)
+  // arrives with a `url` that's a Vonage-hosted, time-limited link —
+  // proper handling requires re-uploading to our own storage and lives
+  // in the WhatsApp P4 inbox feature, not P1.
+  if (messageType !== 'text') {
+    console.log(`[vonage-messages-inbound] non-text message_type=${messageType} from=${from} — logged, not persisted`);
+    return res.status(200).json({ ok: true, skipped: 'non_text' });
+  }
+
+  let receivedAt = null;
+  if (timestamp) {
+    const d = new Date(timestamp);
+    if (!isNaN(d.getTime())) receivedAt = d;
+  }
+
+  const pool = getPool();
+  try {
+    await pool.query(
+      `INSERT INTO support_messages
+         (id, channel, direction, peer_phone, message_text, message_uuid, received_at)
+       VALUES (?, ?, 'inbound', ?, ?, ?, ?)`,
+      [uuidv4(), channel || 'whatsapp', from, text || '', messageUuid, receivedAt],
+    );
+    console.log(`[vonage-messages-inbound] stored from=${from} uuid=${messageUuid}`);
+  } catch (err) {
+    console.error('[vonage-messages-inbound] DB error:', err.message);
+    // 200 anyway — Vonage retries on non-2xx and we don't want a transient
+    // DB blip to spam us with duplicate retries that may eventually land.
+  }
+
   res.status(200).json({ ok: true });
 });
 
-router.post('/webhooks/vonage/messages/status', (req, res) => {
-  console.log('[vonage-messages-status] stub received', {
-    msgId:   req.body?.message_uuid,
-    status:  req.body?.status,
-    channel: req.body?.channel,
-  });
+router.post('/webhooks/vonage/messages/status', captureRawBody, vonageWebhookAuth, async (req, res) => {
+  const body = req.body || {};
+  const {
+    message_uuid: messageUuid,
+    status,
+    timestamp,
+    error,
+  } = body;
+
+  if (!messageUuid || !status) {
+    return res.status(400).json({ error: 'missing_required_fields' });
+  }
+
+  let eventAt = null;
+  if (timestamp) {
+    const d = new Date(timestamp);
+    if (!isNaN(d.getTime())) eventAt = d;
+  }
+
+  // Each transition lands in its own column on whatsapp_message_log. We
+  // also normalise 'submitted' to fill in the column even on the first
+  // status event, in case the send-side INSERT didn't get a chance to
+  // (the status webhook can arrive before our send's UPDATE under rare
+  // races with very fast Vonage delivery).
+  const errMsg = error?.detail || error?.title || error?.message || null;
+  const updates = ['status = ?', 'delivery_err = COALESCE(?, delivery_err)'];
+  const params  = [status, errMsg];
+  if (status === 'submitted' && eventAt) { updates.push('submitted_at = COALESCE(submitted_at, ?)'); params.push(eventAt); }
+  if (status === 'delivered' && eventAt) { updates.push('delivered_at = ?');                          params.push(eventAt); }
+  if (status === 'read'      && eventAt) { updates.push('read_at = ?');                               params.push(eventAt); }
+  params.push(messageUuid);
+
+  const pool = getPool();
+  try {
+    const [result] = await pool.query(
+      `UPDATE whatsapp_message_log SET ${updates.join(', ')} WHERE message_uuid = ?`,
+      params,
+    );
+    if (result.affectedRows === 0) {
+      // Status for a message we didn't initiate (e.g. admin sent manually
+      // via Vonage dashboard) — log and ignore.
+      console.warn(`[vonage-messages-status] no log row for uuid=${messageUuid} status=${status}`);
+    }
+  } catch (err) {
+    console.error('[vonage-messages-status] DB error:', err.message);
+  }
+
   res.status(200).json({ ok: true });
 });
 
