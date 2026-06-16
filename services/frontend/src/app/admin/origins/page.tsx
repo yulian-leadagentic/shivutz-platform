@@ -10,6 +10,7 @@ import { Loader2, Plus, Edit2, Save, X, EyeOff, Eye, AlertCircle, CheckCircle2 }
 import { adminApi } from '@/lib/adminApi';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { ISO_COUNTRIES } from '@/data/iso3166';
 
 interface Country {
   code: string;
@@ -133,6 +134,33 @@ export default function AdminOriginsPage() {
       {adding && (
         <div className="rounded-2xl border border-brand-200 bg-brand-50/30 p-4 space-y-3">
           <h2 className="text-sm font-bold text-slate-800">הוספת ארץ חדשה</h2>
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-medium text-slate-700">בחר ארץ מרשימת ISO 3166</label>
+            <select
+              value={newCode}
+              onChange={(e) => {
+                const code = e.target.value;
+                setNewCode(code);
+                const match = ISO_COUNTRIES.find(c => c.code === code);
+                if (match) setNewEn(match.name_en);
+              }}
+              dir="ltr"
+              className="flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+            >
+              <option value="">— בחר —</option>
+              {ISO_COUNTRIES
+                // Drop countries already in the registry so admin doesn't
+                // pick a duplicate by mistake; the server-side UNIQUE
+                // constraint would 409 anyway.
+                .filter(c => !rows.some(r => r.code === c.code))
+                .map(c => (
+                  <option key={c.code} value={c.code}>{c.code} — {c.name_en}</option>
+                ))}
+            </select>
+            <span className="text-xs text-slate-400">
+              לא ברשימה? אפשר להזין קוד ידני באנגלית בשדה למטה.
+            </span>
+          </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <Input label="קוד ISO (2 אותיות)" placeholder="UA"
               value={newCode}

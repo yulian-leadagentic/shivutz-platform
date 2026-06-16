@@ -37,9 +37,9 @@ function AdminSidebarBody({ pathname, onLogout }: { pathname: string; onLogout: 
     // dark navy background read as heavy + inconsistent with the rest
     // of the app on small screens.
     <div className="w-64 max-w-full bg-white text-slate-700 flex flex-col h-full border-s border-slate-200 shadow-sm">
-      <Link href="/" className="block px-6 py-4 border-b border-slate-200 hover:bg-slate-50 transition-colors">
-        <Logo size="sm" variant="on-light" decorative />
-        <span className="block text-xs text-slate-400 mt-1.5">פאנל ניהול</span>
+      <Link href="/" className="block px-6 py-5 border-b border-slate-200 hover:bg-slate-50 transition-colors">
+        <Logo size="md" variant="on-light" decorative />
+        <span className="block text-sm font-semibold text-slate-700 mt-2">פאנל ניהול</span>
       </Link>
 
       <nav className="flex-1 py-4 space-y-1 px-3 overflow-y-auto">
