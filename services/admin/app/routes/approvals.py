@@ -225,7 +225,7 @@ async def _decide_one(
                 else (float(before["commission_per_worker_amount"]) if before.get("commission_per_worker_amount") is not None else None),
         }
         _audit(conn, org_type, org_id, admin_user_id,
-               "decided" if approved else "rejected",
+               "approved" if approved else "rejected",
                {k: (float(v) if hasattr(v, "as_tuple") else v) for k, v in (before or {}).items()},
                new_state)
         conn.commit()

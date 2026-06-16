@@ -151,21 +151,22 @@ def _enrich_recent_deals(rows: list, org_conn, org_id: str, org_type: str) -> No
         r["other_party_name"] = name_by_id.get(oid) or None
 
 
-def _enrich_recent_deals_profession(rows: list, deal_conn, worker_conn) -> None:
+def _enrich_recent_deals_profession(rows: list, job_conn, worker_conn) -> None:
     """Pull profession_type + Hebrew label off the worker_searches
-    behind each deal. Two-step lookup (deal_db → worker_db) but the
-    admin sees 'מקצוע' on every row so the trade-off is worth it."""
+    behind each deal. Two-step lookup (job_db.worker_searches →
+    worker_db.profession_types) but the admin sees 'מקצוע' on every
+    row so the trade-off is worth it."""
     search_ids = list({r["search_id"] for r in rows if r.get("search_id")})
     if not search_ids:
         return
     ph = ",".join(["%s"] * len(search_ids))
-    deal_cur = deal_conn.cursor()
-    deal_cur.execute(
+    job_cur = job_conn.cursor()
+    job_cur.execute(
         f"""SELECT id, profession_type, region
               FROM worker_searches WHERE id IN ({ph})""",
         search_ids,
     )
-    search_by_id = {r["id"]: r for r in deal_cur.fetchall()}
+    search_by_id = {r["id"]: r for r in job_cur.fetchall()}
 
     prof_codes = list({s.get("profession_type") for s in search_by_id.values() if s.get("profession_type")})
     prof_he: dict = {}
@@ -216,16 +217,21 @@ def _workers_count(worker_cur, corp_id: str) -> dict:
     return out
 
 
-def _open_searches_count(deal_cur, contractor_id: str) -> int:
-    """Open worker-search requests for this contractor."""
-    deal_cur.execute(
+def _open_searches_count(job_cur, contractor_id: str) -> int:
+    """Open worker-search requests for this contractor.
+
+    The worker_searches table lives in job_db (since migration 024
+    renamed job_request_line_items → worker_searches inside job_db),
+    not deal_db. Pass a job_db cursor.
+    """
+    job_cur.execute(
         """SELECT COUNT(*) AS n
            FROM worker_searches
            WHERE contractor_id = %s
              AND status IN ('open', 'partially_matched')""",
         (contractor_id,),
     )
-    row = deal_cur.fetchone()
+    row = job_cur.fetchone()
     return int(row["n"]) if row else 0
 
 
@@ -369,25 +375,33 @@ def get_org_summary(
     finally:
         org_conn.close()
 
-    # Deal counts + recent deals + open searches all come from deal_db.
+    # Deal counts + recent deals come from deal_db. worker_searches
+    # lives in job_db (see migration 024), so open_searches has its
+    # own short-lived connection.
     deal_conn = get_db("deal_db")
     try:
         deal_cur = deal_conn.cursor()
         deal_counts = _deal_counts(deal_cur, org_id, org_type)
         recent_deals = _recent_deals(deal_cur, org_id, org_type)
-        open_searches = (
-            _open_searches_count(deal_cur, org_id)
-            if org_type == "contractor" else 0
-        )
-        # Enrich recent_deals with profession (worker_db) — keep the
-        # connection open for the lookup.
-        worker_conn = get_db("worker_db")
-        try:
-            _enrich_recent_deals_profession(recent_deals, deal_conn, worker_conn)
-        finally:
-            worker_conn.close()
     finally:
         deal_conn.close()
+
+    # Enrich recent_deals' profession + open searches both via job_db
+    # (worker_searches) + worker_db (profession_types). One job_conn
+    # serves both.
+    job_conn = get_db("job_db")
+    try:
+        worker_conn = get_db("worker_db")
+        try:
+            _enrich_recent_deals_profession(recent_deals, job_conn, worker_conn)
+        finally:
+            worker_conn.close()
+        open_searches = (
+            _open_searches_count(job_conn.cursor(), org_id)
+            if org_type == "contractor" else 0
+        )
+    finally:
+        job_conn.close()
 
     # Other-party name lookup hits org_db; do it after the deal block
     # so the deal_conn can close first.

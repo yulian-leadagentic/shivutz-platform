@@ -50,6 +50,20 @@ function fmtDate(iso: string | null | undefined) {
   return new Date(iso).toLocaleString('he-IL');
 }
 
+// Audit-log action codes → Hebrew labels. Anything missing falls back to
+// the raw code so we surface, rather than hide, an unknown event type.
+const ACTION_LABEL_HE: Record<string, string> = {
+  approved:               'אושר',
+  rejected:               'נדחה',
+  suspended:              'הושעה',
+  reactivated:            'הופעל מחדש',
+  edited:                 'נערך',
+  commission_edited:      'עמלה עודכנה',
+  document_uploaded:      'מסמך הועלה',
+  document_deleted:       'מסמך נמחק',
+  decided:                'אושר',
+};
+
 function StatusBadgeRow({ status }: { status: string | null }) {
   const map: Record<string, { label: string; cls: string }> = {
     approved:  { label: 'מאושר',  cls: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
@@ -233,7 +247,12 @@ function OrgDetailContent() {
               </Badge>
               <StatusBadgeRow status={org.approval_status} />
               {org.verification_tier && (
-                <span className="text-xs text-slate-500">tier: <code dir="ltr">{org.verification_tier}</code></span>
+                <span className="text-xs text-slate-500">
+                  {{
+                    tier_1: 'אימות חלקי — נמצא ברשם בלבד',
+                    tier_2: 'אימות מלא — אומת מול הקבלן/התאגיד',
+                  }[org.verification_tier as 'tier_1' | 'tier_2'] ?? org.verification_tier}
+                </span>
               )}
             </div>
           </div>
@@ -284,7 +303,7 @@ function OrgDetailContent() {
               {history.slice(0, 3).map((h) => (
                 <li key={h.log_id} className="py-2 first:pt-0 last:pb-0">
                   <div className="flex items-center justify-between gap-3">
-                    <span className="font-medium text-slate-800">{h.action}</span>
+                    <span className="font-medium text-slate-800">{ACTION_LABEL_HE[h.action] ?? h.action}</span>
                     <span className="text-xs text-slate-500 whitespace-nowrap" dir="ltr">{fmtDate(h.created_at)}</span>
                   </div>
                   {/* Actor identity not yet returned by orgAudit (only
@@ -472,7 +491,7 @@ function OrgDetailContent() {
                 {history.map((h) => (
                   <li key={h.log_id} className="border-b border-slate-100 pb-2 last:border-0">
                     <div className="flex items-center justify-between text-slate-700">
-                      <span className="font-medium">{h.action}</span>
+                      <span className="font-medium">{ACTION_LABEL_HE[h.action] ?? h.action}</span>
                       <span className="text-xs text-slate-400" dir="ltr">{fmtDate(h.created_at)}</span>
                     </div>
                     {/* QA-R5 — was rendering the raw JSON metadata

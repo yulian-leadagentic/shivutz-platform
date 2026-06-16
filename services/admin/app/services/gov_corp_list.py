@@ -42,6 +42,36 @@ PHONE_SPLIT_RE = re.compile(r"[/,;\n]+")
 # strip them and keep only digits + optional leading '+'.
 PHONE_KEEP_RE = re.compile(r"[^\d+]")
 
+# Hebrew Unicode block — used to detect cells we should reverse.
+HEBREW_BLOCK_RE = re.compile(r"[֐-׿]")
+
+# Digit runs inside the reversed cell get re-reversed so a numeric token
+# like "76" doesn't end up as "67".
+DIGIT_RUN_RE = re.compile(r"\d+")
+
+
+def _visual_to_logical_hebrew(s: str | None) -> str | None:
+    """pdfplumber returns Hebrew strings in *visual* order (each cell's
+    characters laid out left-to-right exactly as they appear on the page).
+    Logical reading order — what you'd type, store in a DB, send to a
+    browser — is the reverse, except digit runs need to stay forward.
+
+    Example:
+       PDF cell  →  "תורדש 76 לטפסוי"   (visual order — what's on the page)
+       Logical   →  "יוספטל 76 שדרות"   ("Yoseftal 76, Sderot")
+
+    Implementation: reverse the whole string, then re-reverse every digit
+    run so numeric tokens read normally again. Strings that contain no
+    Hebrew characters are passed through unchanged — keeps Latin / mixed
+    company names intact.
+    """
+    if not s:
+        return s
+    if not HEBREW_BLOCK_RE.search(s):
+        return s
+    rev = s[::-1]
+    return DIGIT_RUN_RE.sub(lambda m: m.group(0)[::-1], rev)
+
 
 def _normalize_phone(raw: str) -> str | None:
     """Return a canonical digit-only phone or None if it doesn't look like one.
@@ -174,6 +204,12 @@ def parse_pdf_bytes(pdf_bytes: bytes) -> list[dict[str, Any]]:
                     if "ח.פ" in bn_cell or "התאגיד" in name_cell:
                         continue
 
+                    # The name + address cells come back from pdfplumber in
+                    # visual order — flip them to logical reading order
+                    # before storing so admin sees correct Hebrew everywhere.
+                    name_he    = _visual_to_logical_hebrew(name_cell or None)
+                    address_he = _visual_to_logical_hebrew(address_cell or None)
+
                     business_number = _first_business_number(bn_cell)
                     if not business_number:
                         # Without a ח.פ the row can't auto-match a corp.
@@ -181,8 +217,8 @@ def parse_pdf_bytes(pdf_bytes: bytes) -> list[dict[str, Any]]:
                         rows.append({
                             "business_number": None,
                             "serial_no": _to_int_or_none(serial_cell),
-                            "company_name_he": name_cell or None,
-                            "address": address_cell or None,
+                            "company_name_he": name_he,
+                            "address": address_he,
                             "phone_mobile_1": None,
                             "phone_mobile_2": None,
                             "phone_landline_1": None,
@@ -195,8 +231,8 @@ def parse_pdf_bytes(pdf_bytes: bytes) -> list[dict[str, Any]]:
                     rows.append({
                         "business_number": business_number,
                         "serial_no": _to_int_or_none(serial_cell),
-                        "company_name_he": name_cell or None,
-                        "address": address_cell or None,
+                        "company_name_he": name_he,
+                        "address": address_he,
                         "phone_mobile_1":   mobiles[0]   if len(mobiles)   >= 1 else None,
                         "phone_mobile_2":   mobiles[1]   if len(mobiles)   >= 2 else None,
                         "phone_landline_1": landlines[0] if len(landlines) >= 1 else None,
