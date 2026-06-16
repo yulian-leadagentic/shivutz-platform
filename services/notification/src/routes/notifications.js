@@ -2,7 +2,49 @@ const router   = require('express').Router();
 const { v4: uuidv4 } = require('uuid');
 const { getPool }    = require('../db');
 const { sendSms }    = require('../sms');
+const { sendMessage } = require('../messaging');
 const { vonageWebhookAuth, captureRawBody } = require('../sms/vonageWebhookAuth');
+
+// Meta-approved WhatsApp template name registered with Vonage. Until the
+// template is approved by Meta, the WhatsApp send will fail and the
+// dispatcher falls back to SMS — so the opt-in is "safe to flip on"
+// even before Meta approval lands. Env-overridable so we can rotate
+// template names without code changes (e.g. on copy revisions).
+const WHATSAPP_OTP_TEMPLATE = process.env.WHATSAPP_OTP_TEMPLATE_NAME || 'tagidai_otp_he';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /internal/otp
+// Channel-aware OTP send — called by the auth service. The auth service
+// already knows the user's whatsapp_opt_in flag (it queries auth_db); it
+// passes the preference here and we pick the channel + template + falls
+// back to SMS on any WhatsApp failure so the user always gets the code.
+// NOT routed through the gateway (internal Docker network only).
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/internal/otp', async (req, res) => {
+  const { phone, code, whatsapp_opt_in: whatsappOptIn } = req.body;
+  if (!phone || !code) {
+    return res.status(400).json({ error: 'phone and code required' });
+  }
+
+  // Build the rendered text the same for both channels — Vonage uses it
+  // as the WhatsApp template's fallback_text, and the SMS provider uses
+  // it verbatim. Identical wording means the user sees the same content
+  // either way (modulo the channel).
+  const message = `קוד האימות שלך לכניסה לפורטל TagidAI הוא: ${code}\nבתוקף 10 דקות. אל תשתף קוד זה.`;
+
+  const channel = whatsappOptIn ? 'auto' : 'sms';
+  try {
+    const result = await sendMessage(phone, message, {
+      channel,
+      templateName:   whatsappOptIn ? WHATSAPP_OTP_TEMPLATE : undefined,
+      templateParams: whatsappOptIn ? [code] : undefined,
+    });
+    res.json({ sent: true, channel: result.channel, messageId: result.messageId });
+  } catch (err) {
+    console.error('[OTP] send failed:', err.message);
+    res.status(500).json({ error: 'otp_send_failed', detail: err.message });
+  }
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /internal/sms

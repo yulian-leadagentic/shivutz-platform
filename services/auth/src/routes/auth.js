@@ -109,23 +109,46 @@ async function getMemberships(pool, userId) {
 }
 
 /**
- * Send OTP SMS via notification service internal endpoint.
+ * Look up whether the phone owner has opted into WhatsApp OTP. Returns
+ * `true` only if the user exists and their flag is 1; new phones (no
+ * row yet — register flow) and existing users without the flag get the
+ * default SMS path.
  */
-async function sendOtpSms(phone, code) {
-  const message = `קוד האימות שלך לכניסה לפורטל TagidAI הוא: ${code}\nבתוקף 10 דקות. אל תשתף קוד זה.`;
+async function getWhatsappOptIn(normPhone) {
   try {
-    const resp = await fetch(`${NOTIF_URL}/internal/sms`, {
+    const pool = getPool();
+    const [rows] = await pool.query(
+      'SELECT whatsapp_opt_in FROM users WHERE phone = ? LIMIT 1',
+      [normPhone],
+    );
+    return rows[0]?.whatsapp_opt_in === 1;
+  } catch (err) {
+    // DB blip should not block OTP — fall back to SMS.
+    console.warn('[OTP] whatsapp_opt_in lookup failed:', err.message);
+    return false;
+  }
+}
+
+/**
+ * Send OTP via notification service. Channel is picked downstream from
+ * the whatsapp_opt_in flag (WhatsApp first → SMS fallback for opted-in
+ * users; pure SMS for everyone else).
+ */
+async function sendOtp(phone, code) {
+  const whatsappOptIn = await getWhatsappOptIn(phone);
+  try {
+    const resp = await fetch(`${NOTIF_URL}/internal/otp`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ phone, message }),
+      body:    JSON.stringify({ phone, code, whatsapp_opt_in: whatsappOptIn }),
     });
     if (!resp.ok) {
       const err = await resp.text();
-      console.error('[OTP] SMS send failed:', err);
+      console.error('[OTP] send failed:', err);
     }
   } catch (err) {
     // Log but don't throw — we don't want OTP generation to fail if SMS is down
-    console.error('[OTP] SMS service unreachable:', err.message);
+    console.error('[OTP] notification service unreachable:', err.message);
   }
 }
 
@@ -144,7 +167,7 @@ router.post('/auth/send-otp', async (req, res) => {
 
     const ip = req.ip || req.headers['x-forwarded-for'];
     const { code, normPhone } = await generateOtp(phone, purpose, ip);
-    await sendOtpSms(normPhone, code);
+    await sendOtp(normPhone, code);
 
     res.json({ sent: true, phone: normPhone });
   } catch (err) {
@@ -679,8 +702,10 @@ router.get('/auth/memberships', async (req, res) => {
 // Supports both legacy email+password and new phone-first paths.
 // ─────────────────────────────────────────────────────────────────────────────
 router.post('/auth/register', async (req, res) => {
-  const { email, password, phone, full_name, role, org_id, org_type, include_tokens } = req.body;
+  const { email, password, phone, full_name, role, org_id, org_type, include_tokens, whatsapp_opt_in } = req.body;
   if (!role) return res.status(400).json({ error: 'role required' });
+  // Coerce to 0/1 — accept boolean or numeric.
+  const waOptIn = (whatsapp_opt_in === true || whatsapp_opt_in === 1 || whatsapp_opt_in === '1') ? 1 : 0;
 
   const pool = getPool();
   const id   = uuidv4();
@@ -724,9 +749,9 @@ router.post('/auth/register', async (req, res) => {
       }
 
       await pool.query(
-        `INSERT INTO users (id, phone, full_name, role, org_id, org_type, auth_method)
-         VALUES (?, ?, ?, ?, ?, ?, 'sms')`,
-        [id, normPhone, full_name || null, role, org_id || null, org_type || null]
+        `INSERT INTO users (id, phone, full_name, role, org_id, org_type, auth_method, whatsapp_opt_in)
+         VALUES (?, ?, ?, ?, ?, ?, 'sms', ?)`,
+        [id, normPhone, full_name || null, role, org_id || null, org_type || null, waOptIn]
       );
       if (include_tokens && org_id) {
         const u = { id, phone: normPhone, email: undefined, full_name: full_name || undefined, role, org_id: org_id || null, org_type: org_type || null };

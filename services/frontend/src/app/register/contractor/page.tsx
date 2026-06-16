@@ -54,6 +54,7 @@ interface Step2 {
 interface Step3 {
   contact_email: string;
   tc_accepted: boolean;
+  whatsapp_opt_in: boolean;
 }
 
 const CONTRACTOR_TC_VERSION = '2026-06-04.v1';
@@ -140,7 +141,7 @@ function RegisterContractorInner() {
   const [step2, setStep2] = useState<Step2>({
     company_name_he: '', business_number: '', kablan_number: '', operating_regions: [],
   });
-  const [step3, setStep3] = useState<Step3>({ contact_email: '', tc_accepted: false });
+  const [step3, setStep3] = useState<Step3>({ contact_email: '', tc_accepted: false, whatsapp_opt_in: false });
 
   const [lookup, setLookup]           = useState<RegistryLookupResult | null>(null);
   const [lookupLoading, setLookupLoading] = useState(false);
@@ -255,6 +256,7 @@ function RegisterContractorInner() {
         contact_name:       step1.full_name,
         contact_phone:      step1.normPhone,
         contact_email:      step3.contact_email || undefined,
+        whatsapp_opt_in:    step3.whatsapp_opt_in,
       });
 
       if (result.access_token && result.refresh_token) {
@@ -672,7 +674,22 @@ function RegisterContractorInner() {
                   autoComplete="email"
                 />
 
-                {/* T&C — scroll box + accept checkbox. BuildUp can't
+                {/* WhatsApp OTP opt-in — optional. When ticked, future
+                    login codes (and eventually deal notifications) go
+                    to WhatsApp first with SMS fallback. Not mandatory —
+                    SMS-only stays the default for everyone who doesn't
+                    actively want WhatsApp. */}
+                <label className="flex items-start gap-2 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={step3.whatsapp_opt_in}
+                    onChange={(e) => setStep3((p) => ({ ...p, whatsapp_opt_in: e.target.checked }))}
+                    className="rounded mt-0.5"
+                  />
+                  <span className="text-slate-700">קבל קודי אימות והתראות בWhatsApp במקום SMS</span>
+                </label>
+
+                {/* T&C — scroll box + accept checkbox. TagidAI can't
                     accept a contractor onto the platform without
                     explicit consent to the liability + verification
                     sections. */}

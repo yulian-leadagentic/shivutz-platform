@@ -32,6 +32,9 @@ class CorporationCreate(BaseModel):
     contact_phone: str                          # owner mobile (used as user.phone for SMS login)
     contact_email: Optional[EmailStr] = None    # optional business email
     tc_version: Optional[str] = None            # T&C version the corp accepted (required for tier_2 path)
+    # Per-user preference: if True, OTP and (later) deal notifications go to
+    # WhatsApp first with SMS fallback. Default False — explicit opt-in only.
+    whatsapp_opt_in: Optional[bool] = False
     # password removed — phone-first OTP registration
 
 
@@ -348,12 +351,13 @@ async def register_corporation(data: CorporationCreate):
         # Phone-first registration — auth service verifies OTP was confirmed recently
         async with httpx.AsyncClient() as client:
             resp = await client.post(f"{AUTH_SERVICE}/auth/register", json={
-                "phone":          data.contact_phone,
-                "full_name":      data.contact_name,
-                "role":           "corporation",
-                "org_id":         org_id,
-                "org_type":       "corporation",
-                "include_tokens": True,
+                "phone":           data.contact_phone,
+                "full_name":       data.contact_name,
+                "role":            "corporation",
+                "org_id":          org_id,
+                "org_type":        "corporation",
+                "include_tokens":  True,
+                "whatsapp_opt_in": bool(data.whatsapp_opt_in),
             })
             if resp.status_code == 409:
                 conn.rollback()

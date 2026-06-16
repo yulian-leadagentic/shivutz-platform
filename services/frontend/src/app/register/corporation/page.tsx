@@ -53,6 +53,7 @@ interface Step2 {
 interface Step3 {
   contact_email: string;
   tc_accepted: boolean;
+  whatsapp_opt_in: boolean;
 }
 
 const TC_VERSION = '2026-06-04.v2';
@@ -135,7 +136,7 @@ function RegisterCorporationInner() {
   const [step2, setStep2] = useState<Step2>({
     company_name_he: '', business_number: '', countries_of_origin: [], minimum_contract_months: 3,
   });
-  const [step3, setStep3] = useState<Step3>({ contact_email: '', tc_accepted: false });
+  const [step3, setStep3] = useState<Step3>({ contact_email: '', tc_accepted: false, whatsapp_opt_in: false });
 
   const [lookup, setLookup]               = useState<CorporationLookupResult | null>(null);
   const [lookupLoading, setLookupLoading] = useState(false);
@@ -230,6 +231,7 @@ function RegisterCorporationInner() {
         contact_phone:           step1.normPhone,
         contact_email:           step3.contact_email || undefined,
         tc_version:              TC_VERSION,
+        whatsapp_opt_in:         step3.whatsapp_opt_in,
       });
       if (result.access_token && result.refresh_token) {
         saveTokens(result.access_token, result.refresh_token);
@@ -583,6 +585,19 @@ function RegisterCorporationInner() {
                   onChange={(e) => setStep3((p) => ({ ...p, contact_email: e.target.value }))}
                   autoComplete="email"
                 />
+
+                {/* WhatsApp OTP opt-in — see contractor register page for
+                    the same control and rationale. Default OFF; SMS only
+                    unless ticked. */}
+                <label className="flex items-start gap-2 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={step3.whatsapp_opt_in}
+                    onChange={(e) => setStep3((p) => ({ ...p, whatsapp_opt_in: e.target.checked }))}
+                    className="rounded mt-0.5"
+                  />
+                  <span className="text-slate-700">קבל קודי אימות והתראות בWhatsApp במקום SMS</span>
+                </label>
 
                 <div className="flex flex-col gap-2">
                   <label className="text-sm font-medium text-slate-700">תנאי שימוש</label>

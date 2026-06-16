@@ -369,6 +369,10 @@ export interface ContractorRegistration {
   contact_name: string;
   contact_phone: string;
   contact_email?: string;
+  /** WhatsApp OTP opt-in. When true, future OTP codes (and eventually
+   *  deal/event notifications) are sent via WhatsApp first with SMS as
+   *  the fallback. Default false — explicit opt-in only. */
+  whatsapp_opt_in?: boolean;
 }
 
 export interface RegistryChannel {
@@ -404,6 +408,8 @@ export interface CorporationRegistration {
   contact_phone: string;
   contact_email?: string;
   tc_version?: string;
+  /** WhatsApp OTP opt-in. See ContractorRegistration above for semantics. */
+  whatsapp_opt_in?: boolean;
 }
 
 export interface RegistrationResult {

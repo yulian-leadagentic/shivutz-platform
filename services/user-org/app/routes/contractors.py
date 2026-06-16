@@ -39,6 +39,9 @@ class ContractorCreate(BaseModel):
     # queue with verification_method='kablan_mismatch_pending' instead
     # of getting automatic tier_2.
     kablan_number: str
+    # Per-user preference: if True, OTP and (later) deal notifications go to
+    # WhatsApp first with SMS fallback. Default False — explicit opt-in only.
+    whatsapp_opt_in: Optional[bool] = False
 
 
 class LookupRequest(BaseModel):
@@ -298,12 +301,13 @@ async def register_contractor(data: ContractorCreate):
         # Phone-first registration — auth service verifies OTP was confirmed recently
         async with httpx.AsyncClient() as client:
             resp = await client.post(f"{AUTH_SERVICE}/auth/register", json={
-                "phone":          data.contact_phone,
-                "full_name":      data.contact_name,
-                "role":           "contractor",
-                "org_id":         org_id,
-                "org_type":       "contractor",
-                "include_tokens": True,
+                "phone":           data.contact_phone,
+                "full_name":       data.contact_name,
+                "role":            "contractor",
+                "org_id":          org_id,
+                "org_type":        "contractor",
+                "include_tokens":  True,
+                "whatsapp_opt_in": bool(data.whatsapp_opt_in),
             })
             if resp.status_code == 409:
                 conn.rollback()
