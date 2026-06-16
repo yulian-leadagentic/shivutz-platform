@@ -781,11 +781,12 @@ async function handle(routingKey, payload, sendEmail) {
     }
 
     case 'search.no_match':
-      // Contractor's search returned 0 results. SMS every approved corp
-      // ("תאגיד מאושר" — verification_tier='tier_2') with the same
-      // recruitment_type so they know there's a contractor waiting.
+      // Contractor's search returned 0 results. Fan out to every approved
+      // corp ("תאגיד מאושר" — verification_tier='tier_2') with the same
+      // recruitment_type, hitting every notification recipient each corp
+      // configured (not just the legacy single contact phone).
       // Best-effort: failures on individual sends don't bubble out.
-      await broadcastNoMatch(payload);
+      await broadcastNoMatch(payload, sendEmail);
       break;
 
     // ── Foreign-import tenders ──────────────────────────────────────
@@ -819,7 +820,7 @@ async function handle(routingKey, payload, sendEmail) {
  * the workers-upload screen. The user-org service exposes the corp
  * directory; we accept its 200/[] result as the source of truth.
  */
-async function broadcastNoMatch(payload) {
+async function broadcastNoMatch(payload, sendEmail) {
   const profHe = await translateProfession(payload.profession_type);
   const region = payload.region ? ` באזור ${payload.region}` : '';
   const qty = payload.quantity || 1;
@@ -843,9 +844,33 @@ async function broadcastNoMatch(payload) {
     `TagidAI — קבלן מחפש ${qty} עובדי ${profHe} ${recruitment}${region}, ולא נמצאו התאמות פעילות.\n` +
     `אם יש לכם עובדים זמינים — זה הזמן להעלות אותם למערכת:\n${uploadLink}`;
 
+  // Fan out via notifyEntity so every team member on the corp who opted
+  // in as a notification recipient gets the alert on their channels
+  // (SMS / email / WhatsApp). The legacy contact_phone is supplied as
+  // the fallback for corps that haven't configured any recipients yet,
+  // so we never regress to silence.
   for (const c of corps) {
-    if (!c?.contact_phone) continue;
-    await sendSmsInternal(c.contact_phone, message);
+    if (!c?.id) continue;
+    try {
+      await notifyEntity({
+        entityType: 'corporation',
+        entityId:   c.id,
+        eventKey:   'search.no_match',
+        emailVars: {
+          contact_name: '',
+          qty,
+          profession_he: profHe,
+          recruitment,
+          region: payload.region || '',
+          upload_link: uploadLink,
+        },
+        smsText: message,
+        sendEmail, sendSms: sendSmsInternal,
+        fallback: { email: c.contact_email, phone: c.contact_phone },
+      });
+    } catch (err) {
+      console.error(`[no_match] notifyEntity failed corp=${c.id}:`, err.message);
+    }
   }
 }
 
