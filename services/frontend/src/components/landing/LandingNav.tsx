@@ -82,9 +82,14 @@ export default function LandingNav(_: LandingNavProps) {
           <a href="#how-it-works" className={`text-sm font-medium transition-colors ${linkCls}`}>
             איך זה עובד
           </a>
-          <Link href="/marketplace" className={`text-sm font-medium transition-colors ${linkCls}`}>
+          <span
+            className="text-sm font-medium text-slate-400 cursor-not-allowed inline-flex items-center gap-1.5"
+            aria-disabled="true"
+            title="לא זמין כרגע"
+          >
             שירותים נלווים
-          </Link>
+            <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">בקרוב</span>
+          </span>
         </nav>
 
         {/* Desktop buttons */}
@@ -184,7 +189,10 @@ export default function LandingNav(_: LandingNavProps) {
       {menuOpen && (
         <div className="md:hidden bg-white border-t border-slate-100 px-6 py-4 space-y-1 shadow-xl">
           <a href="#how-it-works" className="block text-sm font-medium text-slate-700 py-2.5 hover:text-brand-600" onClick={() => setMenuOpen(false)}>איך זה עובד</a>
-          <Link href="/marketplace" className="block text-sm font-medium text-slate-700 py-2.5 hover:text-brand-600" onClick={() => setMenuOpen(false)}>שירותים נלווים</Link>
+          <span className="block text-sm font-medium text-slate-400 py-2.5 cursor-not-allowed" aria-disabled="true">
+            שירותים נלווים
+            <span className="ms-2 text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">בקרוב</span>
+          </span>
           {/* "השאר פרטים" mobile entry removed — same de-dupe as desktop (R2 #5). */}
           <div className="pt-3 flex flex-col gap-2 border-t border-slate-100 mt-1">
             {isLoggedIn ? (

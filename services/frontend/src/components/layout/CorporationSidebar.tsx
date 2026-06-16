@@ -39,6 +39,7 @@ const navItems = [
     label: 'שירותים נלווים',
     href: '/corporation/marketplace',
     icon: Store,
+    disabled: true,
   },
   {
     // QA-R4 #C8: the corp users page is renamed to "צוות התאגיד" to
@@ -93,6 +94,23 @@ export default function CorporationSidebar() {
             const isActive =
               pathname === item.href || pathname.startsWith(item.href + '/');
             const Icon = item.icon;
+            if (item.disabled) {
+              return (
+                <li key={item.href}>
+                  <div
+                    className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-slate-400 cursor-not-allowed"
+                    aria-disabled="true"
+                    title="לא זמין כרגע"
+                  >
+                    <Icon className="h-5 w-5 shrink-0 opacity-60" />
+                    <span>{item.label}</span>
+                    <span className="ms-auto text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">
+                      לא זמין
+                    </span>
+                  </div>
+                </li>
+              );
+            }
             return (
               <li key={item.href}>
                 <Link

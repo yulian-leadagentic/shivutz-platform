@@ -59,12 +59,35 @@ function StatCard({ icon, label, value, loading, href }: {
   );
 }
 
-function ManageTile({ href, icon, title, subtitle }: {
+function ManageTile({ href, icon, title, subtitle, disabled }: {
   href: string;
   icon: React.ReactNode;
   title: string;
   subtitle: string;
+  disabled?: boolean;
 }) {
+  if (disabled) {
+    return (
+      <div
+        className="group flex items-center gap-4 rounded-2xl border border-slate-200
+                   bg-slate-50 p-5 shadow-sm cursor-not-allowed opacity-70"
+        aria-disabled="true"
+        title="לא זמין כרגע"
+      >
+        <div className="w-14 h-14 rounded-xl bg-slate-100 text-slate-400
+                        flex items-center justify-center shrink-0">
+          {icon}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-base font-bold text-slate-500 flex items-center gap-2">
+            {title}
+            <span className="text-[10px] bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded">בקרוב</span>
+          </div>
+          <div className="text-sm text-slate-400 mt-0.5">{subtitle}</div>
+        </div>
+      </div>
+    );
+  }
   return (
     <Link
       href={href}
@@ -177,12 +200,13 @@ export default function CorporationManagePage() {
           icon={<Store className="h-7 w-7" />}
           title="שירותים נלווים"
           subtitle="פרסומי דיור, ציוד ושירותים"
+          disabled
         />
         <ManageTile
           href="/corporation/settings/billing"
           icon={<CreditCard className="h-7 w-7" />}
           title="חיוב ומנוי"
-          subtitle="פרטי תשלום ורמת מנוי בשירותים נלווים"
+          subtitle="פרטי תשלום ורמת מנוי"
         />
       </div>
     </div>
