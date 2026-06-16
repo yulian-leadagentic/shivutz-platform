@@ -5,6 +5,22 @@ const ADMIN_EMAIL    = process.env.ADMIN_EMAIL || 'admin@shivutz-platform.co.il'
 const NOTIF_URL      = `http://localhost:${process.env.PORT || 3006}`;
 const FRONTEND_URL   = process.env.FRONTEND_URL || 'https://app.shivutz.co.il';
 
+// FREE_LAUNCH_UNTIL=YYYY-MM-DD (or full ISO) — when the date is still in the
+// future, the contractor-approved SMS drops the "חיוב יבוצע ב-…" sentence
+// since the payment service is short-circuiting captures anyway. Mirrors the
+// gate in services/payment/app/services/cardcom.py so both sides stay in
+// lockstep.
+const FREE_LAUNCH_UNTIL = (process.env.FREE_LAUNCH_UNTIL || '').trim() || null;
+
+function isFreeLaunchActive() {
+  if (!FREE_LAUNCH_UNTIL) return false;
+  const cutoff = new Date(FREE_LAUNCH_UNTIL);
+  if (isNaN(cutoff.getTime())) {
+    return false;
+  }
+  return new Date() < cutoff;
+}
+
 // Phase-1 fan-out helper — picks up every team member the org flagged
 // as a notification recipient and dispatches per their channel choices.
 const { notifyEntity } = require('../dispatch/notifyEntity');
@@ -609,10 +625,12 @@ async function handle(routingKey, payload, sendEmail) {
       // Contractor SMS confirmation
       if (payload.contractor_contact_phone) {
         const firstName = (payload.contractor_contact_name || '').split(' ')[0] || 'שלום';
+        const tail = isFreeLaunchActive()
+          ? 'ההשקה הזו חינם — לא תחויב.'
+          : `חיוב יבוצע ב-${captureFmt} (אלא אם התאגיד יבטל בחלון הזמן).`;
         await sendSmsInternal(
           payload.contractor_contact_phone,
-          `TagidAI — ${firstName}, אישרת רשימה של ${payload.worker_count} עובדים. ` +
-          `חיוב יבוצע ב-${captureFmt} (אלא אם התאגיד יבטל בחלון הזמן).`
+          `TagidAI — ${firstName}, אישרת רשימה של ${payload.worker_count} עובדים. ${tail}`
         );
       }
       break;

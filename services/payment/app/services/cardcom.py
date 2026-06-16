@@ -18,12 +18,52 @@ CARDCOM_API_PASS = os.getenv("CARDCOM_API_PASSWORD",    "test5000$")
 PAYMENT_FAKE_MODE = os.getenv("PAYMENT_FAKE_MODE", "0") == "1"
 FAKE_AUTH_HOLD_DAYS = 30  # fake hold length — mirrors real-world J5 ceiling
 
+# FREE_LAUNCH_UNTIL=YYYY-MM-DD (or full ISO) — skip the *capture/charge* leg
+# without touching the J5 authorization leg. While the date is in the future,
+# capture_transaction + charge_token return a synthetic captured result tagged
+# `FREE-` so downstream deal state still advances. Authorization still hits
+# Cardcom (we want a real card on file so the cut-over to paid mode requires
+# zero user re-onboarding). Safe to leave set in production; unset / past date
+# = normal billing.
+FREE_LAUNCH_UNTIL = os.getenv("FREE_LAUNCH_UNTIL", "").strip() or None
+
+
+def _free_launch_active() -> bool:
+    if not FREE_LAUNCH_UNTIL:
+        return False
+    try:
+        cutoff = datetime.fromisoformat(FREE_LAUNCH_UNTIL)
+    except ValueError:
+        logger.error("[cardcom] FREE_LAUNCH_UNTIL=%r is not ISO format — ignoring", FREE_LAUNCH_UNTIL)
+        return False
+    return datetime.utcnow() < cutoff
+
 
 if PAYMENT_FAKE_MODE:
     logger.warning("=" * 60)
     logger.warning("PAYMENT_FAKE_MODE=1  —  Cardcom calls are SIMULATED.")
     logger.warning("                       DO NOT USE THIS FLAG IN PRODUCTION.")
     logger.warning("=" * 60)
+
+if FREE_LAUNCH_UNTIL:
+    logger.warning("=" * 60)
+    logger.warning("FREE_LAUNCH_UNTIL=%s — captures/charges short-circuit until that date.", FREE_LAUNCH_UNTIL)
+    logger.warning("                       Authorizations still hit Cardcom for real.")
+    logger.warning("=" * 60)
+
+
+def _free_launch_result(deal_id: str, amount: float, kind: str) -> dict:
+    """Synthetic captured response used during the free-launch window."""
+    tx_id = "FREE-" + uuid.uuid4().hex[:12].upper()
+    logger.info("[cardcom FREE] %s deal=%s amount=%.2f tx=%s (until %s)",
+                kind, deal_id, amount, tx_id, FREE_LAUNCH_UNTIL)
+    return {
+        "provider_transaction_id": tx_id,
+        "response_code":  "FREE_LAUNCH",
+        "invoice_number": "",
+        "invoice_url":    None,
+        "raw":            {"free_launch": True, "until": FREE_LAUNCH_UNTIL, "amount": amount},
+    }
 
 
 class CardcomApiError(Exception):
@@ -198,6 +238,10 @@ async def charge_token(
     Returns: provider_transaction_id, response_code, invoice_number, invoice_url, raw
     """
     total = round(base_amount + vat_amount, 2)
+
+    if _free_launch_active():
+        return _free_launch_result(deal_id, total, "charge_token")
+
     payload = {
         "TerminalNumber": int(CARDCOM_TERMINAL),
         "ApiName":        CARDCOM_API_NAME,
@@ -404,6 +448,9 @@ async def capture_transaction(
             "invoice_url":    None,
             "raw":            {"fake": True, "captured_from": auth_provider_deal_id},
         }
+
+    if _free_launch_active():
+        return _free_launch_result(auth_provider_deal_id, amount, "capture")
 
     payload = {
         "TerminalNumber":     int(CARDCOM_TERMINAL),
