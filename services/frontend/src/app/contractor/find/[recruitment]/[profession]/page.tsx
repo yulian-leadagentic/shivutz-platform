@@ -25,6 +25,7 @@ import { dealApi } from '@/lib/api/deals';
 import { ProfessionIcon } from '@/features/searches/ProfessionIcon';
 import { ConstructionAnimation } from '@/features/searches/ConstructionAnimation';
 import { FireworksOverlay } from '@/features/searches/FireworksOverlay';
+import { FindStepsIndicator } from '@/components/contractor/FindStepsIndicator';
 import { EXPERIENCE_RANGES, EXPERIENCE_LOWER_MONTHS } from '@/i18n/he';
 import type {
   CorpMatch,
@@ -243,13 +244,8 @@ export default function FindFormPage() {
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-6 space-y-5">
+      <FindStepsIndicator active={matching || corps ? 3 : 2} />
       <header className="space-y-1">
-        <Link
-          href={`/contractor/find/${recruitment}`}
-          className="inline-flex items-center text-xs text-slate-500 hover:text-slate-700"
-        >
-          <ChevronRight className="w-3 h-3 me-1" /> חזרה למקצועות
-        </Link>
         <div className="flex items-center gap-3">
           <ProfessionIcon code={profession} size={56} alt={profDef?.name_he} />
           <div>

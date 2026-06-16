@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { LogOut, ChevronDown, Building2, HardHat, Check, Loader2 } from 'lucide-react';
+import { LogOut, ChevronDown, Building2, HardHat, Check, Loader2, ArrowRight } from 'lucide-react';
 import { getAccessToken, decodeJwtPayload, clearTokens, saveTokens } from '@/lib/auth';
 import { otpApi, type Membership } from '@/lib/api';
 import { useAuth } from '@/lib/AuthContext';
@@ -30,6 +30,25 @@ function getPageTitle(pathname: string): string {
   if (pathname.includes('/searches/'))    return 'פרטי חיפוש';
   if (pathname.includes('/deals/'))       return 'פרטי עסקה';
   return 'TagidAI';
+}
+
+// Section roots — back button is hidden here since the user is at the
+// top of a flow. Everything else shows a 'חזרה' button that calls
+// router.back(). Browsers handle the actual history; we just give the
+// user a single, always-present way to step out of a sub-page.
+const ROOT_PATHS = new Set<string>([
+  '/contractor/dashboard',
+  '/corporation/dashboard',
+  '/admin/dashboard',
+  '/',
+]);
+
+function shouldShowBack(pathname: string): boolean {
+  if (ROOT_PATHS.has(pathname)) return false;
+  // /contractor + /corporation roots also count as section roots when
+  // someone lands without the /dashboard suffix.
+  if (pathname === '/contractor' || pathname === '/corporation' || pathname === '/admin') return false;
+  return true;
 }
 
 function getInitials(label: string): string {
@@ -173,6 +192,17 @@ export default function TopBar({ mobileNav }: TopBarProps = {}) {
     <header className="h-16 bg-white border-b border-slate-200/80 flex items-center justify-between gap-2 px-3 sm:px-4 lg:px-6 shrink-0">
       <div className="flex items-center gap-2 min-w-0">
         {mobileNav && <MobileNavDrawer nav={mobileNav} />}
+        {shouldShowBack(pathname) && (
+          <button
+            type="button"
+            onClick={() => router.back()}
+            className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-sm text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors shrink-0"
+            aria-label="חזרה לעמוד הקודם"
+          >
+            <ArrowRight className="h-4 w-4" />
+            <span className="hidden sm:inline">חזרה</span>
+          </button>
+        )}
         <h1 className="text-base sm:text-lg font-bold text-slate-900 text-start tracking-tight truncate">
           {getPageTitle(pathname)}
         </h1>

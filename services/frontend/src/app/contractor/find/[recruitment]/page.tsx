@@ -11,6 +11,7 @@ import { ChevronRight, AlertCircle } from 'lucide-react';
 import { enumApi } from '@/lib/api/enums';
 import { ProfessionIcon } from '@/features/searches/ProfessionIcon';
 import { Button } from '@/components/ui/button';
+import { FindStepsIndicator } from '@/components/contractor/FindStepsIndicator';
 import type { Profession, RecruitmentType } from '@/types';
 
 const TITLES: Record<RecruitmentType, string> = {
@@ -42,10 +43,8 @@ export default function ProfessionTilesPage() {
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-6 space-y-5">
+      <FindStepsIndicator active={1} />
       <header className="space-y-1">
-        <Link href="/contractor/find" className="inline-flex items-center text-xs text-slate-500 hover:text-slate-700">
-          <ChevronRight className="w-3 h-3 me-1" /> חזרה
-        </Link>
         <h1 className="text-2xl font-bold text-slate-900">{title}</h1>
         <p className="text-sm text-slate-600">בחר מקצוע</p>
       </header>
