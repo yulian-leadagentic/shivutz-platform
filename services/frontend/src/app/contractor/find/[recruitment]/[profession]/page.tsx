@@ -491,8 +491,10 @@ export default function FindFormPage() {
           {corps.length > 0 && <FireworksOverlay />}
 
           {/* Spinning brand video — z-20 keeps it above the
-              fireworks overlay (z-10). A subtle white halo lifts
-              it visually away from the fireworks behind. */}
+              fireworks overlay (z-10). object-cover lets the video
+              fill the circle edge-to-edge so the "BuildUp anumate"
+              animation reads as a coherent badge instead of a tiny
+              logo on a grey background. */}
           <video
             src="/brand/buildup-logo-spinning.mp4"
             poster="/brand/buildup-logo.png"
@@ -500,7 +502,7 @@ export default function FindFormPage() {
             loop
             muted
             playsInline
-            className="relative z-20 w-40 h-40 mx-auto object-contain rounded-full bg-white/90 shadow-lg shadow-white/60"
+            className="relative z-20 w-48 h-48 mx-auto object-cover rounded-full shadow-md"
             aria-hidden="true"
           />
 
