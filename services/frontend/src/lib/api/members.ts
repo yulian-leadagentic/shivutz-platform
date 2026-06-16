@@ -87,6 +87,11 @@ export const memberApi = {
       invited_first_name: string | null;
       invited_last_name:  string | null;
       invited_phone:      string;
+      // Email — for active members updates auth_db.users.email, for
+      // pending invites stages on entity_memberships.invited_email.
+      // Empty string clears; omit to leave unchanged. 409 with
+      // code='email_already_in_use' on UNIQUE collision.
+      email:              string;
     }>,
   ) =>
     apiFetch<TeamMember>(

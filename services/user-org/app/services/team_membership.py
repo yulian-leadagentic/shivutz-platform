@@ -140,10 +140,16 @@ async def update_membership(
     first_name   = patch.get("invited_first_name")
     last_name    = patch.get("invited_last_name")
     phone        = patch.get("invited_phone")
+    email        = patch.get("email")            # may be "" to clear, None to leave
 
     # Sanity-check the role value before any DB work.
     if role is not None and role not in ALLOWED_ROLES:
         raise HTTPException(status_code=400, detail="invalid_role")
+
+    # Quick email sanity-check — accept clear ("") or basic shape.
+    if email is not None and email.strip():
+        if "@" not in email or "." not in email.split("@")[-1]:
+            raise HTTPException(status_code=400, detail="invalid_email")
 
     conn = get_db()
     publish_phone_change = None  # set if we need to send a fresh invite SMS
@@ -225,21 +231,51 @@ async def update_membership(
                         "phone":        new_phone,
                         "invite_token": target["invitation_token"],
                     }
+            if "email" in patch:
+                sets.append("invited_email = %s")
+                params.append((email or "").strip() or None)
         else:
             # For active members we silently ignore fields that don't
             # apply (name/phone). They're owned by the users table.
             for forbidden in ("invited_first_name", "invited_last_name", "invited_phone"):
                 if forbidden in patch:
                     pass
+            # Email lives on auth_db.users for active members. We do that
+            # UPDATE separately (different table) so we can surface the
+            # UNIQUE-collision case as a 409 instead of a generic 500.
+            if "email" in patch:
+                new_email = (email or "").strip() or None
+                user_id   = target["user_id"]
+                if new_email is None:
+                    cur.execute("UPDATE auth_db.users SET email = NULL WHERE id = %s", (user_id,))
+                else:
+                    try:
+                        cur.execute(
+                            "UPDATE auth_db.users SET email = %s WHERE id = %s",
+                            (new_email, user_id),
+                        )
+                    except Exception as e:
+                        # Duplicate-key (1062) → another user already has this email.
+                        if "Duplicate entry" in str(e) or "1062" in str(e):
+                            conn.rollback()
+                            raise HTTPException(
+                                status_code=409,
+                                detail={
+                                    "code":    "email_already_in_use",
+                                    "message": "כתובת המייל הזו כבר רשומה אצל משתמש אחר.",
+                                },
+                            )
+                        raise
 
-        if not sets:
+        if not sets and "email" not in patch:
             return {"updated": False, "membership_id": membership_id}
 
-        params.append(membership_id)
-        cur.execute(
-            f"UPDATE auth_db.entity_memberships SET {', '.join(sets)} WHERE membership_id = %s",
-            tuple(params),
-        )
+        if sets:
+            params.append(membership_id)
+            cur.execute(
+                f"UPDATE auth_db.entity_memberships SET {', '.join(sets)} WHERE membership_id = %s",
+                tuple(params),
+            )
         conn.commit()
 
         # Read back so the frontend can refresh the row without a list refetch.
@@ -248,7 +284,8 @@ async def update_membership(
                       em.is_active, em.invitation_accepted_at, em.created_at,
                       em.invited_first_name, em.invited_last_name,
                       COALESCE(u.phone, em.invited_phone) AS phone,
-                      u.full_name, u.email
+                      u.full_name,
+                      COALESCE(u.email, em.invited_email) AS email
                FROM auth_db.entity_memberships em
                LEFT JOIN auth_db.users u ON u.id = em.user_id
                WHERE em.membership_id = %s""",
@@ -377,7 +414,7 @@ def list_deal_contacts(entity_type: str, entity_id: str) -> list[Dict[str, Any]]
                       em.invited_first_name, em.invited_last_name,
                       COALESCE(u.phone, em.invited_phone) AS phone,
                       u.full_name,
-                      u.email
+                      COALESCE(u.email, em.invited_email) AS email
                FROM auth_db.entity_memberships em
                LEFT JOIN auth_db.users u ON u.id = em.user_id
                WHERE em.entity_type      = %s

@@ -528,7 +528,8 @@ def list_corporation_users(org_id: str):
                       em.created_at,
                       em.invited_first_name, em.invited_last_name,
                       COALESCE(u.phone, em.invited_phone) AS phone,
-                      u.full_name, u.email
+                      u.full_name,
+                      COALESCE(u.email, em.invited_email) AS email
                FROM auth_db.entity_memberships em
                LEFT JOIN auth_db.users u ON u.id = em.user_id
                WHERE em.entity_type = 'corporation' AND em.entity_id = %s
@@ -654,6 +655,11 @@ class TeamMemberPatch(BaseModel):
     invited_first_name: Optional[str] = None
     invited_last_name:  Optional[str] = None
     invited_phone:      Optional[str] = None
+    # Email — applies to both active members (auth_db.users.email) and
+    # pending invites (entity_memberships.invited_email). Letting admins
+    # backfill email also re-enables the email channel checkbox in the
+    # notification-recipients UI.
+    email:              Optional[str] = None
 
 
 @router.patch("/{org_id}/users/{membership_id}")

@@ -34,6 +34,7 @@ export function EditMemberModal({ orgType, orgId, member, onSaved, onClose }: Pr
   const [firstName, setFirstName] = useState(member.invited_first_name ?? '');
   const [lastName,  setLastName]  = useState(member.invited_last_name  ?? '');
   const [phone,     setPhone]     = useState(member.phone ?? '');
+  const [email,     setEmail]     = useState(member.email ?? '');
   const [jobTitle,  setJobTitle]  = useState(member.job_title ?? '');
   const [role,      setRole]      = useState(member.role);
 
@@ -65,6 +66,9 @@ export function EditMemberModal({ orgType, orgId, member, onSaved, onClose }: Pr
         patch.invited_phone = phone.trim();
       }
     }
+    if (email.trim() !== (member.email ?? '')) {
+      patch.email = email.trim();
+    }
 
     if (Object.keys(patch).length === 0) { onClose(); return; }
 
@@ -76,6 +80,10 @@ export function EditMemberModal({ orgType, orgId, member, onSaved, onClose }: Pr
       const msg = err instanceof Error ? err.message : '';
       if (msg.includes('cannot_demote_sole_owner') || msg.includes('האחרון')) {
         setError('אי אפשר להוריד את הבעלים האחרון. הוסף בעלים נוסף קודם.');
+      } else if (msg.includes('email_already_in_use') || msg.includes('כתובת המייל')) {
+        setError('כתובת המייל הזו כבר רשומה אצל משתמש אחר.');
+      } else if (msg.includes('invalid_email')) {
+        setError('כתובת מייל לא תקינה.');
       } else {
         setError('שגיאה בשמירת השינויים. נסה שוב.');
       }
@@ -149,6 +157,16 @@ export function EditMemberModal({ orgType, orgId, member, onSaved, onClose }: Pr
               />
             </>
           )}
+
+          <Input
+            label="כתובת מייל"
+            type="email"
+            dir="ltr"
+            placeholder="user@example.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            autoComplete="off"
+          />
 
           <Input
             label="תפקיד בארגון (אופציונלי)"
