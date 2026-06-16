@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import Logo from '@/components/Logo';
-import { Home, LayoutDashboard, ClipboardCheck, Handshake, Building2, LogOut, Percent, PhoneCall, Users, Inbox, Store, Globe2, Flag, MessageCircle, FileCheck } from 'lucide-react';
+import { Home, LayoutDashboard, ClipboardCheck, Handshake, Building2, LogOut, Percent, PhoneCall, Users, Inbox, Store, Globe2, Flag, MessageCircle, FileCheck, Bell } from 'lucide-react';
 import { clearTokens } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 import MobileNavDrawer from '@/components/layout/MobileNavDrawer';
@@ -22,6 +22,7 @@ const NAV = [
   { href: '/admin/origins',          label: 'ארצות מוצא',   icon: Flag },
   { href: '/admin/commissions',      label: 'עמלות ומע״מ',  icon: Percent },
   { href: '/admin/registration-log', label: 'לוג רישומים',  icon: PhoneCall },
+  { href: '/admin/notifications-test', label: 'בדיקת הודעות',  icon: Bell },
 ];
 
 /**

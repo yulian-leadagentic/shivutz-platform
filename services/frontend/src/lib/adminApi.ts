@@ -676,4 +676,35 @@ export const adminApi = {
     }>;
   },
 
+  // ─── Notification test panel ────────────────────────────────────────────
+  testNotifCatalog: () =>
+    apiFetch<{
+      events: Array<{
+        event_type:   string;
+        group:        string;
+        channels:     string[];
+        description:  string;
+        payload:      Record<string, unknown>;
+        override_keys: string[];
+        notes?:       string;
+      }>;
+      crons: Array<{ name: string; description: string }>;
+    }>('/admin/notifications/test/catalog'),
+
+  fireTestEvent: (body: {
+    event_type:     string;
+    payload?:       Record<string, unknown>;
+    override_phone?: string;
+    override_email?: string;
+  }) =>
+    apiFetch<{ fired: boolean; event_type: string; payload: Record<string, unknown> }>(
+      '/admin/notifications/test/event',
+      { method: 'POST', body: JSON.stringify(body) },
+    ),
+
+  fireTestCron: (name: string) =>
+    apiFetch<{ ran: boolean; cron: string }>(
+      `/admin/notifications/test/cron/${name}`,
+      { method: 'POST' },
+    ),
 };
