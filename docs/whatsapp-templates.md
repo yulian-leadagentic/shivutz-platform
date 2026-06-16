@@ -100,9 +100,10 @@ These are the SMS bodies currently in `handlers.js`. Each becomes one template. 
 - **Category**: UTILITY
 - **Body**:
   ```
-  TagidAI — {{1}}, אישרת רשימה של {{2}} עובדים. בעוד 48 שעות יבוצע החיוב ויישלחו פרטי הקשר של התאגיד.
+  TagidAI — {{1}}, אישרת רשימה של {{2}} עובדים. חיוב יבוצע ב-{{3}} (אלא אם התאגיד יבטל בחלון הזמן).
   ```
-- **Parameters**: `{{1}}` first_name, `{{2}}` worker_count
+- **Parameters**: `{{1}}` first_name, `{{2}}` worker_count, `{{3}}` capture date (e.g. `2026-06-18 14:30`)
+- **Note**: Wording matches the SMS exactly so the user sees the same message regardless of channel. The capture date is the deal's scheduled charge time — already computed at send time as `captureFmt` in the notification handler.
 
 ### 8. `tagidai_corp_cancelled_he`  — corp cancelled before capture
 
