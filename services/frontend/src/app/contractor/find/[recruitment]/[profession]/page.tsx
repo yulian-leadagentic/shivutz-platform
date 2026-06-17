@@ -178,11 +178,11 @@ export default function FindFormPage() {
       setSearchId(created.id);
       setSubmitting(false);
 
-      // Show the matching animation for AT LEAST 5 seconds even if the
-      // matcher returns sooner — gives the user a moment to see what's
-      // happening + sells the AI-search story.
+      // Show the matching animation for AT LEAST 10 seconds even if the
+      // matcher returns sooner — gives the user time to watch the
+      // animation play through + sells the AI-search story.
       setMatching(true);
-      const minDelay = new Promise((r) => setTimeout(r, 5000));
+      const minDelay = new Promise((r) => setTimeout(r, 10000));
       const [m] = await Promise.all([
         searchApi.match(created.id),
         minDelay,
