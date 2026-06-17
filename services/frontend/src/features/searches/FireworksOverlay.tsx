@@ -29,6 +29,23 @@ export function FireworksOverlay() {
     return () => { cancelled = true; };
   }, []);
 
+  // When the clip ends, hold on the last frame for 1.5s before
+  // restarting — that gives the user time to register the final
+  // "✓" / fireworks frame instead of it snapping straight back to
+  // frame 0 mid-loop. Native HTMLVideoElement `loop` is too tight;
+  // we replicate with onended → pause → setTimeout → play.
+  function handleEnded() {
+    const v = videoRef.current;
+    if (!v) return;
+    v.pause();
+    setTimeout(() => {
+      if (videoRef.current) {
+        videoRef.current.currentTime = 0;
+        videoRef.current.play().catch(() => { /* autoplay blocked, leave it */ });
+      }
+    }, 1500);
+  }
+
   if (hasVideo) {
     // Foreground celebration: video sits ON TOP of the spinning
     // logo + text (z-50). pointer-events-none keeps the CTAs
@@ -40,9 +57,9 @@ export function FireworksOverlay() {
           ref={videoRef}
           src="/brand/fireworks.mp4"
           autoPlay
-          loop
           muted
           playsInline
+          onEnded={handleEnded}
           onError={() => setHasVideo(false)}
           className="w-full h-full object-cover"
           aria-hidden="true"
