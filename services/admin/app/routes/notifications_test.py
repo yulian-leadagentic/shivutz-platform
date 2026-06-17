@@ -62,6 +62,43 @@ async def fire_event(body: TriggerEventBody):
         raise HTTPException(status_code=502, detail=f"notification_service_unreachable: {e}")
 
 
+class SendMessageBody(BaseModel):
+    phone:   str
+    message: str
+    # Optional context — surfaces in the audit log so we can see why an
+    # admin reached out. Not part of the SMS body.
+    org_id:        Optional[str] = None
+    org_type:      Optional[str] = None
+    corp_deal_no:  Optional[int] = None
+
+
+@router.post("/notifications/send-message")
+async def send_admin_message(body: SendMessageBody):
+    """Admin-initiated outreach to a corporation or contractor contact.
+
+    Used from /admin/orgs/{id} when the admin wants to reach the corp
+    about a specific deal — e.g. "your corp-deal #C-127 is stuck,
+    please respond". The corp_deal_no is just an audit-log marker;
+    the actual SMS body the admin typed is sent verbatim.
+    """
+    if not body.phone or not body.phone.strip():
+        raise HTTPException(status_code=400, detail="phone_required")
+    if not body.message or not body.message.strip():
+        raise HTTPException(status_code=400, detail="message_required")
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            r = await client.post(
+                f"{NOTIF_URL}/internal/sms",
+                json={"phone": body.phone.strip(), "message": body.message.strip()},
+            )
+            data = r.json()
+            if r.status_code >= 400:
+                raise HTTPException(status_code=r.status_code, detail=data.get("error", "send_failed"))
+            return data
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=502, detail=f"notification_service_unreachable: {e}")
+
+
 @router.post("/notifications/test/cron/{name}")
 async def fire_cron(name: str):
     """Run one of the 5 cron jobs once with the current DB state."""

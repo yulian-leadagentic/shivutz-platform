@@ -5,7 +5,7 @@ import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowRight, Loader2, Save, ShieldCheck, ShieldAlert, History as HistoryIcon,
-  Upload, Building2, AlertCircle,
+  Upload, Building2, AlertCircle, MessageSquare, Send, X,
 } from 'lucide-react';
 import { adminApi, type OrgEditPayload, type OrgAuditEntry } from '@/lib/adminApi';
 import { Button } from '@/components/ui/button';
@@ -96,6 +96,10 @@ function OrgDetailContent() {
   const [error, setError]     = useState('');
   const [toast, setToast]     = useState('');
   const [history, setHistory] = useState<OrgAuditEntry[] | null>(null);
+  // QA-R5#5 — quick send-message modal. Pre-fills with the
+  // org.contact_phone, lets the admin reference a per-corp deal number
+  // so the SMS text starts with "TagidAI — בנוגע לדרישה #C-127:".
+  const [messageModalOpen, setMessageModalOpen] = useState(false);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -258,6 +262,17 @@ function OrgDetailContent() {
           </div>
         </div>
         <div className="flex gap-2 flex-wrap">
+          {form.contact_phone && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setMessageModalOpen(true)}
+              disabled={!form.contact_phone}
+              title={`שלח SMS ל-${form.contact_phone}`}
+            >
+              <MessageSquare className="h-3.5 w-3.5" /> שלח הודעה
+            </Button>
+          )}
           {isApproved && (
             <Button variant="outline" size="sm" onClick={() => setStatus('suspended')} disabled={statusBusy}>
               <ShieldAlert className="h-3.5 w-3.5" /> השהה
@@ -546,6 +561,137 @@ function OrgDetailContent() {
         onConfirm={confirmSuspend}
         onCancel={() => setPendingSuspend(false)}
       />
+
+      {messageModalOpen && (
+        <SendMessageModal
+          orgId={id}
+          orgType={orgType}
+          orgName={org?.company_name_he || org?.company_name || ''}
+          contactPhone={form.contact_phone || ''}
+          onClose={() => setMessageModalOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+function SendMessageModal({ orgId, orgType, orgName, contactPhone, onClose }: {
+  orgId: string;
+  orgType: OrgType;
+  orgName: string;
+  contactPhone: string;
+  onClose: () => void;
+}) {
+  const [phone,   setPhone]   = useState(contactPhone);
+  const [dealNo,  setDealNo]  = useState<number | ''>('');
+  const [message, setMessage] = useState('');
+  const [sending, setSending] = useState(false);
+  const [error,   setError]   = useState('');
+  const [recent,  setRecent]  = useState<Array<{ id: string; corp_deal_no: number | null; profession_he: string | null; status: string }>>([]);
+
+  // Pull the org's recent deals so the admin can pick one to reference.
+  // Corp side surfaces corp_deal_no; contractor side shows the search/UUID.
+  useEffect(() => {
+    adminApi.getOrgSummary(orgId, orgType)
+      .then((s) => setRecent(
+        s.recent_deals
+          .filter((d) => orgType === 'contractor' || d.corp_deal_no != null)
+          .map((d) => ({
+            id:            d.id,
+            corp_deal_no:  d.corp_deal_no,
+            profession_he: d.profession_he,
+            status:        d.status,
+          })),
+      ))
+      .catch(() => { /* picker stays empty — admin can still send free-form */ });
+  }, [orgId, orgType]);
+
+  // Whenever the admin picks a deal #, prefill the message body with a
+  // ready-made opener so they only have to add the actual request.
+  useEffect(() => {
+    if (dealNo === '' || !orgName) return;
+    const opener = orgType === 'corporation' && dealNo
+      ? `TagidAI — שלום, בנוגע לדרישה #C-${dealNo} ב${orgName}: `
+      : `TagidAI — שלום ${orgName}, `;
+    setMessage((cur) => cur.startsWith('TagidAI —') ? opener : (cur || opener));
+  }, [dealNo, orgName, orgType]);
+
+  async function send() {
+    setError('');
+    if (!phone.trim()) { setError('יש להזין מספר טלפון'); return; }
+    if (!message.trim() || message.trim().length < 5) { setError('יש להזין הודעה'); return; }
+    setSending(true);
+    try {
+      await adminApi.sendAdminMessage({
+        phone:        phone.trim(),
+        message:      message.trim(),
+        org_id:       orgId,
+        org_type:     orgType,
+        corp_deal_no: dealNo === '' ? undefined : Number(dealNo),
+      });
+      onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'שליחה נכשלה');
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-900/40 backdrop-blur-sm px-4" onClick={() => !sending && onClose()}>
+      <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full max-w-md shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-start gap-3 p-5 pb-3 border-b border-slate-100">
+          <div className="h-10 w-10 rounded-xl bg-brand-50 text-brand-700 flex items-center justify-center shrink-0">
+            <MessageSquare className="h-5 w-5" />
+          </div>
+          <div className="flex-1">
+            <h2 className="text-lg font-bold text-slate-900 leading-tight">שלח הודעה</h2>
+            <p className="text-sm text-slate-500 mt-0.5">{orgName}</p>
+          </div>
+          <button type="button" onClick={onClose} disabled={sending} aria-label="סגור" className="h-8 w-8 inline-flex items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 disabled:opacity-50">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-3">
+          <div className="flex flex-col gap-1">
+            <label className="text-sm font-medium text-slate-700">טלפון יעד</label>
+            <input dir="ltr" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+972500000000" className="h-10 rounded-md border border-slate-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
+          </div>
+
+          {recent.length > 0 && (
+            <div className="flex flex-col gap-1">
+              <label className="text-sm font-medium text-slate-700">צרף הפניה לדרישה (לא חובה)</label>
+              <select value={dealNo} onChange={(e) => setDealNo(e.target.value === '' ? '' : Number(e.target.value))} className="h-10 rounded-md border border-slate-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
+                <option value="">— ללא —</option>
+                {recent.map((d) => (
+                  <option key={d.id} value={d.corp_deal_no ?? 0}>
+                    {d.corp_deal_no != null ? `#C-${d.corp_deal_no}` : '—'} · {d.profession_he ?? '—'} · {d.status}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div className="flex flex-col gap-1">
+            <label className="text-sm font-medium text-slate-700">הודעה</label>
+            <textarea value={message} onChange={(e) => setMessage(e.target.value)} rows={4} placeholder="..." className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
+            <span className="text-xs text-slate-400">{message.length}/320 תווים — SMS ארוך יישבר ל-2 הודעות.</span>
+          </div>
+
+          {error && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">{error}</p>}
+
+          <div className="flex gap-2 pt-1">
+            <button type="button" onClick={onClose} disabled={sending} className="flex-1 px-4 py-2.5 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-50 font-medium text-sm disabled:opacity-50">
+              ביטול
+            </button>
+            <button type="button" onClick={send} disabled={sending} className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-bold text-sm shadow-sm disabled:opacity-50">
+              {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              שלח SMS
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

@@ -283,6 +283,7 @@ export const adminApi = {
         corporation_id: string;
         workers_count: number | null;
         commission_amount: number | null;
+        corp_deal_no:      number | null;
         created_at: string;
         updated_at: string;
         corp_committed_at: string | null;
@@ -706,5 +707,21 @@ export const adminApi = {
     apiFetch<{ ran: boolean; cron: string }>(
       `/admin/notifications/test/cron/${name}`,
       { method: 'POST' },
+    ),
+
+  /** Admin-initiated SMS to a corporation or contractor contact.
+   *  Used from /admin/orgs/{id} via the 'שלח הודעה' button. The
+   *  message body is sent verbatim — the corp_deal_no parameter is
+   *  audit-log context only. */
+  sendAdminMessage: (body: {
+    phone:        string;
+    message:      string;
+    org_id?:      string;
+    org_type?:    string;
+    corp_deal_no?: number;
+  }) =>
+    apiFetch<{ sent: boolean; messageId: string; provider: string }>(
+      '/admin/notifications/send-message',
+      { method: 'POST', body: JSON.stringify(body) },
     ),
 };
