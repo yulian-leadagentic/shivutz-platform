@@ -23,7 +23,6 @@ import { enumApi } from '@/lib/api/enums';
 import { searchApi } from '@/lib/api/jobs';
 import { dealApi } from '@/lib/api/deals';
 import { ProfessionIcon } from '@/features/searches/ProfessionIcon';
-import { ConstructionAnimation } from '@/features/searches/ConstructionAnimation';
 import { FireworksOverlay } from '@/features/searches/FireworksOverlay';
 import { FindStepsIndicator } from '@/components/contractor/FindStepsIndicator';
 import { EXPERIENCE_RANGES, EXPERIENCE_LOWER_MONTHS } from '@/i18n/he';
@@ -464,37 +463,32 @@ export default function FindFormPage() {
         </form>
       )}
 
-      {/* Matching animation — shown for ≥5 seconds (see handleSubmit) */}
-      {matching && (
-        <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
-          <ConstructionAnimation />
-        </div>
-      )}
+      {/* Matching + result share ONE card with the badge in a fixed
+          position. Only the inner text + the action row crossfade
+          between the two states, so there's no card-height pop and
+          no shape jump on the badge. The card itself fades in over
+          300ms when it first replaces the form (animate-[fadeIn]).
 
-      {/* Post-match results.
-          New flow: instead of listing every matched corp and asking
-          the contractor to pick which to contact, the system auto-
-          dispatches inquiries to every matched corp (see
-          handleSubmit). The post-match screen just confirms what
-          the system did and tells the contractor to wait for SMS.
-          The brand video keeps looping so the screen still feels
-          "alive". */}
-      {corps !== null && !matching && (
+          Stages, in order:
+            matching=true,  corps=null         → 'מחפש...' text + dots
+            matching=false, corps.length > 0   → 'נמצאה התאמה...' + fireworks + CTAs
+            matching=false, corps.length === 0 → 'לא נמצאו התאמות' + sky info + CTAs
+       */}
+      {(matching || corps !== null) && (
         <section
-          onClick={handleSuccessClick}
-          className={`relative bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 shadow-sm text-center animate-[fadeIn_300ms_ease-out] ${corps.length > 0 ? 'cursor-pointer' : ''}`}
-          role={corps.length > 0 ? 'button' : undefined}
-          aria-label={corps.length > 0 ? 'מעבר לבקשות ועסקאות' : undefined}
+          onClick={corps && corps.length > 0 ? handleSuccessClick : undefined}
+          className={`relative bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 shadow-sm text-center animate-[fadeIn_300ms_ease-out] overflow-hidden ${
+            corps && corps.length > 0 ? 'cursor-pointer' : ''
+          }`}
+          role={corps && corps.length > 0 ? 'button' : undefined}
+          aria-label={corps && corps.length > 0 ? 'מעבר לבקשות ועסקאות' : undefined}
         >
-          {/* Celebration overlay only on a successful match — keep
-              the no-match screen calmer. */}
-          {corps.length > 0 && <FireworksOverlay />}
+          {/* Fireworks only on a successful match — calmer no-match
+              and matching screens stay video-free behind the badge. */}
+          {!matching && corps && corps.length > 0 && <FireworksOverlay />}
 
-          {/* Spinning brand video — z-20 keeps it above the
-              fireworks overlay (z-10). object-cover lets the video
-              fill the circle edge-to-edge so the "BuildUp anumate"
-              animation reads as a coherent badge instead of a tiny
-              logo on a grey background. */}
+          {/* Brand badge — same 192px circle across all three phases.
+              Sits in z-20 above the fireworks overlay (z-10). */}
           <video
             src="/brand/buildup-logo-spinning.mp4"
             poster="/brand/buildup-logo.png"
@@ -506,24 +500,57 @@ export default function FindFormPage() {
             aria-hidden="true"
           />
 
-          {corps.length > 0 ? (
-            <div className="relative z-20 mt-5 space-y-4 max-w-md mx-auto">
+          {/* Inner content uses a grid stack: matching + result live
+              in the same cell so the new one fades in while the old
+              fades out, no height jolt. */}
+          <div className="relative z-20 mt-5 max-w-md mx-auto grid">
+            {/* Matching copy */}
+            <div
+              className={`row-start-1 col-start-1 transition-opacity duration-500 ${
+                matching ? 'opacity-100' : 'opacity-0 pointer-events-none'
+              }`}
+              aria-hidden={!matching}
+            >
+              <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 leading-tight">
+                מחפש את ההתאמות הטובות ביותר…
+              </h2>
+              <p className="text-sm text-slate-500 mt-2 leading-relaxed">
+                המערכת סורקת עובדים זמינים לפי מקצוע, אזור, ניסיון, שפות וויזה
+              </p>
+              <div className="mt-4 flex justify-center gap-2" aria-hidden="true">
+                {[0, 150, 300].map((delay) => (
+                  <div
+                    key={delay}
+                    className="w-2.5 h-2.5 rounded-full bg-brand-500 animate-bounce"
+                    style={{ animationDelay: `${delay}ms` }}
+                  />
+                ))}
+              </div>
+            </div>
+
+            {/* Match-found copy */}
+            <div
+              className={`row-start-1 col-start-1 transition-opacity duration-500 space-y-4 ${
+                !matching && corps && corps.length > 0
+                  ? 'opacity-100'
+                  : 'opacity-0 pointer-events-none'
+              }`}
+              aria-hidden={matching || !(corps && corps.length > 0)}
+            >
               <div>
                 <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 leading-tight drop-shadow-sm">
-                  {corps.length === 1
+                  {corps?.length === 1
                     ? 'נמצאה התאמה לתאגיד אחד לפחות'
-                    : `נמצאו התאמות ל-${corps.length} תאגידים`}
+                    : `נמצאו התאמות ל-${corps?.length ?? 0} תאגידים`}
                 </h2>
                 <p className="text-sm font-semibold text-emerald-700 mt-2">
                   שלחנו פניה לכולם
                 </p>
               </div>
-
               <div className="rounded-xl bg-emerald-50/95 border border-emerald-200 px-4 py-3 text-sm text-emerald-900 leading-relaxed backdrop-blur-sm">
                 <p>ברגע שיאשרו זמינות עובדים נעדכן אותך בהודעת SMS / WhatsApp</p>
                 <p className="text-emerald-700/80 mt-0.5">למספר ששמור במערכת</p>
               </div>
-
               <p className="text-sm text-slate-700 leading-relaxed bg-white/80 rounded-lg px-3 py-2 backdrop-blur-sm">
                 אתה יכול לעקוב אחר התקדמות העסקה בתפריט{' '}
                 <Link href="/contractor/deals" className="font-bold text-brand-600 hover:underline">
@@ -531,8 +558,16 @@ export default function FindFormPage() {
                 </Link>
               </p>
             </div>
-          ) : (
-            <div className="relative z-20 mt-5 space-y-4 max-w-md mx-auto">
+
+            {/* No-match copy */}
+            <div
+              className={`row-start-1 col-start-1 transition-opacity duration-500 space-y-4 ${
+                !matching && corps && corps.length === 0
+                  ? 'opacity-100'
+                  : 'opacity-0 pointer-events-none'
+              }`}
+              aria-hidden={matching || !(corps && corps.length === 0)}
+            >
               <div>
                 <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 leading-tight">
                   לא נמצאו התאמות
@@ -541,14 +576,23 @@ export default function FindFormPage() {
                   המערכת ממשיכה לחפש עבורך עובדים באופן אקטיבי
                 </p>
               </div>
-
               <div className="rounded-xl bg-sky-50 border border-sky-200 px-4 py-3 text-sm text-sky-900 leading-relaxed">
                 <p>תקבל עדכון ב-SMS / WhatsApp למספר ששמור במערכת ברגע שתימצא התאמה</p>
               </div>
             </div>
-          )}
+          </div>
 
-          <div className="relative z-20 mt-6 flex flex-col sm:flex-row gap-3 justify-center">
+          {/* Action row appears once the matcher returned, fades in
+              over the dots so the user has a moment to register the
+              outcome before the buttons land. */}
+          <div
+            className={`relative z-20 mt-6 flex flex-col sm:flex-row gap-3 justify-center transition-opacity duration-500 ${
+              !matching && corps !== null
+                ? 'opacity-100'
+                : 'opacity-0 pointer-events-none'
+            }`}
+            aria-hidden={matching || corps === null}
+          >
             <Link
               href="/contractor/deals"
               className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold px-5 py-2.5 shadow-sm shadow-emerald-200"
