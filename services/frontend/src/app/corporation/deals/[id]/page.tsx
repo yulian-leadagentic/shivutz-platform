@@ -874,14 +874,18 @@ function CorporationDealPageInner() {
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
           <div className="flex items-center gap-2 flex-wrap">
-            <h1 className="text-2xl font-bold text-slate-900">עסקה #{dealRef(id)}</h1>
-            {(deal as { corp_deal_no?: number | null }).corp_deal_no != null && (
-              <span
-                className="inline-flex items-center text-xs font-mono font-semibold tracking-wide bg-slate-900 text-white px-2 py-0.5 rounded"
-                title="מספר דרישה פנימי של התאגיד"
-              >
-                #C-{(deal as { corp_deal_no?: number | null }).corp_deal_no}
-              </span>
+            {/* Header reads as "דרישה #C-34" when the corp_deal_no is
+                available — that's the number the corp team uses
+                internally + sees in their SMS — and falls back to the
+                derived UUID ref only for legacy rows from before the
+                per-corp numbering migration. Showing both at once was
+                noisy ("עסקה #050347" right next to "#C-34"). */}
+            {(deal as { corp_deal_no?: number | null }).corp_deal_no != null ? (
+              <h1 className="text-2xl font-bold text-slate-900">
+                דרישה <span className="font-mono">#C-{(deal as { corp_deal_no?: number | null }).corp_deal_no}</span>
+              </h1>
+            ) : (
+              <h1 className="text-2xl font-bold text-slate-900">עסקה #{dealRef(id)}</h1>
             )}
             <StatusBadge status={deal.status} perspective="corporation" />
           </div>

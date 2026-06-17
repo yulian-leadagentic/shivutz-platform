@@ -573,7 +573,7 @@ export default function WorkersPage() {
         <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
           <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
           <p className="text-sm text-amber-800">
-            <span className="font-semibold">{expiringSoon.length} עובדים</span> עם ויזה הפוגת תוך 30 יום.
+            <span className="font-semibold">{expiringSoon.length} עובדים זרים</span> שוויזת העבודה שלהם תפוג בעוד 30 יום.
           </p>
         </div>
       )}

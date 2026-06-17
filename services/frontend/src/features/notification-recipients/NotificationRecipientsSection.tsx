@@ -32,15 +32,20 @@ interface Props {
   entityId:   string | null;
   /** Optional callback so the parent page can react to membership / recipient changes. */
   onChange?: (rows: RecipientRow[]) => void;
+  /** Bump to force a refetch — e.g. after the parent saves a team-member
+   *  edit that may have added/cleared an email. */
+  reloadKey?: number;
 }
 
-export function NotificationRecipientsSection({ entityType, entityId, onChange }: Props) {
+export function NotificationRecipientsSection({ entityType, entityId, onChange, reloadKey }: Props) {
   const [rows, setRows]         = useState<RecipientRow[]>([]);
   const [loading, setLoading]   = useState(true);
   const [savingUid, setSaving]  = useState<string | null>(null);
   const [error, setError]       = useState('');
 
-  // Load.
+  // Load. Re-runs whenever the parent bumps `reloadKey` — e.g. after a
+  // team-member email edit so a freshly-set email unlocks the email
+  // checkbox and a cleared one hides it.
   useEffect(() => {
     if (!entityId) return;
     setLoading(true); setError('');
@@ -49,7 +54,7 @@ export function NotificationRecipientsSection({ entityType, entityId, onChange }
       .catch((e) => setError(e instanceof Error ? e.message : 'שגיאה'))
       .finally(() => setLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entityType, entityId]);
+  }, [entityType, entityId, reloadKey]);
 
   const activeCount = useMemo(() => rows.filter((r) => r.is_recipient).length, [rows]);
   const atCap       = activeCount >= MAX_RECIPIENTS;

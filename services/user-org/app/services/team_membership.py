@@ -14,6 +14,25 @@ from app.publisher import publish_event
 ALLOWED_ROLES = {"owner", "admin", "viewer"}
 
 
+def _prune_email_channel(cur, entity_type: str, entity_id: str, user_id: str) -> None:
+    """When a team member's email is cleared, remove 'email' from any
+    notification_recipients.channels JSON array they had configured.
+    Otherwise the UI still shows 'email checked' but with no inbox to
+    receive — and the fan-out helper would attempt sends against a
+    null address.
+    """
+    cur.execute(
+        """UPDATE auth_db.notification_recipients
+           SET channels = JSON_REMOVE(channels,
+               REPLACE(REPLACE(JSON_SEARCH(channels, 'one', 'email'), '"', ''), '$', '$'))
+           WHERE entity_type = %s
+             AND entity_id   = %s
+             AND user_id     = %s
+             AND JSON_SEARCH(channels, 'one', 'email') IS NOT NULL""",
+        (entity_type, entity_id, user_id),
+    )
+
+
 def _ensure_caller_can_manage(
     cur,
     entity_type: str,
@@ -146,10 +165,45 @@ async def update_membership(
     if role is not None and role not in ALLOWED_ROLES:
         raise HTTPException(status_code=400, detail="invalid_role")
 
-    # Quick email sanity-check — accept clear ("") or basic shape.
+    # Quick email sanity-check — accept clear ("") or a shape that
+    # passes both a mailbox-format regex AND a TLD allowlist. The TLD
+    # check catches the most common garbage path: a user typing
+    # "foo@gmail.jkjhgjgjkv" to test the form. Anything outside the
+    # allowlist is rejected with 'invalid_email' and a Hebrew message
+    # surfaces on the frontend.
     if email is not None and email.strip():
-        if "@" not in email or "." not in email.split("@")[-1]:
+        import re as _re
+        addr = email.strip()
+        EMAIL_RE = _re.compile(
+            r"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,24}$"
+        )
+        if not EMAIL_RE.match(addr):
             raise HTTPException(status_code=400, detail="invalid_email")
+        # Pull the TLD (after the last dot) and require it to be a
+        # plausibly-real one. The list is a superset of what Israeli
+        # corp/contractor team members actually use plus the most
+        # common global TLDs. Add to it when a legitimate address gets
+        # blocked.
+        ALLOWED_TLDS = {
+            # Israel
+            "il", "co", "ac", "gov", "muni", "k12", "idf",
+            # English
+            "com", "org", "net", "edu", "info", "biz", "name", "io", "ai",
+            "app", "dev", "tech", "cloud", "site", "online", "store", "shop",
+            "blog", "news", "tv", "fm", "me", "us", "uk", "ca", "de", "fr",
+            "es", "it", "ru", "ua", "ro", "pl", "br", "mx", "in", "jp", "cn",
+            "hk", "sg", "au", "nz", "za", "ar", "cl", "co", "pe", "ng", "ke",
+            "ke", "tz", "ug", "et", "eg", "ma", "sa", "ae", "tr", "gr",
+        }
+        tld = addr.rsplit(".", 1)[-1].lower()
+        if tld not in ALLOWED_TLDS:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code":    "invalid_email_tld",
+                    "message": f"סיומת המייל '.{tld}' לא נראית תקינה.",
+                },
+            )
 
     conn = get_db()
     publish_phone_change = None  # set if we need to send a fresh invite SMS
@@ -248,6 +302,12 @@ async def update_membership(
                 user_id   = target["user_id"]
                 if new_email is None:
                     cur.execute("UPDATE auth_db.users SET email = NULL WHERE id = %s", (user_id,))
+                    # Cascade — once the email is gone, the user can't
+                    # receive on the email channel anymore. Strip 'email'
+                    # from every notification_recipients row for this
+                    # (entity, user) so the recipients UI shows the
+                    # correct unchecked state on the next refetch.
+                    _prune_email_channel(cur, entity_type, entity_id, user_id)
                 else:
                     try:
                         cur.execute(

@@ -3,7 +3,12 @@ const JOB_MATCH_URL  = process.env.JOB_MATCH_SERVICE_URL || 'http://job-match:30
 const DEAL_URL       = process.env.DEAL_SERVICE_URL     || 'http://deal:3005';
 const ADMIN_EMAIL    = process.env.ADMIN_EMAIL || 'admin@shivutz-platform.co.il';
 const NOTIF_URL      = `http://localhost:${process.env.PORT || 3006}`;
-const FRONTEND_URL   = process.env.FRONTEND_URL || 'https://app.shivutz.co.il';
+// Default to the new tagidai.com domain so SMS links never accidentally
+// point at a legacy host when FRONTEND_URL is unset in a service env
+// (e.g. a new Railway service or a misconfigured staging redeploy).
+// docker-compose passes FRONTEND_URL=http://localhost:3008 locally, so
+// this default only ever matters in prod-style deploys missing the var.
+const FRONTEND_URL   = process.env.FRONTEND_URL || 'https://www.tagidai.com';
 
 // FREE_LAUNCH_UNTIL=YYYY-MM-DD (or full ISO) — when the date is still in the
 // future, the contractor-approved SMS drops the "חיוב יבוצע ב-…" sentence
@@ -32,6 +37,31 @@ const ROLE_LABELS_HE = {
   admin:    'מנהל',
   viewer:   'צופה',
 };
+
+// SMS bodies that talk about workers want the plural noun, not the
+// profession name. e.g. "דרישה חדשה לברזלנים", not the literal
+// "לעובדי ברזלן". Keyed by profession code (stable across the
+// worker-service enum). Anything outside this map falls back to
+// "עובדי {profession_he}" which still reads naturally.
+const PROFESSION_PLURAL_HE = {
+  electrician: 'חשמלאים',
+  electricity: 'חשמלאים',
+  flooring:    'רצפים',
+  formwork:    'תפסנים',
+  general:     'עובדים כללים',
+  mason:       'בנאים',
+  painting:    'עובדי גמר',
+  plastering:  'טייחים',
+  plumbing:    'אינסטלטורים',
+  scaffolding: 'רתכים',
+  skeleton:    'ברזלנים',
+};
+
+function professionPlural(code, profHe) {
+  if (code && PROFESSION_PLURAL_HE[code]) return PROFESSION_PLURAL_HE[code];
+  if (profHe) return `עובדי ${profHe}`;
+  return 'עובדים';
+}
 
 // E.164 normaliser for Israeli mobile numbers. Required because some
 // publishers (team.invited, deal.* fan-out, etc.) pass through whatever
@@ -108,7 +138,11 @@ async function notifyMatchFound(result, sendEmail) {
   if (!result || !result.should_notify) return;
 
   const matchUrl   = `${FRONTEND_URL}/contractor/searches/${result.search_id}`;
-  const profession = result.profession || 'החיפוש שלך';
+  // The match-found event from the job-match service carries the
+  // profession TYPE (e.g. 'skeleton', 'plasterer') instead of the
+  // Hebrew label. Translate via the worker-service enum so the SMS
+  // reads as "...לחיפוש 'תפסנים' (1 עובדים)" instead of the raw code.
+  const profession = await translateProfession(result.profession);
   const workerCt   = result.worker_count || 0;
   const smsBody    = `TagidAI — נמצאה התאמה מלאה לחיפוש "${profession}" (${workerCt} עובדים). לצפייה: ${matchUrl}`;
 
@@ -233,9 +267,10 @@ async function materialiseNewDeals(result, sendEmail) {
     }
     if (corpPhone) {
       const corpLink = `${FRONTEND_URL}/corporation/deals`;
+      const profPlural = professionPlural(result.profession, profHe);
       await sendSmsInternal(
         corpPhone,
-        `TagidAI — יש דרישה חדשה ממתינה לעובדי ${profHe}. אנא פתח את לוח העסקאות: ${corpLink}`
+        `TagidAI — יש דרישה חדשה ל${profPlural}. אנא פתח את לוח העסקאות: ${corpLink}`
       );
     }
   }
@@ -244,9 +279,10 @@ async function materialiseNewDeals(result, sendEmail) {
   if (createdAny && result.contact_phone) {
     const dealsLink = `${FRONTEND_URL}/contractor/deals`;
     const firstName = (result.contact_name || '').split(' ')[0] || 'שלום';
+    const profPlural = professionPlural(result.profession, profHe);
     await sendSmsInternal(
       result.contact_phone,
-      `TagidAI — ${firstName}, תאגיד נוסף יכול לתת מענה לדרישה שלך ל-${profHe}. היכנס לבדוק: ${dealsLink}`
+      `TagidAI — ${firstName}, תאגיד נוסף יכול לתת מענה לדרישה שלך ל${profPlural}. היכנס לבדוק: ${dealsLink}`
     );
   }
 }
@@ -355,7 +391,15 @@ async function handle(routingKey, payload, sendEmail) {
       // recipient gets it on the channels they chose. Legacy single-
       // contact fallback fires if no recipients are configured yet.
       const dealUrl = `${FRONTEND_URL}/corporation/deals/${payload.deal_id}`;
-      const prof    = payload.profession_he || 'חיפוש חדש';
+      // payload.profession_he is the published Hebrew label when the
+      // publisher had it; if only the raw profession code came through
+      // we translate via the worker-service enum (used in match-found
+      // too) so the SMS doesn't read 'חיפוש חדש' as a generic fallback.
+      let prof = payload.profession_he;
+      if (!prof && payload.profession_type) {
+        prof = await translateProfession(payload.profession_type);
+      }
+      prof = prof || 'חיפוש חדש';
       // Per-corp request number ("#C-127") so the corp team can talk about
       // a specific deal internally without quoting UUIDs. Falls back to no
       // tag if the deal-service didn't supply one (legacy in-flight events).
@@ -502,7 +546,7 @@ async function handle(routingKey, payload, sendEmail) {
       const message =
         `TagidAI — ${firstName}, בקשתך להצטרף לצוות ${entityKindHe} נדחתה על ידי הבעלים.` +
         reasonSuffix +
-        '\nלשאלות, פנה לתמיכה.';
+        `\nלשאלות, פנה לתמיכה: ${FRONTEND_URL}/support`;
       await sendSmsInternal(payload.requester_phone, message);
       break;
     }
@@ -547,7 +591,8 @@ async function handle(routingKey, payload, sendEmail) {
         await sendSmsInternal(
           payload.contact_phone,
           `TagidAI — ${firstName}, הרישום של ${payload.company_name || 'העסק שלך'} כבר לא מופיע בפנקס הקבלנים. ` +
-          `הגשת בקשות לתאגידים מושהית עד שנעדכן את האימות. היכנס לאתר ובחר "אמת מחדש" בהגדרות.`
+          `הגשת בקשות לתאגידים מושהית עד שנעדכן את האימות. ` +
+          `אמת מחדש: ${FRONTEND_URL}/contractor/verify-kablan`
         );
       }
       break;
@@ -635,7 +680,8 @@ async function handle(routingKey, payload, sendEmail) {
           : `חיוב יבוצע ב-${captureFmt} (אלא אם התאגיד יבטל בחלון הזמן).`;
         await sendSmsInternal(
           payload.contractor_contact_phone,
-          `TagidAI — ${firstName}, אישרת רשימה של ${payload.worker_count} עובדים. ${tail}`
+          `TagidAI — ${firstName}, אישרת רשימה של ${payload.worker_count} עובדים. ${tail} ` +
+          `לצפייה: ${FRONTEND_URL}/contractor/deals/${payload.deal_id}`
         );
       }
       break;
@@ -698,7 +744,7 @@ async function handle(routingKey, payload, sendEmail) {
         await sendSmsInternal(
           payload.contractor_contact_phone,
           `TagidAI — ${firstName}, ${payload.corp_name || 'התאגיד'} ביטל את העסקה לפני החיוב. לא חויבת. ` +
-          `הבקשה שלך נשארת פתוחה.`
+          `הבקשה שלך נשארת פתוחה: ${FRONTEND_URL}/contractor/deals`
         );
       }
       await sendEmail('deal.cancelled_by_corp.admin', ADMIN_EMAIL, null, {

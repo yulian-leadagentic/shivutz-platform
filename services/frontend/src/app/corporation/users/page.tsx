@@ -27,6 +27,7 @@ export default function CorporationUsersPage() {
   const [members, setMembers]   = useState<TeamMember[]>([]);
   const [loading, setLoading]   = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [recipientsReloadKey, setRecipientsReloadKey] = useState(0);
   const [firstName, setFirstName] = useState('');
   const [lastName,  setLastName]  = useState('');
   const [phone, setPhone]       = useState('');
@@ -291,6 +292,7 @@ export default function CorporationUsersPage() {
                   <th className="px-4 py-3 text-start font-medium">שם</th>
                   <th className="px-4 py-3 text-start font-medium">תפקיד</th>
                   <th className="px-4 py-3 text-start font-medium">טלפון</th>
+                  <th className="px-4 py-3 text-start font-medium">מייל</th>
                   <th className="px-4 py-3 text-start font-medium">הרשאה</th>
                   <th className="px-4 py-3 text-start font-medium">איש קשר לעסקאות</th>
                   <th className="px-4 py-3 text-start font-medium">הצטרף</th>
@@ -303,6 +305,9 @@ export default function CorporationUsersPage() {
                     <td className="px-4 py-3 font-medium text-slate-900 whitespace-nowrap">{m.full_name ?? '—'}</td>
                     <td className="px-4 py-3 text-slate-600">{m.job_title || '—'}</td>
                     <td className="px-4 py-3 text-slate-600 whitespace-nowrap" dir="ltr">{m.phone || '—'}</td>
+                    <td className="px-4 py-3 text-slate-600 whitespace-nowrap" dir="ltr">
+                      {m.email ? <span className="text-xs">{m.email}</span> : <span className="text-xs text-slate-300">—</span>}
+                    </td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${ROLE_COLORS[m.role] ?? 'bg-slate-100 text-slate-600'}`}>
                         {ROLE_LABELS[m.role] ?? m.role}
@@ -360,7 +365,7 @@ export default function CorporationUsersPage() {
       {/* Notification recipients — per-user opt-in + channel choice.
           Lives below the active-members table because it's a power
           feature; the team list itself is the primary content. */}
-      <NotificationRecipientsSection entityType="corporation" entityId={entityId} />
+      <NotificationRecipientsSection entityType="corporation" entityId={entityId} reloadKey={recipientsReloadKey} />
 
       {pending.length > 0 && (
         <Card>
@@ -378,6 +383,7 @@ export default function CorporationUsersPage() {
                   <th className="px-4 py-3 text-start font-medium">שם</th>
                   <th className="px-4 py-3 text-start font-medium">תפקיד</th>
                   <th className="px-4 py-3 text-start font-medium">טלפון</th>
+                  <th className="px-4 py-3 text-start font-medium">מייל</th>
                   <th className="px-4 py-3 text-start font-medium">הרשאה</th>
                   <th className="px-4 py-3 text-start font-medium">נשלח</th>
                   <th className="px-4 py-3 text-end font-medium w-12" aria-label="פעולות" />
@@ -389,6 +395,9 @@ export default function CorporationUsersPage() {
                     <td className="px-4 py-3 font-medium text-slate-900 whitespace-nowrap">{m.full_name ?? '—'}</td>
                     <td className="px-4 py-3 text-slate-600">{m.job_title || '—'}</td>
                     <td className="px-4 py-3 text-slate-600 whitespace-nowrap" dir="ltr">{m.phone || '—'}</td>
+                    <td className="px-4 py-3 text-slate-600 whitespace-nowrap" dir="ltr">
+                      {m.email ? <span className="text-xs">{m.email}</span> : <span className="text-xs text-slate-300">—</span>}
+                    </td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${ROLE_COLORS[m.role] ?? 'bg-slate-100 text-slate-600'}`}>
                         {ROLE_LABELS[m.role] ?? m.role}
@@ -433,6 +442,7 @@ export default function CorporationUsersPage() {
           onClose={() => setEditing(null)}
           onSaved={(next) => {
             setMembers((prev) => prev.map((x) => x.membership_id === next.membership_id ? next : x));
+            setRecipientsReloadKey((k) => k + 1);
             setEditing(null);
             setSuccess('פרטי חבר הצוות עודכנו');
             setTimeout(() => setSuccess(''), 4000);

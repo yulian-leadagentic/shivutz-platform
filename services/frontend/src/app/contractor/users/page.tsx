@@ -27,6 +27,11 @@ export default function ContractorUsersPage() {
   const [members, setMembers]     = useState<TeamMember[]>([]);
   const [loading, setLoading]     = useState(true);
   const [showForm, setShowForm]   = useState(false);
+  // Bumped after a member-edit save so the notification-recipients
+  // section refetches. Catches the email-cleared case: backend prunes
+  // 'email' from the channels JSON, then the UI reloads to show the
+  // newly-disabled checkbox state.
+  const [recipientsReloadKey, setRecipientsReloadKey] = useState(0);
   const [firstName, setFirstName] = useState('');
   const [lastName,  setLastName]  = useState('');
   const [phone, setPhone]         = useState('');
@@ -289,6 +294,7 @@ export default function ContractorUsersPage() {
                   <th className="px-4 py-3 text-start font-medium">שם</th>
                   <th className="px-4 py-3 text-start font-medium">תפקיד</th>
                   <th className="px-4 py-3 text-start font-medium">טלפון</th>
+                  <th className="px-4 py-3 text-start font-medium">מייל</th>
                   <th className="px-4 py-3 text-start font-medium">הרשאה</th>
                   <th className="px-4 py-3 text-start font-medium">איש קשר לעסקאות</th>
                   <th className="px-4 py-3 text-start font-medium">הצטרף</th>
@@ -301,6 +307,9 @@ export default function ContractorUsersPage() {
                     <td className="px-4 py-3 font-medium text-slate-900 whitespace-nowrap">{m.full_name ?? '—'}</td>
                     <td className="px-4 py-3 text-slate-600">{m.job_title || '—'}</td>
                     <td className="px-4 py-3 text-slate-600 whitespace-nowrap" dir="ltr">{m.phone || '—'}</td>
+                    <td className="px-4 py-3 text-slate-600 whitespace-nowrap" dir="ltr">
+                      {m.email ? <span className="text-xs">{m.email}</span> : <span className="text-xs text-slate-300">—</span>}
+                    </td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${ROLE_COLORS[m.role] ?? 'bg-slate-100 text-slate-600'}`}>
                         {ROLE_LABELS[m.role] ?? m.role}
@@ -354,7 +363,7 @@ export default function ContractorUsersPage() {
       </Card>
 
       {/* Notification recipients — per-user opt-in + channel choice. */}
-      <NotificationRecipientsSection entityType="contractor" entityId={entityId} />
+      <NotificationRecipientsSection entityType="contractor" entityId={entityId} reloadKey={recipientsReloadKey} />
 
       {/* Pending invitations */}
       {pending.length > 0 && (
@@ -373,6 +382,7 @@ export default function ContractorUsersPage() {
                   <th className="px-4 py-3 text-start font-medium">שם</th>
                   <th className="px-4 py-3 text-start font-medium">תפקיד</th>
                   <th className="px-4 py-3 text-start font-medium">טלפון</th>
+                  <th className="px-4 py-3 text-start font-medium">מייל</th>
                   <th className="px-4 py-3 text-start font-medium">הרשאה</th>
                   <th className="px-4 py-3 text-start font-medium">נשלח</th>
                   <th className="px-4 py-3 text-end font-medium w-12" aria-label="פעולות" />
@@ -384,6 +394,9 @@ export default function ContractorUsersPage() {
                     <td className="px-4 py-3 font-medium text-slate-900 whitespace-nowrap">{m.full_name ?? '—'}</td>
                     <td className="px-4 py-3 text-slate-600">{m.job_title || '—'}</td>
                     <td className="px-4 py-3 text-slate-600 whitespace-nowrap" dir="ltr">{m.phone || '—'}</td>
+                    <td className="px-4 py-3 text-slate-600 whitespace-nowrap" dir="ltr">
+                      {m.email ? <span className="text-xs">{m.email}</span> : <span className="text-xs text-slate-300">—</span>}
+                    </td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${ROLE_COLORS[m.role] ?? 'bg-slate-100 text-slate-600'}`}>
                         {ROLE_LABELS[m.role] ?? m.role}
@@ -428,6 +441,7 @@ export default function ContractorUsersPage() {
           onClose={() => setEditing(null)}
           onSaved={(next) => {
             setMembers((prev) => prev.map((x) => x.membership_id === next.membership_id ? next : x));
+            setRecipientsReloadKey((k) => k + 1);
             setEditing(null);
             setSuccess('פרטי חבר הצוות עודכנו');
             setTimeout(() => setSuccess(''), 4000);

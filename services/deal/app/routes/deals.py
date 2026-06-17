@@ -148,14 +148,17 @@ def _enrich_event_payload(deal_id: str, contractor_id: str, corporation_id: str,
                 )
                 ws = cur.fetchone() or {}
                 out["profession_he"]   = ws.get("prof_he") or ""
+                out["profession_type"] = ws.get("profession_type") or ""
                 out["region_he"]       = ws.get("region")  or ""
                 out["requested_count"] = int(ws.get("quantity") or 0)
             except Exception:
                 out["profession_he"]   = ""
+                out["profession_type"] = ""
                 out["region_he"]       = ""
                 out["requested_count"] = 0
         else:
             out["profession_he"]   = ""
+            out["profession_type"] = ""
             out["region_he"]       = ""
             out["requested_count"] = 0
     finally:

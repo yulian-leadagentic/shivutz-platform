@@ -67,7 +67,19 @@ export function EditMemberModal({ orgType, orgId, member, onSaved, onClose }: Pr
       }
     }
     if (email.trim() !== (member.email ?? '')) {
-      patch.email = email.trim();
+      const trimmed = email.trim();
+      if (trimmed) {
+        // Cheap client-side bounce before the network round-trip so
+        // the user sees the error instantly. Server validates the same
+        // shape + a TLD allowlist; this only catches the basic-format
+        // case ("foo@bar", "@bar.com", spaces, etc.).
+        const SHAPE = /^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,24}$/;
+        if (!SHAPE.test(trimmed)) {
+          setError('כתובת מייל לא תקינה.');
+          return;
+        }
+      }
+      patch.email = trimmed;
     }
 
     if (Object.keys(patch).length === 0) { onClose(); return; }
@@ -82,6 +94,8 @@ export function EditMemberModal({ orgType, orgId, member, onSaved, onClose }: Pr
         setError('אי אפשר להוריד את הבעלים האחרון. הוסף בעלים נוסף קודם.');
       } else if (msg.includes('email_already_in_use') || msg.includes('כתובת המייל')) {
         setError('כתובת המייל הזו כבר רשומה אצל משתמש אחר.');
+      } else if (msg.includes('invalid_email_tld') || msg.includes('סיומת המייל')) {
+        setError('סיומת המייל לא נראית תקינה. בדוק את הכתובת.');
       } else if (msg.includes('invalid_email')) {
         setError('כתובת מייל לא תקינה.');
       } else {
