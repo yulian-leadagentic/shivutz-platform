@@ -4,15 +4,12 @@ const ACCESS_KEY = 'access_token';
 const REFRESH_KEY = 'refresh_token';
 
 export function saveTokens(access: string, refresh: string) {
-  // Cookie expiry has to match the JWT's actual lifetime. Auth service
-  // signs access tokens with 3h TTL by default (JWT_ACCESS_EXPIRES_IN),
-  // but the cookie was set to 15min — so the browser would drop the
-  // cookie 11 of every 12 active minutes and the user would bounce to
-  // /login while the server still considered the JWT valid. Bumping to
-  // 6h covers a normal workday + the silent-refresh fallback handles
-  // anything past the JWT's actual exp.
-  Cookies.set(ACCESS_KEY, access, { expires: 6 / 24, sameSite: 'lax' }); // 6 hours
-  Cookies.set(REFRESH_KEY, refresh, { expires: 7, sameSite: 'lax' });
+  // Cookie expiry must match the JWT's actual lifetime — otherwise the
+  // browser drops the cookie while the server still considers the token
+  // valid, bouncing the user to /login mid-session. Auth service
+  // defaults: 24h access / 30d refresh (services/auth/src/routes/auth.js).
+  Cookies.set(ACCESS_KEY, access, { expires: 1, sameSite: 'lax' });   // 24 hours
+  Cookies.set(REFRESH_KEY, refresh, { expires: 30, sameSite: 'lax' });
 }
 
 export function clearTokens() {

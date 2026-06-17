@@ -9,12 +9,11 @@ const { generateOtp, verifyOtp, hasRecentVerifiedOtp, normalisePhone } = require
 
 const ACCESS_SECRET  = process.env.JWT_SECRET;
 const REFRESH_SECRET = process.env.JWT_SECRET + '_refresh';
-// Wave 5 feedback: "המערכת מעיפה אותי כל כמה דקות" — keep users
-// signed in for a full 6h workday so they don't bounce to /login
-// mid-task. Frontend cookie TTL was bumped to match in
-// services/frontend/src/lib/auth.ts.
-const ACCESS_TTL     = process.env.JWT_ACCESS_EXPIRES_IN  || '6h';
-const REFRESH_TTL    = process.env.JWT_REFRESH_EXPIRES_IN || '7d';
+// Long session TTL to minimise SMS OTP waste — access covers a full
+// workday, refresh covers a month of idle. Frontend cookie TTL must
+// match in services/frontend/src/lib/auth.ts.
+const ACCESS_TTL     = process.env.JWT_ACCESS_EXPIRES_IN  || '24h';
+const REFRESH_TTL    = process.env.JWT_REFRESH_EXPIRES_IN || '30d';
 const NOTIF_URL      = process.env.NOTIF_SERVICE_URL || 'http://notification:3006';
 
 // ─── JWT helpers ──────────────────────────────────────────────────────────────
