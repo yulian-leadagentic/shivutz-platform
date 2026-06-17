@@ -15,6 +15,7 @@ import { EmptyState } from '@/components/admin/EmptyState';
 import { exportCsv } from '@/lib/csv';
 import { resolveStatus } from '@/components/StatusBadge';
 import { adminApi, type AdminDealRow } from '@/lib/adminApi';
+import { dealApi } from '@/lib/api';
 import { dealRef } from '@/lib/utils';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -212,6 +213,43 @@ export default function AdminDealsPage() {
   const [sortKey, setSortKey]   = useState<SortKey>('updated');
   const [sortDir, setSortDir]   = useState<SortDir>('desc');
   const [popoverContact, setPopoverContact] = useState<ContactPopoverProps | null>(null);
+  // QA-R5#6 — inline approve button. State per row id so the spinner
+  // only shows on the row the admin clicked, and toast surfaces the
+  // result without navigating away from the list.
+  const [approvingId, setApprovingId] = useState<string | null>(null);
+  const [approveToast, setApproveToast] = useState<string | null>(null);
+
+  async function approveInline(deal: AdminDealRow) {
+    if (approvingId) return;
+    if (!confirm(`לאשר את עסקה #${dealRef(deal.id)} בשם הקבלן?`)) return;
+    setApprovingId(deal.id);
+    try {
+      await dealApi.approve(deal.id);
+      setApproveToast(`עסקה #${dealRef(deal.id)} אושרה`);
+      setTimeout(() => setApproveToast(null), 3500);
+      // Reload so the row's status + stuck_on update without a hard refresh.
+      reload();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'failed';
+      alert(`אישור נכשל: ${msg}`);
+    } finally {
+      setApprovingId(null);
+    }
+  }
+  // QA-R5#7 — group rows by contractor request (search_id) so it's
+  // visible at a glance which corporations responded to a single
+  // contractor request. Persists across sessions in localStorage
+  // because some admins always work grouped and some always flat.
+  const [groupBySearch, setGroupBySearch] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    try { return window.localStorage.getItem('admin_deals_group_by_search') === '1'; }
+    catch { return false; }
+  });
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try { window.localStorage.setItem('admin_deals_group_by_search', groupBySearch ? '1' : '0'); }
+    catch { /* private mode */ }
+  }, [groupBySearch]);
 
   function reload() {
     setLoading(true); setError(false);
@@ -280,6 +318,32 @@ export default function AdminDealsPage() {
     return c;
   }, [deals]);
 
+  // When grouping is on, interleave a header row before each cluster of
+  // deals sharing the same contractor request (search_id). Each cluster
+  // sorts by its most recent deal so urgent groups float to the top.
+  type Item = { kind: 'row'; deal: AdminDealRow } | { kind: 'header'; key: string; deals: AdminDealRow[] };
+  const items: Item[] = useMemo(() => {
+    if (!groupBySearch) return filtered.map((d) => ({ kind: 'row' as const, deal: d }));
+    const buckets = new Map<string, AdminDealRow[]>();
+    for (const d of filtered) {
+      const key = d.search_id || '__no_search__';
+      const arr = buckets.get(key) || [];
+      arr.push(d);
+      buckets.set(key, arr);
+    }
+    const ordered = Array.from(buckets.entries()).sort(([, a], [, b]) => {
+      const am = Math.max(...a.map((d) => parseUtcMs(d.updated_at) || 0));
+      const bm = Math.max(...b.map((d) => parseUtcMs(d.updated_at) || 0));
+      return bm - am;
+    });
+    const out: Item[] = [];
+    for (const [k, rows] of ordered) {
+      out.push({ kind: 'header', key: k, deals: rows });
+      for (const d of rows) out.push({ kind: 'row', deal: d });
+    }
+    return out;
+  }, [filtered, groupBySearch]);
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -320,6 +384,15 @@ export default function AdminDealsPage() {
         >
           <Download className="h-4 w-4" /> ייצוא ל-CSV
         </Button>
+        <label className="inline-flex items-center gap-2 text-sm text-slate-700 select-none cursor-pointer">
+          <input
+            type="checkbox"
+            checked={groupBySearch}
+            onChange={(e) => setGroupBySearch(e.target.checked)}
+            className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+          />
+          <span>קבץ לפי בקשת קבלן</span>
+        </label>
       </div>
 
       {/* Stuck-stage filter chips — primary axis the admin scans on */}
@@ -418,7 +491,33 @@ export default function AdminDealsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map((d) => (
+                  {items.map((it) => {
+                    if (it.kind === 'header') {
+                      const first = it.deals[0];
+                      const labelEnd = it.deals.length === 1 ? 'תאגיד הגיב' : 'תאגידים הגיבו';
+                      return (
+                        <tr key={`g-${it.key}`} className="bg-slate-100/80 border-y-2 border-slate-300">
+                          <td colSpan={11} className="py-2 px-3 text-sm">
+                            <div className="flex items-center gap-3 flex-wrap text-slate-800">
+                              <span className="font-bold inline-flex items-center gap-1.5">
+                                <HardHat className="h-4 w-4 text-slate-500" />
+                                {first.contractor_name || '—'}
+                              </span>
+                              {first.profession_he && <span className="text-slate-600">· {first.profession_he}</span>}
+                              {first.region && <span className="text-slate-600">· {first.region}</span>}
+                              <span className="ms-auto inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500">
+                                {it.deals.length} {labelEnd}
+                                {it.key !== '__no_search__' && (
+                                  <span className="font-mono text-[10px] text-slate-400 ms-2">בקשה: {it.key.slice(0, 8)}</span>
+                                )}
+                              </span>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    }
+                    const d = it.deal;
+                    return (
                     <tr
                       key={d.id}
                       data-table-row="true"
@@ -506,16 +605,33 @@ export default function AdminDealsPage() {
                         {fmtDate(d.updated_at)}
                       </td>
                       <td className="py-3 px-3">
-                        <Link
-                          href={`/admin/deals/${d.id}`}
-                          data-table-row-action
-                          className="text-brand-600 hover:underline text-xs whitespace-nowrap"
-                        >
-                          פרטי עסקה →
-                        </Link>
+                        <div className="flex items-center gap-2 whitespace-nowrap">
+                          {d.status === 'corp_committed' && (
+                            <button
+                              type="button"
+                              onClick={() => approveInline(d)}
+                              disabled={approvingId === d.id}
+                              data-table-row-action
+                              className="inline-flex items-center gap-1 text-xs font-semibold bg-emerald-600 text-white px-2 py-1 rounded-md hover:bg-emerald-700 disabled:opacity-50"
+                              title="אשר את הרשימה בשם הקבלן"
+                            >
+                              {approvingId === d.id
+                                ? <Loader2 className="h-3 w-3 animate-spin" />
+                                : <span>אשר</span>}
+                            </button>
+                          )}
+                          <Link
+                            href={`/admin/deals/${d.id}`}
+                            data-table-row-action
+                            className="text-brand-600 hover:underline text-xs"
+                          >
+                            פרטי →
+                          </Link>
+                        </div>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -524,6 +640,13 @@ export default function AdminDealsPage() {
       </Card>
 
       {popoverContact && <ContactPopover {...popoverContact} />}
+      {approveToast && (
+        <div className="fixed bottom-6 inset-x-0 flex justify-center pointer-events-none z-50">
+          <div className="rounded-lg bg-emerald-600 text-white px-4 py-2 text-sm shadow-lg pointer-events-auto">
+            {approveToast}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
