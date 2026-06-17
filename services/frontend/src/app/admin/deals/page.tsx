@@ -5,11 +5,12 @@
 // the admin can spot a stuck deal and reach out to the right person
 // without leaving the table.
 
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import {
   Loader2, AlertTriangle, Building2, HardHat, Phone, Mail, User,
   Filter as FilterIcon, ArrowDown, ArrowUp, Clock, X, Inbox, Download,
+  ChevronDown, ChevronLeft,
 } from 'lucide-react';
 import { EmptyState } from '@/components/admin/EmptyState';
 import { exportCsv } from '@/lib/csv';
@@ -218,6 +219,13 @@ export default function AdminDealsPage() {
   // result without navigating away from the list.
   const [approvingId, setApprovingId] = useState<string | null>(null);
   const [approveToast, setApproveToast] = useState<string | null>(null);
+  // QA-R5#4 — expanded row state. Single id at a time keeps the
+  // surface from sprawling; clicking a row's chevron toggles the
+  // expansion in place instead of navigating away.
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  function toggleExpand(id: string) {
+    setExpandedId((cur) => (cur === id ? null : id));
+  }
 
   async function approveInline(deal: AdminDealRow) {
     if (approvingId) return;
@@ -518,8 +526,8 @@ export default function AdminDealsPage() {
                     }
                     const d = it.deal;
                     return (
+                    <Fragment key={d.id}>
                     <tr
-                      key={d.id}
                       data-table-row="true"
                       tabIndex={-1}
                       className="border-b border-slate-100 last:border-0 hover:bg-slate-50/60 focus:bg-amber-50 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-inset"
@@ -620,16 +628,64 @@ export default function AdminDealsPage() {
                                 : <span>אשר</span>}
                             </button>
                           )}
-                          <Link
-                            href={`/admin/deals/${d.id}`}
+                          <button
+                            type="button"
+                            onClick={() => toggleExpand(d.id)}
                             data-table-row-action
-                            className="text-brand-600 hover:underline text-xs"
+                            className="inline-flex items-center gap-1 text-xs text-brand-600 hover:bg-brand-50 px-1.5 py-1 rounded"
+                            title={expandedId === d.id ? 'סגור' : 'הצג פרטים'}
                           >
-                            פרטי →
-                          </Link>
+                            <span>{expandedId === d.id ? 'סגור' : 'פרטים'}</span>
+                            {expandedId === d.id
+                              ? <ChevronDown className="h-3.5 w-3.5" />
+                              : <ChevronLeft className="h-3.5 w-3.5" />}
+                          </button>
                         </div>
                       </td>
                     </tr>
+                    {expandedId === d.id && (
+                      <tr key={`${d.id}-detail`} className="bg-slate-50 border-b border-slate-200">
+                        <td colSpan={11} className="py-4 px-6">
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                            <DetailCol title="קבלן">
+                              <DetailRow label="שם" value={d.contractor_name} />
+                              <DetailRow label="איש קשר" value={d.contractor_contact?.name} />
+                              <DetailRow label="טלפון" value={d.contractor_contact?.phone} dir="ltr" />
+                              <DetailRow label="מייל" value={d.contractor_contact?.email} dir="ltr" />
+                            </DetailCol>
+                            <DetailCol title="תאגיד">
+                              <DetailRow label="שם" value={d.corporation_name} />
+                              <DetailRow label="איש קשר" value={d.corporation_contact?.name} />
+                              <DetailRow label="טלפון" value={d.corporation_contact?.phone} dir="ltr" />
+                              <DetailRow label="מייל" value={d.corporation_contact?.email} dir="ltr" />
+                              {d.corp_deal_no != null && (
+                                <DetailRow label="מספר אצל התאגיד" value={`#C-${d.corp_deal_no}`} />
+                              )}
+                            </DetailCol>
+                            <DetailCol title="עסקה">
+                              <DetailRow label="מקצוע" value={d.profession_he ?? d.profession_type} />
+                              <DetailRow label="אזור" value={d.region} />
+                              <DetailRow label="עובדים" value={d.requested_count != null ? `${d.worker_count ?? 0}/${d.requested_count}` : `${d.worker_count ?? 0}`} />
+                              <DetailRow label="נוצר" value={fmtDate(d.created_at)} />
+                              <DetailRow label="עודכן" value={fmtDate(d.updated_at)} />
+                              {d.corp_committed_at && <DetailRow label="התחייבות תאגיד" value={fmtDate(d.corp_committed_at)} />}
+                              {d.approved_at && <DetailRow label="אישור קבלן" value={fmtDate(d.approved_at)} />}
+                              {d.scheduled_capture_at && <DetailRow label="חיוב מתוכנן" value={fmtDate(d.scheduled_capture_at)} />}
+                            </DetailCol>
+                          </div>
+                          <div className="mt-4 flex items-center gap-2 flex-wrap text-xs">
+                            <span className="text-slate-400 font-mono">{d.id}</span>
+                            <Link
+                              href={`/admin/deals/${d.id}`}
+                              className="ms-auto inline-flex items-center gap-1 text-brand-600 hover:underline"
+                            >
+                              פתח עמוד מלא →
+                            </Link>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
                     );
                   })}
                 </tbody>
@@ -647,6 +703,24 @@ export default function AdminDealsPage() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function DetailCol({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">{title}</h4>
+      <dl className="space-y-1">{children}</dl>
+    </div>
+  );
+}
+
+function DetailRow({ label, value, dir }: { label: string; value: string | number | null | undefined; dir?: 'ltr' | 'rtl' }) {
+  return (
+    <div className="flex items-baseline gap-2">
+      <dt className="text-xs text-slate-500 shrink-0 w-24">{label}:</dt>
+      <dd className="text-slate-800 break-all" dir={dir}>{value ?? '—'}</dd>
     </div>
   );
 }
