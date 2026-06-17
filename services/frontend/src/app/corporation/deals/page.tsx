@@ -972,7 +972,17 @@ function CorporationDealsPageContent() {
                         />
                       )}
                       <div className="flex-1 min-w-0">
-                        <h3 className="text-lg font-bold text-slate-900 leading-tight truncate">{profLabel}</h3>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="text-lg font-bold text-slate-900 leading-tight truncate">{profLabel}</h3>
+                          {d.corp_deal_no != null && (
+                            <span
+                              className="inline-flex items-center text-[11px] font-mono font-semibold tracking-wide bg-slate-900 text-white px-1.5 py-0.5 rounded"
+                              title="מספר דרישה פנימי של התאגיד"
+                            >
+                              #C-{d.corp_deal_no}
+                            </span>
+                          )}
+                        </div>
                         <p className="text-sm font-semibold text-slate-700 mt-1 inline-flex items-center gap-1.5">
                           <UsersIcon className="h-4 w-4 text-slate-400" />
                           <span>

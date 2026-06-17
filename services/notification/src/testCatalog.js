@@ -144,11 +144,12 @@ const TEST_CATALOG = [
       corporation_phone: '+972500000000',
       corporation_email: 'test@example.com',
       contractor_name:   'יוסי כהן',
+      corp_deal_no:      127,
       profession_he:     'טייחים',
       region_he:         'מרכז',
     },
     override_keys: ['corporation_phone', 'corporation_email'],
-    notes: 'Production fan-out targets the corp’s configured recipients. With a fake corporation_id, falls back to corporation_email/corporation_phone — which is exactly where the overrides land.',
+    notes: 'Production fan-out targets the corp’s configured recipients. With a fake corporation_id, falls back to corporation_email/corporation_phone — which is exactly where the overrides land. corp_deal_no surfaces in the SMS as "#C-{n}" so the corp team can reference the deal internally.',
   },
   {
     event_type: 'deal.accepted',

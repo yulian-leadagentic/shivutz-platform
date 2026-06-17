@@ -262,6 +262,29 @@ def list_deals(
         conn.close()
 
 
+def _assign_corp_deal_no(cur, corporation_id: Optional[str]) -> Optional[int]:
+    """Compute the next per-corp deal number for this corporation.
+
+    Returns None when corporation_id is missing (admin-initiated rows
+    without a fixed corp, etc.). The number space is per-corp, so
+    corp A's #1 and corp B's #1 are unrelated. Computed inside the
+    same transaction as the INSERT to avoid collisions in practice
+    — if two concurrent inserts race we'd hit the
+    UNIQUE(corporation_id, corp_deal_no) constraint, the second one
+    rolls back, and the caller retries.
+    """
+    if not corporation_id:
+        return None
+    cur.execute(
+        """SELECT COALESCE(MAX(corp_deal_no), 0) + 1 AS next_no
+           FROM deals
+           WHERE corporation_id = %s""",
+        (corporation_id,),
+    )
+    row = cur.fetchone()
+    return int(row["next_no"]) if row else 1
+
+
 def _require_contractor_tier_2(contractor_id: str) -> None:
     """Block deal proposals from contractors that haven't completed identity
     verification (tier_2). Tier_0 / tier_1 contractors can browse and build
@@ -312,11 +335,13 @@ async def create_deal(
     conn = get_db()
     try:
         cur = conn.cursor()
+        corp_deal_no = _assign_corp_deal_no(cur, data.corporation_id)
         cur.execute(
             """INSERT INTO deals
-               (id, search_id, contractor_id, corporation_id, proposed_by, notes)
-               VALUES (%s,%s,%s,%s,%s,%s)""",
-            (deal_id, search_id, contractor_id, data.corporation_id,
+               (id, search_id, contractor_id, corporation_id, corp_deal_no,
+                proposed_by, notes)
+               VALUES (%s,%s,%s,%s,%s,%s,%s)""",
+            (deal_id, search_id, contractor_id, data.corporation_id, corp_deal_no,
              proposed_by, data.notes)
         )
         conn.commit()
@@ -328,9 +353,10 @@ async def create_deal(
             "deal_id": deal_id,
             "contractor_id": contractor_id,
             "corporation_id": data.corporation_id,
+            "corp_deal_no": corp_deal_no,
         })
 
-        return {"id": deal_id, "status": "proposed"}
+        return {"id": deal_id, "status": "proposed", "corp_deal_no": corp_deal_no}
     except Exception as e:
         conn.rollback()
         raise HTTPException(status_code=500, detail=str(e))
@@ -392,11 +418,14 @@ async def create_deal_from_search(
         contractor_id = srow["contractor_id"]
 
         deal_id = str(uuid.uuid4())
+        corp_deal_no = _assign_corp_deal_no(cur, corporation_id)
         cur.execute(
             """INSERT INTO deals
-               (id, search_id, contractor_id, corporation_id, proposed_by, notes)
-               VALUES (%s,%s,%s,%s,%s,%s)""",
-            (deal_id, search_id, contractor_id, corporation_id, proposed_by, None),
+               (id, search_id, contractor_id, corporation_id, corp_deal_no,
+                proposed_by, notes)
+               VALUES (%s,%s,%s,%s,%s,%s,%s)""",
+            (deal_id, search_id, contractor_id, corporation_id, corp_deal_no,
+             proposed_by, None),
         )
         conn.commit()
 
@@ -409,10 +438,11 @@ async def create_deal_from_search(
             "deal_id": deal_id,
             "contractor_id": contractor_id,
             "corporation_id": corporation_id,
+            "corp_deal_no": corp_deal_no,
             "corp_initiated": True,
         })
 
-        return {"id": deal_id, "status": "proposed", "reused": False}
+        return {"id": deal_id, "status": "proposed", "corp_deal_no": corp_deal_no, "reused": False}
     except HTTPException:
         raise
     except Exception as e:

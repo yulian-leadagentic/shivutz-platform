@@ -875,6 +875,14 @@ function CorporationDealPageInner() {
         <div>
           <div className="flex items-center gap-2 flex-wrap">
             <h1 className="text-2xl font-bold text-slate-900">עסקה #{dealRef(id)}</h1>
+            {(deal as { corp_deal_no?: number | null }).corp_deal_no != null && (
+              <span
+                className="inline-flex items-center text-xs font-mono font-semibold tracking-wide bg-slate-900 text-white px-2 py-0.5 rounded"
+                title="מספר דרישה פנימי של התאגיד"
+              >
+                #C-{(deal as { corp_deal_no?: number | null }).corp_deal_no}
+              </span>
+            )}
             <StatusBadge status={deal.status} perspective="corporation" />
           </div>
           <p className="text-sm text-slate-500 mt-0.5">נוצרה: {fmtDate(deal.created_at)}</p>

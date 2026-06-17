@@ -356,6 +356,10 @@ async function handle(routingKey, payload, sendEmail) {
       // contact fallback fires if no recipients are configured yet.
       const dealUrl = `${FRONTEND_URL}/corporation/deals/${payload.deal_id}`;
       const prof    = payload.profession_he || 'חיפוש חדש';
+      // Per-corp request number ("#C-127") so the corp team can talk about
+      // a specific deal internally without quoting UUIDs. Falls back to no
+      // tag if the deal-service didn't supply one (legacy in-flight events).
+      const ref = payload.corp_deal_no ? ` #C-${payload.corp_deal_no}` : '';
       await notifyEntity({
         entityType: 'corporation',
         entityId:   payload.corporation_id,
@@ -364,9 +368,10 @@ async function handle(routingKey, payload, sendEmail) {
           contractor_name: payload.contractor_name || payload.contractor_id,
           profession:      prof,
           deal_id:         payload.deal_id,
+          corp_deal_no:    payload.corp_deal_no || '',
           link:            dealUrl,
         },
-        smsText: `דרישה חדשה לתאגיד — ${prof}. לצפייה ותגובה: ${dealUrl}`,
+        smsText: `TagidAI — דרישה חדשה${ref}: ${prof}. לצפייה ותגובה: ${dealUrl}`,
         sendEmail, sendSms: sendSmsInternal,
         fallback: { email: payload.corporation_email, phone: payload.corporation_phone },
       });

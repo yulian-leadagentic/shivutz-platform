@@ -151,6 +151,12 @@ export interface Deal {
   search_id: string;
   contractor_id: string | null;   // null when info-disclosure hides the counter-party
   corporation_id: string | null;  // null when info-disclosure hides the counter-party
+  /** Per-corp request number ("#C-127"). Scoped to a single corporation:
+   *  corp A's #127 and corp B's #127 are unrelated. Lets the corp team +
+   *  the platform admin reference a specific deal in chat/SMS without
+   *  quoting a UUID. Assigned at INSERT time inside the deal-service
+   *  transaction (migration 054). null = legacy row from before. */
+  corp_deal_no?: number | null;
   status: string;
   notes?: string;
   created_at: string;

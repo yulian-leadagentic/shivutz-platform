@@ -93,6 +93,7 @@ def _recent_deals(deal_cur, org_id: str, org_type: str, limit: int = 10) -> list
     # Migration 024 renamed deals.request_line_item_id → search_id.
     deal_cur.execute(
         f"""SELECT d.id, d.status, d.contractor_id, d.corporation_id,
+                   d.corp_deal_no,
                    d.commission_amount,
                    d.search_id,
                    d.created_at, d.updated_at,

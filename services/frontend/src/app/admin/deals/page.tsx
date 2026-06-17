@@ -426,10 +426,20 @@ export default function AdminDealsPage() {
                       className="border-b border-slate-100 last:border-0 hover:bg-slate-50/60 focus:bg-amber-50 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-inset"
                     >
                       <td className="py-3 px-3 font-mono text-xs text-slate-600 whitespace-nowrap">
-                        #{dealRef(d.id)}
-                        {d.status === 'disputed' && (
-                          <AlertTriangle className="inline h-3.5 w-3.5 text-rose-500 ms-1" />
-                        )}
+                        <div className="flex items-center gap-1.5">
+                          <span>#{dealRef(d.id)}</span>
+                          {d.corp_deal_no != null && (
+                            <span
+                              className="inline-flex items-center text-[10px] font-mono font-semibold tracking-wide bg-slate-900 text-white px-1.5 py-0.5 rounded"
+                              title="מספר דרישה אצל התאגיד"
+                            >
+                              C-{d.corp_deal_no}
+                            </span>
+                          )}
+                          {d.status === 'disputed' && (
+                            <AlertTriangle className="inline h-3.5 w-3.5 text-rose-500" />
+                          )}
+                        </div>
                       </td>
                       <td className="py-3 px-3"><StatusBadge status={d.status} /></td>
                       <td className="py-3 px-3">
