@@ -12,7 +12,7 @@
 
 const DEAL_URL     = process.env.DEAL_SERVICE_URL || 'http://deal:3005';
 const NOTIF_URL    = `http://localhost:${process.env.NOTIF_PORT || 3006}`;
-const FRONTEND_URL = process.env.FRONTEND_URL || 'https://app.shivutz.co.il';
+const FRONTEND_URL = process.env.FRONTEND_URL || 'https://www.tagidai.com';
 
 async function sendSmsInternal(phone, message) {
   try {

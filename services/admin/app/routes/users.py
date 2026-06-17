@@ -20,7 +20,7 @@ from app.db import get_db
 router = APIRouter()
 
 NOTIF_URL    = os.getenv("NOTIFICATION_SERVICE_URL", "http://notification:3006")
-FRONTEND_URL = os.getenv("FRONTEND_URL", "https://app.shivutz.co.il")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "https://www.tagidai.com")
 
 
 def _norm_phone(raw: str) -> str:

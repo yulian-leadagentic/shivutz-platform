@@ -15,7 +15,7 @@ from app.integrations.israeli_id import is_valid_israeli_id
 
 router = APIRouter()
 AUTH_SERVICE = os.getenv("AUTH_SERVICE_URL", "http://auth:3001")
-FRONTEND_URL = os.getenv("FRONTEND_URL", "https://app.shivutz.co.il")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "https://www.tagidai.com")
 
 # Pre-registration lookup is gated by a recent OTP + a per-phone rate limit
 # (registration is low-volume, but a single user typing repeatedly should
