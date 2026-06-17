@@ -4,8 +4,8 @@
 // One upload per year; existing corps whose ח.פ is in the file are
 // auto-promoted to tier_2 (verification_method='gov_list_match').
 
-import { useEffect, useState, FormEvent } from 'react';
-import { Loader2, FilePlus, FileText, CheckCircle2, AlertCircle, CalendarDays, RefreshCw, Plus } from 'lucide-react';
+import { useEffect, useMemo, useState, FormEvent } from 'react';
+import { Loader2, FilePlus, FileText, CheckCircle2, AlertCircle, CalendarDays, RefreshCw, Plus, ChevronDown, ChevronLeft, Search } from 'lucide-react';
 import { adminApi } from '@/lib/adminApi';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -203,6 +203,155 @@ export default function AdminGovCorpsPage() {
           )}
         </CardContent>
       </Card>
+
+      <RegistryRowsBrowser years={years} />
+    </div>
+  );
+}
+
+interface RegistryRow {
+  id: string;
+  serial_no?: number | null;
+  business_number?: string | null;
+  company_name_he?: string | null;
+  address?: string | null;
+  phone_mobile_1?: string | null;
+  phone_mobile_2?: string | null;
+  phone_landline_1?: string | null;
+  phone_landline_2?: string | null;
+  source_year?: number;
+  imported_at?: string;
+  imported_by?: string | null;
+}
+
+/**
+ * Collapsible browser for every row in the active registry year.
+ * Each row collapses to "{serial} · {company_name} · {ח.פ}" and
+ * expands to show the full contact detail block plus a "manually
+ * added" hint when imported_by is null.
+ */
+function RegistryRowsBrowser({ years }: { years: YearStat[] }) {
+  const latest = years[0]?.source_year ?? null;
+  const [year, setYear] = useState<number | null>(latest);
+  const [rows, setRows] = useState<RegistryRow[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [search, setSearch]   = useState('');
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  useEffect(() => { setYear(years[0]?.source_year ?? null); }, [years]);
+
+  useEffect(() => {
+    if (year == null) { setRows(null); return; }
+    setLoading(true);
+    adminApi.previewGovCorpsYear(year)
+      .then((res) => setRows(res.rows as unknown as RegistryRow[]))
+      .catch(() => setRows([]))
+      .finally(() => setLoading(false));
+  }, [year]);
+
+  const filtered = useMemo(() => {
+    if (!rows) return [];
+    const needle = search.trim().toLowerCase();
+    if (!needle) return rows;
+    return rows.filter((r) =>
+      (r.company_name_he || '').toLowerCase().includes(needle) ||
+      (r.business_number || '').includes(needle) ||
+      (r.address || '').toLowerCase().includes(needle),
+    );
+  }, [rows, search]);
+
+  return (
+    <Card className="border-slate-200">
+      <CardHeader className="flex flex-row items-center justify-between gap-4 flex-wrap">
+        <div>
+          <CardTitle className="text-base">תאגידים ברשימה הפעילה</CardTitle>
+          <CardDescription>
+            רשימת התאגידים שנטענה מהקובץ + עידכונים ידניים של מנהל המערכת. לחץ על שורה לראות פרטים מלאים.
+          </CardDescription>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          {years.length > 1 && (
+            <select
+              value={year ?? ''}
+              onChange={(e) => setYear(e.target.value ? Number(e.target.value) : null)}
+              className="h-9 rounded-md border border-slate-300 bg-white px-2 text-sm"
+            >
+              {years.map((y) => <option key={y.source_year} value={y.source_year}>{y.source_year}</option>)}
+            </select>
+          )}
+          <div className="relative">
+            <Search className="absolute end-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+            <Input
+              placeholder="חפש לפי שם / ח.פ / כתובת"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="h-9 w-64 pe-8"
+            />
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {loading ? (
+          <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-slate-400" /></div>
+        ) : !rows || rows.length === 0 ? (
+          <div className="text-center py-8 text-slate-400 text-sm">אין רשומות לשנה זו.</div>
+        ) : (
+          <>
+            <div className="text-xs text-slate-500 mb-2">
+              {filtered.length === rows.length ? `${rows.length} רשומות` : `${filtered.length} מתוך ${rows.length} רשומות`}
+            </div>
+            <ul className="divide-y divide-slate-100 border border-slate-200 rounded-xl">
+              {filtered.slice(0, 200).map((r) => {
+                const isExp = expandedId === r.id;
+                const isManual = !r.imported_by;
+                return (
+                  <li key={r.id}>
+                    <button
+                      type="button"
+                      onClick={() => setExpandedId(isExp ? null : r.id)}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-start hover:bg-slate-50"
+                    >
+                      {isExp ? <ChevronDown className="h-4 w-4 text-slate-400" /> : <ChevronLeft className="h-4 w-4 text-slate-400" />}
+                      <span className="text-xs text-slate-400 font-mono w-12">{r.serial_no ?? '—'}</span>
+                      <span className="font-medium text-slate-800 flex-1 truncate">{r.company_name_he || '—'}</span>
+                      <span className="text-xs text-slate-500 font-mono">{r.business_number || 'ללא ח.פ'}</span>
+                      {isManual && (
+                        <span className="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-full">הוספה ידנית</span>
+                      )}
+                    </button>
+                    {isExp && (
+                      <div className="px-3 pb-4 bg-slate-50 border-t border-slate-100">
+                        <dl className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1 text-sm pt-3">
+                          <RowDetail label="ח.פ"        value={r.business_number} />
+                          <RowDetail label="מספר סידורי" value={r.serial_no?.toString()} />
+                          <RowDetail label="כתובת"     value={r.address} />
+                          <RowDetail label="טלפון 1"   value={r.phone_mobile_1}   dir="ltr" />
+                          <RowDetail label="טלפון 2"   value={r.phone_mobile_2}   dir="ltr" />
+                          <RowDetail label="לנדליין 1" value={r.phone_landline_1} dir="ltr" />
+                          <RowDetail label="לנדליין 2" value={r.phone_landline_2} dir="ltr" />
+                          <RowDetail label="נטען"      value={r.imported_at ? fmt(r.imported_at) : '—'} />
+                        </dl>
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+            {filtered.length > 200 && (
+              <p className="text-xs text-slate-400 mt-2">מציג 200 ראשונים — סנן בחיפוש כדי לראות יותר.</p>
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function RowDetail({ label, value, dir }: { label: string; value?: string | null; dir?: 'ltr' | 'rtl' }) {
+  return (
+    <div className="flex items-baseline gap-2">
+      <dt className="text-xs text-slate-500 shrink-0 w-24">{label}:</dt>
+      <dd className="text-slate-800 break-all" dir={dir}>{value || '—'}</dd>
     </div>
   );
 }

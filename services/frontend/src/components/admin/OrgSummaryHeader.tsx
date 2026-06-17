@@ -255,7 +255,7 @@ function DealStatusStrip({ counts, teamCount, workers, openSearches, orgType }: 
   }
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-10 gap-2">
       {/* Total deals (always shown) */}
       <KpiTile
         icon={<Handshake className="h-4 w-4" />}
@@ -312,15 +312,22 @@ function KpiTile({ icon, label, value, tone, subtitle }: {
   tone: string;
   subtitle?: string;
 }) {
+  // Dim 0-value tiles so the admin's eye lands on the buckets that
+  // actually have activity instead of being pulled to every counter.
+  const hasValue = value != null && value !== 0;
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+    <div className={`rounded-xl border bg-white p-3 shadow-sm transition-colors ${
+      hasValue ? 'border-slate-200' : 'border-slate-100'
+    }`}>
       <div className="flex items-center justify-between">
-        <span className={`inline-flex items-center justify-center h-7 w-7 rounded-md ${tone}`}>
+        <span className={`inline-flex items-center justify-center h-7 w-7 rounded-md ${tone} ${!hasValue ? 'opacity-50' : ''}`}>
           {icon}
         </span>
-        <span className="text-2xl font-bold text-slate-900 leading-none">{fmtNumberOrDash(value)}</span>
+        <span className={`text-2xl font-bold leading-none ${hasValue ? 'text-slate-900' : 'text-slate-300'}`}>
+          {fmtNumberOrDash(value)}
+        </span>
       </div>
-      <p className="text-xs font-medium text-slate-500 mt-2 truncate">{label}</p>
+      <p className={`text-xs font-medium mt-2 truncate ${hasValue ? 'text-slate-600' : 'text-slate-400'}`}>{label}</p>
       {subtitle && <p className="text-[11px] text-slate-400 mt-0.5 truncate">{subtitle}</p>}
     </div>
   );
