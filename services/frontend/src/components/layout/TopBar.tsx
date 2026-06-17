@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { LogOut, ChevronDown, Building2, HardHat, Check, Loader2, ArrowRight } from 'lucide-react';
+import { LogOut, ChevronDown, Building2, HardHat, Check, Loader2, ArrowRight, ShieldCheck } from 'lucide-react';
 import { getAccessToken, decodeJwtPayload, clearTokens, saveTokens } from '@/lib/auth';
 import { otpApi, type Membership } from '@/lib/api';
 import { useAuth } from '@/lib/AuthContext';
@@ -93,6 +93,15 @@ interface TopBarProps {
 const ENTITY_ROLE_LABELS: Record<string, string> = {
   contractor:  'קבלן',
   corporation: 'תאגיד',
+};
+
+// Mobile-only "you are acting as X" chip palette. Same colours the
+// in-app entity switcher uses, so the user sees consistent role
+// indication between the two surfaces.
+const ENTITY_CHIP: Record<string, { Icon: typeof HardHat; cls: string; label: string }> = {
+  contractor:  { Icon: HardHat,   cls: 'bg-amber-50 text-amber-800 border-amber-200',     label: 'קבלן' },
+  corporation: { Icon: Building2, cls: 'bg-slate-100 text-slate-700 border-slate-200',    label: 'תאגיד' },
+  admin:       { Icon: ShieldCheck, cls: 'bg-rose-50 text-rose-700 border-rose-200',      label: 'מנהל מערכת' },
 };
 
 export default function TopBar({ mobileNav }: TopBarProps = {}) {
@@ -188,6 +197,21 @@ export default function TopBar({ mobileNav }: TopBarProps = {}) {
     }
   }
 
+  // Resolve the active entity so both the right-side dropdown trigger
+  // AND the mobile-only context chip below the title can read it from
+  // the same source. Falls back to the user-role label when the user
+  // has no entity context (admin) or memberships haven't loaded yet.
+  const activeMembership = memberships.find(
+    (m) => m.entity_id === entityId && m.entity_type === entityType,
+  );
+  const activeEntityName = activeMembership?.entity_name
+    || (entityType ? ENTITY_ROLE_LABELS[entityType] : '');
+  // Pick a chip variant — entityType for contractor/corp, falls back
+  // to 'admin' when there's no entity (admins act platform-wide).
+  const chip = entityType
+    ? ENTITY_CHIP[entityType]
+    : (name ? ENTITY_CHIP['admin'] : null);
+
   return (
     <header className="h-16 bg-white border-b border-slate-200/80 flex items-center justify-between gap-2 px-3 sm:px-4 lg:px-6 shrink-0">
       <div className="flex items-center gap-2 min-w-0">
@@ -203,26 +227,37 @@ export default function TopBar({ mobileNav }: TopBarProps = {}) {
             <span className="hidden sm:inline">חזרה</span>
           </button>
         )}
-        <h1 className="text-base sm:text-lg font-bold text-slate-900 text-start tracking-tight truncate">
-          {getPageTitle(pathname)}
-        </h1>
+        <div className="flex flex-col min-w-0">
+          <h1 className="text-base sm:text-lg font-bold text-slate-900 text-start tracking-tight truncate leading-tight">
+            {getPageTitle(pathname)}
+          </h1>
+          {/* Mobile-only: which entity are you acting as right now.
+              Hidden on sm+ because the right-side dropdown trigger
+              already shows the same info (and adds a "switch entity"
+              affordance). Reading top-right on a phone is awkward —
+              putting the context next to the page title makes the
+              "I'm logged in as ..." question answerable at a glance. */}
+          {chip && (
+            <span
+              className={`sm:hidden inline-flex items-center gap-1 mt-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full border self-start max-w-full ${chip.cls}`}
+              title={`פעיל כעת: ${activeEntityName || chip.label}`}
+            >
+              <chip.Icon className="h-3 w-3 shrink-0" />
+              <span className="truncate">
+                {chip.label}
+                {activeEntityName && activeEntityName !== chip.label && ` · ${activeEntityName}`}
+              </span>
+            </span>
+          )}
+        </div>
       </div>
 
-      {name && (() => {
-        // Resolve the active entity's display name from the
-        // memberships list. Per QA-R5 R1#1, the top-right of every
-        // management screen should surface "which entity am I acting
-        // as right now". The user's personal name still shows
-        // underneath as a secondary line so we don't lose that
-        // identity. Before this change the trigger button rendered
-        // ONLY the user's name, which left "which corp am I logged
-        // into?" answerable only by opening the dropdown.
-        const active = memberships.find(
-          (m) => m.entity_id === entityId && m.entity_type === entityType,
-        );
-        const activeEntityName = active?.entity_name
-          || (entityType ? ENTITY_ROLE_LABELS[entityType] : '');
-        return (
+      {name && (
+        // The right-side dropdown trigger shows the entity name
+        // explicitly on sm+ (the mobile-only chip under the page
+        // title handles the small-screen case). Active membership +
+        // entity name are resolved at the top of render and reused
+        // by both surfaces.
         <div className="relative" ref={menuRef}>
           <button
             type="button"
@@ -313,8 +348,7 @@ export default function TopBar({ mobileNav }: TopBarProps = {}) {
             </div>
           )}
         </div>
-        );
-      })()}
+      )}
     </header>
   );
 }
