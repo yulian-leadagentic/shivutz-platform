@@ -482,7 +482,7 @@ export default function FindFormPage() {
       {corps !== null && !matching && (
         <section
           onClick={handleSuccessClick}
-          className={`relative bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 shadow-sm text-center ${corps.length > 0 ? 'cursor-pointer' : ''}`}
+          className={`relative bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 shadow-sm text-center animate-[fadeIn_300ms_ease-out] ${corps.length > 0 ? 'cursor-pointer' : ''}`}
           role={corps.length > 0 ? 'button' : undefined}
           aria-label={corps.length > 0 ? 'מעבר לבקשות ועסקאות' : undefined}
         >

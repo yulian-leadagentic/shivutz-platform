@@ -2,19 +2,25 @@
 
 // Matcher waiting-state animation.
 //
-// Brand-led loader: the BuildUp lockup spins (rotating earth) while
+// Brand-led loader: the TagidAI mark spins (progress_bar2.mp4) while
 // the job-match service scores every corp's roster against the
 // contractor's search. Used during a 5–30s wait; for sub-second
 // loads use a normal spinner instead.
+//
+// Container is intentionally a 192px CIRCLE with object-cover — same
+// shape, size, and fit as the post-match success card. That way the
+// transition between "searching" and "found N matches" is just a
+// fade, not a square→circle / contain→cover jump.
 //
 // Guardrails:
 //   * autoplay + loop + muted + playsInline — required for video
 //     autoplay on Chrome/Safari without a user gesture.
 //   * poster — the same lockup as a static PNG so first paint isn't
 //     blank while the MP4 buffers.
-//   * prefers-reduced-motion → static lockup + dot pulser. Users who
-//     opted out of animation get the message without the spinning
-//     scene.
+//   * prefers-reduced-motion → static lockup in the same circular
+//     frame + dot pulser. Users who opted out of animation get the
+//     message without the spinning scene.
+//   * fade-in (300ms) on mount so the loader doesn't pop in.
 
 import { useEffect, useState } from 'react';
 import Logo from '@/components/Logo';
@@ -34,10 +40,24 @@ function usePrefersReducedMotion(): boolean {
 
 export function ConstructionAnimation() {
   const reduced = usePrefersReducedMotion();
+  // Fade in 300ms after mount so the loader doesn't pop in mid-frame
+  // when the form unmounts and this component takes over.
+  const [shown, setShown] = useState(false);
+  useEffect(() => {
+    const t = window.setTimeout(() => setShown(true), 16);
+    return () => window.clearTimeout(t);
+  }, []);
+
   return (
-    <div className="flex flex-col items-center gap-6 py-8">
+    <div
+      className={`flex flex-col items-center gap-6 py-8 transition-opacity duration-300 ${
+        shown ? 'opacity-100' : 'opacity-0'
+      }`}
+    >
       {reduced ? (
-        <div className="w-52 h-52 rounded-2xl bg-slate-50 flex items-center justify-center">
+        // Same circular frame as the success card so the transition
+        // is purely a fade — no shape jump.
+        <div className="w-48 h-48 rounded-full bg-slate-100 flex items-center justify-center shadow-md">
           <Logo size="lg" variant="on-light" decorative />
         </div>
       ) : (
@@ -48,7 +68,7 @@ export function ConstructionAnimation() {
           loop
           muted
           playsInline
-          className="w-52 h-52 object-contain rounded-2xl bg-white"
+          className="w-48 h-48 rounded-full object-cover shadow-md"
           aria-hidden="true"
         />
       )}
