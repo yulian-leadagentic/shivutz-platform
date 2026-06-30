@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import Logo from '@/components/Logo';
-import { Home, LayoutDashboard, Users, LogOut, UserCog, CreditCard, Store, Globe2, MessageCircle, Zap } from 'lucide-react';
+import { Home, LayoutDashboard, Users, LogOut, UserCog, CreditCard, Store, Globe2, MessageCircle, Zap, Megaphone } from 'lucide-react';
 import { clearTokens } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 
@@ -17,6 +17,14 @@ const navItems = [
     label: 'עובדים',
     href: '/corporation/workers',
     icon: Users,
+  },
+  {
+    // Pivot/v2 Phase 2 — corp publishes worker (and later housing) ads
+    // here. Replaces the auto-broadcast deal pipeline as the primary
+    // discovery surface; contractors search these ads in Phase 3.
+    label: 'מודעות שלי',
+    href: '/corporation/ads',
+    icon: Megaphone,
   },
   {
     // R9 merge — single surface for the corp's "what's in my inbox"

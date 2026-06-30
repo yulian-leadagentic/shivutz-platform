@@ -53,6 +53,7 @@ const services = {
   '/api/uploads':       process.env.USER_ORG_SERVICE_URL      || 'http://user-org:3002',
   '/api/support-tickets': process.env.USER_ORG_SERVICE_URL    || 'http://user-org:3002',
   '/api/membership-requests': process.env.USER_ORG_SERVICE_URL || 'http://user-org:3002',
+  '/api/ads':           process.env.USER_ORG_SERVICE_URL      || 'http://user-org:3002',
 };
 
 // Public routes (no auth required) — matched against req.originalUrl
