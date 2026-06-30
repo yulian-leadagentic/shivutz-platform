@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from app.db import get_db, init_db
 from app.errors import register_error_handlers
-from app.routes import payment_methods, transactions, webhooks, admin_payments, settings
+from app.routes import payment_methods, transactions, webhooks, admin_payments, settings, subscriptions
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from app.services.auto_charge import (
@@ -75,3 +75,4 @@ app.include_router(payment_methods.router, prefix="/payments/payment-methods", t
 app.include_router(transactions.router,    prefix="/payments",                 tags=["transactions"])
 app.include_router(webhooks.router,        prefix="/webhooks",                 tags=["webhooks"])
 app.include_router(admin_payments.router,  prefix="/payments/admin",           tags=["admin"])
+app.include_router(subscriptions.router,   prefix="/payments/subscriptions",   tags=["subscriptions"])
