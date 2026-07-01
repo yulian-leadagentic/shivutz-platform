@@ -22,6 +22,7 @@ from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, Field
 
 from app.db import get_db
+from app.services.subscription_limits import fetch_entitlement, tier_limits
 
 router = APIRouter()
 
@@ -114,6 +115,35 @@ def create_ad(
     if body.ad_type not in ("worker", "housing"):
         raise HTTPException(status_code=400, detail="invalid_ad_type")
 
+    # Tier-cap active-ad count. Phase 5 gate — see subscription_limits.
+    try:
+        ent = fetch_entitlement(corp_id, "corporation")
+    except httpx.HTTPError:
+        # Payment down — fail closed but with a clearer error than 500.
+        raise HTTPException(status_code=503, detail="entitlement_service_unreachable")
+    if not ent["entitled"]:
+        raise HTTPException(status_code=402, detail={"code": "subscription_required", "tier": ent["tier"], "status": ent["status"]})
+    limits = tier_limits(ent["tier"])
+    if limits["active_ads"] is not None:
+        _conn = get_db()
+        try:
+            _cur = _conn.cursor()
+            _cur.execute(
+                "SELECT COUNT(*) AS n FROM ads WHERE owner_entity_id=%s AND deleted_at IS NULL AND active=TRUE",
+                (corp_id,),
+            )
+            row = _cur.fetchone()
+            n = int(row["n"] if row else 0)
+        finally:
+            _conn.close()
+        if n >= limits["active_ads"]:
+            raise HTTPException(status_code=402, detail={
+                "code":  "tier_active_ad_limit",
+                "tier":  ent["tier"],
+                "limit": limits["active_ads"],
+                "used":  n,
+            })
+
     ad_id = str(uuid.uuid4())
     expires_at = body.expires_at or (datetime.utcnow() + timedelta(days=AD_DEFAULT_DAYS)).isoformat()
 
@@ -154,6 +184,53 @@ def create_ad(
         return _serialize(cur.fetchone())
     finally:
         conn.close()
+
+
+# ─── GET /ads/usage — current caller's tier + counters (Phase 5) ────────────
+
+@router.get("/usage")
+def usage(
+    x_entity_id:   Optional[str] = Header(default=None),
+    x_entity_type: Optional[str] = Header(default=None),
+):
+    if not x_entity_id or not x_entity_type:
+        raise HTTPException(status_code=401, detail="auth_required")
+    try:
+        ent = fetch_entitlement(x_entity_id, x_entity_type)
+    except httpx.HTTPError:
+        raise HTTPException(status_code=503, detail="entitlement_service_unreachable")
+    limits = tier_limits(ent["tier"])
+
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT COUNT(*) AS n FROM contact_reveals
+                WHERE viewer_entity_id=%s AND viewer_entity_type=%s
+                  AND revealed_at >= DATE_FORMAT(NOW(), '%Y-%m-01 00:00:00')""",
+            (x_entity_id, x_entity_type),
+        )
+        reveals_used = int(cur.fetchone()["n"])
+        active_ads_used = 0
+        if x_entity_type == "corporation":
+            cur.execute(
+                "SELECT COUNT(*) AS n FROM ads WHERE owner_entity_id=%s AND deleted_at IS NULL AND active=TRUE",
+                (x_entity_id,),
+            )
+            active_ads_used = int(cur.fetchone()["n"])
+    finally:
+        conn.close()
+
+    return {
+        "tier":     ent["tier"],
+        "status":   ent["status"],
+        "entitled": ent["entitled"],
+        "limits":   limits,
+        "usage": {
+            "reveals_this_month": reveals_used,
+            "active_ads":         active_ads_used,
+        },
+    }
 
 
 # ─── GET /ads/mine ──────────────────────────────────────────────────────────
@@ -299,20 +376,39 @@ def contact_reveal(
     if not x_entity_id or not x_entity_type:
         raise HTTPException(status_code=401, detail="auth_required")
 
-    # 1. Entitlement check
+    # 1. Entitlement + tier
     try:
-        with httpx.Client(timeout=3.0) as client:
-            r = client.get(
-                f"{PAYMENT_SVC}/payments/subscriptions/check",
-                headers={"x-entity-id": x_entity_id, "x-entity-type": x_entity_type},
-            )
+        ent = fetch_entitlement(x_entity_id, x_entity_type)
     except httpx.HTTPError as e:
         raise HTTPException(status_code=503, detail=f"entitlement_service_unreachable: {e}")
-    if r.status_code == 402:
-        # Payment-side response already carries the reason — propagate as-is.
-        raise HTTPException(status_code=402, detail=r.json().get("detail", {"code": "subscription_required"}))
-    if r.status_code != 200:
-        raise HTTPException(status_code=502, detail=f"entitlement_check_failed: {r.status_code}")
+    if not ent["entitled"]:
+        raise HTTPException(status_code=402, detail={
+            "code": "subscription_required", "tier": ent["tier"], "status": ent["status"],
+        })
+
+    # 1b. Monthly reveal quota — enforced only if tier has a cap.
+    limits = tier_limits(ent["tier"])
+    if limits["reveals_per_month"] is not None:
+        _conn = get_db()
+        try:
+            _cur = _conn.cursor()
+            _cur.execute(
+                """SELECT COUNT(*) AS n FROM contact_reveals
+                    WHERE viewer_entity_id=%s AND viewer_entity_type=%s
+                      AND revealed_at >= DATE_FORMAT(NOW(), '%Y-%m-01 00:00:00')""",
+                (x_entity_id, x_entity_type),
+            )
+            row = _cur.fetchone()
+            used = int(row["n"] if row else 0)
+        finally:
+            _conn.close()
+        if used >= limits["reveals_per_month"]:
+            raise HTTPException(status_code=402, detail={
+                "code":  "tier_reveal_limit",
+                "tier":  ent["tier"],
+                "limit": limits["reveals_per_month"],
+                "used":  used,
+            })
 
     # 2. Fetch ad + owning corp
     conn = get_db()
@@ -360,6 +456,19 @@ def boost_ad(
     x_entity_type: Optional[str] = Header(default=None),
 ):
     corp_id = _require_corp(x_entity_id, x_entity_type)
+
+    try:
+        ent = fetch_entitlement(corp_id, "corporation")
+    except httpx.HTTPError:
+        raise HTTPException(status_code=503, detail="entitlement_service_unreachable")
+    if not ent["entitled"]:
+        raise HTTPException(status_code=402, detail={"code": "subscription_required", "tier": ent["tier"], "status": ent["status"]})
+    if not tier_limits(ent["tier"])["can_boost"]:
+        raise HTTPException(status_code=402, detail={
+            "code": "tier_boost_not_allowed", "tier": ent["tier"],
+            "message": "שדרג ל'מתקדם' או 'פרו' כדי לקדם מודעות",
+        })
+
     until = datetime.utcnow() + timedelta(days=BOOST_DAYS)
     conn = get_db()
     try:

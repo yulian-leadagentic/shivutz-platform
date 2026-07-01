@@ -58,7 +58,23 @@ export interface AdCreateInput {
 
 export type AdPatchInput = Partial<AdCreateInput> & { active?: boolean };
 
+export interface UsageResponse {
+  tier:     'basic' | 'advanced' | 'pro';
+  status:   'trialing' | 'active' | 'past_due' | 'cancelled' | 'expired';
+  entitled: boolean;
+  limits: {
+    reveals_per_month: number | null;
+    active_ads:        number | null;
+    can_boost:         boolean;
+  };
+  usage: {
+    reveals_this_month: number;
+    active_ads:         number;
+  };
+}
+
 export const adApi = {
+  usage:  ()                          => apiFetch<UsageResponse>('/ads/usage'),
   list:   ()                          => apiFetch<AdRow[]>('/ads/mine'),
   get:    (id: string)                => apiFetch<AdRow>(`/ads/${id}`),
   create: (body: AdCreateInput)       => apiFetch<AdRow>('/ads',           { method: 'POST',   body: JSON.stringify(body) }),
