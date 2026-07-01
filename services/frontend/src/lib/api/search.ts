@@ -13,11 +13,10 @@ export interface SearchFilters {
 }
 
 // Search results omit contact info — that comes from a separate
-// reveal call gated on subscription.
+// reveal call gated on subscription. Housing fields are populated
+// only when ad_type === 'housing'.
 export type AdSearchResult = Omit<AdRow,
   | 'owner_entity_type'
-  | 'city' | 'address_he' | 'total_beds' | 'available_beds' | 'price_per_bed_nis'
-  | 'amenities' | 'photos'
   | 'active' | 'view_count' | 'created_at' | 'updated_at' | 'deleted_at'
 >;
 

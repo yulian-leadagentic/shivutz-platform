@@ -94,7 +94,9 @@ export default function CorporationAdsPage() {
                     <h3 className="text-base font-bold text-slate-900 truncate">{ad.title_he}</h3>
                     <p className="text-xs text-slate-500 mt-0.5">
                       {ad.ad_type === 'worker' ? 'מודעת עובדים' : 'מודעת דיור'}
-                      {ad.quantity ? ` · ${ad.quantity} עובדים` : ''}
+                      {ad.ad_type === 'worker' && ad.quantity ? ` · ${ad.quantity} עובדים` : ''}
+                      {ad.ad_type === 'housing' && ad.city ? ` · ${ad.city}` : ''}
+                      {ad.ad_type === 'housing' && ad.available_beds ? ` · ${ad.available_beds} מיטות פנויות` : ''}
                       {ad.region ? ` · ${ad.region}` : ''}
                     </p>
                   </div>
