@@ -13,6 +13,8 @@ import LandingNav from '@/components/landing/LandingNav';
 import LandingFooter from '@/components/landing/LandingFooter';
 import LeadCaptureModal from '@/components/landing/LeadCaptureModal';
 import HowItWorksSection from '@/components/landing/HowItWorksSection';
+import { AdCarousel } from '@/features/advertising/AdCarousel';
+import { RoleRegisterPicker } from '@/features/advertising/RoleRegisterPicker';
 import { searchApi, type SearchResponse, type AdSearchResult, type ContactReveal } from '@/lib/api/search';
 import { isLoggedIn } from '@/lib/auth';
 
@@ -131,6 +133,13 @@ export default function LandingSearchPage() {
                 </div>
               )}
             </div>
+          </section>
+
+          {/* IAB-standard leaderboard ad slot — carousel of placeholders
+              until real advertisers arrive. Sits between the search hero
+              and results, the highest-CPM position on the page. */}
+          <section className="px-4 pb-6">
+            <AdCarousel />
           </section>
 
           {/* Filter readback + results */}
@@ -264,9 +273,10 @@ export default function LandingSearchPage() {
             </section>
           )}
 
-          {/* Keep marketing content below the fold — only visible when no active search */}
+          {/* Register CTAs + marketing below the fold — only visible when no active search */}
           {!resp && !loading && (
             <>
+              <RoleRegisterPicker />
               <HowItWorksSection />
             </>
           )}
