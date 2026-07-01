@@ -6,7 +6,7 @@ import Logo from '@/components/Logo';
 import { usePathname, useRouter } from 'next/navigation';
 import {
   Home, LayoutDashboard, ClipboardList, Handshake,
-  LogOut, Plus, Users, FileText, Globe2, MessageCircle,
+  LogOut, Plus, Users, FileText, Globe2, MessageCircle, Search,
 } from 'lucide-react';
 import { clearTokens, getAccessToken, decodeJwtPayload } from '@/lib/auth';
 import { cn } from '@/lib/utils';
@@ -28,9 +28,11 @@ interface NavItem {
 
 const CONTRACTOR_NAV: NavItem[] = [
   { label: 'לוח בקרה',    href: '/contractor/dashboard', icon: LayoutDashboard },
-  // Wave 4 polish — חיפוש חדש standalone (no parent), goes straight
-  // to the recruitment-category page.
-  { label: 'חיפוש חדש',   href: '/contractor/find',      icon: Plus },
+  // Pivot/v2 Phase 3 — search-first home. Free-text query against
+  // corp-published ads. The old /contractor/find flow stays until
+  // Phase 6 sunset for in-flight bookmarks.
+  { label: 'חיפוש',       href: '/contractor/search',    icon: Search },
+  { label: 'חיפוש חדש (ישן)', href: '/contractor/find',  icon: Plus },
   // Wave 5: /contractor/searches dropped — /contractor/deals is now
   // the unified view that includes both past requests (empty groups)
   // and the proposals/deals on each. Sidebar label renamed to "בקשות
