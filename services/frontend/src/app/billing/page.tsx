@@ -16,6 +16,7 @@ import {
   type SubscriptionRow,
   type SubscriptionTier,
 } from '@/lib/api/payments';
+import { adApi, type UsageResponse } from '@/lib/api/ads';
 
 const TIERS: { code: SubscriptionTier; title: string; tagline: string; features: string[] }[] = [
   {
@@ -55,6 +56,7 @@ function daysUntil(iso: string | null): number | null {
 
 export default function BillingPage() {
   const [sub, setSub]         = useState<SubscriptionRow | null>(null);
+  const [usage, setUsage]     = useState<UsageResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [busyTier, setBusy]   = useState<SubscriptionTier | null>(null);
   const [error, setError]     = useState<string>('');
@@ -63,8 +65,12 @@ export default function BillingPage() {
     setLoading(true);
     setError('');
     try {
-      const row = await subscriptionApi.me();
+      const [row, u] = await Promise.all([
+        subscriptionApi.me(),
+        adApi.usage().catch(() => null),  // don't hard-fail if usage endpoint is down
+      ]);
       setSub(row);
+      setUsage(u);
     } catch (e) {
       setError((e as Error).message ?? 'שגיאה בטעינת המנוי');
     } finally {
@@ -106,7 +112,7 @@ export default function BillingPage() {
       </header>
 
       {/* Current subscription card */}
-      <section className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+      <section className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">מנוי נוכחי</p>
@@ -128,6 +134,24 @@ export default function BillingPage() {
             )}
           </div>
         </div>
+
+        {/* Usage vs limits (Phase 5) */}
+        {usage && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-slate-100">
+            <div>
+              <p className="text-xs text-slate-500">חשיפות פרטי קשר החודש</p>
+              <p className="text-base font-bold text-slate-900">
+                {usage.usage.reveals_this_month} / {usage.limits.reveals_per_month ?? '∞'}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-500">מודעות פעילות</p>
+              <p className="text-base font-bold text-slate-900">
+                {usage.usage.active_ads} / {usage.limits.active_ads ?? '∞'}
+              </p>
+            </div>
+          </div>
+        )}
       </section>
 
       {error && (
