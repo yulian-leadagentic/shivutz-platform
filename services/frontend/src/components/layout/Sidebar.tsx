@@ -28,10 +28,9 @@ interface NavItem {
 
 const CONTRACTOR_NAV: NavItem[] = [
   { label: 'לוח בקרה',    href: '/contractor/dashboard', icon: LayoutDashboard },
-  // Pivot/v2 Phase 3 — search-first home. Free-text query against
-  // corp-published ads. The old /contractor/find flow stays until
-  // Phase 6 sunset for in-flight bookmarks.
-  { label: 'חיפוש',       href: '/contractor/search',    icon: Search },
+  // Pivot/v2 — search lives on the public landing page (/) so it's
+  // accessible without login. Sidebar entry links home.
+  { label: 'חיפוש',       href: '/',                     icon: Search },
   { label: 'חיפוש חדש (ישן)', href: '/contractor/find',  icon: Plus },
   // Wave 5: /contractor/searches dropped — /contractor/deals is now
   // the unified view that includes both past requests (empty groups)
