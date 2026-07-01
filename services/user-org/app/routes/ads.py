@@ -12,16 +12,20 @@ billing lands in Phase 5 — for now `boost` is free and just flips
 the column.
 """
 import json
+import os
 import uuid
 from datetime import datetime, timedelta
 from typing import Optional
 
+import httpx
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, Field
 
 from app.db import get_db
 
 router = APIRouter()
+
+PAYMENT_SVC = os.getenv("PAYMENT_SERVICE_URL", "http://payment:3009")
 
 AD_DEFAULT_DAYS = 30
 BOOST_DAYS      = 7
@@ -274,6 +278,75 @@ def delete_ad(
         if cur.rowcount == 0:
             raise HTTPException(status_code=404, detail="ad_not_found")
         conn.commit()
+    finally:
+        conn.close()
+
+
+# ─── GET /ads/{id}/contact-reveal (subscription-gated) ────────────────────
+#
+# Phase 3 paywall. Anyone (even non-logged) can search and see ad
+# bodies; only paying subscribers see the corp's phone/email. We
+# call the payment service's /subscriptions/check endpoint to gate
+# this — same pattern Phase 5's gateway middleware will use, but
+# inline here so contact-reveal works before middleware ships.
+
+@router.get("/{ad_id}/contact-reveal")
+def contact_reveal(
+    ad_id: str,
+    x_entity_id:   Optional[str] = Header(default=None),
+    x_entity_type: Optional[str] = Header(default=None),
+):
+    if not x_entity_id or not x_entity_type:
+        raise HTTPException(status_code=401, detail="auth_required")
+
+    # 1. Entitlement check
+    try:
+        with httpx.Client(timeout=3.0) as client:
+            r = client.get(
+                f"{PAYMENT_SVC}/payments/subscriptions/check",
+                headers={"x-entity-id": x_entity_id, "x-entity-type": x_entity_type},
+            )
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=503, detail=f"entitlement_service_unreachable: {e}")
+    if r.status_code == 402:
+        # Payment-side response already carries the reason — propagate as-is.
+        raise HTTPException(status_code=402, detail=r.json().get("detail", {"code": "subscription_required"}))
+    if r.status_code != 200:
+        raise HTTPException(status_code=502, detail=f"entitlement_check_failed: {r.status_code}")
+
+    # 2. Fetch ad + owning corp
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT a.owner_entity_id, c.company_name_he, c.company_name,
+                      c.contact_phone, c.contact_email
+                 FROM ads a
+                 JOIN corporations c ON c.id = a.owner_entity_id
+                WHERE a.id = %s AND a.deleted_at IS NULL""",
+            (ad_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="ad_not_found")
+
+        # 3. Audit (Phase 5 will use this for per-tier quota counting)
+        cur.execute("SHOW TABLES LIKE 'contact_reveals'")
+        if cur.fetchone():
+            cur.execute(
+                """INSERT INTO contact_reveals
+                     (id, viewer_entity_id, viewer_entity_type, ad_id, revealed_at)
+                   VALUES (%s, %s, %s, %s, NOW())""",
+                (str(uuid.uuid4()), x_entity_id, x_entity_type, ad_id),
+            )
+            conn.commit()
+
+        return {
+            "ad_id":        ad_id,
+            "company_name": row["company_name_he"] or row["company_name"],
+            "phone":        row["contact_phone"],
+            "email":        row["contact_email"],
+        }
     finally:
         conn.close()
 

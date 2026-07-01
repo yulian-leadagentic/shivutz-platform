@@ -54,6 +54,7 @@ const services = {
   '/api/support-tickets': process.env.USER_ORG_SERVICE_URL    || 'http://user-org:3002',
   '/api/membership-requests': process.env.USER_ORG_SERVICE_URL || 'http://user-org:3002',
   '/api/ads':           process.env.USER_ORG_SERVICE_URL      || 'http://user-org:3002',
+  '/api/search':        process.env.USER_ORG_SERVICE_URL      || 'http://user-org:3002',
 };
 
 // Public routes (no auth required) — matched against req.originalUrl
@@ -67,6 +68,7 @@ const PUBLIC_PREFIXES = [
   '/api/auth/invite/validate',   // Invitation token check — Phase 4
   '/api/auth/invite/accept',     // Invitation acceptance — Phase 4
   '/api/enums',                  // profession/region enum lookups are public
+  '/api/search',                 // free-text search is public; contact reveal is paywalled
   '/api/webhooks/vonage',        // Vonage webhooks — secured by Signature Secret JWT, not user JWT
   // Uploaded files are served as static assets via the user-org service.
   // Filenames are server-generated UUIDs, so the URL is itself the
