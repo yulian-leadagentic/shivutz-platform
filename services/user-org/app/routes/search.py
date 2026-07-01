@@ -42,17 +42,30 @@ def _serialize_ad(row: dict) -> dict:
         "ad_type":          row["ad_type"],
         "title_he":         row["title_he"],
         "body_he":          row["body_he"],
-        "profession_code":  row["profession_code"],
-        "origin_country":   row["origin_country"],
         "region":           row["region"],
-        "quantity":         row["quantity"],
-        "experience_min_months": row["experience_min_months"],
-        "visa_valid_until": row["visa_valid_until"].isoformat() if row.get("visa_valid_until") else None,
-        "languages":        row.get("languages"),
         "featured_until":   row["featured_until"].isoformat() if row.get("featured_until") else None,
         "published_at":     row["published_at"].isoformat() if row.get("published_at") else None,
         "expires_at":       row["expires_at"].isoformat()   if row.get("expires_at")   else None,
     }
+    if row["ad_type"] == "worker":
+        out.update({
+            "profession_code":       row["profession_code"],
+            "origin_country":        row["origin_country"],
+            "quantity":              row["quantity"],
+            "experience_min_months": row["experience_min_months"],
+            "visa_valid_until":      row["visa_valid_until"].isoformat() if row.get("visa_valid_until") else None,
+            "languages":             row.get("languages"),
+        })
+    else:  # housing
+        out.update({
+            "city":              row["city"],
+            "address_he":        row["address_he"],
+            "total_beds":        row["total_beds"],
+            "available_beds":    row["available_beds"],
+            "price_per_bed_nis": row["price_per_bed_nis"],
+            "amenities":         row.get("amenities"),
+            "photos":            row.get("photos"),
+        })
     return out
 
 
@@ -79,7 +92,13 @@ def search(body: SearchIn):
         wheres.append("(a.region IS NULL OR a.region = %s)")
         params.append(filters["region"])
     if filters.get("quantity"):
-        wheres.append("(a.quantity IS NULL OR a.quantity >= %s)")
+        # For worker ads the contractor's requested count is compared
+        # against the corp's offered quantity; for housing it maps to
+        # available_beds (contractor needs somewhere for N workers to sleep).
+        if filters["ad_type"] == "housing":
+            wheres.append("(a.available_beds IS NULL OR a.available_beds >= %s)")
+        else:
+            wheres.append("(a.quantity IS NULL OR a.quantity >= %s)")
         params.append(filters["quantity"])
 
     sql = f"""

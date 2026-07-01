@@ -154,10 +154,21 @@ export default function ContractorSearchPage() {
                   <div className="min-w-0">
                     <h3 className="text-base font-bold text-slate-900">{ad.title_he}</h3>
                     <p className="text-xs text-slate-500 mt-0.5 flex flex-wrap gap-x-2">
-                      {ad.profession_code && <span>{ad.profession_code}</span>}
-                      {ad.origin_country  && <span>· מוצא: {ad.origin_country}</span>}
-                      {ad.region          && <span>· אזור: {ad.region}</span>}
-                      {ad.quantity        && <span>· {ad.quantity} עובדים</span>}
+                      {ad.ad_type === 'worker' ? (
+                        <>
+                          {ad.profession_code && <span>{ad.profession_code}</span>}
+                          {ad.origin_country  && <span>· מוצא: {ad.origin_country}</span>}
+                          {ad.region          && <span>· אזור: {ad.region}</span>}
+                          {ad.quantity        && <span>· {ad.quantity} עובדים</span>}
+                        </>
+                      ) : (
+                        <>
+                          {ad.city              && <span>{ad.city}</span>}
+                          {ad.region            && <span>· אזור: {ad.region}</span>}
+                          {ad.available_beds    && <span>· {ad.available_beds} מיטות פנויות</span>}
+                          {ad.price_per_bed_nis && <span>· ₪{ad.price_per_bed_nis}/מיטה</span>}
+                        </>
+                      )}
                     </p>
                   </div>
                   {boosted && (
@@ -166,6 +177,22 @@ export default function ContractorSearchPage() {
                     </span>
                   )}
                 </div>
+
+                {ad.ad_type === 'housing' && Array.isArray(ad.amenities) && ad.amenities.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-2">
+                    {ad.amenities.map((a) => (
+                      <span key={a} className="text-[10px] font-semibold text-slate-600 bg-slate-100 rounded-full px-2 py-0.5">{a}</span>
+                    ))}
+                  </div>
+                )}
+
+                {ad.ad_type === 'housing' && Array.isArray(ad.photos) && ad.photos.length > 0 && (
+                  <div className="mt-2 flex gap-2 overflow-x-auto">
+                    {ad.photos.slice(0, 4).map((url) => (
+                      <img key={url} src={url} alt="" className="w-24 h-24 rounded-lg object-cover shrink-0 border border-slate-200" />
+                    ))}
+                  </div>
+                )}
 
                 {ad.body_he && <p className="text-sm text-slate-700 mt-2 whitespace-pre-line">{ad.body_he}</p>}
 

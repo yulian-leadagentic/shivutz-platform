@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { ChevronRight, Loader2 } from 'lucide-react';
 import { adApi, type AdRow } from '@/lib/api/ads';
 import { WorkerAdForm } from '@/features/ads/WorkerAdForm';
+import { HousingAdForm } from '@/features/ads/HousingAdForm';
 
 export default function EditAdPage() {
   const { id }  = useParams<{ id: string }>();
@@ -36,32 +37,59 @@ export default function EditAdPage() {
     );
   }
 
+  const isHousing = ad.ad_type === 'housing';
+
   return (
     <div className="max-w-3xl mx-auto px-4 py-6 space-y-5">
       <header className="space-y-1">
         <Link href="/corporation/ads" className="inline-flex items-center text-xs text-slate-500 hover:text-slate-700">
           <ChevronRight className="w-3 h-3 me-1" /> חזרה למודעות שלי
         </Link>
-        <h1 className="text-2xl font-bold text-slate-900">עריכת מודעה</h1>
+        <h1 className="text-2xl font-bold text-slate-900">
+          {isHousing ? 'עריכת מודעת דיור' : 'עריכת מודעת עובדים'}
+        </h1>
       </header>
-      <WorkerAdForm
-        submitLabel="שמור שינויים"
-        initial={{
-          title_he:              ad.title_he,
-          body_he:               ad.body_he ?? '',
-          profession_code:       ad.profession_code ?? '',
-          origin_country:        ad.origin_country ?? '',
-          region:                ad.region ?? '',
-          quantity:              ad.quantity ?? 1,
-          experience_min_months: ad.experience_min_months ?? 0,
-          visa_valid_until:      ad.visa_valid_until ?? '',
-          languages:             ad.languages ?? [],
-        }}
-        onSubmit={async (payload) => {
-          await adApi.update(id, payload);
-          router.push('/corporation/ads');
-        }}
-      />
+
+      {isHousing ? (
+        <HousingAdForm
+          submitLabel="שמור שינויים"
+          initial={{
+            title_he:          ad.title_he,
+            body_he:           ad.body_he ?? '',
+            city:              ad.city ?? '',
+            address_he:        ad.address_he ?? '',
+            region:            ad.region ?? '',
+            total_beds:        ad.total_beds ?? 4,
+            available_beds:    ad.available_beds ?? 4,
+            price_per_bed_nis: ad.price_per_bed_nis ?? 0,
+            amenities:         ad.amenities ?? [],
+            photos:            (ad.photos ?? []).join(', '),
+          }}
+          onSubmit={async (payload) => {
+            await adApi.update(id, payload);
+            router.push('/corporation/ads');
+          }}
+        />
+      ) : (
+        <WorkerAdForm
+          submitLabel="שמור שינויים"
+          initial={{
+            title_he:              ad.title_he,
+            body_he:               ad.body_he ?? '',
+            profession_code:       ad.profession_code ?? '',
+            origin_country:        ad.origin_country ?? '',
+            region:                ad.region ?? '',
+            quantity:              ad.quantity ?? 1,
+            experience_min_months: ad.experience_min_months ?? 0,
+            visa_valid_until:      ad.visa_valid_until ?? '',
+            languages:             ad.languages ?? [],
+          }}
+          onSubmit={async (payload) => {
+            await adApi.update(id, payload);
+            router.push('/corporation/ads');
+          }}
+        />
+      )}
     </div>
   );
 }
