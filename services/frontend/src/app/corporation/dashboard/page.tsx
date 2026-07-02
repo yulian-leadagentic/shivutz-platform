@@ -17,6 +17,7 @@ import {
 import { dealApi, orgApi } from '@/lib/api';
 import { tenderApi } from '@/lib/api/tenders';
 import { getAccessToken, decodeJwtPayload } from '@/lib/auth';
+import { PublishFirstAdBanner } from '@/features/corporation/PublishFirstAdBanner';
 import type { Deal } from '@/types';
 
 const PENDING_DEAL_STATUSES = new Set(['proposed', 'counter_proposed']);
@@ -110,6 +111,10 @@ export default function CorporationDashboard() {
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-6 space-y-6">
+      {/* Pivot/v2 — nudge new corps to publish their first ad. Only
+          renders when adApi.list() returns zero rows. */}
+      <PublishFirstAdBanner />
+
       {/* Two flavours of the pending-approval banner — depend on
           whether the corp made it to tier_2 (gov-list-matched but the
           typed phone didn't match the registered gov phones) or is

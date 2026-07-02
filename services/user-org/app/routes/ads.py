@@ -308,6 +308,18 @@ def update_ad(
     if not data:
         raise HTTPException(status_code=400, detail="no_changes")
 
+    # Soft trial cap: editing existing ads requires an active/trialing
+    # subscription. Existing ads keep serving search results even when
+    # the sub lapses (see decision Q4a in the pivot flow plan).
+    try:
+        ent = fetch_entitlement(corp_id, "corporation")
+    except httpx.HTTPError:
+        raise HTTPException(status_code=503, detail="entitlement_service_unreachable")
+    if not ent["entitled"]:
+        raise HTTPException(status_code=402, detail={
+            "code": "subscription_required", "tier": ent["tier"], "status": ent["status"],
+        })
+
     sets:   list[str]    = []
     params: list[object] = []
     for k, v in data.items():
