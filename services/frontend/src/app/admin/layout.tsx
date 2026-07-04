@@ -3,25 +3,27 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import Logo from '@/components/Logo';
-import { Home, LayoutDashboard, ClipboardCheck, Handshake, Building2, LogOut, Percent, PhoneCall, Users, Inbox, Store, Globe2, Flag, MessageCircle, FileCheck } from 'lucide-react';
+import { Home, LayoutDashboard, ClipboardCheck, Building2, LogOut, PhoneCall, Users, Inbox, Flag, MessageCircle, FileCheck, Megaphone, CreditCard } from 'lucide-react';
 import { clearTokens } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 import MobileNavDrawer from '@/components/layout/MobileNavDrawer';
 
+// Pivot/v2 admin nav — deal/tender/commission surfaces removed with the
+// old model. New: /admin/ads (moderation) + /admin/subscriptions (tier
+// mgmt). Registration approvals (kept per decision Q-a) live in
+// /admin/approvals and /admin/orgs.
 const NAV = [
-  { href: '/admin/dashboard',  label: 'לוח בקרה',      icon: LayoutDashboard },
-  { href: '/admin/approvals',  label: 'אישורים',        icon: ClipboardCheck, badge: true },
-  { href: '/admin/deals',      label: 'עסקאות',         icon: Handshake },
-  { href: '/admin/tenders',    label: 'בקשות ייבוא',    icon: Globe2 },
-  { href: '/admin/orgs',       label: 'ארגונים',        icon: Building2 },
+  { href: '/admin/dashboard',          label: 'לוח בקרה',           icon: LayoutDashboard },
+  { href: '/admin/approvals',          label: 'אישורים',             icon: ClipboardCheck, badge: true },
+  { href: '/admin/orgs',               label: 'תאגידים וקבלנים',     icon: Building2 },
+  { href: '/admin/ads',                label: 'מודעות',              icon: Megaphone },
+  { href: '/admin/subscriptions',      label: 'מנויים',              icon: CreditCard },
   { href: '/admin/gov-corps-registry', label: 'רשימת תאגידים מורשים', icon: FileCheck },
-  { href: '/admin/users',      label: 'משתמשים',        icon: Users },
-  { href: '/admin/leads',      label: 'פניות ובקשות',   icon: Inbox },
-  { href: '/admin/support',    label: 'פניות שירות לקוחות', icon: MessageCircle },
-  { href: '/admin/marketplace', label: 'שירותים נלווים — קטגוריות', icon: Store },
-  { href: '/admin/origins',          label: 'ארצות מוצא',   icon: Flag },
-  { href: '/admin/commissions',      label: 'עמלות ומע״מ',  icon: Percent },
-  { href: '/admin/registration-log', label: 'לוג רישומים',  icon: PhoneCall },
+  { href: '/admin/users',              label: 'משתמשים',             icon: Users },
+  { href: '/admin/leads',              label: 'פניות ובקשות',         icon: Inbox },
+  { href: '/admin/support',            label: 'פניות שירות לקוחות',   icon: MessageCircle },
+  { href: '/admin/origins',            label: 'ארצות מוצא',           icon: Flag },
+  { href: '/admin/registration-log',   label: 'לוג רישומים',          icon: PhoneCall },
 ];
 
 /**
