@@ -1,189 +1,113 @@
 'use client';
 
-// Wave 4 (2026-05-07) — contractor dashboard simplified per
-// key-user feedback: "המשתמשים אמרו שזה מסובך להם".
-//
-// Three primary tiles + a pending-approval banner. No more KPI cards,
-// no urgent-deals strip, no recent-searches list — those live one
-// click away on the dedicated pages.
+// Pivot/v2 contractor dashboard — deliberately minimal.
+// Q1a decision: contractor doesn't need a rich dashboard. Landing
+// is the search, this is a tiny status page: subscription tier chip,
+// "search now" CTA, kablan status if pending.
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import {
-  Plus, Handshake, Clock, Zap, Globe2,
-} from 'lucide-react';
-import { dealApi, orgApi } from '@/lib/api';
+import { Loader2, Search as SearchIcon, CreditCard, ShieldCheck, Clock } from 'lucide-react';
+import { adApi, type UsageResponse } from '@/lib/api/ads';
+import { orgApi } from '@/lib/api';
 import { getAccessToken, decodeJwtPayload } from '@/lib/auth';
-import type { Deal } from '@/types';
 
-const ACTIVE_DEAL_STATUSES = new Set([
-  'proposed', 'corp_committed', 'counter_proposed',
-  'accepted', 'active', 'reporting',
-]);
+const STATUS_LABEL: Record<string, string> = {
+  trialing: 'ניסיון', active: 'פעיל', past_due: 'תשלום נכשל', cancelled: 'בוטל', expired: 'פג',
+};
+const TIER_LABEL: Record<string, string> = { basic: 'בסיסי', advanced: 'מתקדם', pro: 'פרו' };
 
-function Tile({
-  href, icon, title, subtitle, badge, accent = 'brand',
-}: {
-  href: string;
-  icon: React.ReactNode;
-  title: string;
-  subtitle: string;
-  badge?: number | null;
-  accent?: 'brand' | 'amber' | 'slate';
-}) {
-  const ringByAccent = {
-    brand: 'hover:border-brand-500 hover:bg-brand-50/40',
-    amber: 'hover:border-amber-400 hover:bg-amber-50/40',
-    slate: 'hover:border-slate-400 hover:bg-slate-50/60',
-  }[accent];
-  const iconBgByAccent = {
-    brand: 'bg-brand-50 text-brand-600',
-    amber: 'bg-amber-50 text-amber-600',
-    slate: 'bg-slate-100 text-slate-600',
-  }[accent];
-
-  return (
-    <Link
-      href={href}
-      className={`group relative flex flex-col items-center justify-center text-center
-                  rounded-2xl border border-slate-200 bg-white
-                  px-6 py-8 sm:py-10
-                  ${ringByAccent} hover:shadow-md
-                  active:scale-[0.99] transition shadow-sm`}
-    >
-      {badge != null && badge > 0 && (
-        <div className="absolute top-3 end-3 min-w-[28px] h-7 px-2 rounded-full
-                        bg-amber-500 text-white text-xs font-bold flex items-center
-                        justify-center">
-          {badge}
-        </div>
-      )}
-      <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mb-4 ${iconBgByAccent}`}>
-        {icon}
-      </div>
-      <div className="text-base sm:text-lg font-bold text-slate-900">{title}</div>
-      <div className="text-sm text-slate-500 mt-1 max-w-[18rem]">{subtitle}</div>
-    </Link>
-  );
+function daysUntil(iso: string | null | undefined): number | null {
+  if (!iso) return null;
+  const ms = new Date(iso).getTime() - Date.now();
+  return Number.isFinite(ms) ? Math.max(0, Math.ceil(ms / 86_400_000)) : null;
 }
 
 export default function ContractorDashboardPage() {
-  const [activeDeals, setActiveDeals] = useState<number | null>(null);
-  const [approvalStatus, setApprovalStatus] = useState<string | null>(null);
+  const [usage, setUsage] = useState<UsageResponse | null>(null);
+  const [kablanVerified, setKablan] = useState<boolean | null>(null);
+  const [companyName, setCompanyName] = useState<string>('');
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Org approval status from JWT
     const token = getAccessToken();
-    if (token) {
-      const payload  = decodeJwtPayload(token);
-      const entityId = (payload?.entity_id || payload?.org_id) as string | undefined;
-      const entType  = (payload?.entity_type || payload?.org_type) as string | undefined;
-      if (entityId && entType === 'contractor') {
-        orgApi.getContractor(entityId)
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          .then((c: any) => setApprovalStatus(c.approval_status ?? null))
-          .catch(() => {});
-      }
+    const p = token ? decodeJwtPayload(token) : null;
+    const entityId = (p?.entity_id || p?.org_id) as string | undefined;
+    if (entityId && p?.entity_type === 'contractor') {
+      orgApi.getContractor(entityId).then((c) => {
+        setKablan(!!c.kablan_verified_at);
+        setCompanyName(c.company_name_he || c.company_name || '');
+      }).catch(() => {});
     }
-
-    // Active deals — for the "מצב עובדים" tile badge
-    dealApi.list({ page_size: 200 })
-      .then((res) => {
-        const count = res.items.filter((d: Deal) =>
-          ACTIVE_DEAL_STATUSES.has(d.status)
-        ).length;
-        setActiveDeals(count);
-      })
-      .catch(() => setActiveDeals(0));
+    adApi.usage().then(setUsage).catch(() => {}).finally(() => setLoading(false));
   }, []);
 
+  if (loading) return <div className="text-center py-16"><Loader2 className="w-6 h-6 animate-spin mx-auto text-slate-400" /></div>;
+
+  const trialDays = daysUntil((usage as UsageResponse & { trial_ends_at?: string | null })?.trial_ends_at ?? null);
+  const revealsUsed  = usage?.usage.reveals_this_month ?? 0;
+  const revealsLimit = usage?.limits.reveals_per_month;
+
   return (
-    <div className="max-w-5xl mx-auto px-4 py-6 space-y-6">
-      {/* Pending approval banner */}
-      {approvalStatus === 'pending' && (
-        <div className="flex items-start gap-4 bg-amber-50 border border-amber-200 rounded-2xl p-4">
-          <div className="shrink-0 w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
-            <Clock className="h-5 w-5 text-amber-600" />
-          </div>
+    <div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
+      <header className="text-center space-y-1">
+        <h1 className="text-2xl font-bold text-slate-900">שלום{companyName ? `, ${companyName}` : ''}</h1>
+        <p className="text-sm text-slate-500">התחילו חיפוש חדש או המשיכו לחפש כמו קודם</p>
+      </header>
+
+      {/* Primary CTA — search */}
+      <Link
+        href="/"
+        className="flex items-center justify-center gap-3 bg-brand-600 hover:bg-brand-500 text-white text-lg font-semibold py-4 rounded-2xl shadow-md transition"
+      >
+        <SearchIcon className="w-6 h-6" />
+        התחל חיפוש
+      </Link>
+
+      {/* Kablan verification banner (only if unverified) */}
+      {kablanVerified === false && (
+        <Link
+          href="/contractor/verify-kablan"
+          className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-2xl p-4 hover:border-amber-300 transition"
+        >
+          <ShieldCheck className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
           <div>
-            <h3 className="font-semibold text-amber-900">החשבון ממתין לאישור</h3>
-            <p className="text-sm text-amber-700 mt-0.5">
-              הבקשה שלך מטופלת — תקבל SMS / WhatsApp עם קישור ישיר ברגע שהחשבון יאושר.
-            </p>
+            <h3 className="font-semibold text-amber-900">השלימו אימות רישום קבלנים</h3>
+            <p className="text-sm text-amber-800 mt-0.5">האימות מעלה אמון של תאגידים ומסיר סימוני "לא מאומת" מהחיפושים.</p>
           </div>
-        </div>
+        </Link>
       )}
 
-      {/* Hero — recruitment CTA. White surface per QA-R3 #11 so the
-          contractor dashboard matches the landing's all-white look. */}
-      <section className="relative overflow-hidden rounded-2xl bg-white border border-slate-200 shadow-sm p-6 sm:p-10">
-        {/* Subtle brand-orange glow — reduced opacity for white surface */}
-        <div
-          className="pointer-events-none absolute -top-24 end-0 h-72 w-72 rounded-full opacity-[0.08]"
-          style={{ background: 'radial-gradient(circle, #f78203 0%, transparent 70%)' }}
-        />
-
-        <div className="relative grid gap-6 lg:grid-cols-[1fr_auto] lg:items-center">
-          <div className="space-y-4">
-            <div className="inline-flex items-center gap-2 rounded-full border border-brand-200 bg-brand-50 px-3 py-1 text-xs font-medium text-brand-700">
-              <span className="h-1.5 w-1.5 rounded-full bg-brand-500 animate-pulse" />
-              הפסיקו לרדוף אחרי טלפונים ותיאומים
-            </div>
-            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-slate-900 leading-[1.15] tracking-tight">
-              גיוס עובדים לבנייה — <span className="text-brand-600">פשוט ומהיר</span>
-            </h1>
-            <p className="text-sm sm:text-base text-slate-600 leading-relaxed max-w-2xl">
-              מאות עובדים זמינים לפי מקצוע, ניסיון וזמינות לעבודה.{' '}
-              <span className="text-slate-900 font-medium">מנוע AI לחיפוש התאמות.</span>
+      {/* Subscription card */}
+      <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">המנוי שלך</p>
+            <p className="text-lg font-bold text-slate-900 mt-1">
+              {usage ? TIER_LABEL[usage.tier] : '—'}
+              <span className="ms-2 text-sm font-medium text-slate-600">
+                {usage ? `(${STATUS_LABEL[usage.status] ?? usage.status})` : ''}
+              </span>
             </p>
-            <p className="text-sm sm:text-base text-brand-700 font-semibold">
-              גיוס עובדים מהארץ וייבוא עובדים חדשים
-            </p>
+            {trialDays !== null && (
+              <p className="text-sm text-amber-700 mt-1 inline-flex items-center gap-1">
+                <Clock className="w-3.5 h-3.5" /> נותרו {trialDays} ימים לניסיון
+              </p>
+            )}
+            {usage && (
+              <p className="text-sm text-slate-600 mt-1">
+                חשיפות החודש: <b>{revealsUsed}</b> / <b>{revealsLimit ?? '∞'}</b>
+              </p>
+            )}
           </div>
-
-          <div className="lg:shrink-0">
-            {/* Oversize CTA — primary action, brand orange so it pops
-                on the white surface. */}
-            <Link
-              href="/contractor/find"
-              className="group inline-flex items-center justify-center gap-3
-                         h-16 px-10 rounded-2xl
-                         bg-brand-600 hover:bg-brand-700 active:bg-brand-800
-                         text-white font-extrabold text-xl tracking-tight
-                         shadow-lg shadow-brand-500/30
-                         ring-4 ring-brand-200/50 hover:ring-brand-300
-                         transition-all duration-200 hover:-translate-y-0.5"
-            >
-              <Zap className="h-7 w-7 group-hover:rotate-12 transition-transform" />
-              התחל גיוס
-            </Link>
-          </div>
+          <Link
+            href="/billing"
+            className="inline-flex items-center gap-2 bg-brand-600 hover:bg-brand-500 text-white text-sm font-semibold px-4 py-2 rounded-lg"
+          >
+            <CreditCard className="w-4 h-4" />
+            ניהול מנוי
+          </Link>
         </div>
-      </section>
-
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <Tile
-          href="/contractor/deals"
-          icon={<Handshake className="h-9 w-9" />}
-          title="סטטוס בקשות פעילות"
-          subtitle="כל ההצעות, העסקאות הפעילות והדיווחים שלך"
-          badge={activeDeals}
-          accent="amber"
-        />
-        <Tile
-          href="/contractor/find/domestic"
-          icon={<Plus className="h-9 w-9" />}
-          title="גיוס עובדים מהארץ"
-          subtitle="עובדים שכבר נמצאים בישראל ומוכנים לעבודה"
-          accent="brand"
-        />
-        <Tile
-          href="/contractor/tenders/new"
-          icon={<Globe2 className="h-9 w-9" />}
-          title="ייבוא עובדים חדשים מחו״ל"
-          subtitle="פרסם בקשה לתאגידים — קבל הצעות והבא עובדים לישראל"
-          accent="slate"
-        />
       </div>
     </div>
   );
