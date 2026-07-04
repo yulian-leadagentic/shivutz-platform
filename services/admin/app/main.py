@@ -1,5 +1,5 @@
 from fastapi import FastAPI, HTTPException
-from app.routes import dashboard, enums, approvals, commissions, registration_log, settings, users, leads, deals, support, gov_corp_list, org_summary, notifications_test
+from app.routes import dashboard, enums, approvals, commissions, registration_log, settings, users, leads, deals, support, gov_corp_list, org_summary, notifications_test, ads as admin_ads, subscriptions as admin_subs
 from app.db import get_db, init_db
 from app.errors import register_error_handlers
 
@@ -48,3 +48,5 @@ app.include_router(registration_log.router,   prefix="",        tags=["registrat
 app.include_router(gov_corp_list.router,      prefix="/admin",  tags=["gov-corp-list"])
 app.include_router(org_summary.router,        prefix="/admin",  tags=["org-summary"])
 app.include_router(notifications_test.router, prefix="/admin",  tags=["notifications-test"])
+app.include_router(admin_ads.router,          prefix="/admin",  tags=["admin-ads"])
+app.include_router(admin_subs.router,         prefix="/admin",  tags=["admin-subscriptions"])
