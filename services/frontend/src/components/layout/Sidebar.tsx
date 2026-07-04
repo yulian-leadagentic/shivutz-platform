@@ -6,7 +6,7 @@ import Logo from '@/components/Logo';
 import { usePathname, useRouter } from 'next/navigation';
 import {
   Home, LayoutDashboard, Handshake,
-  LogOut, Plus, Users, FileText, MessageCircle, Search, CreditCard,
+  LogOut, Plus, Users, FileText, MessageCircle, Search, CreditCard, Globe2,
 } from 'lucide-react';
 import { clearTokens, getAccessToken, decodeJwtPayload } from '@/lib/auth';
 import { cn } from '@/lib/utils';
@@ -26,14 +26,18 @@ interface NavItem {
   sub?: { label: string; href: string }[];
 }
 
-// Pivot/v2 — contractor sidebar trimmed to the new model. Old
-// find/deals/tenders/manage surfaces removed with the deal lifecycle.
+// Pivot/v2 — the three old find/deals/foreign-tender categories collapse
+// into ONE surface: "בקשות ייבוא עובדים מחו״ל" which reuses the tender
+// flow (contractor requests specific foreign workers, corps bid, admin
+// approves). Domestic immediate-availability flows through the public
+// search on / instead.
 const CONTRACTOR_NAV: NavItem[] = [
-  { label: 'לוח בקרה',    href: '/contractor/dashboard', icon: LayoutDashboard },
-  { label: 'חיפוש',       href: '/',                     icon: Search },
-  { label: 'צוות',        href: '/contractor/users',     icon: Users },
-  { label: 'מסמכים',      href: '/contractor/documents', icon: FileText },
-  { label: 'חשבון ומנוי', href: '/billing',              icon: CreditCard },
+  { label: 'לוח בקרה',                 href: '/contractor/dashboard', icon: LayoutDashboard },
+  { label: 'חיפוש',                    href: '/',                     icon: Search },
+  { label: 'בקשות ייבוא עובדים מחו״ל', href: '/contractor/tenders',   icon: Globe2 },
+  { label: 'צוות',                     href: '/contractor/users',     icon: Users },
+  { label: 'מסמכים',                   href: '/contractor/documents', icon: FileText },
+  { label: 'חשבון ומנוי',              href: '/billing',              icon: CreditCard },
 ];
 
 // Pivot/v2 — corp no longer maintains a worker roster; workers live
