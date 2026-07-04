@@ -81,7 +81,7 @@ export function KablanVerifyBanner() {
       <div className="flex-1 text-sm leading-relaxed">
         <p className="font-semibold">השלם אימות מול רשם הקבלנים</p>
         <p>
-          הזן את מספר הרישיון שלך לאימות מול פנקס הקבלנים — שלב חיוני לפני חתימה על עסקאות.{' '}
+          הזן את מספר הרישיון שלך לאימות מול פנקס הקבלנים — שלב חיוני לפני צפייה בפרטי תאגיד.{' '}
           <Link href="/contractor/verify-kablan" className="underline font-medium">
             אמת עכשיו ←
           </Link>
