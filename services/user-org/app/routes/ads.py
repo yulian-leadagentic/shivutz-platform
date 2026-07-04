@@ -255,6 +255,99 @@ def usage(
     }
 
 
+# ─── Public landing endpoints (yad2-style landing) ──────────────────────────
+# No auth required. Return sanitized ad payloads (owner id omitted) so
+# the anonymous landing page can render featured + recent ads and real
+# stats without exposing contact info (that's still behind the reveal
+# subscription gate).
+
+_PUBLIC_AD_COLS = (
+    "id, ad_type, title_he, body_he, region, "
+    "profession_code, origin_country, quantity, "
+    "city, available_beds, price_per_bed_nis, amenities, photos, "
+    "featured_until, published_at"
+)
+
+
+def _public_ad(row: dict) -> dict:
+    out = _serialize(row)
+    # Never expose owner id from the public feed — the reveal endpoint
+    # is the only path that surfaces corp contact info.
+    for k in ("owner_entity_id", "owner_entity_type"):
+        out.pop(k, None)
+    return out
+
+
+@router.get("/public/featured")
+def public_featured(limit: int = 12):
+    """Boosted ads first, then most-recent active. Powers the landing
+    carousel + trust bar."""
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            f"""SELECT {_PUBLIC_AD_COLS}
+                  FROM ads
+                 WHERE active=TRUE AND deleted_at IS NULL
+                   AND (expires_at IS NULL OR expires_at > NOW())
+                   AND featured_until IS NOT NULL AND featured_until > NOW()
+                 ORDER BY featured_until DESC, published_at DESC
+                 LIMIT %s""",
+            (max(1, min(limit, 50)),),
+        )
+        return {"results": [_public_ad(r) for r in cur.fetchall()]}
+    finally:
+        conn.close()
+
+
+@router.get("/public/recent")
+def public_recent(limit: int = 12, ad_type: Optional[str] = None):
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        params: list[object] = []
+        wheres = ["active=TRUE", "deleted_at IS NULL",
+                  "(expires_at IS NULL OR expires_at > NOW())"]
+        if ad_type in ("worker", "housing"):
+            wheres.append("ad_type=%s")
+            params.append(ad_type)
+        params.append(max(1, min(limit, 50)))
+        cur.execute(
+            f"""SELECT {_PUBLIC_AD_COLS}
+                  FROM ads
+                 WHERE {' AND '.join(wheres)}
+                 ORDER BY published_at DESC
+                 LIMIT %s""",
+            params,
+        )
+        return {"results": [_public_ad(r) for r in cur.fetchall()]}
+    finally:
+        conn.close()
+
+
+@router.get("/public/stats")
+def public_stats():
+    """Aggregate numbers for the landing trust bar. Numeric only —
+    nothing that identifies a specific entity."""
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) AS n FROM corporations WHERE approval_status='approved' AND deleted_at IS NULL")
+        active_corps = int(cur.fetchone()["n"])
+        cur.execute("SELECT ad_type, COUNT(*) AS n FROM ads WHERE active=TRUE AND deleted_at IS NULL AND (expires_at IS NULL OR expires_at > NOW()) GROUP BY ad_type")
+        by_type = {r["ad_type"]: int(r["n"]) for r in cur.fetchall()}
+        cur.execute("SELECT COUNT(*) AS n FROM contact_reveals WHERE revealed_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)")
+        reveals_30d = int(cur.fetchone()["n"])
+    finally:
+        conn.close()
+    return {
+        "active_corps":       active_corps,
+        "worker_ads":         by_type.get("worker", 0),
+        "housing_ads":        by_type.get("housing", 0),
+        "reveals_last_30d":   reveals_30d,
+    }
+
+
 # ─── GET /ads/mine ──────────────────────────────────────────────────────────
 
 @router.get("/mine")

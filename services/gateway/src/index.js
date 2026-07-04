@@ -69,6 +69,7 @@ const PUBLIC_PREFIXES = [
   '/api/auth/invite/accept',     // Invitation acceptance — Phase 4
   '/api/enums',                  // profession/region enum lookups are public
   '/api/search',                 // free-text search is public; contact reveal is paywalled
+  '/api/ads/public',             // featured/recent/stats for the landing (no auth)
   '/api/webhooks/vonage',        // Vonage webhooks — secured by Signature Secret JWT, not user JWT
   // Uploaded files are served as static assets via the user-org service.
   // Filenames are server-generated UUIDs, so the URL is itself the
