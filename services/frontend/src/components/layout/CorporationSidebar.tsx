@@ -7,6 +7,10 @@ import { Home, LayoutDashboard, Users, LogOut, UserCog, CreditCard, Store, Globe
 import { clearTokens } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 
+// Pivot/v2 — corp lives around one primary surface: their ads.
+// Workers/deals/tenders/marketplace all belonged to the old
+// deal-lifecycle model and are removed. Billing now points at /billing
+// (the pivot subscription page) instead of the old per-deal settings page.
 const navItems = [
   {
     label: 'לוח בקרה',
@@ -14,50 +18,18 @@ const navItems = [
     icon: LayoutDashboard,
   },
   {
-    label: 'עובדים',
-    href: '/corporation/workers',
-    icon: Users,
-  },
-  {
-    // Pivot/v2 Phase 2 — corp publishes worker (and later housing) ads
-    // here. Replaces the auto-broadcast deal pipeline as the primary
-    // discovery surface; contractors search these ads in Phase 3.
     label: 'מודעות שלי',
     href: '/corporation/ads',
     icon: Megaphone,
   },
   {
-    // R9 merge — single surface for the corp's "what's in my inbox"
-    // view. Hosts the open-search browse + the deal lifecycle in one
-    // page. /corporation/requests redirects here for any in-flight
-    // bookmarks.
-    label: 'קבלנים מחפשים עובדים בזמינות מיידית',
-    href: '/corporation/deals',
-    icon: Zap,
-  },
-  {
-    label: 'בקשות ייבוא',
-    href: '/corporation/tenders',
-    icon: Globe2,
-  },
-  {
-    // Renamed from "שוק" — the marketplace surfaces ancillary services
-    // (housing, equipment, logistics) and the term "שירותים נלווים"
-    // reflects that more accurately to users.
-    label: 'שירותים נלווים',
-    href: '/corporation/marketplace',
-    icon: Store,
-  },
-  {
-    // QA-R4 #C8: the corp users page is renamed to "צוות התאגיד" to
-    // mirror the page H1 (also being renamed).
     label: 'צוות התאגיד',
     href: '/corporation/users',
     icon: UserCog,
   },
   {
-    label: 'חיוב ותשלום',
-    href: '/corporation/settings/billing',
+    label: 'חשבון ומנוי',
+    href: '/billing',
     icon: CreditCard,
   },
 ];

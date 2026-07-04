@@ -5,8 +5,8 @@ import Link from 'next/link';
 import Logo from '@/components/Logo';
 import { usePathname, useRouter } from 'next/navigation';
 import {
-  Home, LayoutDashboard, ClipboardList, Handshake,
-  LogOut, Plus, Users, FileText, Globe2, MessageCircle, Search,
+  Home, LayoutDashboard, Handshake,
+  LogOut, Plus, Users, FileText, MessageCircle, Search, CreditCard,
 } from 'lucide-react';
 import { clearTokens, getAccessToken, decodeJwtPayload } from '@/lib/auth';
 import { cn } from '@/lib/utils';
@@ -26,34 +26,22 @@ interface NavItem {
   sub?: { label: string; href: string }[];
 }
 
+// Pivot/v2 — contractor sidebar trimmed to the new model. Old
+// find/deals/tenders/manage surfaces removed with the deal lifecycle.
 const CONTRACTOR_NAV: NavItem[] = [
   { label: 'לוח בקרה',    href: '/contractor/dashboard', icon: LayoutDashboard },
-  // Pivot/v2 — search lives on the public landing page (/) so it's
-  // accessible without login. Sidebar entry links home.
   { label: 'חיפוש',       href: '/',                     icon: Search },
-  { label: 'חיפוש חדש (ישן)', href: '/contractor/find',  icon: Plus },
-  // Wave 5: /contractor/searches dropped — /contractor/deals is now
-  // the unified view that includes both past requests (empty groups)
-  // and the proposals/deals on each. Sidebar label renamed to "בקשות
-  // ועסקאות" so the merge is obvious.
-  { label: 'בקשות ועסקאות', href: '/contractor/deals',     icon: Handshake },
-  { label: 'בקשות ייבוא מחו״ל', href: '/contractor/tenders', icon: Globe2 },
-  // Promoted "צוות" to a top-level entry so contractors get a direct
-  // path to the team-management page (matches the corp sidebar). The
-  // "ניהול והעלאת מסמכים" parent stays as the home for documents +
-  // other future admin surfaces — its sub-menu just shed the team
-  // item to avoid duplication.
-  { label: 'צוות',      href: '/contractor/users',     icon: Users },
-  { label: 'ניהול והעלאת מסמכים', href: '/contractor/manage', icon: FileText,
-    sub: [
-      { label: 'מסמכים',   href: '/contractor/documents' },
-    ] },
+  { label: 'צוות',        href: '/contractor/users',     icon: Users },
+  { label: 'מסמכים',      href: '/contractor/documents', icon: FileText },
+  { label: 'חשבון ומנוי', href: '/billing',              icon: CreditCard },
 ];
 
+// Pivot/v2 — corp no longer maintains a worker roster; workers live
+// inside ads (title/count/profession). "עובדים" and "עסקאות" tabs
+// dropped. This shell mostly redirects to CorporationSidebar which
+// carries the current corp nav.
 const CORPORATION_NAV: NavItem[] = [
   { label: 'לוח בקרה',  href: '/corporation/dashboard', icon: LayoutDashboard },
-  { label: 'עסקאות',    href: '/corporation/deals',     icon: Handshake },
-  { label: 'עובדים',    href: '/corporation/workers',   icon: ClipboardList },
   { label: 'צוות',      href: '/corporation/users',     icon: Users },
   { label: 'מסמכים',    href: '/corporation/documents', icon: FileText },
 ];
