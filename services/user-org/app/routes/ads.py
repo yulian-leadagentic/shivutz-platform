@@ -211,13 +211,33 @@ def usage(
             (x_entity_id, x_entity_type),
         )
         reveals_used = int(cur.fetchone()["n"])
-        active_ads_used = 0
+        active_ads_used         = 0
+        ads_by_type: dict[str, int] = {"worker": 0, "housing": 0}
+        reveals_received_30d    = 0
         if x_entity_type == "corporation":
             cur.execute(
                 "SELECT COUNT(*) AS n FROM ads WHERE owner_entity_id=%s AND deleted_at IS NULL AND active=TRUE",
                 (x_entity_id,),
             )
             active_ads_used = int(cur.fetchone()["n"])
+
+            cur.execute(
+                """SELECT ad_type, COUNT(*) AS n FROM ads
+                    WHERE owner_entity_id=%s AND deleted_at IS NULL AND active=TRUE
+                    GROUP BY ad_type""",
+                (x_entity_id,),
+            )
+            for r in cur.fetchall():
+                ads_by_type[r["ad_type"]] = int(r["n"])
+
+            cur.execute(
+                """SELECT COUNT(*) AS n FROM contact_reveals cr
+                     JOIN ads a ON a.id = cr.ad_id
+                    WHERE a.owner_entity_id=%s
+                      AND cr.revealed_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)""",
+                (x_entity_id,),
+            )
+            reveals_received_30d = int(cur.fetchone()["n"])
     finally:
         conn.close()
 
@@ -227,8 +247,10 @@ def usage(
         "entitled": ent["entitled"],
         "limits":   limits,
         "usage": {
-            "reveals_this_month": reveals_used,
-            "active_ads":         active_ads_used,
+            "reveals_this_month":    reveals_used,
+            "active_ads":            active_ads_used,
+            "ads_by_type":           ads_by_type,
+            "reveals_received_30d":  reveals_received_30d,
         },
     }
 

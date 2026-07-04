@@ -1,470 +1,113 @@
 'use client';
 
+// Pivot/v2 admin dashboard — deal-free platform health snapshot.
+// Legacy deals/tenders/workers tiles removed. New tiles: active corps,
+// active contractors, active ads by type, trials expiring, reveals this
+// month, pending registration approvals, subscribers by tier.
+
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
-  Clock, Briefcase, Handshake, Users, Building2, HardHat,
-  Loader2, AlertTriangle, ChevronLeft, ShieldCheck, Hourglass, Wallet, TrendingUp, Globe2,
-  BarChart3, Inbox,
+  Loader2, Building2, HardHat, Megaphone, Clock, Eye, ClipboardCheck, CreditCard,
 } from 'lucide-react';
-import { adminApi, type AdminDashboard, type AdminAlerts } from '@/lib/adminApi';
-import { EmptyState } from '@/components/admin/EmptyState';
-import { tenderApi } from '@/lib/api';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { resolveStatus } from '@/components/StatusBadge';
+import { apiFetch } from '@/lib/api/client';
 
-type TenderSummary = { pending_publish: number; open_for_bids: number; awaiting_contact: number; in_progress: number };
-
-// QA-R5 — replaced the hand-rolled label map with the canonical
-// StatusBadge resolver so this dashboard reads the SAME label +
-// colour for each status as every other admin / corp / contractor
-// surface. Previously the dashboard called "proposed" → "הצעה
-// נשלחה" while /admin/deals called it "הצעה נכנסה" — admins were
-// effectively learning three vocabularies for the same data.
-const DEAL_STATUS_CODES = [
-  'proposed', 'corp_committed', 'approved', 'closed',
-  'cancelled_by_corp', 'rejected', 'expired',
-] as const;
-
-function fmtDate(iso: string | null | undefined) {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' });
+interface PivotStats {
+  active_corps:       number;
+  active_contractors: number;
+  ads:                { worker: number; housing: number; total: number };
+  trials_expiring_7d: number;
+  reveals_this_month: number;
+  pending_approvals:  number;
+  subs_by_tier:       Record<string, number>;
+  as_of:              string;
 }
 
-function StatTile({ label, value, sub, icon: Icon, color, href }: {
-  label: string;
-  value: number | string;
-  sub?: string;
+function Tile({
+  icon: Icon, label, value, href, accent = 'brand',
+}: {
   icon: React.ElementType;
-  color: string;
-  href?: string;
+  label: string;
+  value: React.ReactNode;
+  href?:  string;
+  accent?: 'brand' | 'amber' | 'emerald' | 'rose';
 }) {
-  const content = (
-    <Card className={href ? 'hover:shadow-md transition-shadow cursor-pointer h-full' : 'h-full'}>
-      <CardContent className="pt-5 pb-4">
-        <div className="flex items-start justify-between">
-          <div>
-            <p className="text-xs text-slate-500">{label}</p>
-            <p className={`text-3xl font-bold mt-0.5 ${color}`}>{value}</p>
-            {sub && <p className="text-xs text-slate-400 mt-1">{sub}</p>}
-          </div>
-          <div className={`p-2.5 rounded-lg ${color.replace('text-', 'bg-').replace('-600', '-50')}`}>
-            <Icon className={`h-5 w-5 ${color}`} />
-          </div>
-        </div>
-      </CardContent>
-    </Card>
+  const accentMap = {
+    brand:   'bg-brand-50   text-brand-700',
+    amber:   'bg-amber-50   text-amber-700',
+    emerald: 'bg-emerald-50 text-emerald-700',
+    rose:    'bg-rose-50    text-rose-700',
+  };
+  const inner = (
+    <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm hover:border-brand-300 transition">
+      <div className={`w-10 h-10 rounded-lg ${accentMap[accent]} flex items-center justify-center mb-3`}>
+        <Icon className="w-5 h-5" />
+      </div>
+      <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">{label}</p>
+      <p className="text-2xl font-extrabold text-slate-900 mt-0.5">{value}</p>
+    </div>
   );
-  return href ? <Link href={href}>{content}</Link> : content;
+  return href ? <Link href={href} className="block">{inner}</Link> : inner;
 }
 
-export default function AdminDashboard() {
-  const [stats, setStats]   = useState<AdminDashboard | null>(null);
-  const [alerts, setAlerts] = useState<AdminAlerts | null>(null);
+export default function AdminDashboardPage() {
+  const [stats, setStats]     = useState<PivotStats | null>(null);
   const [loading, setLoading] = useState(true);
-  // Count of `proposed` deals past the corp-response deadline.
-  // The notification cron also SMSes admins for each new overdue,
-  // but the in-app banner is independent and just polls the count
-  // so it's always current regardless of cron timing.
-  const [overdue, setOverdue] = useState<{ count: number; hours: number } | null>(null);
-  const [tenders, setTenders] = useState<TenderSummary | null>(null);
+  const [error, setError]     = useState('');
 
   useEffect(() => {
-    Promise.all([
-      adminApi.dashboard(),
-      adminApi.alerts(),
-      adminApi.corpResponseOverdueCount().catch(() => ({ count: 0, hours: 48 })),
-      tenderApi.adminSummary().catch(() => null),
-    ])
-      .then(([s, a, o, t]) => { setStats(s); setAlerts(a); setOverdue(o); setTenders(t); })
-      .catch(console.error)
+    apiFetch<PivotStats>('/admin/dashboard/pivot-stats')
+      .then(setStats)
+      .catch((e) => setError((e as Error).message ?? ''))
       .finally(() => setLoading(false));
   }, []);
 
-  if (loading) {
-    return (
-      <div className="space-y-4">
-        {Array.from({ length: 8 }).map((_, i) => (
-          <div key={i} className="h-24 bg-slate-200 rounded-xl animate-pulse" />
-        ))}
-      </div>
-    );
-  }
-  if (!stats) return <p className="text-red-600">שגיאה בטעינת הנתונים</p>;
-
-  const queues = stats.deal_queues;
-  const slaWarnings = alerts?.sla_warnings ?? [];
-
-  // Demand vs supply heatmap — merge both per-profession lists by code.
-  const profMap = new Map<string, { code: string; name_he: string; available: number; assigned: number; demand_qty: number; open_requests: number }>();
-  for (const w of stats.workers_by_profession) {
-    profMap.set(w.code, { ...w, demand_qty: 0, open_requests: 0 });
-  }
-  for (const d of stats.demand_by_profession) {
-    const cur = profMap.get(d.code) ?? { code: d.code, name_he: d.name_he, available: 0, assigned: 0, demand_qty: 0, open_requests: 0 };
-    cur.demand_qty    += d.demand_qty;
-    cur.open_requests += d.open_requests;
-    profMap.set(d.code, cur);
-  }
-  const profMerged = [...profMap.values()].sort((a, b) =>
-    (b.demand_qty + b.available) - (a.demand_qty + a.available),
-  );
+  if (loading) return <div className="text-center py-16"><Loader2 className="w-6 h-6 animate-spin mx-auto text-slate-400" /></div>;
+  if (error || !stats) return <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error || 'שגיאה'}</div>;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-baseline justify-between flex-wrap gap-2">
-        <h1 className="text-2xl font-bold text-slate-900">לוח בקרה</h1>
-        <p className="text-xs text-slate-400">נכון ל-{fmtDate(stats.as_of)}</p>
-      </div>
-
-      {/* Corp-response overdue banner — proposed deals past the
-          corp_response_hours deadline. SMS to admins is sent by
-          the notification cron once per deal; this banner is
-          purely informational and shows the cumulative count so
-          admin sees the load at a glance. */}
-      {overdue && overdue.count > 0 && (
-        <Card className="border-amber-300 bg-amber-50">
-          <CardContent className="pt-4 pb-4 flex items-start gap-3">
-            <div className="p-2 rounded-lg bg-amber-100 text-amber-700 shrink-0">
-              <AlertTriangle className="h-5 w-5" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-bold text-amber-900">
-                {overdue.count === 1
-                  ? 'בקשה אחת עברה את חלון התגובה'
-                  : `${overdue.count} בקשות עברו את חלון התגובה`}
-              </p>
-              <p className="text-xs text-amber-700 mt-0.5">
-                תאגיד לא הגיב לדרישת הקבלן בתוך {overdue.hours} שעות. ייתכן ויש צורך בליווי ידני.
-              </p>
-            </div>
-            <Link
-              href="/admin/deals"
-              className="inline-flex items-center gap-1 text-sm font-semibold text-amber-800 hover:text-amber-900 shrink-0"
-            >
-              עבור לעסקאות <ChevronLeft className="h-4 w-4" />
-            </Link>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* SLA WARNINGS — top of page when present */}
-      {slaWarnings.length > 0 && (
-        <Card className="border-amber-200 bg-amber-50">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base text-amber-700 flex items-center gap-2">
-              <Clock className="h-5 w-5" /> SLA בסכנה — אישורים שפגים תוך 8 שעות ({slaWarnings.length})
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {slaWarnings.map((org) => (
-              <div key={org.id} className="flex items-center justify-between p-2 bg-white rounded-md border border-amber-200">
-                <div>
-                  <p className="font-medium text-slate-900 text-sm">{org.company_name}</p>
-                  <p className="text-xs text-slate-500" dir="ltr">{org.contact_email}</p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <Badge variant="warning">{org.org_type === 'contractor' ? 'קבלן' : 'תאגיד'}</Badge>
-                  <Link href={`/admin/approvals?highlight=${org.id}`} className="text-xs text-amber-700 underline font-medium">
-                    אשר עכשיו
-                  </Link>
-                </div>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* QA-R5 — common admin shortcuts surfaced near the top so
-          they're not buried inside the sidebar. The four below cover
-          the most-frequent admin entry points: pending approvals
-          (the daily queue), gov-corps registry upload (monthly
-          import), commissions (tariff tweaks), and a new admin user
-          (rarely used but high-impact). */}
-      <div>
-        <h2 className="text-sm font-semibold text-slate-500 mb-2">פעולות מהירות</h2>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <Link
-            href="/admin/approvals"
-            className="rounded-2xl border-2 border-amber-200 bg-amber-50 hover:bg-amber-100 transition-colors p-4 flex flex-col gap-1.5"
-          >
-            <ShieldCheck className="h-5 w-5 text-amber-700" aria-hidden />
-            <p className="text-sm font-bold text-amber-900">אישור ארגונים</p>
-            <p className="text-xs text-amber-700/70">תור ההמתנה היומי</p>
-          </Link>
-          <Link
-            href="/admin/gov-corps-registry"
-            className="rounded-2xl border-2 border-slate-200 bg-white hover:bg-slate-50 transition-colors p-4 flex flex-col gap-1.5"
-          >
-            <Building2 className="h-5 w-5 text-slate-700" aria-hidden />
-            <p className="text-sm font-bold text-slate-900">העלאת רשימת תאגידים</p>
-            <p className="text-xs text-slate-500">פנקס משרד הפנים</p>
-          </Link>
-          <Link
-            href="/admin/commissions"
-            className="rounded-2xl border-2 border-slate-200 bg-white hover:bg-slate-50 transition-colors p-4 flex flex-col gap-1.5"
-          >
-            <Wallet className="h-5 w-5 text-slate-700" aria-hidden />
-            <p className="text-sm font-bold text-slate-900">עמלות ומע״מ</p>
-            <p className="text-xs text-slate-500">תעריפים ותקופות מע״מ</p>
-          </Link>
-          <Link
-            href="/admin/users"
-            className="rounded-2xl border-2 border-slate-200 bg-white hover:bg-slate-50 transition-colors p-4 flex flex-col gap-1.5"
-          >
-            <Users className="h-5 w-5 text-slate-700" aria-hidden />
-            <p className="text-sm font-bold text-slate-900">משתמשי מערכת</p>
-            <p className="text-xs text-slate-500">ניהול אדמינים והרשאות</p>
-          </Link>
-        </div>
-      </div>
-
-      {/* HIGH-LEVEL COUNTS — orgs / workers / activity */}
-      <div>
-        <h2 className="text-sm font-semibold text-slate-500 mb-2">סך הכל במערכת</h2>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <StatTile label="קבלנים"      value={stats.contractors.total}
-            sub={`${stats.contractors.approved} מאושרים · ${stats.contractors.pending} ממתינים`}
-            icon={HardHat} color="text-blue-600" href="/admin/orgs?type=contractor" />
-          <StatTile label="תאגידים"     value={stats.corporations.total}
-            sub={`${stats.corporations.approved} מאושרים · ${stats.corporations.pending} ממתינים`}
-            icon={Building2} color="text-navy-600" href="/admin/orgs?type=corporation" />
-          <StatTile label="עובדים"      value={stats.workers.total}
-            sub={`${stats.workers.available} פנויים · ${stats.workers.assigned} משובצים`}
-            icon={Users} color="text-emerald-600" />
-          <StatTile label="עסקאות בתהליך"
-            value={(queues.by_status.proposed ?? 0) + (queues.by_status.corp_committed ?? 0) + (queues.by_status.approved ?? 0)}
-            sub={`${queues.by_status.closed ?? 0} נסגרו`}
-            icon={Handshake} color="text-amber-600" href="/admin/deals" />
-        </div>
-      </div>
-
-      {/* WHO'S WAITING — pending approvals + corp_committed + approved */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-        <StatTile label="ארגונים ממתינים לאישורך"
-          value={stats.pending_approvals}
-          sub="קבלנים + תאגידים"
-          icon={Hourglass} color="text-amber-600" href="/admin/approvals" />
-        <StatTile label="עסקאות ממתינות לקבלן"
-          value={queues.waiting_for_contractor.length}
-          sub="התאגיד שלח רשימה — מחכים לאישור הקבלן"
-          icon={Hourglass} color="text-blue-600" />
-        <StatTile label="חיובים בחלון 48 שעות"
-          value={queues.waiting_for_capture.length}
-          sub="הקבלן אישר — חיוב יורד אוטומטית"
-          icon={Wallet} color="text-emerald-600" />
-      </div>
-
-      {/* FOREIGN-IMPORT REQUESTS — admin's two gates (publish + reveal) */}
-      {tenders && (
+    <div className="max-w-6xl mx-auto space-y-6">
+      <header className="flex items-baseline justify-between gap-3 flex-wrap">
         <div>
-          <h2 className="text-sm font-semibold text-slate-500 mb-2 flex items-center gap-1.5">
-            <Globe2 className="h-4 w-4 text-brand-600" /> בקשות ייבוא עובדים מחו״ל
-          </h2>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <StatTile label="ממתינות לאישור פרסום"
-              value={tenders.pending_publish}
-              sub="חדשות — אשר כדי לפרסם לתאגידים"
-              icon={Hourglass} color="text-slate-700" href="/admin/tenders" />
-            <StatTile label="בקשות קשר לאישורך"
-              value={tenders.awaiting_contact}
-              sub="הקבלן בחר — אשר וחשוף פרטים"
-              icon={ShieldCheck} color="text-amber-600" href="/admin/tenders" />
-            <StatTile label="פתוחות להצעות"
-              value={tenders.open_for_bids}
-              sub="מפורסמות — תאגידים מגישים"
-              icon={Globe2} color="text-sky-600" href="/admin/tenders" />
-            <StatTile label="בתהליך"
-              value={tenders.in_progress}
-              sub="אושרו ונחשפו"
-              icon={Handshake} color="text-emerald-600" href="/admin/tenders" />
-          </div>
+          <h1 className="text-2xl font-bold text-slate-900">לוח בקרה</h1>
+          <p className="text-xs text-slate-500">נכון ל־{new Date(stats.as_of).toLocaleString('he-IL')}</p>
         </div>
+      </header>
+
+      {stats.pending_approvals > 0 && (
+        <Link
+          href="/admin/approvals"
+          className="flex items-start gap-4 bg-amber-50 border border-amber-200 rounded-2xl p-4 hover:border-amber-300 transition"
+        >
+          <div className="w-10 h-10 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+            <ClipboardCheck className="w-5 h-5" />
+          </div>
+          <div className="flex-1">
+            <h3 className="text-base font-bold text-amber-900">{stats.pending_approvals} רישומים ממתינים לאישור</h3>
+            <p className="text-sm text-amber-800 mt-0.5">תאגידים וקבלנים חדשים ממתינים לאישור מנהל.</p>
+          </div>
+        </Link>
       )}
 
-      {/* DEAL STATUS BREAKDOWN */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base flex items-center gap-2"><Handshake className="h-4 w-4 text-slate-400" /> פירוט עסקאות לפי סטטוס</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {DEAL_STATUS_CODES.map((code) => {
-              const { label, variant } = resolveStatus(code, 'admin');
-              // Tile colours match the variant — paint the tile with
-              // the same colour story as the status badge would.
-              const tileTone =
-                variant === 'sky'         ? 'bg-sky-50 border-sky-200 text-sky-900' :
-                variant === 'yellow'      ? 'bg-yellow-50 border-yellow-200 text-yellow-900' :
-                variant === 'orange'      ? 'bg-orange-50 border-orange-200 text-orange-900' :
-                variant === 'success'     ? 'bg-emerald-50 border-emerald-200 text-emerald-900' :
-                variant === 'destructive' ? 'bg-red-50 border-red-200 text-red-900' :
-                                            'bg-slate-50 border-slate-200 text-slate-800';
-              return (
-                <div key={code} className={`p-3 rounded-md border ${tileTone}`}>
-                  <p className="text-xs opacity-70">{label}</p>
-                  <p className="text-2xl font-bold mt-0.5">{queues.by_status[code] ?? 0}</p>
-                </div>
-              );
-            })}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* TWO QUEUES — waiting_for_contractor + waiting_for_capture */}
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
-        <QueueCard
-          title="ממתינים לאישור הקבלן"
-          subtitle="התאגיד שלח רשימת עובדים — דחוף אם > 24 שעות"
-          rows={queues.waiting_for_contractor.map((d) => ({
-            id: d.id,
-            primary: `${d.worker_count} עובדים`,
-            secondary: `${d.hours_waiting ?? 0} שעות במתנה`,
-            tertiary: `פג: ${fmtDate(d.expires_at)}`,
-            urgent: (d.hours_waiting ?? 0) > 24,
-          }))}
-        />
-        <QueueCard
-          title="ממתינים לחיוב אוטומטי"
-          subtitle="הקבלן אישר — חיוב כשהזמן יגיע (אלא אם התאגיד יבטל)"
-          rows={queues.waiting_for_capture.map((d) => ({
-            id: d.id,
-            primary: `₪${(d.commission_amount ?? 0).toLocaleString('he-IL')}`,
-            secondary: `${Math.max(d.hours_until_capture ?? 0, 0)} שעות עד חיוב`,
-            tertiary: `${d.worker_count} עובדים`,
-            urgent: (d.hours_until_capture ?? 0) <= 6,
-          }))}
-        />
+      <div>
+        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">שוק</p>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <Tile icon={Building2}  label="תאגידים פעילים"    value={stats.active_corps}       href="/admin/orgs" />
+          <Tile icon={HardHat}    label="קבלנים פעילים"    value={stats.active_contractors} href="/admin/orgs" />
+          <Tile icon={Megaphone}  label="מודעות עובדים"    value={stats.ads.worker}         href="/admin/ads?ad_type=worker"  accent="emerald" />
+          <Tile icon={Megaphone}  label="מודעות דיור"      value={stats.ads.housing}        href="/admin/ads?ad_type=housing" accent="emerald" />
+        </div>
       </div>
 
-      {/* DEMAND vs SUPPLY by profession */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base flex items-center gap-2"><TrendingUp className="h-4 w-4 text-slate-400" /> ביקוש מול היצע לפי מקצוע</CardTitle>
-          <CardDescription>שורות באדום: יש ביקוש אבל אין עובדים פנויים</CardDescription>
-        </CardHeader>
-        <CardContent className="p-0">
-          {profMerged.length === 0 ? (
-            <EmptyState
-              icon={BarChart3}
-              title="אין נתונים על מקצועות"
-              description="כשיגיעו דרישות לעובדים, יוצג כאן ביקוש מול היצע לפי מקצוע."
-            />
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-100 text-slate-500 text-xs">
-                    <th className="px-3 py-2 text-start font-medium">מקצוע</th>
-                    <th className="px-3 py-2 text-start font-medium">פנויים</th>
-                    <th className="px-3 py-2 text-start font-medium">משובצים</th>
-                    <th className="px-3 py-2 text-start font-medium">ביקוש פתוח</th>
-                    <th className="px-3 py-2 text-start font-medium">פערים</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {profMerged.map((p) => {
-                    const gap = p.demand_qty - p.available;
-                    const cls = gap > 0 ? 'bg-red-50' : (p.demand_qty === 0 && p.available > 0) ? 'bg-amber-50/40' : '';
-                    return (
-                      <tr key={p.code} className={`border-b border-slate-50 last:border-0 ${cls}`}>
-                        <td className="px-3 py-2 text-slate-800 font-medium">{p.name_he || p.code}</td>
-                        <td className="px-3 py-2 text-emerald-700">{p.available}</td>
-                        <td className="px-3 py-2 text-slate-600">{p.assigned}</td>
-                        <td className="px-3 py-2 text-blue-700">{p.demand_qty}{p.open_requests > 0 && <span className="text-xs text-slate-400 ms-1">({p.open_requests} בקשות)</span>}</td>
-                        <td className="px-3 py-2">
-                          {gap > 0
-                            ? <span className="text-red-600 font-semibold">חסרים {gap}</span>
-                            : p.demand_qty === 0 && p.available > 0
-                              ? <span className="text-amber-600">{p.available} ללא ביקוש</span>
-                              : <span className="text-emerald-600">מאוזן</span>}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* IDLE WORKERS — professions with availability but zero demand */}
-      {stats.idle_professions.length > 0 && (
-        <Card className="border-amber-200 bg-amber-50/30">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base text-amber-800 flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4" />
-              עובדים פנויים ללא ביקוש פתוח
-            </CardTitle>
-            <CardDescription>{stats.idle_professions.length} מקצועות — שווה לחפש קבלנים שיכולים להעסיק אותם</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-wrap gap-2">
-              {stats.idle_professions.map((p) => (
-                <span key={p.code} className="inline-flex items-center gap-2 bg-white border border-amber-200 rounded-full px-3 py-1 text-sm">
-                  <span className="font-medium">{p.name_he || p.code}</span>
-                  <span className="text-amber-700 font-semibold">{p.available} פנויים</span>
-                </span>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* All clear */}
-      {slaWarnings.length === 0 && stats.pending_approvals === 0 && queues.waiting_for_contractor.length === 0 && (
-        <Card className="border-emerald-200 bg-emerald-50">
-          <CardContent className="py-4 text-center text-emerald-700 font-medium">
-            ✓ אין ארגונים ממתינים, אין עסקאות תקועות
-          </CardContent>
-        </Card>
-      )}
+      <div>
+        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">מנויים ושימוש</p>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <Tile icon={Clock}       label="ניסיונות שפגים ב-7 ימים"   value={stats.trials_expiring_7d} href="/admin/subscriptions?status=trialing" accent="amber" />
+          <Tile icon={Eye}         label="חשיפות בחודש הנוכחי"        value={stats.reveals_this_month} accent="emerald" />
+          <Tile icon={CreditCard}  label="מנויים בסיסי"                value={stats.subs_by_tier['basic']    ?? 0} href="/admin/subscriptions?tier=basic" />
+          <Tile icon={CreditCard}  label="מנויים מתקדם + פרו"          value={(stats.subs_by_tier['advanced'] ?? 0) + (stats.subs_by_tier['pro'] ?? 0)} href="/admin/subscriptions" accent="emerald" />
+        </div>
+      </div>
     </div>
-  );
-}
-
-
-// ─────────────────────────────────────────────────────────────────────────
-// QueueCard — used for the two waiting-for queues
-// ─────────────────────────────────────────────────────────────────────────
-
-function QueueCard({ title, subtitle, rows }: {
-  title: string;
-  subtitle: string;
-  rows: Array<{ id: string; primary: string; secondary: string; tertiary: string; urgent?: boolean }>;
-}) {
-  return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="text-base">{title}</CardTitle>
-        <CardDescription>{subtitle}</CardDescription>
-      </CardHeader>
-      <CardContent className="p-0">
-        {rows.length === 0 ? (
-          <EmptyState icon={Inbox} title="התור ריק" description="אין רישומים שדורשים מעקב כרגע." />
-        ) : (
-          <div className="divide-y divide-slate-100 max-h-72 overflow-y-auto">
-            {rows.map((r) => (
-              <Link key={r.id} href={`/admin/deals/${r.id}`}
-                className={`block px-4 py-2.5 hover:bg-slate-50 ${r.urgent ? 'bg-red-50/60' : ''}`}>
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <span className="font-mono text-xs text-slate-400">#{r.id.slice(0, 8)}</span>
-                    <span className="font-semibold text-slate-800 text-sm">{r.primary}</span>
-                  </div>
-                  <div className="flex items-center gap-3 text-xs">
-                    <span className={r.urgent ? 'text-red-600 font-semibold' : 'text-slate-500'}>{r.secondary}</span>
-                    <span className="text-slate-400">{r.tertiary}</span>
-                    <ChevronLeft className="h-3 w-3 text-slate-300" />
-                  </div>
-                </div>
-              </Link>
-            ))}
-          </div>
-        )}
-      </CardContent>
-    </Card>
   );
 }
