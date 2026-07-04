@@ -23,6 +23,13 @@ const navItems = [
     icon: Megaphone,
   },
   {
+    // Pivot/v2 — tender flow kept + renamed. Corps bid on foreign-worker
+    // import requests contractors post. Same underlying /tenders backend.
+    label: 'בקשות ייבוא עובדים מחו״ל',
+    href: '/corporation/tenders',
+    icon: Globe2,
+  },
+  {
     label: 'צוות התאגיד',
     href: '/corporation/users',
     icon: UserCog,
