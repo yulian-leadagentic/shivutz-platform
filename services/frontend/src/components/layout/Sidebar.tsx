@@ -35,7 +35,6 @@ const CONTRACTOR_NAV: NavItem[] = [
   { label: 'לוח בקרה',                 href: '/contractor/dashboard', icon: LayoutDashboard },
   { label: 'חיפוש',                    href: '/',                     icon: Search },
   { label: 'בקשות ייבוא עובדים מחו״ל', href: '/contractor/tenders',   icon: Globe2 },
-  { label: 'צוות',                     href: '/contractor/users',     icon: Users },
   { label: 'מסמכים',                   href: '/contractor/documents', icon: FileText },
   { label: 'חשבון ומנוי',              href: '/billing',              icon: CreditCard },
 ];

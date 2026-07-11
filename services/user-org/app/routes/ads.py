@@ -123,7 +123,7 @@ def create_ad(
         raise HTTPException(status_code=503, detail="entitlement_service_unreachable")
     if not ent["entitled"]:
         raise HTTPException(status_code=402, detail={"code": "subscription_required", "tier": ent["tier"], "status": ent["status"]})
-    limits = tier_limits(ent["tier"])
+    limits = tier_limits(ent["tier"], "corporation")
     if limits["active_ads"] is not None:
         _conn = get_db()
         try:
@@ -199,7 +199,7 @@ def usage(
         ent = fetch_entitlement(x_entity_id, x_entity_type)
     except httpx.HTTPError:
         raise HTTPException(status_code=503, detail="entitlement_service_unreachable")
-    limits = tier_limits(ent["tier"])
+    limits = tier_limits(ent["tier"], "corporation")
 
     conn = get_db()
     try:
@@ -514,7 +514,7 @@ def contact_reveal(
         })
 
     # 1b. Monthly reveal quota — enforced only if tier has a cap.
-    limits = tier_limits(ent["tier"])
+    limits = tier_limits(ent["tier"], "corporation")
     if limits["reveals_per_month"] is not None:
         _conn = get_db()
         try:
@@ -590,7 +590,7 @@ def boost_ad(
         raise HTTPException(status_code=503, detail="entitlement_service_unreachable")
     if not ent["entitled"]:
         raise HTTPException(status_code=402, detail={"code": "subscription_required", "tier": ent["tier"], "status": ent["status"]})
-    if not tier_limits(ent["tier"])["can_boost"]:
+    if not tier_limits(ent["tier"], "corporation")["can_boost"]:
         raise HTTPException(status_code=402, detail={
             "code": "tier_boost_not_allowed", "tier": ent["tier"],
             "message": "שדרג ל'מתקדם' או 'פרו' כדי לקדם מודעות",
