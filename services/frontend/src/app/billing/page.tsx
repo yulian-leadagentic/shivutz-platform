@@ -10,33 +10,32 @@
 // window.location to it here.
 
 import { useEffect, useState } from 'react';
-import { Loader2, Check, Sparkles } from 'lucide-react';
+import { Loader2, Check, Sparkles, Users as UsersIcon, Trash2, Plus } from 'lucide-react';
 import {
   subscriptionApi,
   type SubscriptionRow,
   type SubscriptionTier,
 } from '@/lib/api/payments';
 import { adApi, type UsageResponse } from '@/lib/api/ads';
+import { memberApi, type TeamMember } from '@/lib/api/members';
+import { useAuth } from '@/lib/AuthContext';
 
-const TIERS: { code: SubscriptionTier; title: string; tagline: string; features: string[] }[] = [
-  {
-    code: 'basic',
-    title: 'בסיסי',
-    tagline: 'התחלה זריזה',
-    features: ['חיפוש בסיסי', 'חשיפת פרטי קשר מוגבלת', '3 מודעות פעילות'],
-  },
-  {
-    code: 'advanced',
-    title: 'מתקדם',
-    tagline: 'לעובדים בקצב גבוה',
-    features: ['חיפושים נרחבים', 'חשיפת קשר מורחבת', '15 מודעות פעילות'],
-  },
-  {
-    code: 'pro',
-    title: 'פרו',
-    tagline: 'ללא הגבלות',
-    features: ['חיפוש ללא הגבלה', 'חשיפת קשר ללא הגבלה', 'מודעות ללא הגבלה + קידום'],
-  },
+// Static tier taglines; the actual limits are pulled live from the
+// subscription_plans table via /admin/subscription-plans (via the
+// /subscriptions/me endpoint), so the numbers stay in sync when the
+// admin edits them.
+// Contractor tiers — no "active ads" (contractors don't publish).
+// Numbers here are the seed defaults; admin can edit them via
+// /admin/subscription-plans and the live limits render below.
+const CONTRACTOR_TIERS: { code: SubscriptionTier; title: string; tagline: string; features: string[] }[] = [
+  { code: 'basic',    title: 'בסיסי',   tagline: 'התחלה קלה',              features: ['משתמש אחד',          'עד 10 חשיפות פרטי קשר בחודש']  },
+  { code: 'advanced', title: 'מתקדם',   tagline: 'לצוותים בקצב עבודה',    features: ['עד 3 משתמשים',        'עד 40 חשיפות בחודש']            },
+  { code: 'pro',      title: 'פרו',     tagline: 'לפעילות רחבה',          features: ['עד 10 משתמשים',       'עד 120 חשיפות בחודש']           },
+];
+const CORP_TIERS: { code: SubscriptionTier; title: string; tagline: string; features: string[] }[] = [
+  { code: 'basic',    title: 'בסיסי',   tagline: 'התחלה זריזה',            features: ['3 מודעות פעילות', 'ללא קידום'] },
+  { code: 'advanced', title: 'מתקדם',   tagline: 'לתאגידים פעילים',        features: ['15 מודעות פעילות', 'קידום מודעות'] },
+  { code: 'pro',      title: 'פרו',     tagline: 'ללא הגבלות',              features: ['מודעות ללא הגבלה', 'קידום ללא הגבלה'] },
 ];
 
 const STATUS_LABEL: Record<string, string> = {
@@ -55,11 +54,20 @@ function daysUntil(iso: string | null): number | null {
 }
 
 export default function BillingPage() {
+  const { entityId, entityType } = useAuth();
+  const isContractor = entityType === 'contractor';
+  const TIERS = isContractor ? CONTRACTOR_TIERS : CORP_TIERS;
+
   const [sub, setSub]         = useState<SubscriptionRow | null>(null);
   const [usage, setUsage]     = useState<UsageResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [busyTier, setBusy]   = useState<SubscriptionTier | null>(null);
   const [error, setError]     = useState<string>('');
+
+  // Team-members merge (contractor-only). Corp still has /corporation/users.
+  const [members, setMembers]   = useState<TeamMember[]>([]);
+  const [newPhone, setNewPhone] = useState('');
+  const [busyMem, setBusyMem]   = useState<string | null>(null);
 
   async function refresh() {
     setLoading(true);
@@ -71,6 +79,11 @@ export default function BillingPage() {
       ]);
       setSub(row);
       setUsage(u);
+      if (isContractor && entityId) {
+        memberApi.list('contractors', entityId)
+          .then(setMembers)
+          .catch(() => setMembers([]));
+      }
     } catch (e) {
       setError((e as Error).message ?? 'שגיאה בטעינת המנוי');
     } finally {
@@ -78,7 +91,33 @@ export default function BillingPage() {
     }
   }
 
-  useEffect(() => { refresh(); }, []);
+  useEffect(() => { refresh(); }, [isContractor, entityId]);
+
+  async function addMember() {
+    if (!entityId || !isContractor) return;
+    const phone = newPhone.trim();
+    if (phone.length < 9) { setError('מספר טלפון לא תקין'); return; }
+    setBusyMem('add');
+    setError('');
+    try {
+      await memberApi.invite('contractors', entityId, { phone, role: 'member' });
+      setNewPhone('');
+      const next = await memberApi.list('contractors', entityId);
+      setMembers(next);
+    } catch (e) { setError((e as Error).message ?? 'שגיאה בהוספה'); }
+    finally { setBusyMem(null); }
+  }
+
+  async function removeMember(m: TeamMember) {
+    if (!entityId || !isContractor) return;
+    if (!confirm(`להסיר משתמש: ${m.full_name || m.phone}?`)) return;
+    setBusyMem(m.membership_id);
+    try {
+      await memberApi.remove('contractors', entityId, m.membership_id);
+      setMembers((rows) => rows.filter((r) => r.membership_id !== m.membership_id));
+    } catch (e) { setError((e as Error).message ?? 'שגיאה בהסרה'); }
+    finally { setBusyMem(null); }
+  }
 
   async function upgrade(tier: SubscriptionTier) {
     setBusy(tier);
@@ -135,7 +174,8 @@ export default function BillingPage() {
           </div>
         </div>
 
-        {/* Usage vs limits (Phase 5) */}
+        {/* Usage vs limits — contractor sees reveals + user seats,
+             corp sees reveals + active ads. */}
         {usage && (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-slate-100">
             <div>
@@ -144,15 +184,82 @@ export default function BillingPage() {
                 {usage.usage.reveals_this_month} / {usage.limits.reveals_per_month ?? '∞'}
               </p>
             </div>
-            <div>
-              <p className="text-xs text-slate-500">מודעות פעילות</p>
-              <p className="text-base font-bold text-slate-900">
-                {usage.usage.active_ads} / {usage.limits.active_ads ?? '∞'}
-              </p>
-            </div>
+            {isContractor ? (
+              <div>
+                <p className="text-xs text-slate-500">משתמשים במנוי</p>
+                <p className="text-base font-bold text-slate-900">
+                  {members.filter(m => m.is_active !== false).length} / {(usage.limits as unknown as { max_users?: number | null }).max_users ?? '∞'}
+                </p>
+              </div>
+            ) : (
+              <div>
+                <p className="text-xs text-slate-500">מודעות פעילות</p>
+                <p className="text-base font-bold text-slate-900">
+                  {usage.usage.active_ads} / {usage.limits.active_ads ?? '∞'}
+                </p>
+              </div>
+            )}
           </div>
         )}
       </section>
+
+      {/* Contractor-only: team-member phone list (merged from /contractor/users) */}
+      {isContractor && (
+        <section className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-3">
+          <div className="flex items-baseline justify-between gap-3">
+            <div>
+              <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <UsersIcon className="w-4 h-4 text-brand-600" /> משתמשים מורשים
+              </h2>
+              <p className="text-xs text-slate-500">משתמשים שיוכלו להתחבר לחשבון הקבלן בטלפון שלהם</p>
+            </div>
+          </div>
+
+          {members.length === 0 ? (
+            <p className="text-sm text-slate-500">עדיין לא הוספת משתמשים</p>
+          ) : (
+            <ul className="divide-y divide-slate-100">
+              {members.map((m) => (
+                <li key={m.membership_id} className="py-2 flex items-center gap-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-slate-900 truncate">
+                      {m.full_name || ((m.invited_first_name || '') + ' ' + (m.invited_last_name || '')).trim() || m.phone || '—'}
+                    </p>
+                    <p className="text-xs text-slate-500">{m.phone || '—'}{m.pending ? ' · ממתין' : ''}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => removeMember(m)}
+                    disabled={busyMem === m.membership_id}
+                    className="inline-flex items-center gap-1 text-xs text-red-700 hover:bg-red-50 px-2 py-1 rounded disabled:opacity-50"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" /> הסר
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <div className="pt-2 border-t border-slate-100 flex items-center gap-2">
+            <input
+              type="tel"
+              value={newPhone}
+              onChange={(e) => setNewPhone(e.target.value)}
+              placeholder="הוסף מספר טלפון"
+              className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
+            />
+            <button
+              type="button"
+              onClick={addMember}
+              disabled={busyMem !== null || newPhone.trim().length < 9}
+              className="bg-brand-600 hover:bg-brand-500 text-white text-sm font-semibold px-4 py-2 rounded-lg disabled:bg-slate-300 inline-flex items-center gap-1.5"
+            >
+              {busyMem === 'add' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+              הוסף
+            </button>
+          </div>
+        </section>
+      )}
 
       {error && (
         <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
