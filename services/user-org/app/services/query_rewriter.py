@@ -1,22 +1,25 @@
-"""Pivot/v2 Phase 3 — free-text → structured query.
+"""Pivot/v2 — free-text → structured query.
 
-Two modes, switched by env var LLM_REWRITER_FAKE_MODE:
-  fake (default) — regex/keyword extractor. No external dependency.
-  real           — Anthropic Claude Haiku call. Requires ANTHROPIC_API_KEY.
+Modes:
+  fake — regex/keyword extractor. Zero external deps.
+  real — Claude Haiku via Anthropic API. Requires ANTHROPIC_API_KEY.
 
-Fake mode is good enough for Hebrew test queries like
-"מחפש 4 פועלים סינים לריצוף" or "מחפש מקום לינה ל-4 פועלים מסין באזור המרכז".
-Phase 5 layers vector rerank on top; this stays as the prefilter.
+Auto-selection: real mode fires when ANTHROPIC_API_KEY is set AND
+LLM_REWRITER_FAKE_MODE is not '1'. Falls back to fake if the API call
+raises or returns unparseable JSON — search is never blocked by an LLM
+outage.
 
-The map dictionaries here are intentionally small + local. As we see
-real-world queries, expand them (or flip to real LLM mode for
-robustness).
+Real-mode results are cached in Redis for 5 minutes (key = sha256 of
+the raw query) so repeated searches don't re-bill.
 """
+import hashlib
+import json
 import os
 import re
 from typing import Optional
 
 FAKE_MODE = os.getenv("LLM_REWRITER_FAKE_MODE", "1") == "1"
+CACHE_TTL_S = int(os.getenv("LLM_REWRITER_CACHE_TTL", "300"))
 
 # Profession keyword → code. Match by substring (Hebrew morphology is
 # rich, so partial matches catch noun/verb forms). Codes are the values
@@ -35,11 +38,10 @@ PROFESSION_KEYWORDS: dict[str, str] = {
     "פועל":  "GENERAL",    "פועלים":"GENERAL",
 }
 
-# Origin keyword → ISO-2 code. Singular + plural / nationalized form.
 ORIGIN_KEYWORDS: dict[str, str] = {
     "סין":   "CN", "סיני":  "CN", "סינים":  "CN", "סינית": "CN",
-    "אוקראינ":"UA",                 # אוקראינים / אוקראיני / אוקראינה
-    "מולדוב":"MD",                  # מולדבים / מולדובה / מולדבי
+    "אוקראינ":"UA",
+    "מולדוב":"MD",
     "תאיל":   "TH",
     "פיליפ":  "PH",
     "הודו":   "IN",  "הודי":  "IN", "הודים":  "IN",
@@ -48,7 +50,6 @@ ORIGIN_KEYWORDS: dict[str, str] = {
     "טורקי":  "TR",
 }
 
-# Region keyword → region code (matches org_db.regions).
 REGION_KEYWORDS: dict[str, str] = {
     "מרכז":     "CENTER",
     "צפון":     "NORTH",
@@ -62,7 +63,6 @@ HOUSING_KEYWORDS = ("לינה", "דיור", "מקום ל", "מגורים", "די
 
 
 def _quantity(text: str) -> Optional[int]:
-    """First integer in the text. '4 פועלים' → 4."""
     m = re.search(r"\d+", text)
     return int(m.group(0)) if m else None
 
@@ -74,14 +74,6 @@ def _first_match(text: str, table: dict[str, str]) -> Optional[str]:
     return None
 
 
-def _all_matches(text: str, table: dict[str, str]) -> list[str]:
-    seen: list[str] = []
-    for k, v in table.items():
-        if k in text and v not in seen:
-            seen.append(v)
-    return seen
-
-
 def _ad_type(text: str) -> str:
     if any(w in text for w in HOUSING_KEYWORDS):
         return "housing"
@@ -91,8 +83,6 @@ def _ad_type(text: str) -> str:
 # ─── Fake mode ─────────────────────────────────────────────────────────────
 
 def rewrite_fake(query: str) -> dict:
-    """Regex-based extractor — good enough for the demo queries from the
-    pivot brief. Returns the same shape the real LLM mode does."""
     text = query.strip()
     ad_type        = _ad_type(text)
     quantity       = _quantity(text)
@@ -105,23 +95,76 @@ def rewrite_fake(query: str) -> dict:
         "origin_country": origin_country,
         "region":         region,
         "quantity":       quantity,
-        "canonical_query": text,   # passed through; Phase 5 will use this for embedding
+        "canonical_query": text,
     }
 
 
-# ─── Real mode (stub — wires up when ANTHROPIC_API_KEY exists) ──────────────
+# ─── Redis cache ────────────────────────────────────────────────────────────
 
-ANTHROPIC_MODEL = "claude-haiku-4-5-20251001"
+_redis = None
+def _redis_client():
+    global _redis
+    if _redis is not None:
+        return _redis
+    try:
+        import redis
+        url = os.getenv("REDIS_URL", "redis://redis:6379")
+        _redis = redis.from_url(url, decode_responses=True, socket_timeout=1.0)
+        _redis.ping()
+    except Exception:
+        _redis = False  # sentinel — never retry within this process
+    return _redis or None
+
+
+def _cache_key(prefix: str, query: str) -> str:
+    h = hashlib.sha256(query.strip().encode("utf-8")).hexdigest()[:24]
+    return f"{prefix}:{h}"
+
+
+# ─── Real mode ──────────────────────────────────────────────────────────────
+
+ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001")
+
+
+def _extract_json(text: str) -> Optional[dict]:
+    """Parse a JSON object out of an LLM response — strips ```json fences
+    and stray prose. Returns None if we can't find a valid object."""
+    if not text:
+        return None
+    # Strip common ```json ... ``` fences
+    stripped = re.sub(r"^```(?:json)?\s*", "", text.strip(), flags=re.IGNORECASE)
+    stripped = re.sub(r"\s*```$", "", stripped)
+    try:
+        return json.loads(stripped)
+    except json.JSONDecodeError:
+        pass
+    # Fall back to grabbing the outermost {...} block
+    m = re.search(r"\{[\s\S]*\}", text)
+    if not m:
+        return None
+    try:
+        return json.loads(m.group(0))
+    except json.JSONDecodeError:
+        return None
+
 
 def rewrite_real(query: str) -> dict:
-    """Anthropic Claude Haiku call. Returns the same dict shape as the
-    fake mode. Falls back to fake mode if the API call fails so search
-    is never completely broken by an LLM outage."""
+    """Anthropic Claude Haiku call. Redis-cached (5min). Silently falls
+    back to fake mode on any error — search must never break on LLM
+    outage."""
+    r = _redis_client()
+    cache_key = _cache_key("qrewrite", query)
+    if r:
+        try:
+            cached = r.get(cache_key)
+            if cached:
+                return json.loads(cached)
+        except Exception:
+            pass
+
     try:
         from anthropic import Anthropic
     except ImportError:
-        # `anthropic` not installed — silently degrade. Add the package
-        # to user-org requirements before flipping LLM_REWRITER_FAKE_MODE=0.
         return rewrite_fake(query)
 
     api_key = os.getenv("ANTHROPIC_API_KEY")
@@ -131,24 +174,41 @@ def rewrite_real(query: str) -> dict:
     client = Anthropic(api_key=api_key)
     system = (
         "You translate a Hebrew construction-marketplace query into a structured filter. "
-        "Return ONLY a JSON object with keys: ad_type ('worker'|'housing'), "
-        "profession_code (one of TILER/WELDER/ELECTRICIAN/PAINTER/PLUMBER/PLASTERER/"
-        "CARPENTER/STEELWORKER/DRYWALL/BLOCKLAYER/GENERAL or null), "
-        "origin_country (ISO-2 like CN/UA/MD/TH/PH/IN/UZ/ER/TR or null), "
-        "region (CENTER/NORTH/SOUTH/JLM/SHEFELA/SHARON or null), "
-        "quantity (integer or null), canonical_query (the user's request, lightly normalised). "
-        "Output ONLY JSON, no prose, no markdown fences."
+        "Return ONLY a JSON object with keys: "
+        "ad_type ('worker'|'housing'), "
+        "profession_code (one of TILER, WELDER, ELECTRICIAN, PAINTER, PLUMBER, "
+        "PLASTERER, CARPENTER, STEELWORKER, DRYWALL, BLOCKLAYER, GENERAL or null), "
+        "origin_country (ISO-2 like CN, UA, MD, TH, PH, IN, UZ, ER, TR or null), "
+        "region (CENTER, NORTH, SOUTH, JLM, SHEFELA, SHARON or null), "
+        "quantity (integer or null), "
+        "canonical_query (the user's request, lightly normalised). "
+        "Output ONLY the JSON object — no prose, no markdown fences, no code blocks."
     )
     try:
         resp = client.messages.create(
             model=ANTHROPIC_MODEL,
-            max_tokens=200,
+            max_tokens=300,
             system=system,
             messages=[{"role": "user", "content": query}],
         )
-        import json
-        text = resp.content[0].text.strip()
-        return json.loads(text)
+        text = resp.content[0].text
+        parsed = _extract_json(text)
+        if not parsed or not isinstance(parsed, dict):
+            return rewrite_fake(query)
+
+        # Normalise shape — the LLM might miss a field or two.
+        fake = rewrite_fake(query)
+        merged = {**fake, **{k: v for k, v in parsed.items() if v is not None}}
+        # Guardrail: ad_type must be one of the two values.
+        if merged.get("ad_type") not in ("worker", "housing"):
+            merged["ad_type"] = fake["ad_type"]
+
+        if r:
+            try:
+                r.setex(cache_key, CACHE_TTL_S, json.dumps(merged, ensure_ascii=False))
+            except Exception:
+                pass
+        return merged
     except Exception:
         return rewrite_fake(query)
 
