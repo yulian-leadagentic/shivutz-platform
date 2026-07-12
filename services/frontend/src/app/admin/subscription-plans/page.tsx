@@ -16,6 +16,8 @@ interface Plan {
   max_users:              number | null;
   max_reveals_per_month:  number | null;
   max_active_ads:         number | null;
+  max_ad_lifetime_days:   number | null;
+  monthly_price_nis:      number | null;
   can_boost:              boolean;
   trial_days_default:     number;
   cardcom_plan_code:      string | null;
@@ -29,6 +31,8 @@ interface Draft {
   max_users:             string;   // "" = unlimited
   max_reveals_per_month: string;
   max_active_ads:        string;
+  max_ad_lifetime_days:  string;
+  monthly_price_nis:     string;
   can_boost:             boolean;
   trial_days_default:    string;
 }
@@ -38,6 +42,8 @@ function toDraft(p: Plan): Draft {
     max_users:             p.max_users             == null ? '' : String(p.max_users),
     max_reveals_per_month: p.max_reveals_per_month == null ? '' : String(p.max_reveals_per_month),
     max_active_ads:        p.max_active_ads        == null ? '' : String(p.max_active_ads),
+    max_ad_lifetime_days:  p.max_ad_lifetime_days  == null ? '' : String(p.max_ad_lifetime_days),
+    monthly_price_nis:     p.monthly_price_nis     == null ? '' : String(p.monthly_price_nis),
     can_boost:             p.can_boost,
     trial_days_default:    String(p.trial_days_default),
   };
@@ -79,19 +85,23 @@ export default function SubscriptionPlansPage() {
       const n = parseInt(t, 10);
       return Number.isFinite(n) && n >= 0 ? { value: n } : { unlimited: true };
     };
-    const users   = parseCap(d.max_users);
-    const reveals = parseCap(d.max_reveals_per_month);
-    const ads     = parseCap(d.max_active_ads);
+    const users     = parseCap(d.max_users);
+    const reveals   = parseCap(d.max_reveals_per_month);
+    const ads       = parseCap(d.max_active_ads);
+    const lifetime  = parseCap(d.max_ad_lifetime_days);
     const trialDays = parseInt(d.trial_days_default.trim() || '14', 10);
+    const price     = d.monthly_price_nis.trim() === '' ? null : parseInt(d.monthly_price_nis, 10);
 
     const body: Record<string, unknown> = {
-      can_boost: d.can_boost,
+      can_boost:          d.can_boost,
       trial_days_default: trialDays,
     };
+    if (price !== null && Number.isFinite(price)) body.monthly_price_nis = price;
     const unlimited: string[] = [];
-    if (users.unlimited)   unlimited.push('max_users');            else body.max_users             = users.value;
-    if (reveals.unlimited) unlimited.push('max_reveals_per_month'); else body.max_reveals_per_month = reveals.value;
-    if (ads.unlimited)     unlimited.push('max_active_ads');        else body.max_active_ads        = ads.value;
+    if (users.unlimited)    unlimited.push('max_users');             else body.max_users             = users.value;
+    if (reveals.unlimited)  unlimited.push('max_reveals_per_month'); else body.max_reveals_per_month = reveals.value;
+    if (ads.unlimited)      unlimited.push('max_active_ads');        else body.max_active_ads        = ads.value;
+    if (lifetime.unlimited) unlimited.push('max_ad_lifetime_days');  else body.max_ad_lifetime_days  = lifetime.value;
     if (unlimited.length) body.unlimited = unlimited;
 
     try {
@@ -154,12 +164,26 @@ export default function SubscriptionPlansPage() {
                       />
                     )}
                     {!isContractor && (
-                      <Field
-                        label="מודעות פעילות מקסימום"
-                        value={d.max_active_ads}
-                        onChange={(v) => updateDraft(p.id, { max_active_ads: v })}
-                      />
+                      <>
+                        <Field
+                          label="מודעות פעילות מקסימום"
+                          value={d.max_active_ads}
+                          onChange={(v) => updateDraft(p.id, { max_active_ads: v })}
+                        />
+                        <Field
+                          label="ימי חיים מקסימלי למודעה"
+                          value={d.max_ad_lifetime_days}
+                          onChange={(v) => updateDraft(p.id, { max_ad_lifetime_days: v })}
+                        />
+                      </>
                     )}
+
+                    <Field
+                      label="מחיר חודשי (₪)"
+                      value={d.monthly_price_nis}
+                      onChange={(v) => updateDraft(p.id, { monthly_price_nis: v })}
+                      hideUnlimited
+                    />
 
                     <Field
                       label="ימי ניסיון ברירת מחדל"

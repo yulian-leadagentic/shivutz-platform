@@ -10,6 +10,7 @@ from app.services import rate_limit
 from app.services import notification_recipients as notif_recipients
 from app.services import team_membership as team_mgmt
 from app.services import membership_requests as mreq
+from app.services.subscription_limits import fetch_entitlement, tier_limits
 from app.integrations import data_gov_il
 from app.integrations.israeli_id import is_valid_israeli_id
 
@@ -563,6 +564,34 @@ async def invite_corporation_user(
         org = cur.fetchone()
         if not org:
             raise HTTPException(status_code=404, detail="Corporation not found")
+
+        # Pivot/v2 seat gate — mirrors contractor invite. See ADR in
+        # services/user-org/app/services/subscription_limits.py.
+        try:
+            ent = fetch_entitlement(org_id, "corporation")
+        except httpx.HTTPError:
+            raise HTTPException(status_code=503, detail="entitlement_service_unreachable")
+        max_users = tier_limits(ent["tier"], "corporation").get("max_users")
+        if max_users is not None:
+            cur.execute(
+                """SELECT COUNT(*) AS n
+                     FROM auth_db.entity_memberships
+                    WHERE entity_type='corporation'
+                      AND entity_id=%s
+                      AND (is_active=TRUE OR invitation_accepted_at IS NULL)""",
+                (org_id,),
+            )
+            used = int(cur.fetchone()["n"])
+            if used >= max_users:
+                raise HTTPException(
+                    status_code=402,
+                    detail={
+                        "code":  "seat_limit",
+                        "tier":  ent["tier"],
+                        "used":  used,
+                        "limit": max_users,
+                    },
+                )
 
         invite_token    = secrets.token_urlsafe(32)
         membership_id   = str(uuid.uuid4())

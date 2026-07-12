@@ -122,7 +122,12 @@ export default function CorporationUsersPage() {
       setSuccess('ההזמנה נשלחה ב-SMS / WhatsApp');
       setTimeout(() => setSuccess(''), 4000);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'שגיאה');
+      const msg = err instanceof Error ? err.message : '';
+      if (/seat_limit/i.test(msg)) {
+        setError('הגעת לתקרת המשתמשים במסלול הנוכחי — שדרג כדי להוסיף עוד.');
+      } else {
+        setError(msg || 'שגיאה');
+      }
     } finally { setSaving(false); }
   }
 
