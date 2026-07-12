@@ -104,7 +104,14 @@ export default function BillingPage() {
       setNewPhone('');
       const next = await memberApi.list('contractors', entityId);
       setMembers(next);
-    } catch (e) { setError((e as Error).message ?? 'שגיאה בהוספה'); }
+    } catch (e) {
+      const msg = (e as Error).message ?? '';
+      if (/seat_limit/i.test(msg)) {
+        setError('הגעת לתקרת המשתמשים במסלול הנוכחי — שדרג כדי להוסיף עוד.');
+      } else {
+        setError(msg || 'שגיאה בהוספה');
+      }
+    }
     finally { setBusyMem(null); }
   }
 
