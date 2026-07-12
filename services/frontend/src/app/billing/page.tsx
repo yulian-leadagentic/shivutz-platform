@@ -27,15 +27,15 @@ import { useAuth } from '@/lib/AuthContext';
 // Contractor tiers — no "active ads" (contractors don't publish).
 // Numbers here are the seed defaults; admin can edit them via
 // /admin/subscription-plans and the live limits render below.
-const CONTRACTOR_TIERS: { code: SubscriptionTier; title: string; tagline: string; features: string[] }[] = [
-  { code: 'basic',    title: 'בסיסי',   tagline: 'התחלה קלה',              features: ['משתמש אחד',          'עד 10 חשיפות פרטי קשר בחודש']  },
-  { code: 'advanced', title: 'מתקדם',   tagline: 'לצוותים בקצב עבודה',    features: ['עד 3 משתמשים',        'עד 40 חשיפות בחודש']            },
-  { code: 'pro',      title: 'פרו',     tagline: 'לפעילות רחבה',          features: ['עד 10 משתמשים',       'עד 120 חשיפות בחודש']           },
+const CONTRACTOR_TIERS: { code: SubscriptionTier; title: string; tagline: string; price: number | null; features: string[] }[] = [
+  { code: 'basic',    title: 'בסיסי',   tagline: 'התחלה קלה',              price: null, features: ['משתמש אחד',          'עד 10 חשיפות פרטי קשר בחודש']  },
+  { code: 'advanced', title: 'מתקדם',   tagline: 'לצוותים בקצב עבודה',    price: null, features: ['עד 3 משתמשים',        'עד 40 חשיפות בחודש']            },
+  { code: 'pro',      title: 'פרו',     tagline: 'לפעילות רחבה',          price: null, features: ['עד 10 משתמשים',       'עד 120 חשיפות בחודש']           },
 ];
-const CORP_TIERS: { code: SubscriptionTier; title: string; tagline: string; features: string[] }[] = [
-  { code: 'basic',    title: 'בסיסי',   tagline: 'התחלה זריזה',            features: ['3 מודעות פעילות', 'ללא קידום'] },
-  { code: 'advanced', title: 'מתקדם',   tagline: 'לתאגידים פעילים',        features: ['15 מודעות פעילות', 'קידום מודעות'] },
-  { code: 'pro',      title: 'פרו',     tagline: 'ללא הגבלות',              features: ['מודעות ללא הגבלה', 'קידום ללא הגבלה'] },
+const CORP_TIERS: { code: SubscriptionTier; title: string; tagline: string; price: number; features: string[] }[] = [
+  { code: 'basic',    title: 'בסיסי',   tagline: 'התחלה זריזה',      price: 80,  features: ['3 משתמשים', '3 מודעות פעילות במקביל', 'פרסום עד 30 יום'] },
+  { code: 'advanced', title: 'מתקדם',   tagline: 'לתאגידים פעילים',  price: 140, features: ['6 משתמשים', '6 מודעות פעילות במקביל', 'פרסום עד 90 יום · קידום'] },
+  { code: 'pro',      title: 'פרו',     tagline: 'ללא הגבלות',        price: 170, features: ['12 משתמשים', '12 מודעות פעילות', 'פרסום ללא הגבלה · קידום'] },
 ];
 
 const STATUS_LABEL: Record<string, string> = {
@@ -292,6 +292,12 @@ export default function BillingPage() {
                 <h3 className="text-lg font-bold text-slate-900">{t.title}</h3>
               </div>
               <p className="text-xs text-slate-500">{t.tagline}</p>
+              {t.price != null && (
+                <p className="text-lg font-extrabold text-slate-900">
+                  ₪{t.price}
+                  <span className="text-xs font-medium text-slate-500 ms-1">/ חודש · חידוש אוטומטי</span>
+                </p>
+              )}
               <ul className="text-sm text-slate-700 space-y-1.5 flex-grow">
                 {t.features.map((f) => (
                   <li key={f} className="flex items-start gap-2">

@@ -51,7 +51,8 @@ def tier_limits(tier: str, entity_type: str = "contractor") -> dict[str, Optiona
     try:
         cur = conn.cursor()
         cur.execute(
-            """SELECT max_users, max_reveals_per_month, max_active_ads, can_boost
+            """SELECT max_users, max_reveals_per_month, max_active_ads,
+                      max_ad_lifetime_days, monthly_price_nis, can_boost
                  FROM subscription_plans
                 WHERE entity_type=%s AND tier=%s""",
             (entity_type, tier),
@@ -60,10 +61,13 @@ def tier_limits(tier: str, entity_type: str = "contractor") -> dict[str, Optiona
     finally:
         conn.close()
     if not row:
-        return _FALLBACK.get(tier, _FALLBACK["basic"])
+        fb = _FALLBACK.get(tier, _FALLBACK["basic"])
+        return {**fb, "max_ad_lifetime_days": None, "monthly_price_nis": None}
     return {
-        "max_users":         row["max_users"],
-        "reveals_per_month": row["max_reveals_per_month"],
-        "active_ads":        row["max_active_ads"],
-        "can_boost":         bool(row["can_boost"]),
+        "max_users":            row["max_users"],
+        "reveals_per_month":    row["max_reveals_per_month"],
+        "active_ads":           row["max_active_ads"],
+        "max_ad_lifetime_days": row["max_ad_lifetime_days"],
+        "monthly_price_nis":    row["monthly_price_nis"],
+        "can_boost":            bool(row["can_boost"]),
     }

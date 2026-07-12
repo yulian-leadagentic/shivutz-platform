@@ -145,7 +145,24 @@ def create_ad(
             })
 
     ad_id = str(uuid.uuid4())
-    expires_at = body.expires_at or (datetime.utcnow() + timedelta(days=AD_DEFAULT_DAYS)).isoformat()
+
+    # Ad lifetime cap from the tier plan.
+    # - Cap on user-supplied expires_at at max_ad_lifetime_days.
+    # - Default expires_at = now + max_ad_lifetime_days (or NULL if the
+    #   tier allows unlimited lifetime).
+    max_life = limits.get("max_ad_lifetime_days")
+    ceiling  = (datetime.utcnow() + timedelta(days=max_life)) if max_life else None
+    if body.expires_at:
+        try:
+            requested = datetime.fromisoformat(body.expires_at.replace("Z", "+00:00"))
+            if ceiling and requested > ceiling:
+                expires_at = ceiling.isoformat()
+            else:
+                expires_at = body.expires_at
+        except ValueError:
+            expires_at = ceiling.isoformat() if ceiling else None
+    else:
+        expires_at = ceiling.isoformat() if ceiling else None
 
     conn = get_db()
     try:

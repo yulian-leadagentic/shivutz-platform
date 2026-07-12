@@ -30,7 +30,8 @@ def list_plans():
         cur = conn.cursor()
         cur.execute(
             """SELECT id, entity_type, tier, max_users, max_reveals_per_month,
-                      max_active_ads, can_boost, trial_days_default,
+                      max_active_ads, max_ad_lifetime_days, monthly_price_nis,
+                      can_boost, trial_days_default,
                       cardcom_plan_code, updated_at
                  FROM subscription_plans
                 ORDER BY FIELD(entity_type,'contractor','corporation'),
@@ -45,6 +46,8 @@ class PlanPatch(BaseModel):
     max_users:             Optional[int]  = Field(default=None, ge=1)
     max_reveals_per_month: Optional[int]  = Field(default=None, ge=0)
     max_active_ads:        Optional[int]  = Field(default=None, ge=0)
+    max_ad_lifetime_days:  Optional[int]  = Field(default=None, ge=1, le=3650)
+    monthly_price_nis:     Optional[int]  = Field(default=None, ge=0)
     can_boost:             Optional[bool] = None
     trial_days_default:    Optional[int]  = Field(default=None, ge=1, le=365)
     cardcom_plan_code:     Optional[str]  = None
@@ -63,14 +66,14 @@ def update_plan(plan_id: str, body: PlanPatch):
     sets:   list[str]    = []
     params: list[object] = []
 
-    for col in ("max_users", "max_reveals_per_month", "max_active_ads"):
+    for col in ("max_users", "max_reveals_per_month", "max_active_ads", "max_ad_lifetime_days"):
         if col in unlimited:
             sets.append(f"{col}=NULL")
         elif col in data:
             sets.append(f"{col}=%s")
             params.append(data[col])
 
-    for col in ("can_boost", "trial_days_default", "cardcom_plan_code"):
+    for col in ("monthly_price_nis", "can_boost", "trial_days_default", "cardcom_plan_code"):
         if col in data:
             sets.append(f"{col}=%s")
             params.append(data[col])
@@ -90,7 +93,8 @@ def update_plan(plan_id: str, body: PlanPatch):
         conn.commit()
         cur.execute(
             """SELECT id, entity_type, tier, max_users, max_reveals_per_month,
-                      max_active_ads, can_boost, trial_days_default,
+                      max_active_ads, max_ad_lifetime_days, monthly_price_nis,
+                      can_boost, trial_days_default,
                       cardcom_plan_code, updated_at
                  FROM subscription_plans WHERE id=%s""",
             (plan_id,),
