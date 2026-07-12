@@ -10,6 +10,7 @@ from app.services import verification, rate_limit
 from app.services import notification_recipients as notif_recipients
 from app.services import team_membership as team_mgmt
 from app.services import membership_requests as mreq
+from app.services.subscription_limits import fetch_entitlement, tier_limits
 from app.integrations import data_gov_il
 from app.integrations.israeli_id import is_valid_israeli_id
 
@@ -681,6 +682,36 @@ async def invite_contractor_user(
         org = cur.fetchone()
         if not org:
             raise HTTPException(status_code=404, detail="Contractor not found")
+
+        # Pivot/v2 seat gate — reject when the contractor already has
+        # max_users active+pending memberships on their current tier.
+        # Payment/plans down = fail closed (503) rather than let a
+        # seat-check-bypass invite land.
+        try:
+            ent = fetch_entitlement(org_id, "contractor")
+        except httpx.HTTPError:
+            raise HTTPException(status_code=503, detail="entitlement_service_unreachable")
+        max_users = tier_limits(ent["tier"], "contractor").get("max_users")
+        if max_users is not None:
+            cur.execute(
+                """SELECT COUNT(*) AS n
+                     FROM auth_db.entity_memberships
+                    WHERE entity_type='contractor'
+                      AND entity_id=%s
+                      AND (is_active=TRUE OR invitation_accepted_at IS NULL)""",
+                (org_id,),
+            )
+            used = int(cur.fetchone()["n"])
+            if used >= max_users:
+                raise HTTPException(
+                    status_code=402,
+                    detail={
+                        "code":  "seat_limit",
+                        "tier":  ent["tier"],
+                        "used":  used,
+                        "limit": max_users,
+                    },
+                )
 
         invite_token    = secrets.token_urlsafe(32)
         membership_id   = str(uuid.uuid4())
