@@ -13,8 +13,8 @@
 USE payment_db;
 
 ALTER TABLE subscription_plans
-  ADD COLUMN IF NOT EXISTS max_ad_lifetime_days INT NULL AFTER max_active_ads,
-  ADD COLUMN IF NOT EXISTS monthly_price_nis    INT NULL AFTER trial_days_default;
+  ADD COLUMN max_ad_lifetime_days INT NULL AFTER max_active_ads,
+  ADD COLUMN monthly_price_nis    INT NULL AFTER trial_days_default;
 
 UPDATE subscription_plans SET
   max_users             = 3,
