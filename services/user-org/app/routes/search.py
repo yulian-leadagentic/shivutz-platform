@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 
 from app.db import get_db
 from app.services.query_rewriter import rewrite
+from app.services.query_reranker import rerank
 
 router = APIRouter()
 
@@ -117,10 +118,13 @@ def search(body: SearchIn):
         cur = conn.cursor()
         cur.execute(sql, params)
         rows = cur.fetchall()
-        return {
-            "filters":  filters,
-            "results":  [_serialize_ad(r) for r in rows],
-            "total":    len(rows),
-        }
     finally:
         conn.close()
+
+    serialised = [_serialize_ad(r) for r in rows]
+    reranked   = rerank(body.query, serialised)
+    return {
+        "filters":  filters,
+        "results":  reranked,
+        "total":    len(reranked),
+    }
