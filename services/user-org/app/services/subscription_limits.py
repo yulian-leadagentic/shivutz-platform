@@ -47,13 +47,16 @@ def tier_limits(tier: str, entity_type: str = "contractor") -> dict[str, Optiona
     can_boost. Values may be None meaning "unlimited". Falls back to
     _FALLBACK if the row is missing.
     """
-    conn = get_db("payment_db")
+    # user-org's connection is scoped to org_db; the plans table lives in
+    # payment_db. Cross-schema SQL keeps us on a single connection and
+    # avoids adding a second pool.
+    conn = get_db()
     try:
         cur = conn.cursor()
         cur.execute(
             """SELECT max_users, max_reveals_per_month, max_active_ads,
                       max_ad_lifetime_days, monthly_price_nis, can_boost
-                 FROM subscription_plans
+                 FROM payment_db.subscription_plans
                 WHERE entity_type=%s AND tier=%s""",
             (entity_type, tier),
         )
