@@ -14,14 +14,41 @@ import { enumApi } from '@/lib/api/enums';
 import type { AdCreateInput } from '@/lib/api/ads';
 
 const AMENITIES = [
-  { code: 'AC',        label: 'מזגן' },
-  { code: 'WIFI',      label: 'אינטרנט' },
-  { code: 'KITCHEN',   label: 'מטבח' },
-  { code: 'LAUNDRY',   label: 'כביסה' },
-  { code: 'SHOWER',    label: 'מקלחת' },
-  { code: 'PARKING',   label: 'חניה' },
-  { code: 'FURNISHED', label: 'ריהוט' },
+  { code: 'AC',              label: 'מזגן' },
+  { code: 'WIFI',            label: 'אינטרנט' },
+  { code: 'KITCHEN',         label: 'מטבח' },
+  { code: 'LAUNDRY',         label: 'כביסה' },
+  { code: 'SHOWER',          label: 'מקלחת' },
+  { code: 'PARKING',         label: 'חניה' },
+  { code: 'EBIKE_PARKING',   label: 'מקום לאופניים חשמליים' },
+  { code: 'FURNISHED',       label: 'ריהוט' },
 ];
+
+// City → region auto-fill map. Rough grouping; user can override.
+// Values must be the DB codes (org_db.regions / worker_db.regions).
+const CITY_TO_REGION: Record<string, string> = {
+  'תל אביב': 'center', 'תל-אביב': 'center', 'רמת גן': 'center', 'גבעתיים': 'center',
+  'פתח תקווה': 'center', 'הרצליה': 'center', 'רעננה': 'center', 'כפר סבא': 'center',
+  'ראשון לציון': 'center', 'רחובות': 'center', 'חולון': 'center', 'בת ים': 'center',
+  'נתניה': 'center', 'אשדוד': 'center', 'לוד': 'center', 'רמלה': 'center',
+  'ירושלים': 'jerusalem', 'בית שמש': 'jerusalem', 'מעלה אדומים': 'jerusalem',
+  'חיפה': 'north', 'קריית אתא': 'north', 'קריית ביאליק': 'north', 'קריית ים': 'north',
+  'נהריה': 'north', 'עכו': 'north', 'צפת': 'north', 'טבריה': 'north', 'נצרת': 'north',
+  'עפולה': 'north', 'קריית מוצקין': 'north',
+  'באר שבע': 'south', 'אשקלון': 'south', 'אילת': 'south', 'דימונה': 'south',
+  'קריית גת': 'south', 'שדרות': 'south', 'ערד': 'south',
+};
+
+function guessRegion(city: string): string | null {
+  const trimmed = city.trim();
+  if (!trimmed) return null;
+  // Exact match first, then substring (catches "רמת גן פינת ..." etc.)
+  if (CITY_TO_REGION[trimmed]) return CITY_TO_REGION[trimmed];
+  for (const key of Object.keys(CITY_TO_REGION)) {
+    if (trimmed.includes(key)) return CITY_TO_REGION[key];
+  }
+  return null;
+}
 
 export interface HousingAdFormValues {
   title_he: string;
@@ -139,7 +166,18 @@ export function HousingAdForm({
           <input
             type="text"
             value={v.city}
-            onChange={(e) => field('city')(e.target.value)}
+            onChange={(e) => {
+              const city = e.target.value;
+              // Only overwrite region if it's empty or was previously auto-filled.
+              // Simple heuristic: if the current region matches a known city→region
+              // mapping (i.e. we set it), we may overwrite it; otherwise leave alone.
+              setV((s) => {
+                const next = { ...s, city };
+                const auto = guessRegion(city);
+                if (auto && !s.region) next.region = auto;
+                return next;
+              });
+            }}
             placeholder="תל אביב"
             className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
           />

@@ -267,8 +267,23 @@ export default function LandingPage() {
                   )}
 
                   {resp && resp.results.length === 0 && (
-                    <div className="bg-white border border-slate-200 rounded-2xl p-10 text-center text-slate-500 shadow-sm">
-                      לא נמצאו מודעות התואמות לחיפוש. נסה לנסח אחרת.
+                    <div className="bg-amber-50 border-2 border-amber-200 rounded-2xl p-8 text-center shadow-sm">
+                      <p className="text-lg font-bold text-amber-900 mb-2">לא נמצאו מודעות התואמות</p>
+                      <p className="text-sm text-amber-800 mb-4">
+                        נסה לנסח אחרת, להסיר סינון (למשל ללא ציון מוצא), או לחפש מקצוע אחר.
+                      </p>
+                      <div className="flex flex-wrap gap-2 justify-center">
+                        {EXAMPLES.map((ex) => (
+                          <button
+                            key={ex}
+                            type="button"
+                            onClick={() => { setQ(ex); runSearch(ex); }}
+                            className="text-xs px-3 py-1.5 rounded-full border border-amber-300 bg-white hover:border-brand-400 hover:bg-brand-50 text-slate-700 transition"
+                          >
+                            {ex}
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   )}
 
@@ -300,7 +315,7 @@ export default function LandingPage() {
           {/* Recent-ads mosaic (yad2-style) — only when no active search */}
           {!resp && !loading && recent.length > 0 && (
             <section className="max-w-6xl mx-auto px-4 py-4">
-              <h2 className="text-lg sm:text-xl font-bold text-slate-900 mb-3">מודעות אחרונות</h2>
+              <h2 className="text-lg sm:text-xl font-bold text-slate-900 mb-3">פרסום חדש בפורטל</h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {recent.slice(0, 9).map((ad) => {
                   const isHousing = ad.ad_type === 'housing';

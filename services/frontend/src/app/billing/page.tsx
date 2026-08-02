@@ -10,7 +10,8 @@
 // window.location to it here.
 
 import { useEffect, useState } from 'react';
-import { Loader2, Check, Sparkles, Users as UsersIcon, Trash2, Plus } from 'lucide-react';
+import Link from 'next/link';
+import { Loader2, Check, Sparkles, Users as UsersIcon, Trash2, Plus, ChevronRight } from 'lucide-react';
 import {
   subscriptionApi,
   type SubscriptionRow,
@@ -153,6 +154,12 @@ export default function BillingPage() {
   return (
     <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
       <header className="space-y-1">
+        <Link
+          href={isContractor ? '/contractor/dashboard' : '/corporation/dashboard'}
+          className="inline-flex items-center text-xs text-slate-500 hover:text-slate-700"
+        >
+          <ChevronRight className="w-3 h-3 me-1" /> חזרה ללוח בקרה
+        </Link>
         <h1 className="text-2xl font-bold text-slate-900">חשבון ומנוי</h1>
         <p className="text-sm text-slate-500">ניהול המנוי החודשי שלך</p>
       </header>
@@ -277,7 +284,9 @@ export default function BillingPage() {
       {/* Tier picker */}
       <section className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {TIERS.map((t) => {
-          const isCurrent = sub?.tier === t.code && sub?.status === 'active';
+          // Highlight current tier for both trialing + active so it's
+          // marked from day 0, not only after conversion.
+          const isCurrent = sub?.tier === t.code && (sub?.status === 'active' || sub?.status === 'trialing');
           return (
             <div
               key={t.code}
