@@ -11,7 +11,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Loader2, Check, Sparkles, Users as UsersIcon, Trash2, Plus, ChevronRight } from 'lucide-react';
+import { Loader2, Check, Sparkles, Users as UsersIcon, Trash2, Plus, ChevronRight, RefreshCw, Crown, ArrowLeft, ArrowRight } from 'lucide-react';
 import {
   subscriptionApi,
   type SubscriptionRow,
@@ -38,6 +38,8 @@ const CORP_TIERS: { code: SubscriptionTier; title: string; tagline: string; pric
   { code: 'advanced', title: 'מתקדם',   tagline: 'לתאגידים פעילים',  price: 140, features: ['6 משתמשים', '6 מודעות פעילות במקביל', 'פרסום עד 90 יום · קידום'] },
   { code: 'pro',      title: 'פרו',     tagline: 'ללא הגבלות',        price: 170, features: ['12 משתמשים', '12 מודעות פעילות', 'פרסום ללא הגבלה · קידום'] },
 ];
+
+const TIER_ORDER: Record<SubscriptionTier, number> = { basic: 1, advanced: 2, pro: 3 };
 
 const STATUS_LABEL: Record<string, string> = {
   trialing:  'תקופת ניסיון',
@@ -164,29 +166,56 @@ export default function BillingPage() {
         <p className="text-sm text-slate-500">ניהול המנוי החודשי שלך</p>
       </header>
 
-      {/* Current subscription card */}
-      <section className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
-        <div className="flex items-start justify-between gap-4 flex-wrap">
-          <div>
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">מנוי נוכחי</p>
-            <p className="text-xl font-bold text-slate-900 mt-1">
-              {sub ? TIERS.find(t => t.code === sub.tier)?.title : '—'}
-              <span className="ms-2 text-sm font-medium text-slate-600">
-                {sub ? `(${STATUS_LABEL[sub.status] ?? sub.status})` : ''}
-              </span>
-            </p>
-            {trialDays !== null && (
-              <p className="text-sm text-amber-700 mt-1">
-                נותרו {trialDays} ימים בתקופת הניסיון
+      {/* Current subscription hero — bold summary + clear status */}
+      {(() => {
+        const currentTier = sub ? TIERS.find(t => t.code === sub.tier) : null;
+        const isTrialing  = sub?.status === 'trialing';
+        const isActive    = sub?.status === 'active';
+        const isLapsed    = sub && !isActive && !isTrialing;
+        const statusColor = isTrialing ? 'bg-amber-100 text-amber-800 border-amber-300'
+                        : isActive     ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                        :                'bg-red-100 text-red-800 border-red-300';
+        return (
+      <section className="rounded-2xl overflow-hidden shadow-md border border-slate-200 bg-gradient-to-l from-brand-50 via-white to-white">
+        <div className="p-5 sm:p-6 space-y-4">
+          <div className="flex items-start justify-between gap-4 flex-wrap">
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-semibold text-brand-700 uppercase tracking-wider inline-flex items-center gap-1.5">
+                <Crown className="w-3.5 h-3.5" /> המנוי שלך
               </p>
-            )}
-            {periodDays !== null && (
-              <p className="text-sm text-emerald-700 mt-1">
-                החיוב הבא בעוד {periodDays} ימים
-              </p>
-            )}
+              <div className="flex items-baseline gap-2 mt-1 flex-wrap">
+                <h2 className="text-3xl sm:text-4xl font-extrabold text-slate-900">
+                  {currentTier?.title ?? (error ? '—' : '...')}
+                </h2>
+                {sub && (
+                  <span className={`inline-block text-xs font-bold rounded-full px-2.5 py-0.5 border ${statusColor}`}>
+                    {STATUS_LABEL[sub.status] ?? sub.status}
+                  </span>
+                )}
+              </div>
+              {currentTier && 'price' in currentTier && currentTier.price != null && (
+                <p className="text-lg font-bold text-slate-700 mt-1">
+                  ₪{currentTier.price}
+                  <span className="text-xs font-medium text-slate-500 ms-1">/ חודש · חידוש אוטומטי</span>
+                </p>
+              )}
+              {trialDays !== null && (
+                <p className="text-sm text-amber-800 mt-2 font-medium">
+                  ⏳ נותרו {trialDays} ימים בתקופת הניסיון החינמית
+                </p>
+              )}
+              {periodDays !== null && (
+                <p className="text-sm text-emerald-800 mt-2 font-medium">
+                  ✓ החיוב הבא בעוד {periodDays} ימים
+                </p>
+              )}
+              {isLapsed && (
+                <p className="text-sm text-red-800 mt-2 font-medium">
+                  ⚠ המנוי לא פעיל. שדרג כדי להמשיך להשתמש.
+                </p>
+              )}
+            </div>
           </div>
-        </div>
 
         {/* Usage vs limits — contractor sees reveals + user seats,
              corp sees reveals + active ads. */}
@@ -215,7 +244,10 @@ export default function BillingPage() {
             )}
           </div>
         )}
+        </div>
       </section>
+        );
+      })()}
 
       {/* Contractor-only: team-member phone list (merged from /contractor/users) */}
       {isContractor && (
@@ -276,17 +308,31 @@ export default function BillingPage() {
       )}
 
       {error && (
-        <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-          {error}
+        <div className="text-sm text-red-800 bg-red-50 border border-red-200 rounded-lg px-3 py-2 flex items-center gap-2">
+          <span className="flex-1">{error}</span>
+          <button
+            type="button"
+            onClick={refresh}
+            className="inline-flex items-center gap-1 text-xs font-semibold text-red-800 hover:bg-red-100 px-2 py-1 rounded"
+          >
+            <RefreshCw className="w-3.5 h-3.5" /> נסה שוב
+          </button>
         </div>
       )}
 
       {/* Tier picker */}
+      <div>
+        <h2 className="text-lg font-bold text-slate-900 mb-3">חבילות זמינות</h2>
+      </div>
       <section className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {TIERS.map((t) => {
+          const currentOrder  = sub ? (TIER_ORDER[sub.tier] ?? 0) : 0;
+          const targetOrder   = TIER_ORDER[t.code];
           // Highlight current tier for both trialing + active so it's
           // marked from day 0, not only after conversion.
-          const isCurrent = sub?.tier === t.code && (sub?.status === 'active' || sub?.status === 'trialing');
+          const isCurrent     = sub?.tier === t.code && (sub?.status === 'active' || sub?.status === 'trialing');
+          const isUpgrade     = !isCurrent && targetOrder > currentOrder;
+          const isDowngrade   = !isCurrent && targetOrder < currentOrder;
           return (
             <div
               key={t.code}
@@ -299,6 +345,11 @@ export default function BillingPage() {
               <div className="flex items-center gap-2">
                 <Sparkles className="w-4 h-4 text-brand-600" />
                 <h3 className="text-lg font-bold text-slate-900">{t.title}</h3>
+                {isCurrent && (
+                  <span className="ms-auto inline-flex items-center gap-1 text-[10px] font-bold text-brand-800 bg-brand-100 border border-brand-300 rounded-full px-2 py-0.5">
+                    <Crown className="w-3 h-3" /> המנוי שלך
+                  </span>
+                )}
               </div>
               <p className="text-xs text-slate-500">{t.tagline}</p>
               {t.price != null && (
@@ -319,21 +370,38 @@ export default function BillingPage() {
                 type="button"
                 disabled={busyTier !== null || isCurrent}
                 onClick={() => upgrade(t.code)}
-                className="w-full bg-brand-600 hover:bg-brand-500 text-white text-sm font-semibold py-2.5 rounded-lg
-                           disabled:bg-slate-300 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2 transition"
+                className={`w-full text-sm font-semibold py-2.5 rounded-lg
+                           disabled:cursor-not-allowed inline-flex items-center justify-center gap-2 transition ${
+                  isCurrent
+                    ? 'bg-slate-100 text-slate-500 border border-slate-200'
+                    : isDowngrade
+                      ? 'bg-white text-slate-700 border-2 border-slate-300 hover:border-slate-400'
+                      : 'bg-brand-600 hover:bg-brand-500 text-white disabled:bg-slate-300'
+                }`}
               >
                 {busyTier === t.code ? (
                   <><Loader2 className="w-4 h-4 animate-spin" /> מעבד...</>
                 ) : isCurrent ? (
-                  'המנוי הנוכחי'
+                  <><Crown className="w-4 h-4" /> המנוי הנוכחי</>
+                ) : isUpgrade ? (
+                  <>שדרג ל{t.title} <ArrowLeft className="w-4 h-4" /></>
+                ) : isDowngrade ? (
+                  <>עבור ל{t.title} <ArrowRight className="w-4 h-4" /></>
                 ) : (
-                  'שדרג'
+                  <>בחר חבילה זו <ArrowLeft className="w-4 h-4" /></>
                 )}
               </button>
             </div>
           );
         })}
       </section>
+
+      {/* Payment method / Cardcom footnote — real recurring flow lands
+          when the customer's Cardcom account is active (see Q4 in the
+          pivot plan). For now upgrades flip status via fake mode. */}
+      <p className="text-xs text-slate-400 text-center pt-2">
+        התשלום מתבצע בקארדקום · חידוש אוטומטי חודשי · ניתן לבטל בכל עת
+      </p>
     </div>
   );
 }
