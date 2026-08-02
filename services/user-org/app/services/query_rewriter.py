@@ -21,23 +21,22 @@ from typing import Optional
 FAKE_MODE = os.getenv("LLM_REWRITER_FAKE_MODE", "1") == "1"
 CACHE_TTL_S = int(os.getenv("LLM_REWRITER_CACHE_TTL", "300"))
 
-# Profession keyword → code. Match by substring (Hebrew morphology is
-# rich, so partial matches catch noun/verb forms). Codes are the values
-# already in worker_db.professions.code.
+# Profession keyword → code. Values MUST match worker_db.profession_types.code
+# (lowercase english — flooring/mason/plumbing/etc.), not the ad_type enum.
 PROFESSION_KEYWORDS: dict[str, str] = {
-    "ריצוף": "TILER",      "רצף":   "TILER",      "רצפים": "TILER",
-    "ריתוך": "WELDER",     "רתך":   "WELDER",     "רתכים": "WELDER",
-    "חשמל":  "ELECTRICIAN","חשמלאי":"ELECTRICIAN","חשמלאים":"ELECTRICIAN",
-    "צבע":   "PAINTER",    "צבעי":  "PAINTER",    "צבעים": "PAINTER",
-    "אינסטל":"PLUMBER",    "אינסטלטור":"PLUMBER", "שרברב": "PLUMBER",
-    "טייח":  "PLASTERER",  "טיוח":  "PLASTERER",
-    "נגר":   "CARPENTER",  "נגרים": "CARPENTER",
-    "ברזל":  "STEELWORKER","ברזלן": "STEELWORKER","ברזלנים":"STEELWORKER",
-    "גבס":   "DRYWALL",    "גיבוס": "DRYWALL",
-    "בלוקים":"BLOCKLAYER", "בלוקאי":"BLOCKLAYER",
-    "פועל":  "GENERAL",    "פועלים":"GENERAL",
+    "ריצוף": "flooring",   "רצף":   "flooring",   "רצפים": "flooring",   "פרקט":  "flooring",
+    "חשמל":  "electrician","חשמלאי":"electrician","חשמלאים":"electrician",
+    "צבע":   "painting",   "צבעי":  "painting",   "צבעים": "painting",
+    "אינסטל":"plumbing",   "אינסטלטור":"plumbing","שרברב": "plumbing",
+    "טייח":  "plastering", "טיוח":  "plastering", "טיח":   "plastering",
+    "תפסן":  "formwork",   "טפסן":  "formwork",   "תבניות":"formwork",
+    "ברזל":  "skeleton",   "ברזלן": "skeleton",   "ברזלנים":"skeleton",
+    "בנאי":  "mason",      "בניה":  "mason",      "בלוקים":"mason",      "בלוקאי":"mason",
+    "פיגומ": "scaffolding",
+    "פועל":  "general",    "פועלים":"general",
 }
 
+# ISO-2 codes from worker_db.origin_countries.code
 ORIGIN_KEYWORDS: dict[str, str] = {
     "סין":   "CN", "סיני":  "CN", "סינים":  "CN", "סינית": "CN",
     "אוקראינ":"UA",
@@ -46,17 +45,17 @@ ORIGIN_KEYWORDS: dict[str, str] = {
     "פיליפ":  "PH",
     "הודו":   "IN",  "הודי":  "IN", "הודים":  "IN",
     "אוזבק":  "UZ",
-    "אריתר":  "ER",
-    "טורקי":  "TR",
+    "רומנ":   "RO",
+    "סרי לנק":"LK", "לנקי":  "LK",
 }
 
+# Codes from worker_db.regions.code
 REGION_KEYWORDS: dict[str, str] = {
-    "מרכז":     "CENTER",
-    "צפון":     "NORTH",
-    "דרום":     "SOUTH",
-    "ירושלים":  "JLM",
-    "שפלה":     "SHEFELA",
-    "שרון":     "SHARON",
+    "מרכז":     "center",
+    "צפון":     "north",
+    "דרום":     "south",
+    "ירושלים":  "jerusalem",
+    "כל הארץ":  "national",
 }
 
 HOUSING_KEYWORDS = ("לינה", "דיור", "מקום ל", "מגורים", "דירה")
@@ -176,10 +175,10 @@ def rewrite_real(query: str) -> dict:
         "You translate a Hebrew construction-marketplace query into a structured filter. "
         "Return ONLY a JSON object with keys: "
         "ad_type ('worker'|'housing'), "
-        "profession_code (one of TILER, WELDER, ELECTRICIAN, PAINTER, PLUMBER, "
-        "PLASTERER, CARPENTER, STEELWORKER, DRYWALL, BLOCKLAYER, GENERAL or null), "
-        "origin_country (ISO-2 like CN, UA, MD, TH, PH, IN, UZ, ER, TR or null), "
-        "region (CENTER, NORTH, SOUTH, JLM, SHEFELA, SHARON or null), "
+        "profession_code (one of flooring, electrician, painting, plumbing, plastering, "
+        "formwork, mason, skeleton, scaffolding, general — or null), "
+        "origin_country (ISO-2 from: CN, IN, LK, MD, PH, RO, TH, UA, UZ — or null), "
+        "region (one of center, north, south, jerusalem, national — or null), "
         "quantity (integer or null), "
         "canonical_query (the user's request, lightly normalised). "
         "Output ONLY the JSON object — no prose, no markdown fences, no code blocks."
