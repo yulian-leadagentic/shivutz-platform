@@ -1,10 +1,16 @@
 'use client';
 
-// Pivot/v2 — landing "מקודמים" horizontal carousel (yad2-style commercial slot).
-// Boosted ads first; if none, falls back to most-recent public feed.
+// Pivot/v2 — "מודעות מקודמות" carousel (yad2-style commercial slot).
+// Each card is a bold gradient hero tinted by profession or ad type,
+// so the strip reads as real creative even without corp-uploaded photos.
+// Boosted ads render first; falls back to recent so the slot is never
+// empty.
 
 import { useEffect, useRef, useState } from 'react';
-import { ChevronRight, ChevronLeft, Zap, Building2, Home, Users } from 'lucide-react';
+import {
+  ChevronRight, ChevronLeft, Zap, Home, Users,
+  Building2, Hammer, Wrench, PaintBucket, Bolt, Plug, Layers, Boxes,
+} from 'lucide-react';
 import { apiFetch } from '@/lib/api/client';
 
 interface PublicAd {
@@ -24,6 +30,41 @@ interface PublicAd {
   published_at:    string;
 }
 
+// Profession → gradient + icon. Falls back to a neutral navy for
+// unknown codes (or housing, handled separately).
+const PROFESSION_STYLE: Record<string, { grad: string; icon: typeof Hammer }> = {
+  flooring:     { grad: 'from-orange-500 to-rose-600',      icon: Layers },
+  electrician:  { grad: 'from-yellow-500 to-orange-600',    icon: Bolt },
+  electricity:  { grad: 'from-yellow-500 to-orange-600',    icon: Bolt },
+  painting:     { grad: 'from-fuchsia-500 to-purple-600',   icon: PaintBucket },
+  plumbing:     { grad: 'from-sky-500 to-blue-600',         icon: Wrench },
+  plastering:   { grad: 'from-stone-500 to-neutral-700',    icon: Layers },
+  formwork:     { grad: 'from-amber-500 to-orange-700',     icon: Hammer },
+  mason:        { grad: 'from-slate-500 to-slate-800',      icon: Hammer },
+  skeleton:     { grad: 'from-zinc-500 to-zinc-800',        icon: Bolt },
+  scaffolding:  { grad: 'from-teal-500 to-emerald-700',     icon: Boxes },
+  general:      { grad: 'from-indigo-500 to-blue-700',      icon: Users },
+};
+const HOUSING_STYLE = { grad: 'from-emerald-500 to-teal-700', icon: Home };
+const DEFAULT_STYLE = { grad: 'from-slate-600 to-slate-800',   icon: Building2 };
+
+const PROFESSION_LABEL: Record<string, string> = {
+  flooring: 'ריצוף', electrician: 'חשמל', electricity: 'חשמל',
+  painting: 'צביעה', plumbing: 'אינסטלציה', plastering: 'טיח',
+  formwork: 'תפסן', mason: 'בנאי', skeleton: 'ברזלן',
+  scaffolding: 'פיגומים', general: 'פועל כללי',
+};
+const ORIGIN_LABEL: Record<string, string> = {
+  CN: 'סין', IN: 'הודו', LK: 'סרי לנקה', MD: 'מולדובה',
+  PH: 'פיליפינים', RO: 'רומניה', TH: 'תאילנד', UA: 'אוקראינה', UZ: 'אוזבקיסטן',
+};
+
+function styleFor(ad: PublicAd) {
+  if (ad.ad_type === 'housing') return HOUSING_STYLE;
+  if (ad.profession_code && PROFESSION_STYLE[ad.profession_code]) return PROFESSION_STYLE[ad.profession_code];
+  return DEFAULT_STYLE;
+}
+
 export function FeaturedAdsCarousel() {
   const [ads, setAds] = useState<PublicAd[]>([]);
   const scroller = useRef<HTMLDivElement>(null);
@@ -32,7 +73,6 @@ export function FeaturedAdsCarousel() {
     apiFetch<{ results: PublicAd[] }>('/ads/public/featured?limit=12')
       .then((r) => {
         if (r.results.length > 0) setAds(r.results);
-        // fall back to recent so the slot never renders empty
         else apiFetch<{ results: PublicAd[] }>('/ads/public/recent?limit=12').then((rr) => setAds(rr.results));
       })
       .catch(() => setAds([]));
@@ -49,25 +89,20 @@ export function FeaturedAdsCarousel() {
   return (
     <section className="max-w-6xl mx-auto px-4">
       <div className="flex items-baseline justify-between mb-3">
-        <h2 className="text-lg sm:text-xl font-bold text-slate-900 flex items-center gap-2">
-          <Zap className="w-5 h-5 text-amber-500" />
-          מודעות מקודמות
-        </h2>
+        <div>
+          <h2 className="text-lg sm:text-xl font-bold text-slate-900 flex items-center gap-2">
+            <Zap className="w-5 h-5 text-amber-500 fill-amber-400" />
+            הכי מבוקשים כרגע
+          </h2>
+          <p className="text-xs text-slate-500 mt-0.5">מודעות מקודמות של תאגידים</p>
+        </div>
         <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => scroll('right')}
-            aria-label="הקודמים"
-            className="w-8 h-8 rounded-full border border-slate-200 bg-white hover:bg-slate-50 inline-flex items-center justify-center"
-          >
+          <button type="button" onClick={() => scroll('right')} aria-label="הקודמים"
+            className="w-8 h-8 rounded-full border border-slate-200 bg-white hover:bg-slate-50 inline-flex items-center justify-center">
             <ChevronRight className="w-4 h-4 text-slate-600" />
           </button>
-          <button
-            type="button"
-            onClick={() => scroll('left')}
-            aria-label="הבאים"
-            className="w-8 h-8 rounded-full border border-slate-200 bg-white hover:bg-slate-50 inline-flex items-center justify-center"
-          >
+          <button type="button" onClick={() => scroll('left')} aria-label="הבאים"
+            className="w-8 h-8 rounded-full border border-slate-200 bg-white hover:bg-slate-50 inline-flex items-center justify-center">
             <ChevronLeft className="w-4 h-4 text-slate-600" />
           </button>
         </div>
@@ -81,45 +116,56 @@ export function FeaturedAdsCarousel() {
         {ads.map((ad) => {
           const boosted = ad.featured_until && new Date(ad.featured_until) > new Date();
           const isHousing = ad.ad_type === 'housing';
+          const st = styleFor(ad);
+          const Icon = st.icon;
+          const profLabel = ad.profession_code ? (PROFESSION_LABEL[ad.profession_code] ?? ad.profession_code) : '';
+          const orgLabel  = ad.origin_country  ? (ORIGIN_LABEL[ad.origin_country]  ?? ad.origin_country)  : '';
           return (
             <a
               key={ad.id}
               href={`/?ad=${ad.id}`}
-              className={`snap-start shrink-0 w-[260px] rounded-2xl border p-4 bg-white shadow-sm hover:shadow-md transition ${
-                boosted ? 'border-amber-300' : 'border-slate-200'
-              }`}
+              className="snap-start shrink-0 w-[280px] rounded-2xl overflow-hidden shadow-md hover:shadow-lg transition group"
             >
-              <div className="flex items-center gap-2 mb-2">
-                <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${
-                  isHousing ? 'bg-slate-100 text-slate-700' : 'bg-brand-50 text-brand-700'
-                }`}>
-                  {isHousing ? <Home className="w-4 h-4" /> : <Users className="w-4 h-4" />}
+              {/* Gradient hero */}
+              <div className={`relative bg-gradient-to-br ${st.grad} text-white p-4 h-32 overflow-hidden`}>
+                <div className="absolute -bottom-4 -end-4 opacity-25 pointer-events-none">
+                  <Icon className="w-28 h-28" />
                 </div>
-                {boosted && (
-                  <span className="ms-auto text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5">
-                    מקודם
+                <div className="relative flex items-start justify-between">
+                  <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider bg-white/25 backdrop-blur-sm rounded-full px-2 py-0.5">
+                    {isHousing ? 'דיור' : (profLabel || 'עובדים')}
                   </span>
-                )}
+                  {boosted && (
+                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-900 bg-amber-300 rounded-full px-2 py-0.5">
+                      <Zap className="w-3 h-3 fill-amber-800" />
+                      מקודם
+                    </span>
+                  )}
+                </div>
+                <div className="relative mt-3">
+                  <p className="text-2xl font-extrabold leading-tight drop-shadow-sm">
+                    {isHousing
+                      ? (ad.available_beds ? `${ad.available_beds} מיטות פנויות` : (ad.city || 'דיור'))
+                      : (ad.quantity ? `${ad.quantity} ${profLabel || 'עובדים'}` : (profLabel || 'עובדים'))}
+                  </p>
+                  <p className="text-xs text-white/85 mt-0.5">
+                    {isHousing
+                      ? [ad.city, ad.price_per_bed_nis ? `₪${ad.price_per_bed_nis}/מיטה` : null].filter(Boolean).join(' · ')
+                      : [orgLabel && `מוצא: ${orgLabel}`, ad.region].filter(Boolean).join(' · ')}
+                  </p>
+                </div>
               </div>
-              <h3 className="text-sm font-bold text-slate-900 line-clamp-2 min-h-[2.5rem]">{ad.title_he}</h3>
-              <p className="text-xs text-slate-500 mt-1 flex flex-wrap gap-x-2">
-                {isHousing ? (
-                  <>
-                    {ad.city && <span>{ad.city}</span>}
-                    {ad.available_beds && <span>· {ad.available_beds} מיטות</span>}
-                    {ad.price_per_bed_nis && <span>· ₪{ad.price_per_bed_nis}</span>}
-                  </>
-                ) : (
-                  <>
-                    {ad.profession_code && <span>{ad.profession_code}</span>}
-                    {ad.origin_country  && <span>· {ad.origin_country}</span>}
-                    {ad.quantity        && <span>· {ad.quantity} עובדים</span>}
-                  </>
+
+              {/* Body strip */}
+              <div className="bg-white p-3">
+                <p className="text-sm font-bold text-slate-900 line-clamp-1">{ad.title_he}</p>
+                {ad.body_he && (
+                  <p className="text-xs text-slate-500 mt-1 line-clamp-2 leading-relaxed">{ad.body_he}</p>
                 )}
-              </p>
-              <div className="mt-3 text-xs font-semibold text-brand-700 inline-flex items-center gap-1">
-                <Building2 className="w-3.5 h-3.5" />
-                חשוף פרטי קשר ←
+                <div className="mt-2 text-xs font-semibold text-brand-700 inline-flex items-center gap-1 group-hover:gap-2 transition-all">
+                  <Building2 className="w-3.5 h-3.5" />
+                  לחץ לחשיפת פרטי התאגיד ←
+                </div>
               </div>
             </a>
           );

@@ -40,9 +40,14 @@ async function rateLimiter(req, res) {
 
   const role   = req.headers['x-user-role'] || 'anon';
   const limit  = LIMITS[role] || LIMITS.anon;
+  // Bucket by user_id when authenticated — IP alone can starve every
+  // real user behind a single NAT / Docker bridge. Anon still buckets
+  // by IP because there's no better identifier before login.
+  const userId = req.headers['x-user-id'];
   const ip     = req.ip || req.socket.remoteAddress;
+  const bucket = userId ? `u:${userId}` : `ip:${ip}`;
   const minute = Math.floor(Date.now() / 60000);
-  const key    = `rate:${role}:${ip}:${minute}`;
+  const key    = `rate:${role}:${bucket}:${minute}`;
 
   const count = await redis.incr(key);
   if (count === 1) await redis.expire(key, 60);
