@@ -12,6 +12,7 @@ import { useEffect, useState } from 'react';
 import { Loader2, Save } from 'lucide-react';
 import { enumApi } from '@/lib/api/enums';
 import type { AdCreateInput } from '@/lib/api/ads';
+import { PhotoUploader } from './PhotoUploader';
 
 const AMENITIES = [
   { code: 'AC',              label: 'מזגן' },
@@ -60,7 +61,7 @@ export interface HousingAdFormValues {
   available_beds: number;
   price_per_bed_nis: number;
   amenities: string[];
-  photos: string;  // comma-separated URLs
+  photos: string[];   // absolute image URLs (Cloudinary secure_url or pasted)
 }
 
 const EMPTY: HousingAdFormValues = {
@@ -73,7 +74,7 @@ const EMPTY: HousingAdFormValues = {
   available_beds: 4,
   price_per_bed_nis: 0,
   amenities: [],
-  photos: '',
+  photos: [],
 };
 
 export function HousingAdForm({
@@ -117,7 +118,7 @@ export function HousingAdForm({
     if (v.available_beds > v.total_beds) { setError('מיטות פנויות לא יכול לעלות על סך המיטות'); return; }
     setSub(true);
 
-    const photoList = v.photos.split(',').map((s) => s.trim()).filter(Boolean);
+    const photoList = v.photos;
 
     try {
       await onSubmit({
@@ -262,17 +263,12 @@ export function HousingAdForm({
       </div>
 
       <div>
-        <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-          תמונות (URLים מופרדים בפסיק)
-        </label>
-        <textarea
+        <label className="block text-xs font-semibold text-slate-700 mb-1.5">תמונות</label>
+        <PhotoUploader
           value={v.photos}
-          onChange={(e) => field('photos')(e.target.value)}
-          rows={2}
-          placeholder="https://... , https://..."
-          className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
+          onChange={(urls) => field('photos')(urls)}
+          maxPhotos={6}
         />
-        <p className="text-xs text-slate-400 mt-1">העלאה מהמחשב תגיע ב-Phase 4.5</p>
       </div>
 
       <div>

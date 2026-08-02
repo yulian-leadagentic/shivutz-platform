@@ -1,13 +1,17 @@
 'use client';
 
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ChevronRight } from 'lucide-react';
-import { adApi } from '@/lib/api/ads';
+import { adApi, type AdCreateInput } from '@/lib/api/ads';
 import { HousingAdForm } from '@/features/ads/HousingAdForm';
+import { AdPreviewModal } from '@/features/ads/AdPreviewModal';
 
 export default function NewHousingAdPage() {
   const router = useRouter();
+  const [preview, setPreview] = useState<AdCreateInput | null>(null);
+
   return (
     <div className="max-w-3xl mx-auto px-4 py-6 space-y-5">
       <header className="space-y-1">
@@ -18,9 +22,15 @@ export default function NewHousingAdPage() {
         <p className="text-sm text-slate-500">מיטות פנויות לפועלים, לפי עיר ואזור</p>
       </header>
       <HousingAdForm
-        submitLabel="פרסם מודעה"
-        onSubmit={async (payload) => {
-          const created = await adApi.create(payload);
+        submitLabel="המשך לתצוגה מקדימה"
+        onSubmit={async (payload) => { setPreview(payload); }}
+      />
+      <AdPreviewModal
+        payload={preview}
+        onCancel={() => setPreview(null)}
+        onConfirm={async () => {
+          if (!preview) return;
+          const created = await adApi.create(preview);
           router.push(`/corporation/ads?created=${created.id}`);
         }}
       />

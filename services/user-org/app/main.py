@@ -1,7 +1,7 @@
 import os
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
-from app.routes import contractors, corporations, users, admin_approvals, marketplace, marketplace_admin, marketplace_subscriptions, marketplace_uploads, support, membership_requests, ads, search
+from app.routes import contractors, corporations, users, admin_approvals, marketplace, marketplace_admin, marketplace_subscriptions, marketplace_uploads, support, membership_requests, uploads, ads, search
 from app.db import get_db, init_db
 from app.errors import register_error_handlers
 
@@ -35,6 +35,12 @@ def readyz():
         return {"status": "ready", "service": "user-org"}
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"db_unreachable: {e}")
+
+# /uploads router must be registered BEFORE the StaticFiles mount —
+# mounts are last-resort in FastAPI, but the mount also swallows
+# unknown paths under its prefix as 404 files. Registering explicit
+# routes first lets /uploads/cloudinary-signature reach our handler.
+app.include_router(uploads.router, prefix="/uploads", tags=["uploads"])
 
 # Serve uploaded files statically
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
