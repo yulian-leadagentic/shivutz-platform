@@ -21,7 +21,7 @@ export default function NewHousingAdPage() {
         submitLabel="פרסם מודעה"
         onSubmit={async (payload) => {
           const created = await adApi.create(payload);
-          router.push(`/corporation/ads/${created.id}/edit`);
+          router.push(`/corporation/ads?created=${created.id}`);
         }}
       />
     </div>

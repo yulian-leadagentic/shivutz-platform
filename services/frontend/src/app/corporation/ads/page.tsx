@@ -7,7 +7,8 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Loader2, Plus, Pencil, Trash2, Zap, Eye } from 'lucide-react';
+import { useSearchParams, useRouter } from 'next/navigation';
+import { Loader2, Plus, Pencil, Trash2, Zap, Eye, ArrowLeft, CreditCard, CheckCircle2, X } from 'lucide-react';
 import { adApi, type AdRow } from '@/lib/api/ads';
 
 function fmt(iso: string | null): string {
@@ -23,10 +24,28 @@ function daysLeft(iso: string | null): number | null {
 }
 
 export default function CorporationAdsPage() {
+  const params = useSearchParams();
+  const router = useRouter();
   const [ads, setAds]         = useState<AdRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy]       = useState<string | null>(null);
   const [error, setError]     = useState('');
+  const [savedToast, setSavedToast] = useState<boolean>(false);
+
+  // Post-save toast: /corporation/ads/new/* redirects here with
+  // ?created=<id> so the corp lands on their inventory + sees confirmation.
+  useEffect(() => {
+    if (params.get('created')) {
+      setSavedToast(true);
+      const t = setTimeout(() => {
+        setSavedToast(false);
+        const url = new URL(window.location.href);
+        url.searchParams.delete('created');
+        router.replace(url.pathname + (url.search || ''));
+      }, 4000);
+      return () => clearTimeout(t);
+    }
+  }, [params, router]);
 
   async function refresh() {
     setLoading(true);
@@ -42,11 +61,22 @@ export default function CorporationAdsPage() {
 
   useEffect(() => { refresh(); }, []);
 
+  const [upgradePrompt, setUpgradePrompt] = useState<string>('');
+
   async function onBoost(id: string) {
     setBusy(id);
+    setUpgradePrompt('');
+    setError('');
     try { await adApi.boost(id); await refresh(); }
-    catch (e) { setError((e as Error).message ?? 'שגיאה בקידום'); }
-    finally  { setBusy(null); }
+    catch (e) {
+      const msg = (e as Error).message ?? '';
+      if (/can_boost|tier_active_ad_limit|subscription_required|402/i.test(msg)) {
+        setUpgradePrompt('קידום מודעות זמין רק במסלול מתקדם ומעלה. שדרג עכשיו כדי לקדם את המודעה.');
+      } else {
+        setError(msg || 'שגיאה בקידום');
+      }
+    }
+    finally { setBusy(null); }
   }
 
   async function onDelete(id: string) {
@@ -73,8 +103,42 @@ export default function CorporationAdsPage() {
         </Link>
       </header>
 
+      {savedToast && (
+        <div className="flex items-center gap-3 rounded-2xl border-2 border-emerald-300 bg-emerald-50 px-4 py-3 shadow-sm">
+          <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+          <p className="flex-1 text-sm text-emerald-900 font-medium">
+            המודעה נשמרה ותפורסם בקרוב. היא מופיעה כעת ברשימה למטה.
+          </p>
+          <button
+            type="button"
+            onClick={() => setSavedToast(false)}
+            aria-label="סגור"
+            className="text-emerald-700 hover:bg-emerald-100 rounded-full p-1"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {error && (
         <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>
+      )}
+
+      {upgradePrompt && (
+        <div className="rounded-2xl border-2 border-amber-300 bg-gradient-to-l from-amber-50 to-white p-4 shadow-sm flex items-center gap-4 flex-wrap">
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-bold text-amber-900">שדרוג נדרש</p>
+            <p className="text-sm text-amber-800 mt-0.5">{upgradePrompt}</p>
+          </div>
+          <Link
+            href="/billing"
+            className="inline-flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold px-4 py-2 rounded-lg shrink-0"
+          >
+            <CreditCard className="w-4 h-4" />
+            לחץ כאן לשדרוג
+            <ArrowLeft className="w-4 h-4" />
+          </Link>
+        </div>
       )}
 
       {loading ? (

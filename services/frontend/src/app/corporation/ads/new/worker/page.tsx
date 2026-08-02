@@ -21,7 +21,10 @@ export default function NewWorkerAdPage() {
         submitLabel="פרסם מודעה"
         onSubmit={async (payload) => {
           const created = await adApi.create(payload);
-          router.push(`/corporation/ads/${created.id}/edit`);
+          // Land back on the list with a saved-toast, per user feedback:
+          // corp should see "המודעה נשמרה" and their inventory, not the
+          // edit form again.
+          router.push(`/corporation/ads?created=${created.id}`);
         }}
       />
     </div>
