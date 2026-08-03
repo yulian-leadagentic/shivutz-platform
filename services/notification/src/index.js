@@ -5,11 +5,8 @@ const { initDb, getPool }    = require('./db');
 const { startConsumer } = require('./consumers');
 const { runVisaExpiryCron } = require('./cron/visaExpiry');
 const { runContractorRevalidationCron } = require('./cron/contractorRevalidation');
-const { runDealLifecycleCron } = require('./cron/dealLifecycle');
-const { runContractorApprovalReminderCron } = require('./cron/contractorApprovalReminder');
-const { runCorpResponseOverdueCron }        = require('./cron/corpResponseOverdue');
-const { runTrialEndingReminderCron }        = require('./cron/trialEndingReminder');
-const { runAdExpiringReminderCron }         = require('./cron/adExpiringReminder');
+const { runTrialEndingReminderCron }    = require('./cron/trialEndingReminder');
+const { runAdExpiringReminderCron }     = require('./cron/adExpiringReminder');
 const notifRoutes = require('./routes/notifications');
 
 const app = express();
@@ -53,29 +50,6 @@ const PORT = process.env.NOTIF_PORT || 3006;
   cron.schedule('30 6 * * *', () => {
     console.log('[cron] Running contractor revalidation');
     runContractorRevalidationCron().catch(console.error);
-  });
-
-  // Hourly — deal lifecycle (expire / capture / admin-nudge)
-  cron.schedule('0 * * * *', () => {
-    runDealLifecycleCron().catch(console.error);
-  });
-
-  // Daily at 09:00 — SMS contractors with stuck corp_committed deals
-  // (pending their approval > 24h). One summary text per contractor
-  // with a deep link to the /contractor/deals queue.
-  cron.schedule('0 9 * * *', () => {
-    console.log('[cron] Running contractor approval reminder');
-    runContractorApprovalReminderCron().catch(console.error);
-  });
-
-  // Every 5 min — admin notification for `proposed` deals past the
-  // corp-response deadline (default 48h). Each deal triggers exactly
-  // one notification thanks to the proposed_admin_notified_at latch.
-  // Sweep cadence is short on purpose so admin sees the alert close
-  // to the actual deadline crossing (not waiting until the next
-  // daily run).
-  cron.schedule('*/5 * * * *', () => {
-    runCorpResponseOverdueCron().catch(console.error);
   });
 
   // Daily at 08:00 — SMS entities whose trial ends within the next

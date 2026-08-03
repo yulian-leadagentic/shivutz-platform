@@ -151,8 +151,8 @@ export default function LandingPage() {
                 <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900">
                   שוק העובדים והדיור לענף הבנייה
                 </h1>
-                <p className="text-sm sm:text-base text-slate-600">
-                  חפשו בשפה חופשית · תאגידים מפרסמים · חיבור ישיר
+                <p className="text-base sm:text-lg font-semibold text-slate-700">
+                  תאגידים וקבלנים מתחברים אצלינו
                 </p>
               </div>
 

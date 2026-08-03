@@ -369,33 +369,12 @@ def get_org_summary(
     finally:
         org_conn.close()
 
-    # Deal counts + recent deals + open searches all come from deal_db.
-    deal_conn = get_db("deal_db")
-    try:
-        deal_cur = deal_conn.cursor()
-        deal_counts = _deal_counts(deal_cur, org_id, org_type)
-        recent_deals = _recent_deals(deal_cur, org_id, org_type)
-        open_searches = (
-            _open_searches_count(deal_cur, org_id)
-            if org_type == "contractor" else 0
-        )
-        # Enrich recent_deals with profession (worker_db) — keep the
-        # connection open for the lookup.
-        worker_conn = get_db("worker_db")
-        try:
-            _enrich_recent_deals_profession(recent_deals, deal_conn, worker_conn)
-        finally:
-            worker_conn.close()
-    finally:
-        deal_conn.close()
-
-    # Other-party name lookup hits org_db; do it after the deal block
-    # so the deal_conn can close first.
-    org_conn = get_db("org_db")
-    try:
-        _enrich_recent_deals(recent_deals, org_conn, org_id, org_type)
-    finally:
-        org_conn.close()
+    # Pivot/v2: deal + search + worker tables were dropped. Return
+    # zero counts so the frontend keeps rendering the org header
+    # without the (now-removed) deal strip.
+    deal_counts   = {}
+    recent_deals  = []
+    open_searches = 0
 
     # Team-member count (active accepted memberships only).
     auth_conn = get_db("auth_db")
@@ -405,15 +384,7 @@ def get_org_summary(
     finally:
         auth_conn.close()
 
-    # Workers count — corp-only.
     workers = None
-    if org_type == "corporation":
-        worker_conn = get_db("worker_db")
-        try:
-            worker_cur = worker_conn.cursor()
-            workers = _workers_count(worker_cur, org_id)
-        finally:
-            worker_conn.close()
 
     # Verification-status block (contractor only) — single source of
     # truth for the admin UI's "is this org actually who they claim

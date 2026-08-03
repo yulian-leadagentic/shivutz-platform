@@ -92,26 +92,12 @@ export function OrgSummaryHeader({ orgId, orgType, refreshKey }: {
         <ContractorVerificationBanner status={data.verification_status} />
       )}
 
-      {/* KPI strip — deal status counts + team + workers / searches */}
-      <DealStatusStrip
-        counts={data.deal_counts}
-        teamCount={data.team_count}
-        workers={data.workers}
-        openSearches={data.open_searches}
-        orgType={orgType}
-      />
-
       {/* Gov data — different shape per role. */}
       {orgType === 'contractor' && data.gov.contractor && (
         <ContractorGovPanel gov={data.gov.contractor} businessNumber={(data.org.business_number as string) ?? ''} />
       )}
       {orgType === 'corporation' && data.gov.corporation && (
         <CorporationGovPanel gov={data.gov.corporation} businessNumber={(data.org.business_number as string) ?? ''} />
-      )}
-
-      {/* Recent deals — the actual activity on this org */}
-      {data.recent_deals.length > 0 && (
-        <RecentDealsTable deals={data.recent_deals} orgType={orgType} />
       )}
     </div>
   );

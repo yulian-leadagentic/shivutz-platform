@@ -8,9 +8,7 @@ export type { Membership, InviteMetadata } from './auth';
 
 export { enumApi } from './enums';
 export { orgApi } from './organizations';
-export { jobApi, searchApi } from './jobs';
 export { workerApi } from './workers';
-export { dealApi } from './deals';
 export { tenderApi } from './tenders';
 export type { Tender, TenderItem, Bid, BidItem, TenderCreatePayload, BidCreatePayload } from './tenders';
 

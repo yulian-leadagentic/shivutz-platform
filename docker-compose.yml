@@ -132,24 +132,6 @@ services:
       rabbitmq:
         condition: service_healthy
 
-  job-match:
-    build: ./services/job-match
-    restart: unless-stopped
-    env_file: .env
-    environment:
-      DB_NAME: ${JOB_DB_NAME}
-    ports:
-      - "3004:3004"
-    networks:
-      - shivutz
-    depends_on:
-      mysql:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      worker:
-        condition: service_started
-
   deal:
     build: ./services/deal
     restart: unless-stopped
@@ -190,7 +172,6 @@ services:
     env_file: .env
     environment:
       USER_ORG_SERVICE_URL: http://user-org:3002
-      JOB_MATCH_SERVICE_URL: http://job-match:3004
       DEAL_SERVICE_URL: http://deal:3005
     ports:
       - "3007:3007"

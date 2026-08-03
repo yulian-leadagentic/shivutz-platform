@@ -12,7 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { HomeLink } from '@/components/HomeLink';
 import Logo from '@/components/Logo';
-import { readProspect, readPendingSearch, clearProspect, clearPendingSearch } from '@/features/prospect/state';
+import { readProspect, clearProspect } from '@/features/prospect/state';
 import type { RegistryChannel, RegistryLookupResult } from '@/types';
 
 const TOTAL_STEPS = 3;
@@ -261,43 +261,10 @@ function RegisterContractorInner() {
         saveTokens(result.access_token, result.refresh_token);
       }
 
-      // Trial loop closure — if the prospect filled a search form at
-      // /try/contractor before being asked to register, replay it
-      // against the real /searches endpoint now that they're auth'd.
-      // We do this BEFORE any redirect so the search exists by the
-      // time the user lands on /contractor/deals.
-      const pending = fromTrial ? readPendingSearch() : null;
-      if (pending && result.access_token) {
-        try {
-          // Inline import — searchApi pulls the access token via the
-          // shared api client, which now sees the cookies we just
-          // saveTokens'd above. Failures are non-fatal: the user lands
-          // on the dashboard either way, and they can fill the form
-          // again from there.
-          const { searchApi } = await import('@/lib/api');
-          await searchApi.create(pending);
-        } catch {
-          // Swallow — see comment above.
-        }
-      }
-      // Cleanup — prospect session has served its purpose; the user
-      // is now a real registered contractor.
       clearProspect();
-      clearPendingSearch();
 
-      // Branching on the kablan match result:
-      //   matched  → already tier_2; straight to dashboard (or deals if
-      //              they came from a trial-flow with a pending search).
-      //   mismatch → row is pending admin review; show the "ממתין לאישור"
-      //              screen so the user knows it's not a silent failure.
-      // The legacy email/SMS verify path is only reached on the explicit
-      // fallback for old kablan-less rows (not possible from this flow).
       if (result.kablan_matched) {
-        if (pending) {
-          router.push('/contractor/deals');
-        } else {
-          router.push('/contractor/dashboard');
-        }
+        router.push('/contractor/dashboard');
       } else {
         // Mismatch — pending admin queue. Surface the success-screen
         // copy with the "ממתין לאישור" message.
