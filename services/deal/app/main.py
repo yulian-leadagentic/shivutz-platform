@@ -1,9 +1,9 @@
 from fastapi import FastAPI, HTTPException
-from app.routes import deals, messages, reports, commissions, tenders
+from app.routes import tenders
 from app.db import get_db, init_db
 from app.errors import register_error_handlers
 
-app = FastAPI(title="Shivutz Deal Service", version="1.0.0")
+app = FastAPI(title="Shivutz Tender Service", version="2.0.0")
 register_error_handlers(app)
 
 @app.on_event("startup")
@@ -12,13 +12,11 @@ async def startup():
 
 @app.get("/health")
 def health():
-    """Liveness — static OK, independent of dependencies."""
-    return {"status": "ok", "service": "deal"}
+    return {"status": "ok", "service": "tender"}
 
 
 @app.get("/readyz")
 def readyz():
-    """Readiness — 503 if the deal DB can't serve a trivial query."""
     try:
         conn = get_db()
         try:
@@ -27,13 +25,8 @@ def readyz():
             cur.fetchone()
         finally:
             conn.close()
-        return {"status": "ready", "service": "deal"}
+        return {"status": "ready", "service": "tender"}
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"db_unreachable: {e}")
 
-app.include_router(deals.router,       prefix="/deals",       tags=["deals"])
-app.include_router(messages.router,    prefix="/deals",       tags=["messages"])
-app.include_router(reports.router,     prefix="/deals",       tags=["reports"])
-app.include_router(commissions.router, prefix="/commissions", tags=["commissions"])
-app.include_router(tenders.router,     prefix="/tenders",     tags=["tenders"])
-# deploy probe — 2026-05-29 (foreign-tender bid gate + freeze/reject endpoints)
+app.include_router(tenders.router, prefix="/tenders", tags=["tenders"])

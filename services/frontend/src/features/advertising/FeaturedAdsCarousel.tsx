@@ -8,7 +8,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import {
-  ChevronRight, ChevronLeft, Zap, Home, Users,
+  ChevronRight, ChevronLeft, Flame, Zap, Home, Users,
   Building2, Hammer, Wrench, PaintBucket, Bolt, Plug, Layers, Boxes,
 } from 'lucide-react';
 import { apiFetch } from '@/lib/api/client';
@@ -91,8 +91,8 @@ export function FeaturedAdsCarousel() {
       <div className="flex items-baseline justify-between mb-3">
         <div>
           <h2 className="text-lg sm:text-xl font-bold text-slate-900 flex items-center gap-2">
-            <Zap className="w-5 h-5 text-amber-500 fill-amber-400" />
-            הכי מבוקשים כרגע
+            <Flame className="w-5 h-5 text-orange-500 fill-orange-400" />
+            חם בפורטל
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">מודעות מקודמות של תאגידים</p>
         </div>

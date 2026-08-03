@@ -9,26 +9,26 @@ import { useAuth } from '@/lib/AuthContext';
 import MobileNavDrawer from './MobileNavDrawer';
 
 const pageTitles: Record<string, string> = {
+  '/contractor':               'לוח בקרה',
   '/contractor/dashboard':     'לוח בקרה',
-  '/contractor/searches':      'סטטוס בקשות',
-  '/contractor/find':          'חיפוש חדש',
-  '/contractor/deals':         'עסקאות',
-  '/contractor/manage':        'ניהול',
   '/contractor/users':         'ניהול צוות',
   '/contractor/documents':     'מסמכים',
+  '/contractor/tenders':       'בקשות ייבוא עובדים מחו״ל',
+  '/corporation':              'לוח בקרה',
   '/corporation/dashboard':    'לוח בקרה',
+  '/corporation/ads':          'המודעות שלי',
   '/corporation/workers':      'ניהול עובדים',
   '/corporation/workers/new':  'הוספת עובד',
-  '/corporation/deals':        'עסקאות',
   '/corporation/users':        'ניהול צוות',
   '/corporation/documents':    'מסמכים',
+  '/corporation/tenders':      'בקשות ייבוא עובדים מחו״ל',
+  '/billing':                  'חשבון ומנוי',
 };
 
 function getPageTitle(pathname: string): string {
   if (pageTitles[pathname]) return pageTitles[pathname];
-  if (pathname.includes('/find/'))        return 'איתור עובדים';
-  if (pathname.includes('/searches/'))    return 'פרטי חיפוש';
-  if (pathname.includes('/deals/'))       return 'פרטי עסקה';
+  if (pathname.includes('/tenders/')) return 'בקשת ייבוא עובדים';
+  if (pathname.includes('/ads/'))     return 'מודעה';
   return 'TagidAI';
 }
 

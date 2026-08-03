@@ -1,5 +1,5 @@
 from fastapi import FastAPI, HTTPException
-from app.routes import dashboard, enums, approvals, commissions, registration_log, settings, users, leads, deals, support, gov_corp_list, org_summary, notifications_test, ads as admin_ads, subscriptions as admin_subs, subscription_plans as admin_plans
+from app.routes import dashboard, enums, approvals, registration_log, settings, users, leads, support, gov_corp_list, org_summary, notifications_test, ads as admin_ads, subscriptions as admin_subs, subscription_plans as admin_plans
 from app.db import get_db, init_db
 from app.errors import register_error_handlers
 
@@ -20,7 +20,7 @@ def health():
 def readyz():
     """Readiness — 503 if any of the schemas admin reads from is unreachable."""
     try:
-        conn = get_db("deal_db")
+        conn = get_db("org_db")
         try:
             cur = conn.cursor()
             cur.execute("SELECT 1")
@@ -33,8 +33,6 @@ def readyz():
 
 app.include_router(dashboard.router,     prefix="/admin", tags=["dashboard"])
 app.include_router(approvals.router,     prefix="/admin", tags=["approvals"])
-app.include_router(commissions.router,   prefix="/admin", tags=["commissions"])
-app.include_router(deals.router,         prefix="/admin", tags=["deals"])
 app.include_router(settings.router,      prefix="/admin", tags=["settings"])
 app.include_router(users.router,         prefix="/admin", tags=["users"])
 app.include_router(leads.router,         prefix="/admin", tags=["leads"])

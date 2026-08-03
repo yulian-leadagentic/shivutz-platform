@@ -243,23 +243,13 @@ function LoginPageInner() {
       // any more; they go straight into "try the product, then register
       // to save your work".
       if ('prospect' in res && res.prospect) {
-        sessionStorage.setItem('prospect', JSON.stringify({
-          phone:  res.phone,
-          intent: res.intent,
-          // Wall-clock expiry so the trial pages can detect a stale
-          // session (e.g. the user navigated away for 20 minutes and
-          // came back) and bounce back to /login if needed.
-          expires_at: new Date(Date.now() + 15 * 60_000).toISOString(),
-        }));
-        // Both contractor + corporation now have trial surfaces:
-        //   /try/contractor   — domestic vs foreign tiles + search form
-        //   /try/corporation  — immediate vs foreign tiles + req list
-        // Anything else falls back to the landing (defensive — no
-        // intent string outside these two should reach here, but a
-        // hard /login is the safest landing).
+        // Pivot/v2: no trial funnel pages — an unregistered phone lands
+        // straight on the registration form for the intent role. The
+        // landing search page (/) is public anyway, so a fallback there
+        // is fine for unknown intents.
         router.push(
-          res.intent === 'corporation' ? '/try/corporation' :
-          res.intent === 'contractor'  ? '/try/contractor' :
+          res.intent === 'corporation' ? '/register/corporation' :
+          res.intent === 'contractor'  ? '/register/contractor'  :
           '/',
         );
         return;

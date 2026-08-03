@@ -17,19 +17,18 @@ type Resolver = (role: AudienceRole) => ResolvedCta | null;
 
 const RESOLVERS: Record<CtaIntent, Resolver> = {
   check_match: (role) => {
-    if (role === 'contractor')   return { label: 'בדוק התאמה', href: '/contractor/find' };
-    if (role === 'corporation')  return { label: 'בדוק התאמה', href: '/corporation/workers' };
-    return { label: 'בדוק התאמה', href: '/login?next=/contractor/find' };
+    if (role === 'contractor')   return { label: 'חפש עובדים', href: '/' };
+    if (role === 'corporation')  return { label: 'המודעות שלי', href: '/corporation/ads' };
+    return { label: 'חפש עובדים', href: '/' };
   },
   see_requirements: (role) => {
-    if (role === 'contractor')   return { label: 'ראה דרישות', href: '/contractor/deals' };
-    if (role === 'corporation')  return { label: 'ראה דרישות', href: '/corporation/tenders' };
+    if (role === 'contractor')   return { label: 'בקשות ייבוא', href: '/contractor/tenders' };
+    if (role === 'corporation')  return { label: 'בקשות ייבוא', href: '/corporation/tenders' };
     return { label: 'הירשם וצפה', href: '/register/contractor' };
   },
-  see_housing: () => ({ label: 'ראה מגורים', href: '/marketplace?cat=housing' }),
+  see_housing: () => ({ label: 'ראה מגורים', href: '/?category=housing' }),
   post_requirement: (role) => {
-    if (role === 'contractor')   return { label: 'פרסם דרישה', href: '/contractor/find' };
-    // Corp users get no "post requirement" CTA — not their flow.
+    if (role === 'contractor')   return { label: 'חפש עובדים', href: '/' };
     if (role === 'corporation')  return { label: '', href: '', hidden: true };
     return { label: 'הירשם וצפה', href: '/register/contractor' };
   },
