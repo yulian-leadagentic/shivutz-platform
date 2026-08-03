@@ -8,6 +8,8 @@ const { runContractorRevalidationCron } = require('./cron/contractorRevalidation
 const { runDealLifecycleCron } = require('./cron/dealLifecycle');
 const { runContractorApprovalReminderCron } = require('./cron/contractorApprovalReminder');
 const { runCorpResponseOverdueCron }        = require('./cron/corpResponseOverdue');
+const { runTrialEndingReminderCron }        = require('./cron/trialEndingReminder');
+const { runAdExpiringReminderCron }         = require('./cron/adExpiringReminder');
 const notifRoutes = require('./routes/notifications');
 
 const app = express();
@@ -74,6 +76,22 @@ const PORT = process.env.NOTIF_PORT || 3006;
   // daily run).
   cron.schedule('*/5 * * * *', () => {
     runCorpResponseOverdueCron().catch(console.error);
+  });
+
+  // Daily at 08:00 — SMS entities whose trial ends within the next
+  // 3 days (see TRIAL_ENDING_DAYS_AHEAD). One SMS per sub, latched
+  // via subscriptions.trial_expiry_notified_at.
+  cron.schedule('0 8 * * *', () => {
+    console.log('[cron] Running trial-ending reminder');
+    runTrialEndingReminderCron().catch(console.error);
+  });
+
+  // Daily at 08:15 — SMS corps whose ad expires within the next 3
+  // days (see AD_EXPIRY_DAYS_AHEAD). One SMS per ad, latched via
+  // ads.expiry_notified_at.
+  cron.schedule('15 8 * * *', () => {
+    console.log('[cron] Running ad-expiring reminder');
+    runAdExpiringReminderCron().catch(console.error);
   });
 
   app.listen(PORT, () => console.log(`Notification service listening on ${PORT}`));
