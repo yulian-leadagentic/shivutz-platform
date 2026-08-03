@@ -436,6 +436,20 @@ async function handle(routingKey, payload, sendEmail) {
       });
       break;
 
+    // Pivot/v2 — corp gets notified when a contractor reveals the
+    // contact info on one of their ads. Best-effort SMS to the corp's
+    // primary contact_phone; skipped if payload lacks it.
+    case 'ad.contact_revealed': {
+      if (!payload.corp_phone) break;
+      const adUrl = `${FRONTEND_URL}/corporation/ads`;
+      const title = (payload.ad_title || '').slice(0, 60);
+      const message =
+        `TagidAI — קבלן חשף את פרטי הקשר שלכם בעקבות המודעה "${title}". ` +
+        `הוא עשוי לפנות אליכם בקרוב.\nלצפייה במודעות שלכם:\n${adUrl}`;
+      await sendSmsInternal(payload.corp_phone, message);
+      break;
+    }
+
     case 'team.invited': {
       const roleLabel   = ROLE_LABELS_HE[payload.role] ?? payload.role;
       const inviteUrl   = `${FRONTEND_URL}/invite/accept/${payload.invite_token}`;
