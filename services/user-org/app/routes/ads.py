@@ -22,6 +22,7 @@ from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, Field
 
 from app.db import get_db
+from app.publisher import publish_event
 from app.services.subscription_limits import fetch_entitlement, tier_limits
 
 router = APIRouter()
@@ -512,7 +513,7 @@ def delete_ad(
 # inline here so contact-reveal works before middleware ships.
 
 @router.get("/{ad_id}/contact-reveal")
-def contact_reveal(
+async def contact_reveal(
     ad_id: str,
     x_entity_id:   Optional[str] = Header(default=None),
     x_entity_type: Optional[str] = Header(default=None),
@@ -559,7 +560,8 @@ def contact_reveal(
     try:
         cur = conn.cursor()
         cur.execute(
-            """SELECT a.owner_entity_id, c.company_name_he, c.company_name,
+            """SELECT a.owner_entity_id, a.title_he,
+                      c.company_name_he, c.company_name,
                       c.contact_phone, c.contact_email
                  FROM ads a
                  JOIN corporations c ON c.id = a.owner_entity_id
@@ -570,7 +572,7 @@ def contact_reveal(
         if not row:
             raise HTTPException(status_code=404, detail="ad_not_found")
 
-        # 3. Audit (Phase 5 will use this for per-tier quota counting)
+        # 3. Audit — powers per-tier quota + reveals-received counters.
         cur.execute("SHOW TABLES LIKE 'contact_reveals'")
         if cur.fetchone():
             cur.execute(
@@ -581,14 +583,31 @@ def contact_reveal(
             )
             conn.commit()
 
-        return {
+        company_name = row["company_name_he"] or row["company_name"]
+        response = {
             "ad_id":        ad_id,
-            "company_name": row["company_name_he"] or row["company_name"],
+            "company_name": company_name,
             "phone":        row["contact_phone"],
             "email":        row["contact_email"],
         }
     finally:
         conn.close()
+
+    # 4. Notify the corp — best-effort, never blocks the reveal.
+    if row["contact_phone"]:
+        try:
+            await publish_event("ad.contact_revealed", {
+                "corp_id":       row["owner_entity_id"],
+                "corp_phone":    row["contact_phone"],
+                "corp_name":     company_name,
+                "ad_id":         ad_id,
+                "ad_title":      row["title_he"],
+                "viewer_type":   x_entity_type,   # 'contractor' | 'corporation'
+            })
+        except Exception as e:
+            print(f"[ads.contact_reveal] publish failed (non-fatal): {e}")
+
+    return response
 
 
 # ─── POST /ads/{id}/boost ───────────────────────────────────────────────────
