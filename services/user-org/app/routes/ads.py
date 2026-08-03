@@ -512,6 +512,110 @@ def delete_ad(
 # this — same pattern Phase 5's gateway middleware will use, but
 # inline here so contact-reveal works before middleware ships.
 
+# ─── Internal cron endpoints (called by notification service) ──────────────
+#
+# Both use a "get-and-latch" pattern in one tx: the SELECT returns
+# rows to notify AND the UPDATE marks them notified. The cron doesn't
+# have to make a second call, and a network failure between the two
+# is impossible (never re-notifies + never mis-flags).
+
+@router.post("/internal/trial-ending-batch")
+def trial_ending_batch(days_ahead: int = 3):
+    """Trialing subs whose trial ends within days_ahead and haven't
+    been notified. Marks them notified in the same tx. Corp/contractor
+    contact phone is joined in so the cron can SMS directly."""
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT s.id AS sub_id, s.entity_id, s.entity_type, s.tier,
+                      s.trial_ends_at,
+                      TIMESTAMPDIFF(DAY, NOW(), s.trial_ends_at) AS days_left,
+                      COALESCE(c.contact_phone, ct.contact_phone) AS phone,
+                      COALESCE(c.company_name_he, c.company_name,
+                               ct.company_name_he, ct.company_name)     AS entity_name
+                 FROM payment_db.subscriptions s
+                 LEFT JOIN corporations c  ON s.entity_type='corporation' AND c.id  = s.entity_id
+                 LEFT JOIN contractors  ct ON s.entity_type='contractor'  AND ct.id = s.entity_id
+                WHERE s.status='trialing'
+                  AND s.trial_ends_at > NOW()
+                  AND s.trial_ends_at <= DATE_ADD(NOW(), INTERVAL %s DAY)
+                  AND s.trial_expiry_notified_at IS NULL""",
+            (days_ahead,),
+        )
+        rows = cur.fetchall()
+        if rows:
+            ids = [r["sub_id"] for r in rows]
+            ph  = ",".join(["%s"] * len(ids))
+            cur.execute(
+                f"UPDATE payment_db.subscriptions SET trial_expiry_notified_at=NOW() WHERE id IN ({ph})",
+                ids,
+            )
+            conn.commit()
+        return {
+            "targets": [
+                {
+                    "sub_id":      r["sub_id"],
+                    "entity_type": r["entity_type"],
+                    "entity_name": r["entity_name"],
+                    "tier":        r["tier"],
+                    "phone":       r["phone"],
+                    "days_left":   int(r["days_left"] or 0),
+                }
+                for r in rows if r["phone"]  # skip anything we can't SMS
+            ]
+        }
+    finally:
+        conn.close()
+
+
+@router.post("/internal/ad-expiring-batch")
+def ad_expiring_batch(days_ahead: int = 3):
+    """Active ads whose expires_at is within days_ahead and haven't
+    been notified. Same latch pattern."""
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT a.id AS ad_id, a.title_he, a.owner_entity_id,
+                      a.expires_at, a.ad_type,
+                      TIMESTAMPDIFF(DAY, NOW(), a.expires_at) AS days_left,
+                      c.contact_phone AS phone
+                 FROM ads a
+                 JOIN corporations c ON c.id = a.owner_entity_id
+                WHERE a.active = TRUE
+                  AND a.deleted_at IS NULL
+                  AND a.expires_at IS NOT NULL
+                  AND a.expires_at > NOW()
+                  AND a.expires_at <= DATE_ADD(NOW(), INTERVAL %s DAY)
+                  AND a.expiry_notified_at IS NULL""",
+            (days_ahead,),
+        )
+        rows = cur.fetchall()
+        if rows:
+            ids = [r["ad_id"] for r in rows]
+            ph  = ",".join(["%s"] * len(ids))
+            cur.execute(
+                f"UPDATE ads SET expiry_notified_at=NOW() WHERE id IN ({ph})",
+                ids,
+            )
+            conn.commit()
+        return {
+            "targets": [
+                {
+                    "ad_id":     r["ad_id"],
+                    "title":     r["title_he"],
+                    "ad_type":   r["ad_type"],
+                    "phone":     r["phone"],
+                    "days_left": int(r["days_left"] or 0),
+                }
+                for r in rows if r["phone"]
+            ]
+        }
+    finally:
+        conn.close()
+
+
 @router.get("/{ad_id}/contact-reveal")
 async def contact_reveal(
     ad_id: str,
