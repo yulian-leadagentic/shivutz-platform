@@ -34,8 +34,10 @@ import { FeaturedAdsCarousel } from '@/features/advertising/FeaturedAdsCarousel'
 import { LandingTrustBar } from '@/features/advertising/LandingTrustBar';
 import { searchApi, type SearchResponse, type AdSearchResult, type ContactReveal } from '@/lib/api/search';
 import { apiFetch } from '@/lib/api/client';
+import { enumApi } from '@/lib/api/enums';
 import { isLoggedIn } from '@/lib/auth';
 import { readPendingReveal, clearPendingReveal } from '@/features/prospect/state';
+import type { Profession } from '@/types';
 
 const EXAMPLES = [
   'מחפש 4 פועלים סינים לריצוף',
@@ -84,14 +86,43 @@ export default function LandingPage() {
 
   const [recent, setRecent] = useState<PublicAd[]>([]);
 
+  // L2 — structured filter chips alongside free-text. Selected values
+  // get prepended to the LLM query on submit; the rewriter already
+  // knows how to fold "flooring, center, china" into enum filters, so
+  // this is a pure client-side add — no backend contract change.
+  const [professions, setProfessions] = useState<Profession[]>([]);
+  const [regions,     setRegions]     = useState<{ code: string; name_he: string }[]>([]);
+  const [origins,     setOrigins]     = useState<{ code: string; name_he: string }[]>([]);
+  const [fProf,       setFProf]       = useState('');
+  const [fRegion,     setFRegion]     = useState('');
+  const [fOrigin,     setFOrigin]     = useState('');
+
   useEffect(() => {
     apiFetch<{ results: PublicAd[] }>('/ads/public/recent?limit=12')
       .then((r) => setRecent(r.results))
       .catch(() => setRecent([]));
+    // Best-effort: filters degrade to empty selects if the endpoints
+    // 500 or the anon rate limit is hit.
+    enumApi.professions().then(setProfessions).catch(() => setProfessions([]));
+    enumApi.regions().then(setRegions).catch(() => setRegions([]));
+    enumApi.origins().then(setOrigins).catch(() => setOrigins([]));
   }, []);
 
+  function labelFor<T extends { code: string; name_he: string }>(list: T[], code: string): string {
+    return list.find((r) => r.code === code)?.name_he ?? code;
+  }
+
   async function runSearch(rawQ?: string) {
-    const query = (rawQ ?? q).trim();
+    let query = (rawQ ?? q).trim();
+    // Prepend the active filter labels so the LLM sees them as intent.
+    const chips: string[] = [];
+    if (fProf)   chips.push(labelFor(professions, fProf));
+    if (fRegion) chips.push('אזור: ' + labelFor(regions, fRegion));
+    if (fOrigin) chips.push('מוצא: ' + labelFor(origins, fOrigin));
+    if (chips.length) {
+      const prefix = chips.join(' · ') + (query ? ' — ' : '');
+      query = prefix + query;
+    }
     if (query.length < 2) return;
     setQ(query);
     setLoading(true);
@@ -100,6 +131,11 @@ export default function LandingPage() {
     catch (e) { setError((e as Error).message ?? 'שגיאה בחיפוש'); }
     finally { setLoading(false); }
   }
+
+  function clearFilters() {
+    setFProf(''); setFRegion(''); setFOrigin('');
+  }
+  const anyFilter = !!(fProf || fRegion || fOrigin);
 
   function pickCategory(cat: typeof CATEGORIES[number]) {
     if (cat.soon) return;
@@ -213,8 +249,56 @@ export default function LandingPage() {
               {/* Fat search bar */}
               <form
                 onSubmit={(e) => { e.preventDefault(); runSearch(); }}
-                className="bg-white border border-slate-200 rounded-2xl p-3 shadow-md"
+                className="bg-white border border-slate-200 rounded-2xl p-3 shadow-md space-y-2"
               >
+                {/* L2 — filter chips row. Selected values fold into the
+                    LLM query on submit. Native selects for touch-friendly
+                    picking on mobile; no popover libs needed. */}
+                <div className="flex flex-wrap items-center gap-2 text-sm">
+                  <select
+                    value={fProf}
+                    onChange={(e) => setFProf(e.target.value)}
+                    aria-label="מקצוע"
+                    className="h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm text-slate-800 max-w-[45%] sm:max-w-none"
+                  >
+                    <option value="">כל המקצועות</option>
+                    {professions.map((p) => (
+                      <option key={p.code} value={p.code}>{p.name_he}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={fRegion}
+                    onChange={(e) => setFRegion(e.target.value)}
+                    aria-label="אזור"
+                    className="h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm text-slate-800 max-w-[45%] sm:max-w-none"
+                  >
+                    <option value="">כל הארץ</option>
+                    {regions.map((r) => (
+                      <option key={r.code} value={r.code}>{r.name_he}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={fOrigin}
+                    onChange={(e) => setFOrigin(e.target.value)}
+                    aria-label="ארץ מוצא"
+                    className="h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm text-slate-800 max-w-[45%] sm:max-w-none"
+                  >
+                    <option value="">כל הארצות</option>
+                    {origins.map((o) => (
+                      <option key={o.code} value={o.code}>{o.name_he}</option>
+                    ))}
+                  </select>
+                  {anyFilter && (
+                    <button
+                      type="button"
+                      onClick={clearFilters}
+                      className="text-xs text-slate-500 hover:text-brand-800 underline underline-offset-2"
+                    >
+                      נקה סינון
+                    </button>
+                  )}
+                </div>
+
                 <div className="flex items-center gap-2">
                   <SearchIcon className="w-5 h-5 text-slate-400 shrink-0" />
                   <input
@@ -226,10 +310,10 @@ export default function LandingPage() {
                   />
                   <button
                     type="submit"
-                    disabled={loading || q.trim().length < 2}
-                    className="bg-brand-800 hover:bg-brand-900 text-white text-sm font-semibold px-5 py-2.5 rounded-lg disabled:bg-slate-300 inline-flex items-center gap-2"
+                    disabled={loading || (q.trim().length < 2 && !anyFilter)}
+                    className="bg-brand-800 hover:bg-brand-900 text-white text-base font-bold px-6 py-3 rounded-xl disabled:bg-slate-300 inline-flex items-center gap-2 shrink-0"
                   >
-                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <SearchIcon className="w-4 h-4" />}
+                    {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <SearchIcon className="w-5 h-5" />}
                     חפש
                   </button>
                 </div>
