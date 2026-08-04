@@ -176,7 +176,7 @@ export default function CorporationAdsPage() {
 
                 <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 mt-3 text-xs">
                   <div><dt className="text-slate-500">פג תוקף</dt><dd className="text-slate-800">{fmt(ad.expires_at)}{daysLeft(ad.expires_at) !== null ? ` (עוד ${daysLeft(ad.expires_at)} ימים)` : ''}</dd></div>
-                  <div><dt className="text-slate-500">צפיות</dt><dd className="text-slate-800 inline-flex items-center gap-1"><Eye className="w-3 h-3" />{ad.view_count}</dd></div>
+                  <div><dt className="text-slate-500">חשיפות פרטי קשר</dt><dd className="text-slate-800 inline-flex items-center gap-1"><Eye className="w-3 h-3" />{ad.reveal_count ?? 0}</dd></div>
                 </dl>
 
                 <div className="flex items-center gap-2 mt-3 pt-3 border-t border-slate-100">

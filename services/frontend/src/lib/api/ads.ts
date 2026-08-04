@@ -37,6 +37,8 @@ export interface AdRow {
   expires_at: string | null;
   featured_until: string | null;
   view_count: number;
+  /** CP2: contact-reveals count, populated by /ads/mine only. */
+  reveal_count?: number;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;

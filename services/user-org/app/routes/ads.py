@@ -373,14 +373,22 @@ def list_my_ads(
     x_entity_id:   Optional[str] = Header(default=None),
     x_entity_type: Optional[str] = Header(default=None),
 ):
+    """Corp's own ads with a per-ad reveal_count subquery.
+
+    Pivot/v2 (CP2): reveals is the value metric — corps see how many
+    contractors actually revealed their contact info, not raw views.
+    """
     corp_id = _require_corp(x_entity_id, x_entity_type)
     conn = get_db()
     try:
         cur = conn.cursor()
         cur.execute(
-            """SELECT * FROM ads
-                WHERE owner_entity_id=%s AND deleted_at IS NULL
-                ORDER BY featured_until DESC, created_at DESC""",
+            """SELECT a.*,
+                      (SELECT COUNT(*) FROM contact_reveals cr
+                        WHERE cr.ad_id = a.id) AS reveal_count
+                 FROM ads a
+                WHERE a.owner_entity_id=%s AND a.deleted_at IS NULL
+                ORDER BY a.featured_until DESC, a.created_at DESC""",
             (corp_id,),
         )
         return [_serialize(r) for r in cur.fetchall()]
