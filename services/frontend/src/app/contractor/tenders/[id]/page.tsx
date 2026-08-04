@@ -326,7 +326,7 @@ export default function ContractorTenderDetailPage() {
                       {!locked ? (
                         <button type="button" onClick={() => toggle(bi.id)}
                           className={`h-6 w-6 rounded-md border-2 flex items-center justify-center shrink-0 transition ${
-                            isSel ? 'bg-brand-600 border-brand-600 text-white' : 'border-slate-300 hover:border-brand-400'}`}
+                            isSel ? 'bg-brand-800 border-brand-800 text-white' : 'border-slate-300 hover:border-brand-400'}`}
                           aria-label="בחר שורה">
                           {isSel && <Check className="h-4 w-4" />}
                         </button>

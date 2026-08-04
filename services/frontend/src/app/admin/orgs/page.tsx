@@ -188,7 +188,7 @@ export default function AdminOrgsPage() {
         pills={{
           options: [
             { key: 'all',         label: 'הכל',     count: orgs.length,                                                       tone: 'bg-slate-900 text-white' },
-            { key: 'contractor',  label: 'קבלנים',  count: orgs.filter((o) => o.org_type === 'contractor').length,            tone: 'bg-brand-600 text-white' },
+            { key: 'contractor',  label: 'קבלנים',  count: orgs.filter((o) => o.org_type === 'contractor').length,            tone: 'bg-brand-800 text-white' },
             { key: 'corporation', label: 'תאגידים', count: orgs.filter((o) => o.org_type === 'corporation').length,           tone: 'bg-navy-600 text-white' },
           ],
           active: typeFilter,

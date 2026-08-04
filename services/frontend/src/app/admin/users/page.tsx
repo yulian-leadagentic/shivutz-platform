@@ -146,7 +146,7 @@ export default function AdminUsersPage() {
   };
   const ROLE_PILLS: PillOption<typeof filterRole>[] = [
     { key: 'all',         label: 'הכל',     count: users.length,         tone: 'bg-slate-900 text-white' },
-    { key: 'admin',       label: 'מנהלים',  count: roleCounts.admin,     tone: 'bg-brand-600 text-white' },
+    { key: 'admin',       label: 'מנהלים',  count: roleCounts.admin,     tone: 'bg-brand-800 text-white' },
     { key: 'contractor',  label: 'קבלנים',  count: roleCounts.contractor, tone: 'bg-amber-500 text-white' },
     { key: 'corporation', label: 'תאגידים', count: roleCounts.corporation, tone: 'bg-navy-600 text-white' },
   ];

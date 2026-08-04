@@ -146,7 +146,7 @@ function OrgRow({
               aria-pressed={selected}
               className={`shrink-0 inline-flex items-center justify-center w-6 h-6 rounded-md border transition-colors ${
                 selected
-                  ? 'bg-brand-600 border-brand-600 text-white'
+                  ? 'bg-brand-800 border-brand-800 text-white'
                   : 'bg-white border-slate-300 text-slate-400 hover:border-brand-500 hover:text-brand-600'
               }`}
             >
@@ -533,7 +533,7 @@ function ApprovalsContent() {
         pills={{
           options: [
             { key: 'all',         label: 'הכל',     count: orgs.length,                                            tone: 'bg-slate-900 text-white' },
-            { key: 'contractor',  label: 'קבלנים',  count: orgs.filter((o) => o.org_type === 'contractor').length, tone: 'bg-brand-600 text-white' },
+            { key: 'contractor',  label: 'קבלנים',  count: orgs.filter((o) => o.org_type === 'contractor').length, tone: 'bg-brand-800 text-white' },
             { key: 'corporation', label: 'תאגידים', count: orgs.filter((o) => o.org_type === 'corporation').length, tone: 'bg-navy-600 text-white' },
           ],
           active: typeFilter,
@@ -568,7 +568,7 @@ function ApprovalsContent() {
             aria-pressed={allVisibleSelected}
             className={`inline-flex items-center justify-center w-6 h-6 rounded-md border transition-colors ${
               allVisibleSelected
-                ? 'bg-brand-600 border-brand-600 text-white'
+                ? 'bg-brand-800 border-brand-800 text-white'
                 : someVisibleSelected
                   ? 'bg-brand-100 border-brand-400 text-brand-700'
                   : 'bg-white border-slate-300 text-slate-400 hover:border-brand-500 hover:text-brand-600'

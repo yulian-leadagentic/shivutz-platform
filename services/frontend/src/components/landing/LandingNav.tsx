@@ -163,7 +163,7 @@ export default function LandingNav(_: LandingNavProps) {
               </Link>
               <Link
                 href="/register/contractor"
-                className="text-sm font-semibold bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded-lg transition-colors shadow-sm"
+                className="text-sm font-semibold bg-brand-800 hover:bg-brand-900 text-white px-4 py-2 rounded-lg transition-colors shadow-sm"
               >
                 הצטרף
               </Link>
@@ -202,7 +202,7 @@ export default function LandingNav(_: LandingNavProps) {
                     פאנל ניהול
                   </Link>
                 )}
-                <Link href={dashboardHref} className="w-full text-center text-sm font-semibold text-white bg-brand-600 hover:bg-brand-700 py-2.5 rounded-lg" onClick={() => setMenuOpen(false)}>לוח בקרה</Link>
+                <Link href={dashboardHref} className="w-full text-center text-sm font-semibold text-white bg-brand-800 hover:bg-brand-900 py-2.5 rounded-lg" onClick={() => setMenuOpen(false)}>לוח בקרה</Link>
                 <button
                   type="button"
                   onClick={() => { setMenuOpen(false); handleLogout(); }}
@@ -215,7 +215,7 @@ export default function LandingNav(_: LandingNavProps) {
             ) : (
               <>
                 <Link href="/login" className="w-full text-center text-sm font-medium text-slate-600 py-2.5 rounded-lg hover:bg-slate-50 border border-slate-200" onClick={() => setMenuOpen(false)}>משתמש רשום? לחץ כאן</Link>
-                <Link href="/register/contractor" className="w-full text-center text-sm font-semibold text-white bg-brand-600 hover:bg-brand-700 py-2.5 rounded-lg" onClick={() => setMenuOpen(false)}>הצטרף</Link>
+                <Link href="/register/contractor" className="w-full text-center text-sm font-semibold text-white bg-brand-800 hover:bg-brand-900 py-2.5 rounded-lg" onClick={() => setMenuOpen(false)}>הצטרף</Link>
               </>
             )}
           </div>

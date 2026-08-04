@@ -288,7 +288,7 @@ function RegisterCorporationInner() {
             <Link href="/login" className="px-4 py-2 rounded-lg border border-slate-300 text-sm font-medium text-slate-700 hover:bg-slate-50">
               חזרה לכניסה
             </Link>
-            <Link href="/" className="px-4 py-2 rounded-lg bg-brand-600 text-sm font-medium text-white hover:bg-brand-700">
+            <Link href="/" className="px-4 py-2 rounded-lg bg-brand-800 text-sm font-medium text-white hover:bg-brand-900">
               חזרה לדף הבית
             </Link>
           </div>

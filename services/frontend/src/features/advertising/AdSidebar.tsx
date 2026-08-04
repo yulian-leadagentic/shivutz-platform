@@ -29,7 +29,7 @@ export function AdSidebar({
         <p className="text-xs text-slate-600 mt-1 leading-relaxed">{body}</p>
         <a
           href={href}
-          className="mt-3 inline-flex items-center bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-3.5 py-2 rounded-lg"
+          className="mt-3 inline-flex items-center bg-brand-800 hover:bg-brand-900 text-white text-xs font-semibold px-3.5 py-2 rounded-lg"
         >
           {cta}
         </a>

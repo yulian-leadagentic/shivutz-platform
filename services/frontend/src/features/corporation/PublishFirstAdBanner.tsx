@@ -53,7 +53,7 @@ export function PublishFirstAdBanner() {
           </p>
           <Link
             href="/corporation/ads/new"
-            className="mt-3 inline-flex items-center gap-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold px-4 py-2 rounded-lg"
+            className="mt-3 inline-flex items-center gap-2 bg-brand-800 hover:bg-brand-900 text-white text-sm font-semibold px-4 py-2 rounded-lg"
           >
             <Megaphone className="w-4 h-4" />
             פרסם מודעה

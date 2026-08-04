@@ -133,7 +133,7 @@ export default function NewWorkerPage() {
               aria-pressed={isActive}
               className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-bold transition-all ${
                 isActive
-                  ? 'bg-brand-600 text-white shadow-sm'
+                  ? 'bg-brand-800 text-white shadow-sm'
                   : 'bg-white text-slate-800 border border-slate-300 hover:border-brand-400 hover:bg-brand-50/40'
               }`}
             >

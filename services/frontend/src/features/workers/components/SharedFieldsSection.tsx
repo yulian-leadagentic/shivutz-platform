@@ -80,7 +80,7 @@ export function SharedFieldsSection({
               onClick={() => onChange({ experience_range: r.code })}
               className={`px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${
                 fields.experience_range === r.code
-                  ? 'bg-brand-600 text-white border-brand-600'
+                  ? 'bg-brand-800 text-white border-brand-600'
                   : 'bg-white text-slate-600 border-slate-300 hover:border-brand-400'
               }`}>{r.label}</button>
           ))}
@@ -108,7 +108,7 @@ export function SharedFieldsSection({
             <button key={l.code} type="button" onClick={() => toggleLang(l.code)}
               className={`px-2.5 py-1 rounded-full text-xs border font-medium transition-colors ${
                 fields.languages.includes(l.code)
-                  ? 'bg-brand-600 text-white border-brand-600'
+                  ? 'bg-brand-800 text-white border-brand-600'
                   : 'bg-white text-slate-600 border-slate-300 hover:border-brand-400'
               }`}>{l.name}</button>
           ))}

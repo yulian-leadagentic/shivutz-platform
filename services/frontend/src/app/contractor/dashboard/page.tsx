@@ -58,7 +58,7 @@ export default function ContractorDashboardPage() {
       {/* Primary CTA — search */}
       <Link
         href="/"
-        className="flex items-center justify-center gap-3 bg-brand-600 hover:bg-brand-700 text-white text-lg font-semibold py-4 rounded-2xl shadow-md transition"
+        className="flex items-center justify-center gap-3 bg-brand-800 hover:bg-brand-900 text-white text-lg font-semibold py-4 rounded-2xl shadow-md transition"
       >
         <SearchIcon className="w-6 h-6" />
         התחל חיפוש
@@ -102,7 +102,7 @@ export default function ContractorDashboardPage() {
           </div>
           <Link
             href="/billing"
-            className="inline-flex items-center gap-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold px-4 py-2 rounded-lg"
+            className="inline-flex items-center gap-2 bg-brand-800 hover:bg-brand-900 text-white text-sm font-semibold px-4 py-2 rounded-lg"
           >
             <CreditCard className="w-4 h-4" />
             ניהול מנוי

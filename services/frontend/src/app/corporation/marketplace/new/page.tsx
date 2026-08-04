@@ -107,7 +107,7 @@ export default function NewListingPage() {
                     onClick={() => update('category', c.value)}
                     className={`px-4 py-2 rounded-full text-sm font-medium border transition-all ${
                       form.category === c.value
-                        ? 'bg-brand-600 text-white border-brand-600'
+                        ? 'bg-brand-800 text-white border-brand-600'
                         : 'border-slate-200 text-slate-600 hover:border-brand-300'
                     }`}
                   >
