@@ -204,7 +204,7 @@ export default function LandingPage() {
                   <button
                     type="submit"
                     disabled={loading || q.trim().length < 2}
-                    className="bg-brand-600 hover:bg-brand-500 text-white text-sm font-semibold px-5 py-2.5 rounded-lg disabled:bg-slate-300 inline-flex items-center gap-2"
+                    className="bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold px-5 py-2.5 rounded-lg disabled:bg-slate-300 inline-flex items-center gap-2"
                   >
                     {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <SearchIcon className="w-4 h-4" />}
                     חפש

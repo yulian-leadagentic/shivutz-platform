@@ -90,7 +90,7 @@ export function AdInquiryModal({
             <button
               type="button"
               onClick={close}
-              className="mt-2 bg-brand-600 hover:bg-brand-500 text-white text-sm font-semibold px-5 py-2 rounded-lg"
+              className="mt-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold px-5 py-2 rounded-lg"
             >
               סגור
             </button>
@@ -140,7 +140,7 @@ export function AdInquiryModal({
               <button
                 type="submit"
                 disabled={busy}
-                className="w-full bg-brand-600 hover:bg-brand-500 text-white font-semibold py-2.5 rounded-lg disabled:bg-slate-300 inline-flex items-center justify-center gap-2"
+                className="w-full bg-brand-600 hover:bg-brand-700 text-white font-semibold py-2.5 rounded-lg disabled:bg-slate-300 inline-flex items-center justify-center gap-2"
               >
                 {busy ? <><Loader2 className="w-4 h-4 animate-spin" /> שולח…</> : <><Send className="w-4 h-4" /> שלח</>}
               </button>

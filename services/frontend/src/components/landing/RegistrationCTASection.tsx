@@ -46,7 +46,7 @@ export default function RegistrationCTASection({ onLeadCapture }: RegistrationCT
             <ul className="space-y-2.5 mb-7 flex-1">
               {CONTRACTOR_BENEFITS.map((b) => (
                 <li key={b} className="flex items-start gap-2.5 text-sm text-slate-700">
-                  <Check className="h-4 w-4 shrink-0 text-brand-500 mt-0.5" />
+                  <Check className="h-4 w-4 shrink-0 text-brand-600 mt-0.5" />
                   {b}
                 </li>
               ))}
@@ -54,7 +54,7 @@ export default function RegistrationCTASection({ onLeadCapture }: RegistrationCT
             <div className="space-y-2">
               <Link
                 href="/register/contractor"
-                className="flex items-center justify-between w-full bg-brand-600 hover:bg-brand-500 text-white font-semibold text-sm px-5 py-3 rounded-xl transition-colors"
+                className="flex items-center justify-between w-full bg-brand-600 hover:bg-brand-700 text-white font-semibold text-sm px-5 py-3 rounded-xl transition-colors"
               >
                 <span>הצטרף כקבלן — בחינם</span>
                 <ArrowLeft className="h-4 w-4" />

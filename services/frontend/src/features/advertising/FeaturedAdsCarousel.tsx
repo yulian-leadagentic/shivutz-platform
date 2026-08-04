@@ -91,7 +91,7 @@ export function FeaturedAdsCarousel() {
       <div className="flex items-baseline justify-between mb-3">
         <div>
           <h2 className="text-lg sm:text-xl font-bold text-slate-900 flex items-center gap-2">
-            <Flame className="w-5 h-5 text-orange-500 fill-orange-400" />
+            <Flame className="w-5 h-5 text-brand-700 fill-brand-500" />
             חם בפורטל
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">מודעות מקודמות של תאגידים</p>

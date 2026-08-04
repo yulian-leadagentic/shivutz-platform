@@ -147,7 +147,7 @@ export function AdPreviewModal({
             type="button"
             onClick={confirm}
             disabled={busy}
-            className="flex-[2] bg-brand-600 hover:bg-brand-500 text-white font-semibold py-2.5 rounded-lg disabled:bg-slate-300 inline-flex items-center justify-center gap-2"
+            className="flex-[2] bg-brand-600 hover:bg-brand-700 text-white font-semibold py-2.5 rounded-lg disabled:bg-slate-300 inline-flex items-center justify-center gap-2"
           >
             {busy ? <><Loader2 className="w-4 h-4 animate-spin" /> מפרסם…</> : <><Send className="w-4 h-4" /> אשר ופרסם</>}
           </button>
