@@ -5,7 +5,7 @@
 // The success state is handled inline on the caller (contact info shown
 // in the ad card); the modal only appears when reveal is blocked.
 
-import { useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { X, UserPlus, LogIn, CreditCard, Sparkles } from 'lucide-react';
 import { writePendingReveal, clearPendingReveal } from '@/features/prospect/state';
@@ -20,6 +20,8 @@ function returnHref(adId: string): string {
   return `/?reveal=${encodeURIComponent(adId)}`;
 }
 
+const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
 export function RevealModal({
   block,
   onClose,
@@ -27,6 +29,9 @@ export function RevealModal({
   block: RevealBlock | null;
   onClose: () => void;
 }) {
+  const dialogRef  = useRef<HTMLDivElement>(null);
+  const returnFocusTo = useRef<HTMLElement | null>(null);
+
   // O1 — stash reveal intent so /login /register /billing round-trips
   // survive OTP restart, tab refresh, or a lost returnTo URL param.
   // 'error' has no adId so nothing to stash. Cleared on explicit close
@@ -36,10 +41,52 @@ export function RevealModal({
     writePendingReveal({ adId: block.adId, kind: block.kind });
   }, [block]);
 
-  function handleClose() {
+  const handleClose = useCallback(() => {
     clearPendingReveal();
     onClose();
-  }
+  }, [onClose]);
+
+  // R1 — a11y: focus-trap, Esc-to-close, return-focus-on-close.
+  useEffect(() => {
+    if (!block) return;
+    // Remember what was focused when the modal opened (typically the
+    // Reveal button on an ad card) so we can put focus back after close.
+    returnFocusTo.current = document.activeElement as HTMLElement | null;
+
+    // Focus the first focusable inside the modal (usually the close X).
+    // Focusing the title itself keeps screen-readers oriented; use the
+    // dialog root as the anchor so tab starts inside.
+    const first = dialogRef.current?.querySelector<HTMLElement>(FOCUSABLE);
+    (first ?? dialogRef.current)?.focus();
+
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        handleClose();
+        return;
+      }
+      if (e.key !== 'Tab' || !dialogRef.current) return;
+      const items = Array.from(dialogRef.current.querySelectorAll<HTMLElement>(FOCUSABLE));
+      if (items.length === 0) return;
+      const firstEl = items[0];
+      const lastEl  = items[items.length - 1];
+      const active  = document.activeElement as HTMLElement | null;
+      if (e.shiftKey && active === firstEl) {
+        e.preventDefault();
+        lastEl.focus();
+      } else if (!e.shiftKey && active === lastEl) {
+        e.preventDefault();
+        firstEl.focus();
+      }
+    }
+
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      // Return focus to whatever opened the modal.
+      returnFocusTo.current?.focus?.();
+    };
+  }, [block, handleClose]);
 
   if (!block) return null;
 
@@ -49,10 +96,13 @@ export function RevealModal({
       onClick={handleClose}
     >
       <div
-        className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl p-6 space-y-4"
+        ref={dialogRef}
+        className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl p-6 space-y-4 outline-none"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
+        aria-labelledby="reveal-modal-title"
+        tabIndex={-1}
       >
         <button
           type="button"
@@ -69,7 +119,7 @@ export function RevealModal({
               <Sparkles className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-slate-900">כדי לראות פרטי קשר</h2>
+              <h2 id="reveal-modal-title" className="text-lg font-bold text-slate-900">כדי לראות פרטי קשר</h2>
               <p className="text-sm text-slate-600 mt-1 leading-relaxed">
                 חפשו אצלנו בחינם. חשיפת פרטי הקשר של תאגידים דורשת חשבון עם מנוי פעיל — 14 ימי ניסיון חינם.
               </p>
@@ -99,7 +149,7 @@ export function RevealModal({
               <CreditCard className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-slate-900">המנוי לא פעיל</h2>
+              <h2 id="reveal-modal-title" className="text-lg font-bold text-slate-900">המנוי לא פעיל</h2>
               <p className="text-sm text-slate-600 mt-1 leading-relaxed">
                 תקופת הניסיון או המנוי שלך הסתיים. חדש את המנוי כדי להמשיך לחשוף פרטי קשר.
               </p>
@@ -119,7 +169,7 @@ export function RevealModal({
               <CreditCard className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-slate-900">הגעת למגבלת החודש</h2>
+              <h2 id="reveal-modal-title" className="text-lg font-bold text-slate-900">הגעת למגבלת החודש</h2>
               <p className="text-sm text-slate-600 mt-1 leading-relaxed">
                 השתמשת ב-{block.used} מתוך {block.limit} חשיפות במסלול <b>{block.tier}</b>. שדרג את המנוי לחשיפות ללא הגבלה.
               </p>
@@ -139,7 +189,7 @@ export function RevealModal({
               <X className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-slate-900">שגיאה</h2>
+              <h2 id="reveal-modal-title" className="text-lg font-bold text-slate-900">שגיאה</h2>
               <p className="text-sm text-slate-600 mt-1 leading-relaxed">{block.message}</p>
             </div>
             <button
