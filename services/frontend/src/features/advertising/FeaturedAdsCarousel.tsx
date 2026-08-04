@@ -136,8 +136,8 @@ export function FeaturedAdsCarousel() {
                     {isHousing ? 'דיור' : (profLabel || 'עובדים')}
                   </span>
                   {boosted && (
-                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-900 bg-amber-300 rounded-full px-2 py-0.5">
-                      <Zap className="w-3 h-3 fill-amber-800" />
+                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-brand-700 bg-brand-100 rounded-full px-2 py-0.5">
+                      <Zap className="w-3 h-3 fill-brand-500" />
                       מקודם
                     </span>
                   )}

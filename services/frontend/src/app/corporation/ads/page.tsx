@@ -165,8 +165,8 @@ export default function CorporationAdsPage() {
                     </p>
                   </div>
                   {boosted && (
-                    <span className="shrink-0 inline-flex items-center gap-1 text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5">
-                      <Zap className="w-3 h-3" />
+                    <span className="shrink-0 inline-flex items-center gap-1 text-xs font-semibold text-brand-700 bg-brand-100 rounded-full px-2 py-0.5">
+                      <Zap className="w-3 h-3 fill-brand-500" />
                       מקודם
                     </span>
                   )}
