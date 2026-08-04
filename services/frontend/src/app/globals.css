@@ -19,6 +19,19 @@ html[dir="rtl"] {
   direction: rtl;
 }
 
+/* ─── G2 — universal keyboard-focus indicator ──────────────────────
+ * Safety-net ring on any focusable that hasn't set its own
+ * focus-visible style. Uses primary-700 (#d26a02) rather than
+ * primary-600 so the ring meets the WCAG 2.4.11 non-text UI 3:1 bar
+ * against white (primary-600 lands at ~2.6:1 — visible but fails).
+ * Component-level focus-visible utilities win on specificity where
+ * they exist. Mouse focus stays quiet — this is keyboard-only. */
+:focus-visible {
+  outline: 2px solid #d26a02;
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
 /* Smooth-scroll for in-page anchors (e.g. nav → #how-it-works).
    Per the spec, scroll-behavior: smooth ignores prefers-reduced-motion
    on its own, so the media query below restores instant for users
