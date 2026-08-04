@@ -13,12 +13,19 @@ import hashlib
 import json
 import os
 import re
+import time
 from typing import Optional
 
 RERANK_ENABLED = os.getenv("LLM_RERANK_ENABLED", "1") == "1"
 RERANK_MIN     = int(os.getenv("LLM_RERANK_MIN", "5"))
 RERANK_TOP_N   = int(os.getenv("LLM_RERANK_TOP_N", "30"))
 CACHE_TTL_S    = int(os.getenv("LLM_RERANK_CACHE_TTL", "300"))
+# L3 — bounded timeout on the Anthropic rerank call. Rerank is
+# best-effort — the SQL-ordered result is the safe fallback, so a
+# tight budget keeps /search latency predictable during Anthropic
+# degradation. Reranker is called AFTER the rewriter, so its
+# budget is the second half of the overall LLM latency envelope.
+LLM_TIMEOUT_S  = float(os.getenv("LLM_RERANK_TIMEOUT_S", "3.0"))
 
 ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001")
 
@@ -139,16 +146,22 @@ def rerank(query: str, candidates: list[dict]) -> list[dict]:
         "no omissions. No prose."
     )
 
+    t0 = time.perf_counter()
     try:
-        client = Anthropic(api_key=api_key)
+        # L3 — bounded timeout so a slow rerank can't stretch /search
+        # past a user's patience. Fallback is the SQL-ordered `candidates`
+        # list which is a perfectly valid result.
+        client = Anthropic(api_key=api_key, timeout=LLM_TIMEOUT_S)
         resp = client.messages.create(
             model=ANTHROPIC_MODEL,
             max_tokens=1200,
             messages=[{"role": "user", "content": prompt}],
         )
+        elapsed = time.perf_counter() - t0
         text = resp.content[0].text
         ranked = _extract_id_list(text, valid_ids)
         if not ranked:
+            print(f"[qrerank] unparseable ({elapsed:.2f}s) → sql order kept")
             return candidates
 
         # Append any candidates the LLM dropped, in their original order —
@@ -162,8 +175,21 @@ def rerank(query: str, candidates: list[dict]) -> list[dict]:
             except Exception:
                 pass
 
+        if elapsed > 1.5:
+            print(f"[qrerank] slow ({elapsed:.2f}s) candidates={len(top)}")
         return _reorder(top, final_order) + tail
-    except Exception:
+    except Exception as exc:  # noqa: BLE001 — search must never break on LLM outage
+        elapsed = time.perf_counter() - t0
+        msg = str(exc).lower()
+        if "timeout" in msg or "timed out" in msg:
+            kind = "timeout"
+        elif "429" in msg or "rate" in msg:
+            kind = "rate_limit"
+        elif "401" in msg or "auth" in msg:
+            kind = "auth"
+        else:
+            kind = "other"
+        print(f"[qrerank] fallback:{kind} ({elapsed:.2f}s) — {type(exc).__name__}")
         return candidates
 
 
