@@ -35,6 +35,7 @@ import { LandingTrustBar } from '@/features/advertising/LandingTrustBar';
 import { searchApi, type SearchResponse, type AdSearchResult, type ContactReveal } from '@/lib/api/search';
 import { apiFetch } from '@/lib/api/client';
 import { isLoggedIn } from '@/lib/auth';
+import { readPendingReveal, clearPendingReveal } from '@/features/prospect/state';
 
 const EXAMPLES = [
   'מחפש 4 פועלים סינים לריצוף',
@@ -117,6 +118,8 @@ export default function LandingPage() {
     try {
       const r = await searchApi.revealContact(adId);
       setReveals((s) => ({ ...s, [adId]: r }));
+      // O1 — the intent that survived login/renew is now spent.
+      clearPendingReveal();
     } catch (e) {
       const msg = (e as Error).message ?? '';
       if (/401|Unauthorized/i.test(msg))                      setBlock({ kind: 'unauth', adId });
@@ -126,16 +129,36 @@ export default function LandingPage() {
     } finally { setRevealing(null); }
   }, [revealing]);
 
+  // O1 — restore a reveal intent that outlived its URL. If the visitor
+  // came back logged-in with no ?reveal= (returnTo lost to refresh /
+  // OTP restart / tab close), promote the stashed adId to a URL param
+  // so the existing reveal-on-mount effect below picks it up.
+  useEffect(() => {
+    if (params.get('reveal')) return;
+    if (!isLoggedIn()) return;
+    const pending = readPendingReveal();
+    if (!pending) return;
+    const url = new URL(window.location.href);
+    url.searchParams.set('reveal', pending.adId);
+    router.replace(url.pathname + url.search + url.hash);
+  }, [params, router]);
+
   useEffect(() => {
     const target = params.get('reveal');
-    if (!target || !resp) return;
+    if (!target) return;
     if (reveals[target] || block) return;
-    const ad = resp.results.find((a) => a.id === target);
-    if (ad) revealFor(ad.id);
+    // Look in search results OR the recent-ads grid — after a
+    // post-register redirect the user typically lands here without a
+    // query, so recent is the only surface where the target card
+    // exists yet.
+    const ad = resp?.results.find((a) => a.id === target)
+            ?? recent.find((a) => a.id === target);
+    if (!ad) return;  // ad not currently rendered; wait for search / recent to load
+    revealFor(ad.id);
     const url = new URL(window.location.href);
     url.searchParams.delete('reveal');
     router.replace(url.pathname + url.search + url.hash);
-  }, [params, resp, reveals, block, revealFor, router]);
+  }, [params, resp, recent, reveals, block, revealFor, router]);
 
   return (
     <>

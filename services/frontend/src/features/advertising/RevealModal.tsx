@@ -5,8 +5,10 @@
 // The success state is handled inline on the caller (contact info shown
 // in the ad card); the modal only appears when reveal is blocked.
 
+import { useEffect } from 'react';
 import Link from 'next/link';
 import { X, UserPlus, LogIn, CreditCard, Sparkles } from 'lucide-react';
+import { writePendingReveal, clearPendingReveal } from '@/features/prospect/state';
 
 export type RevealBlock =
   | { kind: 'unauth';  adId: string }
@@ -25,12 +27,26 @@ export function RevealModal({
   block: RevealBlock | null;
   onClose: () => void;
 }) {
+  // O1 — stash reveal intent so /login /register /billing round-trips
+  // survive OTP restart, tab refresh, or a lost returnTo URL param.
+  // 'error' has no adId so nothing to stash. Cleared on explicit close
+  // and on successful reveal (caller-side).
+  useEffect(() => {
+    if (!block || block.kind === 'error') return;
+    writePendingReveal({ adId: block.adId, kind: block.kind });
+  }, [block]);
+
+  function handleClose() {
+    clearPendingReveal();
+    onClose();
+  }
+
   if (!block) return null;
 
   return (
     <div
       className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4"
-      onClick={onClose}
+      onClick={handleClose}
     >
       <div
         className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl p-6 space-y-4"
@@ -40,7 +56,7 @@ export function RevealModal({
       >
         <button
           type="button"
-          onClick={onClose}
+          onClick={handleClose}
           className="absolute top-3 end-3 text-slate-400 hover:text-slate-700"
           aria-label="סגור"
         >
