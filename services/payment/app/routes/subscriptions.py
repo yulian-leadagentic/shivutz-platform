@@ -54,16 +54,34 @@ def _fetch(cur, entity_id: str, entity_type: str) -> Optional[dict]:
     return cur.fetchone()
 
 
+GRACE_DAYS = 7  # spec B3 — corp trial-end grace before hard-cap
+
+
 def _insert_trial(cur, entity_id: str, entity_type: str) -> dict:
     sub_id = str(uuid.uuid4())
     trial_ends = datetime.utcnow() + timedelta(days=TRIAL_DAYS)
+    grace_ends = trial_ends + timedelta(days=GRACE_DAYS)
     cur.execute(
         """INSERT INTO subscriptions
-             (id, entity_id, entity_type, tier, status, trial_ends_at)
-           VALUES (%s, %s, %s, 'basic', 'trialing', %s)""",
-        (sub_id, entity_id, entity_type, trial_ends),
+             (id, entity_id, entity_type, tier, status, trial_ends_at, grace_ends_at)
+           VALUES (%s, %s, %s, 'basic', 'trialing', %s, %s)""",
+        (sub_id, entity_id, entity_type, trial_ends, grace_ends),
     )
     return _fetch(cur, entity_id, entity_type)
+
+
+def _in_grace(row: dict, now: datetime) -> bool:
+    """True when trial ended but grace window has not — publish/edit
+    blocked, existing ads still live, contact reveals still permitted
+    from the corp side (they're the ad owner, not a paywalled viewer)."""
+    if row.get("status") != "trialing":
+        return False
+    if row.get("trial_ends_at") is None:
+        return False
+    if row["trial_ends_at"] > now:
+        return False  # trial still active
+    ge = row.get("grace_ends_at")
+    return ge is None or ge > now
 
 
 # ─── GET /payments/subscriptions/me ──────────────────────────────────────────
@@ -123,11 +141,37 @@ def start_subscription(
             cur.execute(
                 """UPDATE subscriptions
                      SET tier=%s, status='active', cardcom_plan_code=%s,
-                         current_period_end=%s, cancelled_at=NULL
+                         current_period_end=%s, cancelled_at=NULL,
+                         grace_sms_step=0
                    WHERE entity_id=%s AND entity_type=%s""",
                 (body.tier, plan_code, period_end, entity_id, entity_type),
             )
             conn.commit()
+
+            # B3 — renewal restores paused ads for corps that were in
+            # hard-cap. Runs cross-schema; missing table (dev) or empty
+            # result set is a no-op. Only touches ads that were paused
+            # BY the grace cron (paused_by='grace_hard_cap') to avoid
+            # un-pausing ones the corp paused manually.
+            if entity_type == "corporation":
+                try:
+                    org_conn = get_db("org_db")
+                    try:
+                        org_cur = org_conn.cursor()
+                        org_cur.execute(
+                            """UPDATE ads SET active=TRUE, paused_by=NULL
+                                WHERE owner_entity_id=%s
+                                  AND active=FALSE
+                                  AND paused_by='grace_hard_cap'
+                                  AND deleted_at IS NULL""",
+                            (entity_id,),
+                        )
+                        org_conn.commit()
+                    finally:
+                        org_conn.close()
+                except Exception as exc:  # noqa: BLE001 — restore is best-effort
+                    print(f"[subscriptions] grace-restore skipped: {exc}")
+
             return {"mode": "fake", "tier": body.tier, "status": "active",
                     "current_period_end": period_end.isoformat()}
 
@@ -190,9 +234,19 @@ def check_entitlement(
         now      = datetime.utcnow()
         status   = row["status"]
         entitled = False
+        in_grace = False
 
         if status == "trialing":
-            entitled = row["trial_ends_at"] is None or row["trial_ends_at"] > now
+            trial_live = row["trial_ends_at"] is None or row["trial_ends_at"] > now
+            if trial_live:
+                entitled = True
+            else:
+                # B3 grace — trial ended but hard-cap hasn't fired yet.
+                # NOT entitled for paywalled actions (publish/edit),
+                # but the frontend uses the code to render the grace
+                # banner instead of a plain "subscription required"
+                # wall.
+                in_grace = _in_grace(row, now)
         elif status in ("active", "cancelled"):
             entitled = row["current_period_end"] is None or row["current_period_end"] > now
         elif status == "past_due":
@@ -201,9 +255,10 @@ def check_entitlement(
         if not entitled:
             raise HTTPException(
                 status_code=402,
-                detail={"code": "subscription_required",
+                detail={"code": "grace_period" if in_grace else "subscription_required",
                         "status": status,
-                        "tier": row["tier"]},
+                        "tier": row["tier"],
+                        "grace_ends_at": row["grace_ends_at"].isoformat() if in_grace and row.get("grace_ends_at") else None},
             )
         return {"entitled": True, "status": status, "tier": row["tier"]}
     finally:

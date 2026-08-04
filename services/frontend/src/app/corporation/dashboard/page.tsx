@@ -74,7 +74,19 @@ export default function CorporationDashboardPage() {
 
   if (loading) return <div className="text-center py-16"><Loader2 className="w-6 h-6 animate-spin mx-auto text-slate-400" /></div>;
 
-  const trialDays  = usage?.status === 'trialing' ? daysUntil((usage as UsageResponse & { trial_ends_at?: string | null }).trial_ends_at ?? null) : null;
+  const trialEndsAt = (usage as UsageResponse & { trial_ends_at?: string | null })?.trial_ends_at ?? null;
+  const graceEndsAt = (usage as UsageResponse & { grace_ends_at?: string | null })?.grace_ends_at ?? null;
+  // Trial "days left" — only when the trial itself is still active.
+  const now = new Date();
+  const trialLive = usage?.status === 'trialing' && trialEndsAt !== null && new Date(trialEndsAt) > now;
+  const trialDays = trialLive ? daysUntil(trialEndsAt) : null;
+  // B3 grace state — trial ended, grace not yet closed. Days-left uses
+  // grace_ends_at; server pauses ads on grace_ends_at + 1 day.
+  const inGrace = usage?.status === 'trialing'
+               && trialEndsAt !== null
+               && new Date(trialEndsAt) <= now
+               && (graceEndsAt === null || new Date(graceEndsAt) > now);
+  const graceDaysLeft = inGrace ? daysUntil(graceEndsAt) : null;
   const revealsReceived30d = (usage?.usage as (UsageResponse['usage'] & { reveals_received_30d?: number }))?.reveals_received_30d ?? 0;
   const adsByType = (usage?.usage as (UsageResponse['usage'] & { ads_by_type?: Record<string, number> }))?.ads_by_type ?? { worker: 0, housing: 0 };
 
@@ -86,6 +98,27 @@ export default function CorporationDashboardPage() {
       </header>
 
       <PublishFirstAdBanner />
+
+      {inGrace && (
+        <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-2xl p-4">
+          <Clock className="h-5 w-5 text-amber-700 shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <h3 className="font-semibold text-amber-900">תקופת הניסיון הסתיימה</h3>
+            <p className="text-sm text-amber-800 mt-0.5">
+              {graceDaysLeft !== null && graceDaysLeft > 0
+                ? `נותרו ${graceDaysLeft} ימים לחדש לפני שהמודעות יושהו ויוסתרו מתוצאות החיפוש.`
+                : 'המודעות יושהו במהלך היממה הקרובה. חדש כדי להחזירן מיד.'}
+            </p>
+          </div>
+          <Link
+            href="/billing"
+            className="shrink-0 inline-flex items-center gap-2 bg-brand-800 hover:bg-brand-900 text-white text-sm font-semibold px-4 py-2 rounded-lg"
+          >
+            <CreditCard className="w-4 h-4" />
+            חדש מנוי
+          </Link>
+        </div>
+      )}
 
       {approvalStatus === 'pending' && (
         <div className="flex items-start gap-3 bg-sky-50 border border-sky-200 rounded-2xl p-4">

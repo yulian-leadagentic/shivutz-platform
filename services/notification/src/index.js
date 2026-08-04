@@ -7,6 +7,8 @@ const { runVisaExpiryCron } = require('./cron/visaExpiry');
 const { runContractorRevalidationCron } = require('./cron/contractorRevalidation');
 const { runTrialEndingReminderCron }    = require('./cron/trialEndingReminder');
 const { runAdExpiringReminderCron }     = require('./cron/adExpiringReminder');
+const { runGraceReminderCron }          = require('./cron/graceReminder');
+const { runGraceHardCapCron }           = require('./cron/graceHardCap');
 const notifRoutes = require('./routes/notifications');
 
 const app = express();
@@ -66,6 +68,23 @@ const PORT = process.env.NOTIF_PORT || 3006;
   cron.schedule('15 8 * * *', () => {
     console.log('[cron] Running ad-expiring reminder');
     runAdExpiringReminderCron().catch(console.error);
+  });
+
+  // Daily at 08:30 — corp trial-end grace SMS series (spec B3).
+  // 4 sends (day 0/3/6/7) latched per-step via grace_sms_step so a
+  // missed run catches up on the next day. Companion cron below flips
+  // the ads.
+  cron.schedule('30 8 * * *', () => {
+    console.log('[cron] Running grace-period reminder');
+    runGraceReminderCron().catch(console.error);
+  });
+
+  // Daily at 08:45 — hard-cap: pause corp ads whose grace_ends_at is
+  // past. Runs AFTER the day-7 SMS at 08:30 so the "המודעות הושהו" SMS
+  // is factually true by the time it hits the phone.
+  cron.schedule('45 8 * * *', () => {
+    console.log('[cron] Running grace hard-cap');
+    runGraceHardCapCron().catch(console.error);
   });
 
   app.listen(PORT, () => console.log(`Notification service listening on ${PORT}`));
