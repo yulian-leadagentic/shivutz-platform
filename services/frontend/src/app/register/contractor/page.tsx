@@ -425,7 +425,7 @@ function RegisterContractorInner() {
                   dir="ltr"
                 />
                 {error && (
-                  <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">{error}</p>
+                  <p role="alert" aria-live="assertive" className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">{error}</p>
                 )}
                 <Button type="submit" disabled={loading} className="w-full">
                   {loading ? <><Loader2 className="h-4 w-4 animate-spin" /> שולח קוד...</> : 'שלח קוד אימות'}
@@ -461,7 +461,7 @@ function RegisterContractorInner() {
                   className="text-center text-xl tracking-widest"
                 />
                 {error && (
-                  <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">{error}</p>
+                  <p role="alert" aria-live="assertive" className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">{error}</p>
                 )}
                 <Button type="submit" disabled={loading} className="w-full">
                   {loading ? <><Loader2 className="h-4 w-4 animate-spin" /> מאמת...</> : 'אמת מספר טלפון'}
@@ -577,14 +577,25 @@ function RegisterContractorInner() {
                     pre-fill from the registry response (that would
                     defeat the verification — the whole point is that
                     the user proves they know their own license number). */}
-                <Input
-                  label="מספר רישיון קבלן"
-                  placeholder="לדוגמה: 3842"
-                  value={step2.kablan_number}
-                  onChange={(e) => setStep2((p) => ({ ...p, kablan_number: e.target.value.replace(/\D/g, '') }))}
-                  inputMode="numeric"
-                  dir="ltr"
-                />
+                <div>
+                  <Input
+                    label="מספר רישיון קבלן"
+                    placeholder="לדוגמה: 3842"
+                    value={step2.kablan_number}
+                    onChange={(e) => setStep2((p) => ({ ...p, kablan_number: e.target.value.replace(/\D/g, '') }))}
+                    inputMode="numeric"
+                    dir="ltr"
+                  />
+                  {/* O2 — explain why we ask for kablan number. Users skip
+                      or fabricate the field otherwise; this reframes it
+                      from friction to a trust signal. */}
+                  <p className="text-xs text-slate-500 mt-1 flex items-start gap-1.5">
+                    <ShieldCheck className="h-3.5 w-3.5 mt-0.5 text-brand-700 shrink-0" />
+                    <span>
+                      אנו מצליבים מול פנקס הקבלנים כדי להוכיח לתאגידים שאתם קבלנים אמיתיים. התאמה מיידית = מסלול tier_2 מהיר; חוסר התאמה עובר לבדיקה ידנית של מנהל המערכת.
+                    </span>
+                  </p>
+                </div>
 
                 <div className="flex flex-col gap-2">
                   <label className="text-sm font-medium text-slate-700">אזורי פעילות</label>
@@ -605,7 +616,7 @@ function RegisterContractorInner() {
                   </div>
                 </div>
                 {error && (
-                  <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">{error}</p>
+                  <p role="alert" aria-live="assertive" className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">{error}</p>
                 )}
                 <div className="flex gap-3">
                   <Button
@@ -663,7 +674,7 @@ function RegisterContractorInner() {
                 </div>
 
                 {error && (
-                  <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">{error}</p>
+                  <p role="alert" aria-live="assertive" className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">{error}</p>
                 )}
                 <div className="flex gap-3">
                   <Button
@@ -732,9 +743,11 @@ function RegisterContractorInner() {
                       label="קוד אימות (6 ספרות)"
                       type="text"
                       inputMode="numeric"
+                      pattern="\d{6}"
                       maxLength={6}
                       value={verify.code}
                       onChange={(e) => setVerify({ ...verify, code: e.target.value.replace(/\D/g, '') })}
+                      autoComplete="one-time-code"
                       dir="ltr"
                       className="text-center text-xl tracking-widest"
                     />
@@ -745,7 +758,7 @@ function RegisterContractorInner() {
                 )}
 
                 {verifyError && (
-                  <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+                  <p role="alert" aria-live="assertive" className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">
                     {verifyError === 'target_mismatch' ? 'הערוץ אינו תואם את הרשום בפנקס' :
                      verifyError === 'invalid_token'   ? 'קוד שגוי' :
                      verifyError === 'expired'         ? 'הקוד פג תוקף — חזור ובחר ערוץ שוב' :

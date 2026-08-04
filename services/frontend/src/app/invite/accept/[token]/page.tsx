@@ -218,7 +218,7 @@ export default function InviteAcceptPage() {
                     )}
 
                     {error && (
-                      <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">{error}</p>
+                      <p role="alert" aria-live="assertive" className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">{error}</p>
                     )}
                     <Button type="submit" disabled={loading} className="w-full">
                       {loading ? <><Loader2 className="h-4 w-4 animate-spin" /> שולח...</> : 'שלח קוד אימות'}
@@ -256,7 +256,7 @@ export default function InviteAcceptPage() {
                       className="text-center text-xl tracking-widest"
                     />
                     {error && (
-                      <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">{error}</p>
+                      <p role="alert" aria-live="assertive" className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">{error}</p>
                     )}
                     <Button type="submit" disabled={loading} className="w-full">
                       {loading ? <><Loader2 className="h-4 w-4 animate-spin" /> מאמת...</> : 'אשר הזמנה'}
