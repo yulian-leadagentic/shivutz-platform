@@ -21,7 +21,6 @@ def list_pending():
                    contact_email, contact_name, contact_phone, business_number,
                    kablan_number, kvutza, sivug, gov_branch, gov_company_status,
                    verification_tier, verification_method,
-                   commission_per_worker_amount,
                    approval_sla_deadline, created_at, 'contractor' AS org_type
             FROM contractors
             WHERE approval_status='pending' AND deleted_at IS NULL
@@ -31,7 +30,6 @@ def list_pending():
                    NULL AS kablan_number, NULL AS kvutza, NULL AS sivug,
                    NULL AS gov_branch, gov_company_status,
                    verification_tier, verification_method,
-                   commission_per_worker_amount,
                    approval_sla_deadline, created_at, 'corporation' AS org_type
             FROM corporations
             WHERE approval_status='pending' AND deleted_at IS NULL
@@ -98,7 +96,6 @@ def list_approved():
 class ApprovalDecision(BaseModel):
     approved: bool
     reason: Optional[str] = None
-    commission_per_worker_amount: Optional[float] = None  # if set, override entity commission at approval time
 
 
 class BulkApprovalItem(BaseModel):
@@ -110,7 +107,6 @@ class BulkApprovalDecision(BaseModel):
     items: List[BulkApprovalItem]
     approved: bool
     reason: Optional[str] = None
-    commission_per_worker_amount: Optional[float] = None
 
 
 class BulkApprovalResult(BaseModel):
@@ -124,7 +120,6 @@ class OrgEdit(BaseModel):
     contact_name: Optional[str] = None
     contact_email: Optional[str] = None
     contact_phone: Optional[str] = None
-    commission_per_worker_amount: Optional[float] = None
     notes: Optional[str] = None
     # Registry / business fields — admin can correct these (e.g. fix mojibake,
     # update after רשם החברות status change, override a wrong סיווג).
@@ -162,7 +157,6 @@ async def _decide_one(
     org_type: str,
     approved: bool,
     reason: Optional[str],
-    commission_per_worker_amount: Optional[float],
     admin_user_id: str,
 ) -> dict:
     """Core approval/rejection logic — shared by the single-org PATCH
@@ -176,7 +170,7 @@ async def _decide_one(
         table = "contractors" if org_type == "contractor" else "corporations"
 
         cur.execute(
-            f"SELECT approval_status, verification_tier, commission_per_worker_amount FROM {table} WHERE id=%s",
+            f"SELECT approval_status, verification_tier FROM {table} WHERE id=%s",
             (org_id,),
         )
         before = cur.fetchone() or {}
@@ -185,26 +179,18 @@ async def _decide_one(
         # For contractors:  tier_2 = identity-verified principal (can submit to corp).
         # For corporations: tier_2 = "תאגיד מאושר" (only path to publish/offer workers).
         if approved:
-            sets = [
-                "approval_status='approved'",
-                "approved_by_user_id=%s",
-                "approved_at=NOW()",
-                "rejection_reason=%s",
-                "verification_tier='tier_2'",
-                "verification_method='manual'",
-                "verified_at=NOW()",
-                "revalidate_at=DATE_ADD(NOW(), INTERVAL 183 DAY)",
-            ]
-            params = [admin_user_id, reason]
-            if commission_per_worker_amount is not None:
-                sets += ["commission_per_worker_amount=%s",
-                         "commission_set_by_user_id=%s",
-                         "commission_set_at=NOW()"]
-                params += [commission_per_worker_amount, admin_user_id]
-            params.append(org_id)
             cur.execute(
-                f"UPDATE {table} SET {', '.join(sets)} WHERE id=%s AND deleted_at IS NULL",
-                tuple(params),
+                f"""UPDATE {table} SET
+                        approval_status='approved',
+                        approved_by_user_id=%s,
+                        approved_at=NOW(),
+                        rejection_reason=%s,
+                        verification_tier='tier_2',
+                        verification_method='manual',
+                        verified_at=NOW(),
+                        revalidate_at=DATE_ADD(NOW(), INTERVAL 183 DAY)
+                    WHERE id=%s AND deleted_at IS NULL""",
+                (admin_user_id, reason, org_id),
             )
         else:
             cur.execute(
@@ -220,9 +206,6 @@ async def _decide_one(
         new_state = {
             "approval_status": "approved" if approved else "rejected",
             "verification_tier": "tier_2" if approved else before.get("verification_tier"),
-            "commission_per_worker_amount": commission_per_worker_amount
-                if commission_per_worker_amount is not None
-                else (float(before["commission_per_worker_amount"]) if before.get("commission_per_worker_amount") is not None else None),
         }
         _audit(conn, org_type, org_id, admin_user_id,
                "approved" if approved else "rejected",
@@ -274,7 +257,6 @@ async def decide(
         org_type=org_type,
         approved=body.approved,
         reason=body.reason,
-        commission_per_worker_amount=body.commission_per_worker_amount,
         admin_user_id=admin_user_id,
     )
 
@@ -288,9 +270,7 @@ async def decide_bulk(
     independently — one bad ID doesn't poison the batch. The frontend
     pre-confirms with the admin; bulk is hard to undo.
 
-    The per-row commission override applies to ALL items in this call
-    (typically left blank so each row keeps its own commission). A
-    single rejection reason applies to all rejected items.
+    A single rejection reason applies to all rejected items.
     """
     if not body.items:
         raise HTTPException(status_code=400, detail="no_items")
@@ -307,7 +287,6 @@ async def decide_bulk(
                 org_type=it.org_type,
                 approved=body.approved,
                 reason=body.reason,
-                commission_per_worker_amount=body.commission_per_worker_amount,
                 admin_user_id=admin_user_id,
             )
             ok.append(result)
@@ -329,7 +308,7 @@ def edit_org(
 ):
     """Admin edits contractor / corporation fields. Records the diff in
     audit_log so changes are traceable. Useful for fixing mojibake names,
-    updating contact details, overriding commission, etc."""
+    updating contact details, correcting registry values, etc."""
     if org_type not in ("contractor", "corporation"):
         raise HTTPException(status_code=400, detail="invalid org_type")
     table = "contractors" if org_type == "contractor" else "corporations"
@@ -369,9 +348,6 @@ def edit_org(
             sets.append(f"{k}=%s")
             # JSON columns need serialization.
             params.append(_json.dumps(v, ensure_ascii=False) if k == "countries_of_origin" else v)
-        if "commission_per_worker_amount" in updates:
-            sets += ["commission_set_by_user_id=%s", "commission_set_at=NOW()"]
-            params += [admin_user_id]
         params.append(org_id)
         try:
             cur.execute(

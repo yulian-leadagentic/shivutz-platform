@@ -487,8 +487,8 @@ def get_corporation(org_id: str):
         if not row:
             raise HTTPException(status_code=404, detail="Corporation not found")
         # Defensive serialization — the corporations table accreted
-        # mixed-type columns over time (DECIMAL commission_per_worker_amount,
-        # DATETIME created_at/verification_*, JSON threshold_requirements).
+        # mixed-type columns over time (DATETIME created_at /
+        # verification_*, JSON threshold_requirements).
         # FastAPI's default encoder handles datetime + Decimal but mid-
         # version regressions in Pydantic / PyMySQL surfaced 500s in
         # prod where the encoder couldn't walk a particular row. Normalise

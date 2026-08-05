@@ -489,7 +489,6 @@ function RecentDealsTable({ deals, orgType }: {
               <th className="px-3 py-2 text-start font-medium">{otherSide}</th>
               <th className="px-3 py-2 text-start font-medium">מקצוע</th>
               <th className="px-3 py-2 text-start font-medium">עובדים</th>
-              <th className="px-3 py-2 text-start font-medium">סכום</th>
               <th className="px-3 py-2 text-start font-medium">עדכון אחרון</th>
               <th className="px-3 py-2 text-start font-medium">נפתחה</th>
             </tr>
@@ -505,9 +504,6 @@ function RecentDealsTable({ deals, orgType }: {
                 </td>
                 <td className="px-3 py-2 text-slate-700">{d.profession_he ?? d.profession_type ?? '—'}</td>
                 <td className="px-3 py-2 text-slate-700">{fmtNumberOrDash(d.workers_count ?? d.dw_count)}</td>
-                <td className="px-3 py-2 text-slate-700 whitespace-nowrap">
-                  {d.commission_amount != null ? `₪${Number(d.commission_amount).toLocaleString('he-IL')}` : '—'}
-                </td>
                 <td className="px-3 py-2 text-slate-500 text-xs whitespace-nowrap">
                   <span className="inline-flex items-center gap-1">
                     <CalendarDays className="h-3 w-3 text-slate-400" />

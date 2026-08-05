@@ -14,8 +14,6 @@ import { TableToolbar } from '@/components/table/TableToolbar';
 import { useTableState } from '@/components/table/useTableState';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 
-const DEFAULT_COMMISSION = 500;
-
 function hoursLeft(iso: string) {
   const diff = new Date(iso).getTime() - Date.now();
   const h = Math.round(diff / 3_600_000);
@@ -37,8 +35,7 @@ function OrgRow({
   highlighted: boolean;
   selected: boolean;
   onToggleSelected: () => void;
-  onDecide: (id: string, orgType: string, approved: boolean, reason: string | undefined,
-             commission: number) => Promise<void>;
+  onDecide: (id: string, orgType: string, approved: boolean, reason: string | undefined) => Promise<void>;
   onLocalEdit: (id: string, patch: Partial<PendingOrg>) => void;
   onToast: (msg: string) => void;
 }) {
@@ -46,9 +43,6 @@ function OrgRow({
   const [deciding, setDeciding] = useState<'approve' | 'reject' | null>(null);
   const [rejectReason, setRejectReason] = useState('');
   const [showRejectInput, setShowRejectInput] = useState(false);
-  const [commission, setCommission] = useState<string>(
-    String(org.commission_per_worker_amount ?? DEFAULT_COMMISSION)
-  );
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState<OrgEditPayload>({});
   const [savingEdit, setSavingEdit] = useState(false);
@@ -59,20 +53,15 @@ function OrgRow({
   const sla = hoursLeft(org.approval_sla_deadline);
 
   async function approve() {
-    const amount = parseFloat(commission);
-    if (Number.isNaN(amount) || amount < 0) {
-      onToast('✗ עמלה לא תקינה');
-      return;
-    }
     setDeciding('approve');
-    await onDecide(org.id, org.org_type, true, undefined, amount);
+    await onDecide(org.id, org.org_type, true, undefined);
     setDeciding(null);
   }
 
   async function reject() {
     if (!showRejectInput) { setShowRejectInput(true); setExpanded(true); return; }
     setDeciding('reject');
-    await onDecide(org.id, org.org_type, false, rejectReason, parseFloat(commission) || DEFAULT_COMMISSION);
+    await onDecide(org.id, org.org_type, false, rejectReason);
     setDeciding(null);
   }
 
@@ -83,7 +72,6 @@ function OrgRow({
       contact_name:    org.contact_name,
       contact_email:   org.contact_email,
       contact_phone:   org.contact_phone,
-      commission_per_worker_amount: org.commission_per_worker_amount ?? DEFAULT_COMMISSION,
     });
     setEditing(true);
     setExpanded(true);
@@ -214,30 +202,8 @@ function OrgRow({
             ))}
           </div>
 
-          {/* Commission input — defaults to 500₪ per worker, editable per entity.
-              Layout note: label sits ABOVE the input (block), default-hint
-              sits BELOW the input (separate line) — used to be flex-end
-              + side-by-side which caused the label to overlap the input
-              on narrow widths in RTL. Also dropped the redundant '(₪)'
-              from the label since the input already shows a ₪ icon. */}
-          {!editing && (
-            <div className="max-w-xs">
-              <label className="text-xs text-slate-500 block mb-1">עמלת פלטפורמה לעובד</label>
-              <div className="relative">
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={commission}
-                  onChange={e => setCommission(e.target.value)}
-                  dir="ltr"
-                  className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 pe-8 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                />
-                <span className="absolute end-3 top-1/2 -translate-y-1/2 text-xs text-slate-400">₪</span>
-              </div>
-              <p className="text-xs text-slate-400 mt-1">ברירת מחדל: ₪{DEFAULT_COMMISSION}</p>
-            </div>
-          )}
+          {/* D3 removed the per-org commission input — the pivot model
+              earns from subscriptions + reveals, no per-deal commission. */}
 
           {/* Inline edit form */}
           {editing && (
@@ -267,14 +233,6 @@ function OrgRow({
                   <label className="text-xs text-slate-500 block mb-1">טלפון</label>
                   <input value={editForm.contact_phone ?? ''}
                     onChange={e => setEditForm(p => ({ ...p, contact_phone: e.target.value }))}
-                    dir="ltr"
-                    className="h-9 w-full rounded-md border border-slate-300 bg-white px-2 text-sm" />
-                </div>
-                <div>
-                  <label className="text-xs text-slate-500 block mb-1">עמלה לעובד (₪)</label>
-                  <input type="number" step="0.01" min="0"
-                    value={editForm.commission_per_worker_amount ?? DEFAULT_COMMISSION}
-                    onChange={e => setEditForm(p => ({ ...p, commission_per_worker_amount: parseFloat(e.target.value) }))}
                     dir="ltr"
                     className="h-9 w-full rounded-md border border-slate-300 bg-white px-2 text-sm" />
                 </div>
@@ -468,9 +426,9 @@ function ApprovalsContent() {
   }
 
   async function handleDecide(id: string, orgType: string, approved: boolean,
-                              reason: string | undefined, commission: number) {
+                              reason: string | undefined) {
     try {
-      const result = await adminApi.decide(id, orgType, approved, reason, commission);
+      const result = await adminApi.decide(id, orgType, approved, reason);
       pushToast(approved ? `✓ ${result.company_name} אושר בהצלחה` : `✗ ${result.company_name} נדחה`);
       setOrgs(prev => prev.filter(o => o.id !== id));
       setSelectedIds(prev => {

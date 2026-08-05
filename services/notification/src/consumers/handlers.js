@@ -480,13 +480,6 @@ async function handle(routingKey, payload, sendEmail) {
       break;
     }
 
-    case 'commission.invoiced':
-      await sendEmail('commission.invoiced', ADMIN_EMAIL, null, {
-        invoice_number: payload.commission_id,
-        deal_id:        payload.deal_id,
-      });
-      break;
-
     case 'worker.visa.expiring_30d':
     case 'worker.visa.expiring_7d':
       await sendEmail('worker.visa.expiring_30d', payload.corporation_email || ADMIN_EMAIL, null, {
@@ -661,158 +654,10 @@ async function handle(routingKey, payload, sendEmail) {
       break;
     }
 
-    case 'deal.approved': {
-      const captureFmt = payload.scheduled_capture_at
-        ? new Date(payload.scheduled_capture_at).toLocaleString('he-IL')
-        : '';
-      // Contractor side
-      if (payload.contractor_contact_email) {
-        await sendEmail('deal.approved.contractor', payload.contractor_contact_email, null, {
-          contact_name:      payload.contractor_contact_name || '',
-          worker_count:      payload.worker_count || 0,
-          profession_he:     payload.profession_he || 'עובדים',
-          corp_name:         payload.corp_name || 'התאגיד',
-          commission_amount: payload.commission_amount || 0,
-          capture_at:        captureFmt,
-        });
-      }
-      // Corp side
-      if (payload.corp_contact_email) {
-        await sendEmail('deal.approved.corp', payload.corp_contact_email, null, {
-          contact_name:    payload.corp_contact_name || '',
-          contractor_name: payload.contractor_name || 'הקבלן',
-          worker_count:    payload.worker_count || 0,
-          profession_he:   payload.profession_he || 'עובדים',
-          capture_at:      captureFmt,
-        });
-      }
-      // Contractor SMS confirmation
-      if (payload.contractor_contact_phone) {
-        const firstName = (payload.contractor_contact_name || '').split(' ')[0] || 'שלום';
-        const tail = isFreeLaunchActive()
-          ? 'ההשקה הזו חינם — לא תחויב.'
-          : `חיוב יבוצע ב-${captureFmt} (אלא אם התאגיד יבטל בחלון הזמן).`;
-        await sendSmsInternal(
-          payload.contractor_contact_phone,
-          `TagidAI — ${firstName}, אישרת רשימה של ${payload.worker_count} עובדים. ${tail} ` +
-          `לצפייה: ${FRONTEND_URL}/contractor/deals/${payload.deal_id}`
-        );
-      }
-      break;
-    }
-
-    case 'deal.rejected': {
-      if (payload.corp_contact_email) {
-        await sendEmail('deal.rejected.corp', payload.corp_contact_email, null, {
-          contact_name:  payload.corp_contact_name || '',
-          worker_count:  payload.worker_count || 0,
-          profession_he: payload.profession_he || 'עובדים',
-        });
-      }
-      await sendEmail('deal.rejected.admin', ADMIN_EMAIL, null, {
-        contractor_name:   payload.contractor_name || '',
-        corp_name:         payload.corp_name || '',
-        worker_count:      payload.worker_count || 0,
-        profession_he:     payload.profession_he || 'עובדים',
-        region_he:         payload.region_he || '',
-        commission_amount: payload.commission_amount || 0,
-        rejected_at:       payload.rejected_at
-          ? new Date(payload.rejected_at).toLocaleString('he-IL') : '',
-      });
-      break;
-    }
-
-    case 'deal.expired': {
-      if (payload.contractor_contact_email) {
-        await sendEmail('deal.expired.contractor', payload.contractor_contact_email, null, {
-          contact_name:  payload.contractor_contact_name || '',
-          worker_count:  payload.worker_count || 0,
-          profession_he: payload.profession_he || 'עובדים',
-        });
-      }
-      if (payload.corp_contact_email) {
-        await sendEmail('deal.expired.corp', payload.corp_contact_email, null, {
-          worker_count: payload.worker_count || 0,
-        });
-      }
-      await sendEmail('deal.expired.admin', ADMIN_EMAIL, null, {
-        contractor_name:   payload.contractor_name || '',
-        corp_name:         payload.corp_name || '',
-        worker_count:      payload.worker_count || 0,
-        profession_he:     payload.profession_he || 'עובדים',
-        commission_amount: payload.commission_amount || 0,
-      });
-      break;
-    }
-
-    case 'deal.cancelled_by_corp': {
-      if (payload.contractor_contact_email) {
-        await sendEmail('deal.cancelled_by_corp.contractor', payload.contractor_contact_email, null, {
-          contact_name:        payload.contractor_contact_name || '',
-          corp_name:           payload.corp_name || 'התאגיד',
-          cancellation_reason: payload.cancellation_reason || '',
-        });
-      }
-      if (payload.contractor_contact_phone) {
-        const firstName = (payload.contractor_contact_name || '').split(' ')[0] || 'שלום';
-        await sendSmsInternal(
-          payload.contractor_contact_phone,
-          `TagidAI — ${firstName}, ${payload.corp_name || 'התאגיד'} ביטל את העסקה לפני החיוב. לא חויבת. ` +
-          `הבקשה שלך נשארת פתוחה: ${FRONTEND_URL}/contractor/deals`
-        );
-      }
-      await sendEmail('deal.cancelled_by_corp.admin', ADMIN_EMAIL, null, {
-        contractor_name:     payload.contractor_name || '',
-        corp_name:           payload.corp_name || '',
-        worker_count:        payload.worker_count || 0,
-        profession_he:       payload.profession_he || 'עובדים',
-        region_he:           payload.region_he || '',
-        commission_amount:   payload.commission_amount || 0,
-        cancellation_reason: payload.cancellation_reason || '—',
-        cancelled_at:        payload.cancelled_at
-          ? new Date(payload.cancelled_at).toLocaleString('he-IL') : '',
-      });
-      break;
-    }
-
-    case 'deal.closed': {
-      if (payload.contractor_contact_email) {
-        await sendEmail('deal.closed.contractor', payload.contractor_contact_email, null, {
-          contact_name:      payload.contractor_contact_name || '',
-          corp_name:         payload.corp_name || 'התאגיד',
-          worker_count:      payload.worker_count || 0,
-          profession_he:     payload.profession_he || 'עובדים',
-          invoice_number:    payload.invoice_number || (payload.deal_id_short || ''),
-          commission_amount: payload.commission_amount || 0,
-          invoice_url:       payload.invoice_url || '',
-          deal_id_short:     payload.deal_id_short || '',
-        });
-      }
-      if (payload.corp_contact_email) {
-        await sendEmail('deal.closed.corp', payload.corp_contact_email, null, {
-          contact_name:    payload.corp_contact_name || '',
-          contractor_name: payload.contractor_name || 'הקבלן',
-          worker_count:    payload.worker_count || 0,
-          profession_he:   payload.profession_he || 'עובדים',
-        });
-      }
-      break;
-    }
-
-    case 'deal.pending_admin_nudge': {
-      await sendEmail('deal.pending_admin_nudge', ADMIN_EMAIL, null, {
-        contractor_name:   payload.contractor_name || '',
-        corp_name:         payload.corp_name || '',
-        worker_count:      payload.worker_count || 0,
-        profession_he:     payload.profession_he || 'עובדים',
-        region_he:         payload.region_he || '',
-        commission_amount: payload.commission_amount || 0,
-        hours_pending:     payload.hours_pending || 0,
-        expires_at:        payload.expires_at
-          ? new Date(payload.expires_at).toLocaleString('he-IL') : '',
-      });
-      break;
-    }
+    // D4: six dead deal-lifecycle handler cases were removed here.
+    // They fired off the dropped `deals` table; the RabbitMQ queue
+    // in consumers/index.js never bound their routing keys either.
+    // See git log and migration 068 for the exact event names.
 
     // ── Match-found notification flow ───────────────────────────────────
 
