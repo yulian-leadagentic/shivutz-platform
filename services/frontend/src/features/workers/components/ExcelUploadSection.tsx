@@ -208,7 +208,7 @@ export function ExcelUploadSection({
           className="flex-1 min-w-[180px]"
         >
           {uploading
-            ? <><Loader2 className="h-4 w-4 animate-spin" /> מייבא...</>
+            ? <><Loader2 className="h-4 w-4 animate-spin" /> מייבא…</>
             : <><FileSpreadsheet className="h-4 w-4" /> ייבא {validRows.length > 0 ? validRows.length : ''} עובדים</>}
         </Button>
         {/* Reset — clears the loaded rows + the file picker so the

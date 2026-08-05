@@ -160,7 +160,7 @@ export function CommitEngagementModal({
             </Button>
             <Button size="sm" onClick={handleConfirm} disabled={phase === 'working'}>
               {phase === 'working'
-                ? <><Loader2 className="h-4 w-4 animate-spin" />מתבצע...</>
+                ? <><Loader2 className="h-4 w-4 animate-spin" />מתבצע…</>
                 : 'המשך לתשלום'}
             </Button>
           </div>

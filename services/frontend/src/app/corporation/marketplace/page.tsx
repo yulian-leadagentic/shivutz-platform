@@ -177,7 +177,7 @@ export default function CorporationMarketplacePage() {
         <CardContent className="p-0">
           {loading ? (
             <div className="flex items-center justify-center py-12 text-slate-400">
-              <Loader2 className="animate-spin h-5 w-5 me-2" />טוען...
+              <Loader2 className="animate-spin h-5 w-5 me-2" />טוען…
             </div>
           ) : listings.length === 0 ? (
             <div className="text-center py-12 space-y-3">

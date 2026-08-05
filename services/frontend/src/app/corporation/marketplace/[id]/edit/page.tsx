@@ -118,7 +118,7 @@ export default function EditListingPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20 text-slate-400">
-        <Loader2 className="h-5 w-5 animate-spin me-2" />טוען...
+        <Loader2 className="h-5 w-5 animate-spin me-2" />טוען…
       </div>
     );
   }
@@ -148,7 +148,7 @@ export default function EditListingPage() {
 
       {success && (
         <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm rounded-xl px-4 py-3">
-          ✓ המודעה עודכנה בהצלחה — מעביר לרשימה...
+          ✓ המודעה עודכנה בהצלחה — מעביר לרשימה…
         </div>
       )}
 
@@ -290,7 +290,7 @@ export default function EditListingPage() {
         {/* Actions */}
         <div className="flex gap-3">
           <Button type="submit" disabled={saving || success} className="bg-brand-800 hover:bg-brand-900 text-white px-6">
-            {saving ? <><Loader2 className="h-4 w-4 animate-spin me-2" />שומר...</> : <><Save className="h-4 w-4 me-2" />שמור שינויים</>}
+            {saving ? <><Loader2 className="h-4 w-4 animate-spin me-2" />שומר…</> : <><Save className="h-4 w-4 me-2" />שמור שינויים</>}
           </Button>
           <Button type="button" variant="outline" onClick={() => router.back()} disabled={saving}>
             ביטול

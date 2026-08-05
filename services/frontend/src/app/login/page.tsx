@@ -349,7 +349,7 @@ function LoginPageInner() {
                   onClick={() => handleSendOtp()}
                 >
                   {loading
-                    ? <><Loader2 className="h-4 w-4 animate-spin" /><span>שולח...</span></>
+                    ? <><Loader2 className="h-4 w-4 animate-spin" /><span>שולח…</span></>
                     : copy.existingLabel}
                 </Button>
               </form>
@@ -388,7 +388,7 @@ function LoginPageInner() {
                   onClick={() => handleOtpLogin()}
                 >
                   {loading
-                    ? <><Loader2 className="h-4 w-4 animate-spin" /><span>מאמת...</span></>
+                    ? <><Loader2 className="h-4 w-4 animate-spin" /><span>מאמת…</span></>
                     : 'כניסה'}
                 </Button>
                 <button

@@ -59,7 +59,7 @@ export default function ListingDetailPage() {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center text-slate-400">
-        <Loader2 className="h-6 w-6 animate-spin me-2" />טוען מודעה...
+        <Loader2 className="h-6 w-6 animate-spin me-2" />טוען מודעה…
       </div>
     );
   }

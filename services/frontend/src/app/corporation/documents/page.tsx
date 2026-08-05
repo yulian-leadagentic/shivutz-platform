@@ -138,7 +138,7 @@ export default function CorporationDocumentsPage() {
               value={notes} onChange={(e) => setNotes(e.target.value)} />
             {error && <p className="text-sm text-red-600">{error}</p>}
             <Button type="button" onClick={handleAdd} disabled={saving} className="w-full">
-              {saving ? <><Loader2 className="h-4 w-4 animate-spin" /> שומר...</> : 'הוסף'}
+              {saving ? <><Loader2 className="h-4 w-4 animate-spin" /> שומר…</> : 'הוסף'}
             </Button>
           </CardContent>
         </Card>

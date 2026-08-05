@@ -196,7 +196,7 @@ export default function LeadCaptureModal({ open, onClose }: LeadCaptureModalProp
                 className="w-full h-11 bg-brand-800 hover:bg-brand-900 text-white font-semibold shadow-lg shadow-brand-600/20"
               >
                 {submitting ? (
-                  <><Loader2 className="h-4 w-4 animate-spin me-2" />שולח...</>
+                  <><Loader2 className="h-4 w-4 animate-spin me-2" />שולח…</>
                 ) : (
                   'שלח פרטים'
                 )}

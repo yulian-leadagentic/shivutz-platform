@@ -232,7 +232,7 @@ export default function ContractorUsersPage() {
             </div>
             {error && <p className="text-sm text-red-600">{error}</p>}
             <Button type="button" onClick={handleInvite} disabled={saving} className="w-full">
-              {saving ? <><Loader2 className="h-4 w-4 animate-spin" /> שולח...</> : 'שלח הזמנה'}
+              {saving ? <><Loader2 className="h-4 w-4 animate-spin" /> שולח…</> : 'שלח הזמנה'}
             </Button>
           </CardContent>
         </Card>

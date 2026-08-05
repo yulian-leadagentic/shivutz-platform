@@ -196,7 +196,7 @@ export function WorkerAdForm({
         className="w-full bg-brand-800 hover:bg-brand-900 text-white font-semibold py-3 rounded-lg
                    disabled:bg-slate-400 inline-flex items-center justify-center gap-2 transition"
       >
-        {submitting ? <><Loader2 className="w-4 h-4 animate-spin" /> שומר...</> : <><Save className="w-4 h-4" /> {submitLabel}</>}
+        {submitting ? <><Loader2 className="w-4 h-4 animate-spin" /> שומר…</> : <><Save className="w-4 h-4" /> {submitLabel}</>}
       </button>
     </form>
   );

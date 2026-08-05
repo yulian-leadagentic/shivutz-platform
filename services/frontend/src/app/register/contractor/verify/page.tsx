@@ -59,14 +59,14 @@ function VerifyEmailLink() {
           {state.kind === 'loading' && (
             <>
               <Loader2 className="h-12 w-12 text-brand-600 animate-spin" />
-              <h2 className="text-lg font-semibold text-slate-800">מאמת קישור...</h2>
+              <h2 className="text-lg font-semibold text-slate-800">מאמת קישור…</h2>
             </>
           )}
           {state.kind === 'success' && (
             <>
               <CheckCircle2 className="h-16 w-16 text-emerald-500" />
               <h2 className="text-xl font-bold text-slate-900">החשבון אומת בהצלחה</h2>
-              <p className="text-slate-600">מעביר אותך לדשבורד...</p>
+              <p className="text-slate-600">מעביר אותך לדשבורד…</p>
             </>
           )}
           {state.kind === 'error' && (

@@ -706,7 +706,7 @@ function ApprovalsContent() {
 
 export default function ApprovalsPage() {
   return (
-    <Suspense fallback={<div className="flex justify-center py-12"><span className="text-slate-400 text-sm">טוען...</span></div>}>
+    <Suspense fallback={<div className="flex justify-center py-12"><span className="text-slate-400 text-sm">טוען…</span></div>}>
       <ApprovalsContent />
     </Suspense>
   );

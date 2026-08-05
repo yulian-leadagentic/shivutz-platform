@@ -74,7 +74,7 @@ export default function VerifyKablanPage() {
           <CardContent className="pt-8 pb-8 flex flex-col items-center gap-3">
             <CheckCircle2 className="h-14 w-14 text-emerald-500" />
             <h2 className="text-xl font-bold text-slate-900">אומת מול פנקס הקבלנים</h2>
-            <p className="text-slate-600 text-sm">החשבון שלך פעיל במלואו — מעביר אותך לדשבורד...</p>
+            <p className="text-slate-600 text-sm">החשבון שלך פעיל במלואו — מעביר אותך לדשבורד…</p>
             <Loader2 className="h-5 w-5 animate-spin text-brand-600" />
           </CardContent>
         </Card>
@@ -145,7 +145,7 @@ export default function VerifyKablanPage() {
               <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">{error}</p>
             )}
             <Button type="submit" disabled={loading} className="w-full mt-1">
-              {loading ? <><Loader2 className="h-4 w-4 animate-spin" /> מאמת...</> : 'אמת'}
+              {loading ? <><Loader2 className="h-4 w-4 animate-spin" /> מאמת…</> : 'אמת'}
             </Button>
             <button
               type="button"

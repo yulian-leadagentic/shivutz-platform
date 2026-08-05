@@ -412,7 +412,7 @@ function RegisterContractorInner() {
                           bg-white/85 backdrop-blur-sm rounded-xl"
                aria-live="polite" aria-busy="true">
             <Loader2 className="h-12 w-12 animate-spin text-brand-600 mb-4" />
-            <p className="text-base font-semibold text-slate-800">מבצע רישום...</p>
+            <p className="text-base font-semibold text-slate-800">מבצע רישום…</p>
             <p className="text-sm text-slate-500 mt-1">אל תסגור את הדף</p>
           </div>
         )}
@@ -459,7 +459,7 @@ function RegisterContractorInner() {
                   <p role="alert" aria-live="assertive" className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">{error}</p>
                 )}
                 <Button type="submit" disabled={loading} className="w-full">
-                  {loading ? <><Loader2 className="h-4 w-4 animate-spin" /> שולח קוד...</> : 'שלח קוד אימות'}
+                  {loading ? <><Loader2 className="h-4 w-4 animate-spin" /> שולח קוד…</> : 'שלח קוד אימות'}
                 </Button>
                 {/* The "יש לך חשבון? כניסה" link was removed — the user
                     is already inside the registration flow; the link
@@ -495,7 +495,7 @@ function RegisterContractorInner() {
                   <p role="alert" aria-live="assertive" className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">{error}</p>
                 )}
                 <Button type="submit" disabled={loading} className="w-full">
-                  {loading ? <><Loader2 className="h-4 w-4 animate-spin" /> מאמת...</> : 'אמת מספר טלפון'}
+                  {loading ? <><Loader2 className="h-4 w-4 animate-spin" /> מאמת…</> : 'אמת מספר טלפון'}
                 </Button>
                 <button
                   type="button"
@@ -632,7 +632,7 @@ function RegisterContractorInner() {
                   <label className="text-sm font-medium text-slate-700">אזורי פעילות</label>
                   <div className="grid grid-cols-2 gap-2 max-h-44 overflow-y-auto border border-slate-200 rounded-md p-3">
                     {regions.length === 0
-                      ? <p className="text-sm text-slate-500 col-span-2">טוען אזורים...</p>
+                      ? <p className="text-sm text-slate-500 col-span-2">טוען אזורים…</p>
                       : regions.map((r) => (
                         <label key={r.code} className="flex items-center gap-2 text-sm cursor-pointer">
                           <input
@@ -717,7 +717,7 @@ function RegisterContractorInner() {
                     חזור
                   </Button>
                   <Button type="submit" disabled={loading || !step3.tc_accepted} className="flex-1">
-                    {loading ? <><Loader2 className="h-4 w-4 animate-spin" /> שולח...</> : 'הירשם'}
+                    {loading ? <><Loader2 className="h-4 w-4 animate-spin" /> שולח…</> : 'הירשם'}
                   </Button>
                 </div>
               </form>
@@ -783,7 +783,7 @@ function RegisterContractorInner() {
                       className="text-center text-xl tracking-widest"
                     />
                     <Button type="submit" disabled={loading}>
-                      {loading ? <><Loader2 className="h-4 w-4 animate-spin" /> מאמת...</> : 'אמת'}
+                      {loading ? <><Loader2 className="h-4 w-4 animate-spin" /> מאמת…</> : 'אמת'}
                     </Button>
                   </form>
                 )}

@@ -197,7 +197,7 @@ export default function NewWorkerPage() {
               </Button>
             ) : (
               <Button type="submit" disabled={submitting} className="flex-1">
-                {submitting ? <><Loader2 className="h-4 w-4 animate-spin" /> שומר...</> : <><Plus className="h-4 w-4" /> שמור עובד</>}
+                {submitting ? <><Loader2 className="h-4 w-4 animate-spin" /> שומר…</> : <><Plus className="h-4 w-4" /> שמור עובד</>}
               </Button>
             )}
             <Button type="button" variant="outline" onClick={() => router.push('/corporation/workers')}>סיום</Button>

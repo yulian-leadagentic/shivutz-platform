@@ -167,7 +167,7 @@ export default function ImageUploader({ value, onChange, disabled }: ImageUpload
           {uploadingCount > 0 ? (
             <div className="flex items-center justify-center gap-2 text-sm text-slate-600">
               <Loader2 className="h-4 w-4 animate-spin" />
-              מעלה {uploadingCount} תמונות...
+              מעלה {uploadingCount} תמונות…
             </div>
           ) : (
             <div className="flex flex-col items-center gap-1.5">

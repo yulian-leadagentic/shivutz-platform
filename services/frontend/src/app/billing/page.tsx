@@ -419,7 +419,7 @@ export default function BillingPage() {
                 }`}
               >
                 {busyTier === t.code ? (
-                  <><Loader2 className="w-4 h-4 animate-spin" /> מעבד...</>
+                  <><Loader2 className="w-4 h-4 animate-spin" /> מעבד…</>
                 ) : isCurrent ? (
                   <><Crown className="w-4 h-4" /> המנוי הנוכחי</>
                 ) : isUpgrade ? (

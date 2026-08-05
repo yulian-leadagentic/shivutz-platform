@@ -219,7 +219,7 @@ export default function NewListingPage() {
 
             <div className="flex gap-3 pt-2">
               <Button type="submit" disabled={saving} className="flex-1 sm:flex-none">
-                {saving ? <><Loader2 className="h-4 w-4 animate-spin me-2" />מפרסם...</> : 'פרסם מודעה'}
+                {saving ? <><Loader2 className="h-4 w-4 animate-spin me-2" />מפרסם…</> : 'פרסם מודעה'}
               </Button>
               <Button type="button" variant="ghost" onClick={() => router.back()}>ביטול</Button>
             </div>

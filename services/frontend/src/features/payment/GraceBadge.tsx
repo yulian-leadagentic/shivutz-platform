@@ -127,7 +127,7 @@ export function GraceBadge({ dealId, graceExpiresAt, holdPlacedAt, approvedAt, o
             חזרה
           </Button>
           <Button size="sm" variant="destructive" onClick={handleCancel} disabled={cancelling}>
-            {cancelling ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />מבטל...</> : 'כן, בטל את ההתחייבות'}
+            {cancelling ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />מבטל…</> : 'כן, בטל את ההתחייבות'}
           </Button>
         </div>
       </div>

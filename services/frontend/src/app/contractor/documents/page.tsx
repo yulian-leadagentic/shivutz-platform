@@ -218,7 +218,7 @@ function LicenseSection({
             <div className="flex gap-2">
               <Button type="button" onClick={handleUpload} disabled={saving} className="flex-1 h-10">
                 {saving
-                  ? <><Loader2 className="h-4 w-4 animate-spin" /> {addMode === 'file' ? 'מעלה...' : 'שומר...'}</>
+                  ? <><Loader2 className="h-4 w-4 animate-spin" /> {addMode === 'file' ? 'מעלה…' : 'שומר…'}</>
                   : license ? 'החלף רישיון' : 'העלה רישיון'}
               </Button>
               <Button type="button" variant="outline" onClick={() => { setOpen(false); reset(); }} className="h-10">
@@ -435,7 +435,7 @@ function OtherDocsSection({
 
             <Button type="button" onClick={handleAdd} disabled={saving} className="w-full h-11">
               {saving
-                ? <><Loader2 className="h-4 w-4 animate-spin" /> {addMode === 'file' ? 'מעלה...' : 'שומר...'}</>
+                ? <><Loader2 className="h-4 w-4 animate-spin" /> {addMode === 'file' ? 'מעלה…' : 'שומר…'}</>
                 : addMode === 'file' ? 'העלה מסמך' : 'הוסף קישור'}
             </Button>
           </div>

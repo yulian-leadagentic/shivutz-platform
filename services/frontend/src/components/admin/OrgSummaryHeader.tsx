@@ -70,7 +70,7 @@ export function OrgSummaryHeader({ orgId, orgType, refreshKey }: {
   if (loading) {
     return (
       <div className="flex items-center gap-2 text-slate-400 text-sm py-4">
-        <Loader2 className="h-4 w-4 animate-spin" /> טוען מידע מצרפי...
+        <Loader2 className="h-4 w-4 animate-spin" /> טוען מידע מצרפי…
       </div>
     );
   }
