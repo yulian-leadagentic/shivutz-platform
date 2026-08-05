@@ -279,11 +279,19 @@ export default function ContractorTenderDetailPage() {
         const currentStep = steps.find((s) => s.n === current)!;
         return (
           <div className="rounded-2xl border border-slate-200 bg-white shadow-sm px-4 py-3 space-y-2">
-            <p className="text-xs text-slate-500 flex items-center gap-1.5">
+            <p className="text-xs text-slate-500 flex items-center gap-1.5 flex-wrap">
               <span className="font-semibold text-slate-700">כרגע:</span>
               <span>{whoseLabel[currentStep.whose]}</span>
               <span className="text-slate-300">·</span>
               <span>שלב {current} מתוך 4 — {currentStep.label}</span>
+              {/* T2 — tooltip explaining when contact info is revealed.
+                  Docs/tender-anon-flow.md is the canonical source. */}
+              <span
+                className="text-slate-400 cursor-help border-b border-dotted border-slate-300"
+                title="פרטי התאגיד ופרטי הקבלן נחשפים רק לאחר שהמנהל מאשר את ההצעה הזוכה — לא לפני. עד אז שני הצדדים אנונימיים זה לזה."
+              >
+                מתי הפרטים נחשפים?
+              </span>
             </p>
             <ol className="flex items-center gap-1.5 flex-wrap text-xs">
               {steps.map((s, i) => (
