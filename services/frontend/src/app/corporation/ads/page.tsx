@@ -11,6 +11,13 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { Loader2, Plus, Pencil, Trash2, Zap, Eye, ArrowLeft, CreditCard, CheckCircle2, X } from 'lucide-react';
 import { adApi, type AdRow } from '@/lib/api/ads';
 
+// CP3 — boost commercial anchors. Pivot v2 decision: per-day flat.
+// If admin edits the tier's boost pricing later, we'll pull these from
+// the subscription-plans row instead — for launch they're constants.
+const BOOST_DAYS   = 7;
+const BOOST_PER_DAY_NIS = 5;
+const BOOST_TOTAL_NIS   = BOOST_DAYS * BOOST_PER_DAY_NIS;
+
 function fmt(iso: string | null): string {
   if (!iso) return '—';
   const d = new Date(iso);
@@ -207,13 +214,21 @@ export default function CorporationAdsPage() {
                   >
                     <Pencil className="w-3.5 h-3.5" /> ערוך
                   </Link>
+                  {/* CP3 — price on the CTA. No surprise on click; user
+                      sees the full commitment (₪35 for 7 days) before
+                      confirming. Boost auto-expires at featured_until so
+                      no separate 'end boost' action needed — the derived
+                      `boosted` flag flips off when the timestamp passes. */}
                   <button
                     type="button"
                     onClick={() => onBoost(ad.id)}
                     disabled={busy === ad.id}
-                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-700 hover:bg-amber-50 px-2 py-1.5 rounded disabled:opacity-50"
+                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-700 hover:bg-amber-50 px-2.5 py-1.5 rounded disabled:opacity-50"
+                    title={`קידום דוחף את המודעה לראש התוצאות למשך ${BOOST_DAYS} ימים. פג אוטומטית — אין חיוב מתמשך.`}
                   >
-                    <Zap className="w-3.5 h-3.5" /> {boosted ? 'הארך קידום' : 'קדם 7 ימים'}
+                    <Zap className="w-3.5 h-3.5" />
+                    {boosted ? `הארך ${BOOST_DAYS} ימים` : `קדם ${BOOST_DAYS} ימים`}
+                    <span className="text-amber-900">· ₪{BOOST_TOTAL_NIS}</span>
                   </button>
                   <button
                     type="button"
