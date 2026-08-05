@@ -588,10 +588,10 @@ async function handle(routingKey, payload, sendEmail) {
       break;
     }
 
-    // D4: deleted six dead deal-lifecycle handlers here — deal.approved,
-    // deal.rejected, deal.expired, deal.cancelled_by_corp, deal.closed,
-    // deal.pending_admin_nudge. They fired off the dropped `deals` table;
-    // consumers/index.js queue never bound their routing keys either.
+    // D4: six dead deal-lifecycle handler cases were removed here.
+    // They fired off the dropped `deals` table; the RabbitMQ queue
+    // in consumers/index.js never bound their routing keys either.
+    // See git log and migration 068 for the exact event names.
 
     // ── Match-found notification flow ───────────────────────────────────
 

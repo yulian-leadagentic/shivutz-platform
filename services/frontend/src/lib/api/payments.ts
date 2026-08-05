@@ -1,8 +1,5 @@
 import { apiFetch } from './client';
-import type {
-  PaymentMethod,
-  PaymentTransactionRow,
-} from '@/types';
+import type { PaymentMethod } from '@/types';
 
 // ─── Pivot/v2 — subscription endpoints ──────────────────────────────────────
 
@@ -55,37 +52,4 @@ export const paymentApi = {
       `/payments/payment-methods/${pmId}/set-default`,
       { method: 'PATCH' }
     ),
-
-  /**
-   * Get a Cardcom LowProfile tokenization URL to redirect the user to.
-   *
-   * `invoice_email` (optional) is the address where future invoices for
-   * captured charges should be sent. Pre-launch, Cardcom invoices were
-   * being issued with no `To` address — the email goes through to
-   * Cardcom's InvoiceHead so the receipt actually reaches the corp.
-   */
-  cardcomInit: (invoice_email?: string) =>
-    apiFetch<{ url: string; low_profile_id: string }>(
-      '/payments/cardcom-init',
-      invoice_email
-        ? { method: 'POST', body: JSON.stringify({ invoice_email }) }
-        : { method: 'GET' },
-    ),
-
-  /** Full transaction row. Kept for future subscription-invoice UI
-   *  (post-Cardcom-recurring). D3 removed the deal-lifecycle callers
-   *  (CapturedBadge etc.) but the endpoint remains valid for admin
-   *  audit and any future subscription-receipt surface. */
-  getTransaction: (txId: string) =>
-    apiFetch<PaymentTransactionRow & {
-      invoice_number?: string | null;
-      invoice_url?: string | null;
-      invoice_issued_at?: string | null;
-      provider_response_code?: string | null;
-      provider_transaction_id?: string | null;
-      charged_at?: string | null;
-      base_amount?: number;
-      vat_amount?: number;
-      total_amount?: number;
-    }>(`/payments/transactions/${txId}`),
 };

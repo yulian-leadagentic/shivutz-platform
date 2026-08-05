@@ -277,23 +277,6 @@ export interface PaymentMethod {
   last_used_at: string | null;
 }
 
-export interface PaymentTransactionRow {
-  id: string;
-  deal_id: string;
-  status: string;
-  total_amount: number | null;
-  vat_amount: number | null;
-  base_amount: number | null;
-  grace_period_expires_at: string | null;
-  auth_provider_deal_id: string | null;
-  authorized_at: string | null;
-  auth_expires_at: string | null;
-  charged_at: string | null;
-  cancelled_at: string | null;
-  last_capture_error: string | null;
-  retry_count: number;
-}
-
 export interface MarketplaceListing {
   id: string;
   corporation_id: string;
