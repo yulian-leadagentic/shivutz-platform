@@ -30,7 +30,9 @@ router = APIRouter()
 PAYMENT_SVC = os.getenv("PAYMENT_SERVICE_URL", "http://payment:3009")
 
 AD_DEFAULT_DAYS = 30
-BOOST_DAYS      = 7
+BOOST_DAYS         = 7
+BOOST_PER_DAY_NIS  = 5   # D1 anchor — mirrors the frontend CP3 CTA
+BOOST_TOTAL_NIS    = BOOST_DAYS * BOOST_PER_DAY_NIS
 
 
 def _serialize(row: dict) -> dict:
@@ -871,7 +873,8 @@ def boost_ad(
             "message": "שדרג ל'מתקדם' או 'פרו' כדי לקדם מודעות",
         })
 
-    until = datetime.utcnow() + timedelta(days=BOOST_DAYS)
+    now   = datetime.utcnow()
+    until = now + timedelta(days=BOOST_DAYS)
     conn = get_db()
     try:
         cur = conn.cursor()
@@ -881,6 +884,25 @@ def boost_ad(
         )
         if cur.rowcount == 0:
             raise HTTPException(status_code=404, detail="ad_not_found")
+
+        # D1 — write to promotions too so ROI attribution + billing
+        # sourcing can move to that table without a schema change.
+        # Read paths still use ads.featured_until until Wave 5 (D2)
+        # swaps them over. Wrapped in try/except so a missing table
+        # (fresh DB / pre-064 environment) doesn't 500 the boost.
+        try:
+            cur.execute(
+                """INSERT INTO promotions
+                     (id, kind, target_type, target_id,
+                      owner_entity_id, owner_entity_type,
+                      starts_at, ends_at, price_nis, status)
+                   VALUES (%s, 'boost', 'ad', %s, %s, 'corporation',
+                           %s, %s, %s, 'active')""",
+                (str(uuid.uuid4()), ad_id, corp_id, now, until, BOOST_TOTAL_NIS),
+            )
+        except Exception as exc:  # noqa: BLE001
+            print(f"[boost] promotions insert skipped: {exc}")
+
         conn.commit()
         return {"id": ad_id, "featured_until": until.isoformat()}
     finally:
