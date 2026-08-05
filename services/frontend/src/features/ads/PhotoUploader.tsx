@@ -101,12 +101,16 @@ export function PhotoUploader({
         <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
           {value.map((url, i) => (
             <div key={url + i} className="relative rounded-lg overflow-hidden border border-slate-200 aspect-square bg-slate-50">
+              {/* CP5 — alt derived from ordinal so screen-readers get
+                  "תמונה 2 מתוך 4" instead of a silent skip. Persistent
+                  per-photo alt input needs a schema change (photos
+                  moves from string[] to {url, alt}[]) — deferred. */}
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={url} alt="" className="w-full h-full object-cover" />
+              <img src={url} alt={`תמונה ${i + 1}`} className="w-full h-full object-cover" />
               <button
                 type="button"
                 onClick={() => removeAt(i)}
-                aria-label="הסר"
+                aria-label={`הסר תמונה ${i + 1}`}
                 className="absolute top-1 end-1 w-6 h-6 rounded-full bg-slate-900/70 text-white flex items-center justify-center hover:bg-slate-900"
               >
                 <X className="w-3.5 h-3.5" />

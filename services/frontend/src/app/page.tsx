@@ -524,7 +524,12 @@ function AdCard({
       {ad.ad_type === 'housing' && Array.isArray(ad.photos) && ad.photos.length > 0 && (
         <div className="mt-2 flex gap-2 overflow-x-auto">
           {ad.photos.slice(0, 4).map((url) => (
-            <img key={url} src={url} alt="" className="w-24 h-24 rounded-lg object-cover shrink-0 border border-slate-200" />
+            <img
+              key={url}
+              src={url}
+              alt={ad.title_he ?? ''}
+              className="w-24 h-24 rounded-lg object-cover shrink-0 border border-slate-200"
+            />
           ))}
         </div>
       )}

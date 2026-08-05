@@ -127,7 +127,7 @@ export default function ListingDetailPage() {
                         className="shrink-0 h-20 w-28 rounded-lg overflow-hidden bg-slate-100 border border-slate-200"
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={url} alt="" className="w-full h-full object-cover" loading="lazy" />
+                        <img src={url} alt={listing.title ?? ''} className="w-full h-full object-cover" loading="lazy" />
                       </div>
                     ))}
                   </div>
