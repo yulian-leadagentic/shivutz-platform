@@ -258,7 +258,7 @@ export default function ListingDetailPage() {
                       className="flex items-center gap-2 bg-brand-800 hover:bg-brand-900 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition-colors"
                     >
                       <Phone className="h-4 w-4" />
-                      {listing.contact_phone}
+                      <span dir="ltr">{listing.contact_phone}</span>
                     </a>
                   )}
                 </div>

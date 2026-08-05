@@ -292,7 +292,7 @@ export default function BillingPage() {
                     <p className="text-sm font-medium text-slate-900 truncate">
                       {m.full_name || ((m.invited_first_name || '') + ' ' + (m.invited_last_name || '')).trim() || m.phone || '—'}
                     </p>
-                    <p className="text-xs text-slate-500">{m.phone || '—'}{m.pending ? ' · ממתין' : ''}</p>
+                    <p className="text-xs text-slate-500"><span dir="ltr">{m.phone || '—'}</span>{m.pending ? ' · ממתין' : ''}</p>
                   </div>
                   <button
                     type="button"

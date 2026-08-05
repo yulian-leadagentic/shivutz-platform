@@ -204,7 +204,10 @@ function OrgRow({
             ].map(([k, v]) => (
               <div key={k}>
                 <p className="text-slate-400 text-xs">{k}</p>
-                <p className="font-medium text-slate-800 truncate">{v || '—'}</p>
+                {/* G6 — plaintext bidi resolves per-value: Hebrew names
+                    stay RTL, phone/email/ח.פ render LTR without a
+                    per-field metadata flag. */}
+                <p className="font-medium text-slate-800 truncate" style={{ unicodeBidi: 'plaintext' }}>{v || '—'}</p>
               </div>
             ))}
           </div>

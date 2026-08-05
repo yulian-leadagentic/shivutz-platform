@@ -539,12 +539,12 @@ function AdCard({
             </div>
             {revealed.phone && (
               <a href={`tel:${revealed.phone}`} className="text-brand-700 hover:underline flex items-center gap-1.5">
-                <Phone className="w-4 h-4" /> {revealed.phone}
+                <Phone className="w-4 h-4" /> <span dir="ltr">{revealed.phone}</span>
               </a>
             )}
             {revealed.email && (
               <a href={`mailto:${revealed.email}`} className="text-brand-700 hover:underline flex items-center gap-1.5">
-                <Mail className="w-4 h-4" /> {revealed.email}
+                <Mail className="w-4 h-4" /> <span dir="ltr">{revealed.email}</span>
               </a>
             )}
             {/* R2 — reassure the user that a re-view of this ad won't
