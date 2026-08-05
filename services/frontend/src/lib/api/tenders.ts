@@ -62,6 +62,10 @@ export interface Tender {
   target_start_date?: string | null;
   notes?: string | null;
   status: 'pending_admin' | 'open' | 'awaiting_admin' | 'in_progress' | 'closed' | 'cancelled' | 'frozen' | 'rejected';
+  /** T1 — true when the tender skipped the admin publish-gate
+   *  because the contractor is tier_2+ AND kablan-verified. Drives
+   *  the /admin/tenders 'auto-published' filter chip. */
+  auto_published?: boolean;
   rejection_reason?: string | null;
   revealed_at?: string | null;
   frozen_at?: string | null;
@@ -139,7 +143,10 @@ export const tenderApi = {
     }),
 
   // Admin
-  adminListAll: () => apiFetch<Tender[]>('/tenders/admin/all'),
+  adminListAll: (params?: { autoPublished?: boolean }) => {
+    const qs = params?.autoPublished ? '?auto_published=true' : '';
+    return apiFetch<Tender[]>(`/tenders/admin/all${qs}`);
+  },
   adminSummary: () =>
     apiFetch<{ pending_publish: number; open_for_bids: number; awaiting_contact: number; in_progress: number }>(
       '/tenders/admin/summary'),
