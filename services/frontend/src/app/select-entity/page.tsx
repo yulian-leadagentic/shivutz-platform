@@ -169,9 +169,9 @@ export default function SelectEntityPage() {
                   router.push('/admin/dashboard');
                 }}
                 disabled={loading !== null}
-                className="w-full flex items-center gap-4 p-4 rounded-lg border-2 border-rose-300 bg-rose-50/40 hover:border-rose-400 hover:bg-rose-50 transition-colors text-start disabled:opacity-60"
+                className="w-full flex items-center gap-4 p-4 rounded-lg border-2 border-navy-300 bg-navy-50/40 hover:border-navy-400 hover:bg-navy-50 transition-colors text-start disabled:opacity-60"
               >
-                <ShieldCheck className="h-8 w-8 text-rose-600 shrink-0" />
+                <ShieldCheck className="h-8 w-8 text-navy-600 shrink-0" />
                 <div className="flex-1 min-w-0">
                   <p className="font-semibold text-slate-900">מנהל מערכת</p>
                   <p className="text-xs text-slate-500 mt-0.5">פאנל ניהול הפלטפורמה</p>

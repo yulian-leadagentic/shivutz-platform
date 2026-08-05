@@ -102,7 +102,13 @@ def get_my_subscription(
         if row is None:
             row = _insert_trial(cur, entity_id, entity_type)
             conn.commit()
-        return _serialize(row)
+        out = _serialize(row)
+        # B4 — surface the payment-service mode so /billing can render
+        # a 'מצב בדיקה' chip while Cardcom recurring is not yet live.
+        # Booleans stay stable across a mode flip so the frontend just
+        # needs to hide the chip when payment_mode='live'.
+        out["payment_mode"] = "fake" if FAKE_MODE else "live"
+        return out
     finally:
         conn.close()
 

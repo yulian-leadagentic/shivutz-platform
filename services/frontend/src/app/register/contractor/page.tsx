@@ -344,17 +344,48 @@ function RegisterContractorInner() {
   );
 
   // ── Success screen (only when no tokens were returned — fallback) ────────
+  // O5 — full "awaiting admin" surface: SLA + what's next + how to
+  // reach a human. Previously showed only "עד 48 שעות" with a login
+  // link, which left users guessing whether something else was
+  // needed.
   if (success) return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
-      <Card className="w-full max-w-md shadow-md text-center">
-        <CardContent className="pt-8 pb-8 flex flex-col items-center gap-4">
-          <CheckCircle2 className="h-16 w-16 text-green-500" />
-          <h2 className="text-xl font-bold text-slate-900">הבקשה התקבלה!</h2>
-          <p className="text-slate-600">ממתין לאישור מנהל — עד 48 שעות</p>
-          <p className="text-slate-500 text-sm">נשלח אליך SMS / WhatsApp לאחר האישור</p>
-          <Link href="/login" className="text-brand-600 font-medium hover:underline text-sm">
-            חזרה לכניסה
-          </Link>
+      <Card className="w-full max-w-lg shadow-md">
+        <CardContent className="pt-8 pb-8 flex flex-col items-center gap-4 text-center">
+          <CheckCircle2 className="h-16 w-16 text-emerald-500" />
+          <div>
+            <h2 className="text-xl font-bold text-slate-900">הבקשה התקבלה — ממתין לאישור מנהל</h2>
+            <p className="text-slate-600 mt-1">מנהל המערכת בודק את הרישום מול פנקס הקבלנים.</p>
+          </div>
+
+          <ol className="w-full text-start bg-slate-50 border border-slate-200 rounded-lg p-4 space-y-2 text-sm">
+            <li className="flex items-start gap-2">
+              <span className="flex-shrink-0 mt-0.5 inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 text-xs font-bold">✓</span>
+              <span className="text-slate-800">הרישום שלכם נשמר במערכת</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="flex-shrink-0 mt-0.5 inline-flex items-center justify-center w-5 h-5 rounded-full bg-amber-100 text-amber-700 text-xs font-bold">2</span>
+              <span className="text-slate-800">
+                מנהל מערכת יעבור על הרישום ויאשר תוך <b>עד 48 שעות</b>
+                <span className="block text-xs text-slate-500 mt-0.5">רוב הבקשות מטופלות תוך יום עבודה. יום שישי-שבת יגררו עיכוב.</span>
+              </span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="flex-shrink-0 mt-0.5 inline-flex items-center justify-center w-5 h-5 rounded-full bg-slate-200 text-slate-600 text-xs font-bold">3</span>
+              <span className="text-slate-800">
+                תקבלו SMS / WhatsApp מיד עם האישור. אז ניתן להיכנס למערכת עם אותו מספר הטלפון.
+              </span>
+            </li>
+          </ol>
+
+          <div className="w-full flex flex-col gap-2 pt-2">
+            <Link href="/login" className="w-full inline-flex items-center justify-center bg-brand-800 hover:bg-brand-900 text-white text-sm font-semibold px-4 py-2.5 rounded-lg">
+              חזרה לכניסה
+            </Link>
+            <Link href="/support" className="text-xs text-slate-500 hover:text-brand-700 hover:underline">
+              משהו לא ברור? צור קשר עם התמיכה →
+            </Link>
+          </div>
         </CardContent>
       </Card>
     </div>

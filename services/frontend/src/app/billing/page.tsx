@@ -162,7 +162,20 @@ export default function BillingPage() {
         >
           <ChevronRight className="w-3 h-3 me-1" /> חזרה ללוח בקרה
         </Link>
-        <h1 className="text-2xl font-bold text-slate-900">חשבון ומנוי</h1>
+        <div className="flex items-baseline gap-2 flex-wrap">
+          <h1 className="text-2xl font-bold text-slate-900">חשבון ומנוי</h1>
+          {/* B4 — payment-service mode chip. Only shown while the
+              backend runs in fake mode; hides itself once Cardcom
+              recurring is live. */}
+          {(sub as unknown as { payment_mode?: string })?.payment_mode === 'fake' && (
+            <span
+              className="text-[10px] font-bold uppercase tracking-wider rounded-full border border-amber-300 bg-amber-50 text-amber-700 px-2 py-0.5"
+              title="חיוב מדומה — Cardcom האמיתי עדיין לא מחובר. כל 'תשלום' עובר להצלחה מיידית."
+            >
+              מצב בדיקה
+            </span>
+          )}
+        </div>
         <p className="text-sm text-slate-500">ניהול המנוי החודשי שלך</p>
       </header>
 
