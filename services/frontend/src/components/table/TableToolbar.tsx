@@ -20,7 +20,7 @@
  * dance in 17 different files.
  */
 
-import { useEffect } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { ArrowUp, ArrowDown, Filter as FilterIcon, X, Search } from 'lucide-react';
 
 export interface PillOption<K extends string = string> {
@@ -74,6 +74,13 @@ interface Props<P extends string = string, S extends string = string> {
    *  active (caller decides), a clear button renders. */
   hasActiveFilter?: boolean;
   onClear?: () => void;
+  /** Optional Enter-key handler on the search input (for pages that
+   *  submit search server-side rather than filter locally). */
+  onSearchSubmit?: () => void;
+  /** Optional trailing element rendered at the end of the control
+   *  strip (e.g. an "include hidden" checkbox). Kept as an escape
+   *  hatch so page-specific extras don't need bespoke toolbars. */
+  trailingControls?: ReactNode;
 }
 
 export function TableToolbar<P extends string = string, S extends string = string>(
@@ -92,12 +99,14 @@ export function TableToolbar<P extends string = string, S extends string = strin
     onSortDirToggle,
     hasActiveFilter,
     onClear,
+    onSearchSubmit,
+    trailingControls,
   } = props;
 
   const showSearch  = onSearchChange !== undefined;
   const showSort    = sortOptions && sortOptions.length > 0 && onSortKeyChange;
   const showSelects = selects && selects.length > 0;
-  const showControl = showSearch || showSort || showSelects || hasActiveFilter;
+  const showControl = showSearch || showSort || showSelects || hasActiveFilter || !!trailingControls;
 
   // QA-R5 — global "/" focuses the table search. Skipped when the
   // user is already typing in a form field (input/textarea/contentE)
@@ -199,6 +208,9 @@ export function TableToolbar<P extends string = string, S extends string = strin
                     if (e.key === 'Escape' && searchValue) {
                       e.stopPropagation();
                       onSearchChange?.('');
+                    } else if (e.key === 'Enter' && onSearchSubmit) {
+                      e.preventDefault();
+                      onSearchSubmit();
                     }
                   }}
                   className="h-9 w-full ps-8 pe-2 text-sm rounded-md border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
@@ -249,6 +261,10 @@ export function TableToolbar<P extends string = string, S extends string = strin
                 <X className="h-3.5 w-3.5" />
                 נקה
               </button>
+            )}
+
+            {trailingControls && (
+              <div className="shrink-0 flex items-center">{trailingControls}</div>
             )}
           </div>
         </div>

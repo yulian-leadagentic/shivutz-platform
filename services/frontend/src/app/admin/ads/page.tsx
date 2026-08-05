@@ -3,8 +3,9 @@
 // Pivot/v2 admin — ad moderation table.
 
 import { useEffect, useState } from 'react';
-import { EyeOff, Eye, Trash2, Loader2, Search as SearchIcon } from 'lucide-react';
+import { EyeOff, Eye, Trash2, Loader2 } from 'lucide-react';
 import { apiFetch } from '@/lib/api/client';
+import { TableToolbar } from '@/components/table/TableToolbar';
 
 interface AdminAdRow {
   id: string;
@@ -74,33 +75,35 @@ export default function AdminAdsPage() {
         <p className="text-sm text-slate-500">ניהול תוכן — הסתרה, ביטול הסתרה, מחיקה</p>
       </header>
 
-      {/* Filters */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-3 shadow-sm flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-2 flex-1 min-w-[200px]">
-          <SearchIcon className="w-4 h-4 text-slate-400" />
-          <input
-            type="text"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') refresh(); }}
-            placeholder="חיפוש בכותרת/תיאור"
-            className="flex-1 text-sm outline-none placeholder:text-slate-400"
-          />
-        </div>
-        <select
-          value={typeFilter}
-          onChange={(e) => setType(e.target.value as '' | 'worker' | 'housing')}
-          className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm bg-white"
-        >
-          <option value="">כל הסוגים</option>
-          <option value="worker">עובדים</option>
-          <option value="housing">דיור</option>
-        </select>
-        <label className="text-xs text-slate-600 inline-flex items-center gap-1.5 cursor-pointer">
-          <input type="checkbox" checked={showHidden} onChange={(e) => setHid(e.target.checked)} className="rounded" />
-          כולל מחוקים
-        </label>
-      </div>
+      {/* A1 — shared TableToolbar. Type filter as pills (better tap
+          target on mobile than a select), 'הכל / עובדים / דיור'; hidden
+          toggle as a checkbox trailing the search. */}
+      <TableToolbar
+        pills={{
+          options: [
+            { key: '',        label: 'הכל',    tone: 'bg-slate-900 text-white' },
+            { key: 'worker',  label: 'עובדים', tone: 'bg-sky-500 text-white' },
+            { key: 'housing', label: 'דיור',   tone: 'bg-emerald-500 text-white' },
+          ],
+          active: typeFilter,
+          onChange: (v) => setType(v as '' | 'worker' | 'housing'),
+        }}
+        searchValue={q}
+        onSearchChange={setQ}
+        searchPlaceholder="חיפוש בכותרת/תיאור"
+        onSearchSubmit={refresh}
+        hasActiveFilter={typeFilter !== '' || showHidden || q.trim() !== ''}
+        onClear={() => { setType(''); setHid(false); setQ(''); }}
+        trailingControls={
+          <label className="text-xs text-slate-600 inline-flex items-center gap-1.5 cursor-pointer">
+            <input type="checkbox" checked={showHidden} onChange={(e) => setHid(e.target.checked)} className="rounded" />
+            כולל מחוקים
+          </label>
+        }
+      />
+      {/* No sort options here — admin ad list default sort is
+          created_at DESC (server-side). Add sort if a real use-case
+          emerges. */}
 
       {error && (
         <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>
