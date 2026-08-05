@@ -217,30 +217,51 @@ export default function BillingPage() {
             </div>
           </div>
 
-        {/* Usage vs limits — contractor sees reveals + user seats,
-             corp sees reveals + active ads. */}
+        {/* Usage vs limits — B1 role-scoped grid:
+             contractor sees reveals-consumed + user seats;
+             corp sees active-ads + ad lifetime + user seats
+             (no reveal counter — corps receive reveals, don't spend). */}
         {usage && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-slate-100">
-            <div>
-              <p className="text-xs text-slate-500">חשיפות פרטי קשר החודש</p>
-              <p className="text-base font-bold text-slate-900">
-                {usage.usage.reveals_this_month} / {usage.limits.reveals_per_month ?? '∞'}
-              </p>
-            </div>
+          <div className={`grid grid-cols-1 ${isContractor ? 'sm:grid-cols-2' : 'sm:grid-cols-3'} gap-3 pt-3 border-t border-slate-100`}>
             {isContractor ? (
-              <div>
-                <p className="text-xs text-slate-500">משתמשים במנוי</p>
-                <p className="text-base font-bold text-slate-900">
-                  {members.filter(m => m.is_active !== false).length} / {(usage.limits as unknown as { max_users?: number | null }).max_users ?? '∞'}
-                </p>
-              </div>
+              <>
+                <div>
+                  <p className="text-xs text-slate-500">חשיפות פרטי קשר החודש</p>
+                  <p className="text-base font-bold text-slate-900">
+                    {usage.usage.reveals_this_month} / {usage.limits.reveals_per_month ?? '∞'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">משתמשים במנוי</p>
+                  <p className="text-base font-bold text-slate-900">
+                    {members.filter(m => m.is_active !== false).length} / {(usage.limits as unknown as { max_users?: number | null }).max_users ?? '∞'}
+                  </p>
+                </div>
+              </>
             ) : (
-              <div>
-                <p className="text-xs text-slate-500">מודעות פעילות</p>
-                <p className="text-base font-bold text-slate-900">
-                  {usage.usage.active_ads} / {usage.limits.active_ads ?? '∞'}
-                </p>
-              </div>
+              <>
+                <div>
+                  <p className="text-xs text-slate-500">מודעות פעילות</p>
+                  <p className="text-base font-bold text-slate-900">
+                    {usage.usage.active_ads} / {usage.limits.active_ads ?? '∞'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">משך חיים מקסימלי למודעה</p>
+                  <p className="text-base font-bold text-slate-900">
+                    {(usage.limits as unknown as { max_ad_lifetime_days?: number | null }).max_ad_lifetime_days == null
+                      ? 'ללא הגבלה'
+                      : `${(usage.limits as unknown as { max_ad_lifetime_days?: number }).max_ad_lifetime_days} ימים`}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">משתמשים במנוי</p>
+                  <p className="text-base font-bold text-slate-900">
+                    <Link href="/corporation/users" className="text-brand-700 hover:underline">לניהול</Link>
+                    {' '}/ {(usage.limits as unknown as { max_users?: number | null }).max_users ?? '∞'}
+                  </p>
+                </div>
+              </>
             )}
           </div>
         )}
