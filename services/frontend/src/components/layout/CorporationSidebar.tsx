@@ -30,6 +30,15 @@ const navItems = [
     icon: Globe2,
   },
   {
+    // CP6 — marketplace (housing/equipment/services listings a corp
+    // can publish for contractors). Task #152 removed the link from
+    // both sidebars when the marketplace pages were parked; the corp
+    // pages are back and generating leads, so surface it again here.
+    label: 'שירותים נלווים',
+    href: '/corporation/marketplace',
+    icon: Store,
+  },
+  {
     label: 'צוות התאגיד',
     href: '/corporation/users',
     icon: UserCog,
