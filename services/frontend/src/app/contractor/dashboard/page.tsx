@@ -7,7 +7,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Loader2, Search as SearchIcon, CreditCard, ShieldCheck, Clock, Globe2, ArrowLeft } from 'lucide-react';
+import { Loader2, Search as SearchIcon, CreditCard, Clock, Globe2, ArrowLeft } from 'lucide-react';
 import { adApi, type UsageResponse } from '@/lib/api/ads';
 import { orgApi } from '@/lib/api';
 import { getAccessToken, decodeJwtPayload } from '@/lib/auth';
@@ -25,7 +25,6 @@ function daysUntil(iso: string | null | undefined): number | null {
 
 export default function ContractorDashboardPage() {
   const [usage, setUsage] = useState<UsageResponse | null>(null);
-  const [kablanVerified, setKablan] = useState<boolean | null>(null);
   const [companyName, setCompanyName] = useState<string>('');
   const [loading, setLoading] = useState(true);
 
@@ -35,7 +34,6 @@ export default function ContractorDashboardPage() {
     const entityId = (p?.entity_id || p?.org_id) as string | undefined;
     if (entityId && p?.entity_type === 'contractor') {
       orgApi.getContractor(entityId).then((c) => {
-        setKablan(!!c.kablan_verified_at);
         setCompanyName(c.company_name_he || c.company_name || '');
       }).catch(() => {});
     }
@@ -96,19 +94,9 @@ export default function ContractorDashboardPage() {
         </Link>
       </div>
 
-      {/* Kablan verification banner (only if unverified) */}
-      {kablanVerified === false && (
-        <Link
-          href="/contractor/verify-kablan"
-          className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-2xl p-4 hover:border-amber-300 transition"
-        >
-          <ShieldCheck className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
-          <div>
-            <h3 className="font-semibold text-amber-900">השלימו אימות רישום קבלנים</h3>
-            <p className="text-sm text-amber-800 mt-0.5">האימות מעלה אמון של תאגידים ומסיר סימוני "לא מאומת" מהחיפושים.</p>
-          </div>
-        </Link>
-      )}
+      {/* C1 — kablan banner intentionally NOT rendered here.
+          Contractor layout mounts <KablanVerifyBanner /> globally, so
+          duplicating it on the dashboard was double-messaging. */}
 
       {/* Subscription card */}
       <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">

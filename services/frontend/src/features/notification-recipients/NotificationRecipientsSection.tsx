@@ -228,7 +228,7 @@ function ChannelBox({
       {icon}
       <span className="font-semibold whitespace-nowrap">{label}</span>
       {badge && (
-        <span className="text-[9px] uppercase tracking-wider font-bold bg-amber-100 text-amber-800 px-1 py-0.5 rounded">
+        <span className="text-[10px] font-bold uppercase tracking-wider text-amber-800 bg-amber-100 rounded-full px-2 py-0.5">
           {badge}
         </span>
       )}

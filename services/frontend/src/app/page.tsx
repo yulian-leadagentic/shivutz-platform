@@ -19,7 +19,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Loader2, Search as SearchIcon, Mail, Phone, Building2, Sparkles,
-  Users, Home as HomeIcon, Globe2, Boxes, Zap,
+  Users, Home as HomeIcon, Globe2, Boxes, Zap, ArrowLeft,
 } from 'lucide-react';
 import LandingNav from '@/components/landing/LandingNav';
 import LandingFooter from '@/components/landing/LandingFooter';
@@ -236,7 +236,7 @@ export default function LandingPage() {
                           <Icon className="w-5 h-5" />
                         </div>
                         {cat.soon && (
-                          <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 rounded-full px-2 py-0.5">בקרוב</span>
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 bg-slate-100 rounded-full px-2 py-0.5">בקרוב</span>
                         )}
                       </div>
                       <h3 className="text-sm font-bold text-slate-900">{cat.label}</h3>
@@ -559,6 +559,19 @@ function AdCard({
             <p className="text-xs text-slate-500 pt-1">
               נשמר לך — לא ייגבו חשיפות נוספות על מודעה זו.
             </p>
+            {/* R4 — cross-flow discovery on the "warm" moment after a
+                successful reveal. Contractor who just got a corp's
+                phone number is a warm lead for related surfaces. */}
+            <Link
+              href={ad.ad_type === 'worker' ? '/marketplace?category=housing' : '/'}
+              className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-brand-700 hover:text-brand-900"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              {ad.ad_type === 'worker'
+                ? 'צריך גם דיור לפועלים? עיין בשירותים נלווים'
+                : 'מחפש גם עובדים? חפש כאן'}
+              <ArrowLeft className="w-3.5 h-3.5" />
+            </Link>
           </div>
         ) : (
           <button

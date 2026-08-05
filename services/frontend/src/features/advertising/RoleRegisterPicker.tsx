@@ -63,7 +63,7 @@ export function RoleRegisterPicker() {
                 </div>
                 <h3 className="text-base font-bold text-slate-900">{r.title}</h3>
                 {r.soon && (
-                  <span className="ms-auto text-[10px] font-semibold text-slate-500 bg-slate-100 rounded-full px-2 py-0.5">
+                  <span className="ms-auto text-[10px] font-bold uppercase tracking-wider text-slate-500 bg-slate-100 rounded-full px-2 py-0.5">
                     בקרוב
                   </span>
                 )}
