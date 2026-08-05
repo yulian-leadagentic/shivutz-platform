@@ -7,7 +7,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Loader2, Search as SearchIcon, CreditCard, ShieldCheck, Clock } from 'lucide-react';
+import { Loader2, Search as SearchIcon, CreditCard, ShieldCheck, Clock, Globe2, ArrowLeft } from 'lucide-react';
 import { adApi, type UsageResponse } from '@/lib/api/ads';
 import { orgApi } from '@/lib/api';
 import { getAccessToken, decodeJwtPayload } from '@/lib/auth';
@@ -52,17 +52,49 @@ export default function ContractorDashboardPage() {
     <div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
       <header className="text-center space-y-1">
         <h1 className="text-2xl font-bold text-slate-900">שלום{companyName ? `, ${companyName}` : ''}</h1>
-        <p className="text-sm text-slate-500">התחילו חיפוש חדש או המשיכו לחפש כמו קודם</p>
+        <p className="text-sm text-slate-500">שני מסלולים למצוא עובדים — בחרו את המתאים</p>
       </header>
 
-      {/* Primary CTA — search */}
-      <Link
-        href="/"
-        className="flex items-center justify-center gap-3 bg-brand-800 hover:bg-brand-900 text-white text-lg font-semibold py-4 rounded-2xl shadow-md transition"
-      >
-        <SearchIcon className="w-6 h-6" />
-        התחל חיפוש
-      </Link>
+      {/* C2 — split entry tiles. Reuses the same mental model as the
+          landing category tiles ('workers' vs 'import') so the contractor
+          reads the two jobs as one system, wherever they land. */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <Link
+          href="/"
+          className="group flex flex-col justify-between gap-3 p-5 rounded-2xl bg-brand-800 hover:bg-brand-900 text-white shadow-md transition min-h-[160px]"
+        >
+          <div className="flex items-center gap-3">
+            <div className="h-11 w-11 rounded-xl bg-white/15 flex items-center justify-center shrink-0">
+              <SearchIcon className="w-6 h-6" />
+            </div>
+            <div className="min-w-0">
+              <h2 className="text-base font-bold leading-tight">מצא עובדים זמינים עכשיו</h2>
+              <p className="text-xs text-white/80 mt-0.5 leading-relaxed">חיפוש בחופש. תוצאות מיידיות מתאגידים שיש להם עובדים פנויים כעת.</p>
+            </div>
+          </div>
+          <div className="text-xs font-semibold inline-flex items-center gap-1.5 opacity-90 group-hover:opacity-100 transition">
+            חפש עכשיו <ArrowLeft className="w-3.5 h-3.5" />
+          </div>
+        </Link>
+
+        <Link
+          href="/contractor/tenders"
+          className="group flex flex-col justify-between gap-3 p-5 rounded-2xl bg-white border-2 border-slate-200 hover:border-brand-400 hover:shadow-md text-slate-900 transition min-h-[160px]"
+        >
+          <div className="flex items-center gap-3">
+            <div className="h-11 w-11 rounded-xl bg-brand-50 flex items-center justify-center shrink-0">
+              <Globe2 className="w-6 h-6 text-brand-700" />
+            </div>
+            <div className="min-w-0">
+              <h2 className="text-base font-bold leading-tight">בקש ייבוא עובדים מחו״ל</h2>
+              <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">בקשה מובנית שרצה על תאגידים מורשים. הצעות חוזרות תוך ימים.</p>
+            </div>
+          </div>
+          <div className="text-xs font-semibold text-brand-700 inline-flex items-center gap-1.5">
+            פתח בקשה חדשה <ArrowLeft className="w-3.5 h-3.5" />
+          </div>
+        </Link>
+      </div>
 
       {/* Kablan verification banner (only if unverified) */}
       {kablanVerified === false && (
