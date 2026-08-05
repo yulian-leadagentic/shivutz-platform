@@ -257,6 +257,57 @@ export default function ContractorTenderDetailPage() {
         </div>
       </div>
 
+      {/* C3 — pipeline strip. Users kept asking 'do I still need to do
+          something?' after selecting a winning bid; the double
+          admin+contractor approval read as two disconnected banners.
+          One row here shows the whole flow with the current step lit. */}
+      {(() => {
+        const hasBids = liveBids.length > 0;
+        const isSelected = ['awaiting_admin', 'in_progress'].includes(tender.status);
+        let current: 1 | 2 | 3 | 4 = 1;
+        if (revealed) current = 4;
+        else if (isSelected) current = 3;   // waiting on admin reveal-approval
+        else if (hasBids) current = 2;      // corp bids arrived, contractor to choose
+        else current = 1;                    // pending_admin OR open-no-bids
+        const steps: Array<{ n: 1|2|3|4; label: string; whose: 'you'|'corp'|'admin' }> = [
+          { n: 1, label: 'פרסמת בקשה',        whose: 'you'   },
+          { n: 2, label: 'תאגידים מציעים',    whose: 'corp'  },
+          { n: 3, label: 'בחרת זוכים',        whose: 'you'   },
+          { n: 4, label: 'אישור מנהל וחשיפה', whose: 'admin' },
+        ];
+        const whoseLabel = { you: 'בידיים שלכם', corp: 'ממתין לתאגידים', admin: 'ממתין למנהל המערכת' };
+        const currentStep = steps.find((s) => s.n === current)!;
+        return (
+          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm px-4 py-3 space-y-2">
+            <p className="text-xs text-slate-500 flex items-center gap-1.5">
+              <span className="font-semibold text-slate-700">כרגע:</span>
+              <span>{whoseLabel[currentStep.whose]}</span>
+              <span className="text-slate-300">·</span>
+              <span>שלב {current} מתוך 4 — {currentStep.label}</span>
+            </p>
+            <ol className="flex items-center gap-1.5 flex-wrap text-xs">
+              {steps.map((s, i) => (
+                <li key={s.n} className="flex items-center gap-1.5">
+                  <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 font-semibold ${
+                    s.n <  current ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                    s.n === current ? 'bg-brand-50 text-brand-800 border-brand-300' :
+                                      'bg-white text-slate-500 border-slate-200'
+                  }`}>
+                    <span className={`inline-flex w-4 h-4 items-center justify-center rounded-full text-[10px] ${
+                      s.n < current  ? 'bg-emerald-600 text-white' :
+                      s.n === current ? 'bg-brand-800 text-white' :
+                                        'bg-slate-200 text-slate-500'
+                    }`}>{s.n < current ? '✓' : s.n}</span>
+                    {s.label}
+                  </span>
+                  {i < steps.length - 1 && <span className="text-slate-300">←</span>}
+                </li>
+              ))}
+            </ol>
+          </div>
+        );
+      })()}
+
       {/* Status banners */}
       {tender.status === 'pending_admin' && (
         <PendingAdminBanner createdAt={tender.created_at} />
