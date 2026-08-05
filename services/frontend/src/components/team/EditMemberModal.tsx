@@ -1,9 +1,28 @@
 'use client';
 
-import { useState, FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Loader2, X, Pencil, Info } from 'lucide-react';
 import { memberApi, type TeamMember } from '@/lib/api';
 import { Input } from '@/components/ui/input';
+
+// Israeli phone: mobile 05x-xxxxxxx (10 digits) or landline 0N-xxxxxxx
+// (9 digits, N ∈ 2..9 except 5). Accept spaces / dashes; strip and check.
+function normalizeIsraeliPhone(raw: string): string {
+  return raw.replace(/[\s\-‏‎]/g, '');
+}
+function validateIsraeliPhone(raw: string): string {
+  const p = normalizeIsraeliPhone(raw);
+  if (!p) return 'יש להזין מספר טלפון';
+  if (!/^0\d{8,9}$/.test(p)) return 'מספר טלפון ישראלי לא תקין (למשל 050-1234567)';
+  return '';
+}
+function validateName(raw: string, fieldLabel: string): string {
+  const s = raw.trim();
+  if (s.length > 60) return `${fieldLabel} ארוך מדי (עד 60 תווים)`;
+  return '';
+}
+
+const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 const ROLE_OPTIONS_PENDING_OR_NEW: { value: string; label: string }[] = [
   { value: 'admin',  label: 'מנהל — גישה מלאה לבקשות, עסקאות וצוות' },
@@ -39,13 +58,65 @@ export function EditMemberModal({ orgType, orgId, member, onSaved, onClose }: Pr
 
   const [saving, setSaving] = useState(false);
   const [error,  setError]  = useState('');
+  // C4 — per-field errors, so the invalid field gets a red ring +
+  // inline message instead of one anonymous bottom-of-form error.
+  const [fieldErrors, setFieldErrors] = useState<{ phone?: string; firstName?: string; lastName?: string; jobTitle?: string }>({});
+
+  const dialogRef       = useRef<HTMLDivElement>(null);
+  const returnFocusTo   = useRef<HTMLElement | null>(null);
 
   const phoneChanged = isPending && phone.trim() && phone.trim() !== (member.phone ?? '').trim();
+
+  const doClose = useCallback(() => { if (!saving) onClose(); }, [onClose, saving]);
+
+  // C4 — modal a11y: remember opener, focus first control, trap Tab,
+  // Esc to close, restore focus on unmount.
+  useEffect(() => {
+    returnFocusTo.current = document.activeElement as HTMLElement | null;
+    const first = dialogRef.current?.querySelector<HTMLElement>(FOCUSABLE);
+    (first ?? dialogRef.current)?.focus();
+
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') { e.preventDefault(); doClose(); return; }
+      if (e.key !== 'Tab' || !dialogRef.current) return;
+      const items = Array.from(dialogRef.current.querySelectorAll<HTMLElement>(FOCUSABLE));
+      if (items.length === 0) return;
+      const firstEl = items[0];
+      const lastEl  = items[items.length - 1];
+      const active  = document.activeElement as HTMLElement | null;
+      if (e.shiftKey && active === firstEl) { e.preventDefault(); lastEl.focus(); }
+      else if (!e.shiftKey && active === lastEl) { e.preventDefault(); firstEl.focus(); }
+    }
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      returnFocusTo.current?.focus?.();
+    };
+  }, [doClose]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (saving) return;
     setError('');
+
+    // C4 — client-side validation. Only checks fields the user can
+    // edit for this row type (pending vs active).
+    const fe: typeof fieldErrors = {};
+    if (isPending) {
+      const nameErr1 = validateName(firstName, 'שם פרטי');
+      const nameErr2 = validateName(lastName, 'שם משפחה');
+      if (nameErr1) fe.firstName = nameErr1;
+      if (nameErr2) fe.lastName  = nameErr2;
+      // Phone required only if the row currently has one; blank stays blank.
+      if (phone.trim() || (member.phone ?? '').trim()) {
+        const phErr = validateIsraeliPhone(phone);
+        if (phErr) fe.phone = phErr;
+      }
+    }
+    const jtErr = validateName(jobTitle, 'תפקיד');
+    if (jtErr) fe.jobTitle = jtErr;
+    if (Object.keys(fe).length > 0) { setFieldErrors(fe); return; }
+    setFieldErrors({});
 
     // Build a minimal patch — only send fields that actually changed.
     const patch: Parameters<typeof memberApi.update>[3] = {};
@@ -60,9 +131,9 @@ export function EditMemberModal({ orgType, orgId, member, onSaved, onClose }: Pr
       if (lastName.trim() !== (member.invited_last_name ?? '')) {
         patch.invited_last_name = lastName.trim() || null;
       }
-      if (phone.trim() !== (member.phone ?? '')) {
-        if (!phone.trim()) { setError('יש להזין מספר טלפון'); return; }
-        patch.invited_phone = phone.trim();
+      const normalizedPhone = normalizeIsraeliPhone(phone);
+      if (normalizedPhone !== (member.phone ?? '')) {
+        patch.invited_phone = normalizedPhone;
       }
     }
 
@@ -93,10 +164,15 @@ export function EditMemberModal({ orgType, orgId, member, onSaved, onClose }: Pr
   return (
     <div
       className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-900/40 backdrop-blur-sm px-4"
-      onClick={() => !saving && onClose()}
+      onClick={doClose}
     >
       <div
-        className="bg-white rounded-t-2xl sm:rounded-2xl w-full max-w-md shadow-2xl"
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="edit-member-title"
+        tabIndex={-1}
+        className="bg-white rounded-t-2xl sm:rounded-2xl w-full max-w-md shadow-2xl outline-none"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -105,14 +181,14 @@ export function EditMemberModal({ orgType, orgId, member, onSaved, onClose }: Pr
             <Pencil className="h-5 w-5" />
           </div>
           <div className="flex-1">
-            <h2 className="text-lg font-bold text-slate-900 leading-tight">
+            <h2 id="edit-member-title" className="text-lg font-bold text-slate-900 leading-tight">
               עריכת חבר צוות
             </h2>
             <p className="text-sm text-slate-500 mt-0.5">{displayName}</p>
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={doClose}
             disabled={saving}
             aria-label="סגור"
             className="h-8 w-8 inline-flex items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 disabled:opacity-50"
@@ -122,7 +198,7 @@ export function EditMemberModal({ orgType, orgId, member, onSaved, onClose }: Pr
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="p-5 space-y-3">
+        <form onSubmit={handleSubmit} className="p-5 space-y-3" noValidate>
           {isPending && (
             <>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -131,21 +207,31 @@ export function EditMemberModal({ orgType, orgId, member, onSaved, onClose }: Pr
                   placeholder="ישראל"
                   value={firstName}
                   onChange={(e) => setFirstName(e.target.value)}
+                  error={fieldErrors.firstName}
+                  autoComplete="given-name"
+                  maxLength={60}
                 />
                 <Input
                   label="שם משפחה"
                   placeholder="ישראלי"
                   value={lastName}
                   onChange={(e) => setLastName(e.target.value)}
+                  error={fieldErrors.lastName}
+                  autoComplete="family-name"
+                  maxLength={60}
                 />
               </div>
               <Input
                 label="מספר טלפון נייד"
                 type="tel"
+                inputMode="tel"
                 placeholder="050-0000000"
                 dir="ltr"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
+                error={fieldErrors.phone}
+                autoComplete="tel"
+                aria-required={!!(member.phone ?? '').trim()}
               />
             </>
           )}
@@ -155,11 +241,14 @@ export function EditMemberModal({ orgType, orgId, member, onSaved, onClose }: Pr
             placeholder="מנהל אתר בנייה"
             value={jobTitle}
             onChange={(e) => setJobTitle(e.target.value)}
+            error={fieldErrors.jobTitle}
+            maxLength={60}
           />
 
           <div className="flex flex-col gap-1">
-            <label className="text-sm font-medium text-slate-700">הרשאות</label>
+            <label htmlFor="edit-member-role" className="text-sm font-medium text-slate-700">הרשאות</label>
             <select
+              id="edit-member-role"
               value={role}
               onChange={(e) => setRole(e.target.value)}
               className="flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
@@ -178,7 +267,7 @@ export function EditMemberModal({ orgType, orgId, member, onSaved, onClose }: Pr
           )}
 
           {error && (
-            <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">{error}</p>
+            <p role="alert" className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">{error}</p>
           )}
 
           <div className="flex gap-2 pt-1">
