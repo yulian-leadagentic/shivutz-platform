@@ -5,14 +5,15 @@ from app.errors import register_error_handlers
 from app.routes import payment_methods, webhooks, admin_payments, settings, subscriptions
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from app.services.auto_charge import (
-    # Pattern A (J5 pre-auth) — runs frequently so grace expiry resolves within ~1 min.
-    process_expired_auths,
-    process_failed_captures,
-    # Pattern B (legacy token + scheduled charge) — kept working during transition.
-    process_expired_grace_periods,
-    process_retry_failed,
-)
+
+# D4 step 0 — auto_charge cron unscheduled. All four jobs
+# (process_expired_auths / process_failed_captures /
+# process_expired_grace_periods / process_retry_failed) captured
+# J5 pre-auths on the dropped `deals` table, so every tick has
+# been erroring on staging since the deal-service sunset. The
+# module + payment_transactions cleanup happens in later D4 steps
+# once we confirm no live billing branch depends on the same
+# storage.
 
 scheduler = AsyncIOScheduler()
 
@@ -20,15 +21,9 @@ scheduler = AsyncIOScheduler()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
-
-    # Pattern A sweeps (frequent — grace can be 24-48h so we want ~1-min resolution)
-    scheduler.add_job(process_expired_auths,   "interval", minutes=1, id="capture_expired_auths")
-    scheduler.add_job(process_failed_captures, "interval", minutes=5, id="capture_retry_failed")
-
-    # Pattern B legacy sweeps (daily — same cadence as before)
-    scheduler.add_job(process_expired_grace_periods, "cron", hour=2, minute=0, id="legacy_auto_charge")
-    scheduler.add_job(process_retry_failed,          "cron", hour=3, minute=0, id="legacy_retry_failed")
-
+    # No scheduled jobs at present. Subscription renewals run via
+    # Cardcom's recurring engine (Cardcom pushes webhooks), not
+    # via APScheduler.
     scheduler.start()
     yield
     scheduler.shutdown()
