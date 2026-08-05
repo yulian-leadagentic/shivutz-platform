@@ -188,6 +188,11 @@ export default function ContractorTendersPage() {
                         </span>
                       ))}
                     </div>
+                    {t.status === 'rejected' && t.rejection_reason && (
+                      <p className="text-xs text-rose-700 mt-1.5">
+                        <span className="font-semibold">סיבת דחייה:</span> {t.rejection_reason}
+                      </p>
+                    )}
                     <p className="text-xs text-slate-400 mt-1.5">פורסם: {fmt(t.created_at)}</p>
                   </div>
                   <div className="text-center shrink-0">

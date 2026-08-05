@@ -237,7 +237,7 @@ export default function ContractorUsersPage() {
             </div>
             {error && <p className="text-sm text-red-600">{error}</p>}
             <Button type="button" onClick={handleInvite} disabled={saving} className="w-full">
-              {saving ? <><Loader2 className="h-4 w-4 animate-spin" /> שולח...</> : 'שלח הזמנה'}
+              {saving ? <><Loader2 className="h-4 w-4 animate-spin" /> שולח…</> : 'שלח הזמנה'}
             </Button>
           </CardContent>
         </Card>
@@ -339,7 +339,7 @@ export default function ContractorUsersPage() {
                           onClick={() => setEditing(m)}
                           title="ערוך משתמש"
                           aria-label={`ערוך את ${m.full_name ?? 'המשתמש'}`}
-                          className="inline-flex items-center justify-center h-7 w-7 rounded-full text-slate-400 hover:bg-brand-50 hover:text-brand-600 transition-colors"
+                          className="inline-flex items-center justify-center h-11 w-11 sm:h-7 sm:w-7 rounded-full text-slate-400 hover:bg-brand-50 hover:text-brand-600 transition-colors"
                         >
                           <Pencil className="h-4 w-4" />
                         </button>
@@ -347,7 +347,7 @@ export default function ContractorUsersPage() {
                           onClick={() => setPendingDelete(m)}
                           title="הסר משתמש"
                           aria-label={`הסר את ${m.full_name ?? 'המשתמש'}`}
-                          className="inline-flex items-center justify-center h-7 w-7 rounded-full text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition-colors"
+                          className="inline-flex items-center justify-center h-11 w-11 sm:h-7 sm:w-7 rounded-full text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition-colors"
                         >
                           <Trash2 className="h-4 w-4" />
                         </button>
@@ -409,7 +409,7 @@ export default function ContractorUsersPage() {
                           onClick={() => setEditing(m)}
                           title="ערוך הזמנה"
                           aria-label="ערוך הזמנה"
-                          className="inline-flex items-center justify-center h-7 w-7 rounded-full text-slate-400 hover:bg-brand-50 hover:text-brand-600 transition-colors"
+                          className="inline-flex items-center justify-center h-11 w-11 sm:h-7 sm:w-7 rounded-full text-slate-400 hover:bg-brand-50 hover:text-brand-600 transition-colors"
                         >
                           <Pencil className="h-4 w-4" />
                         </button>
@@ -417,7 +417,7 @@ export default function ContractorUsersPage() {
                           onClick={() => setPendingDelete(m)}
                           title="בטל הזמנה"
                           aria-label="בטל הזמנה"
-                          className="inline-flex items-center justify-center h-7 w-7 rounded-full text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition-colors"
+                          className="inline-flex items-center justify-center h-11 w-11 sm:h-7 sm:w-7 rounded-full text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition-colors"
                         >
                           <Trash2 className="h-4 w-4" />
                         </button>

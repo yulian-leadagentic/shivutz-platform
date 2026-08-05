@@ -197,6 +197,11 @@ export default function CorpTendersPage() {
                         הצעתך: {b.items.reduce((s, i) => s + i.quantity_offered, 0)} עובדים
                         {b.arrival_date && ` · הגעה ${fmt(b.arrival_date)}`}
                       </p>
+                      {b.status === 'rejected' && b.rejection_reason && (
+                        <p className="text-xs text-rose-700 mt-1">
+                          <span className="font-semibold">סיבת דחייה:</span> {b.rejection_reason}
+                        </p>
+                      )}
                       <p className="text-xs text-slate-400 mt-1">הוגש {fmt(b.submitted_at)}</p>
                     </div>
                     <ArrowLeft className="h-5 w-5 text-slate-300 shrink-0" />

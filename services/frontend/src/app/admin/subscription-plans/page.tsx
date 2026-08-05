@@ -206,7 +206,7 @@ export default function SubscriptionPlansPage() {
                       type="button"
                       onClick={() => save(p)}
                       disabled={busy === p.id}
-                      className="w-full mt-2 bg-brand-600 hover:bg-brand-500 text-white text-sm font-semibold py-2 rounded-lg
+                      className="w-full mt-2 bg-brand-800 hover:bg-brand-900 text-white text-sm font-semibold py-2 rounded-lg
                                  disabled:bg-slate-300 inline-flex items-center justify-center gap-2"
                     >
                       {busy === p.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
@@ -242,7 +242,7 @@ function Field({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           className={`w-full border rounded-lg px-2 py-1.5 text-sm outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 ${
-            isUnlimited ? 'border-brand-200 bg-brand-50/50 placeholder:text-brand-500' : 'border-slate-300'
+            isUnlimited ? 'border-brand-200 bg-brand-50/50 placeholder:text-slate-400' : 'border-slate-300'
           }`}
           placeholder={hideUnlimited ? '' : 'ללא הגבלה'}
         />

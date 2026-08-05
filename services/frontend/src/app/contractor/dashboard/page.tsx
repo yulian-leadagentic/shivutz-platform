@@ -7,7 +7,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Loader2, Search as SearchIcon, CreditCard, ShieldCheck, Clock } from 'lucide-react';
+import { Loader2, Search as SearchIcon, CreditCard, Clock, Globe2, ArrowLeft } from 'lucide-react';
 import { adApi, type UsageResponse } from '@/lib/api/ads';
 import { orgApi } from '@/lib/api';
 import { getAccessToken, decodeJwtPayload } from '@/lib/auth';
@@ -25,7 +25,6 @@ function daysUntil(iso: string | null | undefined): number | null {
 
 export default function ContractorDashboardPage() {
   const [usage, setUsage] = useState<UsageResponse | null>(null);
-  const [kablanVerified, setKablan] = useState<boolean | null>(null);
   const [companyName, setCompanyName] = useState<string>('');
   const [loading, setLoading] = useState(true);
 
@@ -35,7 +34,6 @@ export default function ContractorDashboardPage() {
     const entityId = (p?.entity_id || p?.org_id) as string | undefined;
     if (entityId && p?.entity_type === 'contractor') {
       orgApi.getContractor(entityId).then((c) => {
-        setKablan(!!c.kablan_verified_at);
         setCompanyName(c.company_name_he || c.company_name || '');
       }).catch(() => {});
     }
@@ -52,31 +50,53 @@ export default function ContractorDashboardPage() {
     <div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
       <header className="text-center space-y-1">
         <h1 className="text-2xl font-bold text-slate-900">שלום{companyName ? `, ${companyName}` : ''}</h1>
-        <p className="text-sm text-slate-500">התחילו חיפוש חדש או המשיכו לחפש כמו קודם</p>
+        <p className="text-sm text-slate-500">שני מסלולים למצוא עובדים — בחרו את המתאים</p>
       </header>
 
-      {/* Primary CTA — search */}
-      <Link
-        href="/"
-        className="flex items-center justify-center gap-3 bg-brand-600 hover:bg-brand-500 text-white text-lg font-semibold py-4 rounded-2xl shadow-md transition"
-      >
-        <SearchIcon className="w-6 h-6" />
-        התחל חיפוש
-      </Link>
-
-      {/* Kablan verification banner (only if unverified) */}
-      {kablanVerified === false && (
+      {/* C2 — split entry tiles. Reuses the same mental model as the
+          landing category tiles ('workers' vs 'import') so the contractor
+          reads the two jobs as one system, wherever they land. */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Link
-          href="/contractor/verify-kablan"
-          className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-2xl p-4 hover:border-amber-300 transition"
+          href="/"
+          className="group flex flex-col justify-between gap-3 p-5 rounded-2xl bg-brand-800 hover:bg-brand-900 text-white shadow-md transition min-h-[160px]"
         >
-          <ShieldCheck className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
-          <div>
-            <h3 className="font-semibold text-amber-900">השלימו אימות רישום קבלנים</h3>
-            <p className="text-sm text-amber-800 mt-0.5">האימות מעלה אמון של תאגידים ומסיר סימוני "לא מאומת" מהחיפושים.</p>
+          <div className="flex items-center gap-3">
+            <div className="h-11 w-11 rounded-xl bg-white/15 flex items-center justify-center shrink-0">
+              <SearchIcon className="w-6 h-6" />
+            </div>
+            <div className="min-w-0">
+              <h2 className="text-base font-bold leading-tight">מצא עובדים זמינים עכשיו</h2>
+              <p className="text-xs text-white/80 mt-0.5 leading-relaxed">חיפוש בחופש. תוצאות מיידיות מתאגידים שיש להם עובדים פנויים כעת.</p>
+            </div>
+          </div>
+          <div className="text-xs font-semibold inline-flex items-center gap-1.5 opacity-90 group-hover:opacity-100 transition">
+            חפש עכשיו <ArrowLeft className="w-3.5 h-3.5" />
           </div>
         </Link>
-      )}
+
+        <Link
+          href="/contractor/tenders"
+          className="group flex flex-col justify-between gap-3 p-5 rounded-2xl bg-white border-2 border-slate-200 hover:border-brand-400 hover:shadow-md text-slate-900 transition min-h-[160px]"
+        >
+          <div className="flex items-center gap-3">
+            <div className="h-11 w-11 rounded-xl bg-brand-50 flex items-center justify-center shrink-0">
+              <Globe2 className="w-6 h-6 text-brand-700" />
+            </div>
+            <div className="min-w-0">
+              <h2 className="text-base font-bold leading-tight">בקש ייבוא עובדים מחו״ל</h2>
+              <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">בקשה מובנית שרצה על תאגידים מורשים. הצעות חוזרות תוך ימים.</p>
+            </div>
+          </div>
+          <div className="text-xs font-semibold text-brand-700 inline-flex items-center gap-1.5">
+            פתח בקשה חדשה <ArrowLeft className="w-3.5 h-3.5" />
+          </div>
+        </Link>
+      </div>
+
+      {/* C1 — kablan banner intentionally NOT rendered here.
+          Contractor layout mounts <KablanVerifyBanner /> globally, so
+          duplicating it on the dashboard was double-messaging. */}
 
       {/* Subscription card */}
       <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
@@ -90,8 +110,13 @@ export default function ContractorDashboardPage() {
               </span>
             </p>
             {trialDays !== null && (
-              <p className="text-sm text-amber-700 mt-1 inline-flex items-center gap-1">
-                <Clock className="w-3.5 h-3.5" /> נותרו {trialDays} ימים לניסיון
+              <p className="text-sm text-amber-700 mt-1 inline-flex items-center gap-1.5 flex-wrap">
+                <Clock className="w-3.5 h-3.5" />
+                נותרו {trialDays} ימים לניסיון
+                {revealsLimit != null && (
+                  <>· {revealsLimit} חשיפות</>
+                )}
+                <span className="text-amber-600">· ללא כרטיס אשראי</span>
               </p>
             )}
             {usage && (
@@ -102,7 +127,7 @@ export default function ContractorDashboardPage() {
           </div>
           <Link
             href="/billing"
-            className="inline-flex items-center gap-2 bg-brand-600 hover:bg-brand-500 text-white text-sm font-semibold px-4 py-2 rounded-lg"
+            className="inline-flex items-center gap-2 bg-brand-800 hover:bg-brand-900 text-white text-sm font-semibold px-4 py-2 rounded-lg"
           >
             <CreditCard className="w-4 h-4" />
             ניהול מנוי

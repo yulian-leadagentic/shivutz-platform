@@ -1,12 +1,15 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { LogOut, ChevronDown, Building2, HardHat, Check, Loader2, ArrowRight, ShieldCheck } from 'lucide-react';
+import { LogOut, ChevronDown, Building2, HardHat, Check, Loader2, ArrowRight, ShieldCheck, Eye } from 'lucide-react';
 import { getAccessToken, decodeJwtPayload, clearTokens, saveTokens } from '@/lib/auth';
 import { otpApi, type Membership } from '@/lib/api';
+import { adApi } from '@/lib/api/ads';
 import { useAuth } from '@/lib/AuthContext';
 import MobileNavDrawer from './MobileNavDrawer';
+import { NotificationBell } from './NotificationBell';
 
 const pageTitles: Record<string, string> = {
   '/contractor':               'לוח בקרה',
@@ -112,6 +115,17 @@ export default function TopBar({ mobileNav }: TopBarProps = {}) {
   const [secondary, setSecondary] = useState<string>('');
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  // R3 — reveal quota gauge visible on every logged-in page. Only
+  // meaningful for contractors (they spend reveals; corps receive).
+  // usage endpoint returns 402 for expired subs — swallow so a lapsed
+  // trial doesn't crash the topbar.
+  const [reveals, setReveals] = useState<{ used: number; limit: number | null } | null>(null);
+  useEffect(() => {
+    if (!isLoggedIn || entityType !== 'contractor') { setReveals(null); return; }
+    adApi.usage()
+      .then((u) => setReveals({ used: u.usage.reveals_this_month, limit: u.limits.reveals_per_month }))
+      .catch(() => setReveals(null));
+  }, [isLoggedIn, entityType, entityId]);
 
   // Memberships drive the in-app entity switcher. Loaded once on mount
   // (and again whenever the active entityId changes — e.g. after a
@@ -252,6 +266,34 @@ export default function TopBar({ mobileNav }: TopBarProps = {}) {
         </div>
       </div>
 
+      <div className="flex items-center gap-2 min-w-0">
+      {/* G5 — in-app notification bell. Only meaningful once the user
+          is signed in; when there is no name (logged-out) we skip it
+          entirely so the anonymous landing/marketing surfaces don't
+          poll /notifications and 401. */}
+      {name && <NotificationBell />}
+
+      {/* R3 — reveal quota gauge (contractors only). Amber at ≥80%,
+          rose at 100%. Click routes to /billing so the upgrade path
+          is one click from anywhere in the app. */}
+      {reveals && reveals.limit != null && (() => {
+        const pct   = reveals.limit === 0 ? 100 : Math.min(100, Math.round((reveals.used / reveals.limit) * 100));
+        const tone  = pct >= 100 ? 'bg-rose-50 text-rose-700 border-rose-200'
+                    : pct >=  80 ? 'bg-amber-50 text-amber-700 border-amber-200'
+                    :              'bg-slate-50 text-slate-700 border-slate-200';
+        return (
+          <Link
+            href="/billing"
+            className={`hidden sm:inline-flex items-center gap-1.5 text-xs font-semibold rounded-full border px-2.5 py-1 ${tone}`}
+            title="חשיפות שלך החודש · לחץ לניהול מנוי"
+          >
+            <Eye className="h-3.5 w-3.5" />
+            <span dir="ltr">{reveals.used} / {reveals.limit}</span>
+            <span>חשיפות</span>
+          </Link>
+        );
+      })()}
+
       {name && (
         // The right-side dropdown trigger shows the entity name
         // explicitly on sm+ (the mobile-only chip under the page
@@ -349,6 +391,7 @@ export default function TopBar({ mobileNav }: TopBarProps = {}) {
           )}
         </div>
       )}
+      </div>
     </header>
   );
 }

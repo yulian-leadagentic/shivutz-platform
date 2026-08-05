@@ -190,7 +190,7 @@ export function NotificationRecipientsSection({ entityType, entityId, onChange, 
                   aria-pressed={r.is_recipient}
                   className={`shrink-0 inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold transition-colors border ${
                     r.is_recipient
-                      ? 'bg-brand-600 text-white border-brand-600 hover:bg-brand-700'
+                      ? 'bg-brand-800 text-white border-brand-600 hover:bg-brand-700'
                       : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'
                   } disabled:opacity-50`}
                   title={r.is_recipient ? 'בטל קבלת התראות' : 'סמן כמקבל התראות'}
@@ -233,7 +233,7 @@ function ChannelBox({
       {icon}
       <span className="font-semibold whitespace-nowrap">{label}</span>
       {badge && (
-        <span className="text-[9px] uppercase tracking-wider font-bold bg-amber-100 text-amber-800 px-1 py-0.5 rounded">
+        <span className="text-[10px] font-bold uppercase tracking-wider text-amber-800 bg-amber-100 rounded-full px-2 py-0.5">
           {badge}
         </span>
       )}

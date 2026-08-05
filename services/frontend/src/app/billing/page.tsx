@@ -162,7 +162,20 @@ export default function BillingPage() {
         >
           <ChevronRight className="w-3 h-3 me-1" /> חזרה ללוח בקרה
         </Link>
-        <h1 className="text-2xl font-bold text-slate-900">חשבון ומנוי</h1>
+        <div className="flex items-baseline gap-2 flex-wrap">
+          <h1 className="text-2xl font-bold text-slate-900">חשבון ומנוי</h1>
+          {/* B4 — payment-service mode chip. Only shown while the
+              backend runs in fake mode; hides itself once Cardcom
+              recurring is live. */}
+          {(sub as unknown as { payment_mode?: string })?.payment_mode === 'fake' && (
+            <span
+              className="text-[10px] font-bold uppercase tracking-wider rounded-full border border-amber-300 bg-amber-50 text-amber-700 px-2 py-0.5"
+              title="חיוב מדומה — Cardcom האמיתי עדיין לא מחובר. כל 'תשלום' עובר להצלחה מיידית."
+            >
+              מצב בדיקה
+            </span>
+          )}
+        </div>
         <p className="text-sm text-slate-500">ניהול המנוי החודשי שלך</p>
       </header>
 
@@ -177,70 +190,96 @@ export default function BillingPage() {
                         :                'bg-red-100 text-red-800 border-red-300';
         return (
       <section className="rounded-2xl overflow-hidden shadow-md border border-slate-200 bg-gradient-to-l from-brand-50 via-white to-white">
-        <div className="p-5 sm:p-6 space-y-4">
-          <div className="flex items-start justify-between gap-4 flex-wrap">
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-semibold text-brand-700 uppercase tracking-wider inline-flex items-center gap-1.5">
-                <Crown className="w-3.5 h-3.5" /> המנוי שלך
-              </p>
-              <div className="flex items-baseline gap-2 mt-1 flex-wrap">
-                <h2 className="text-3xl sm:text-4xl font-extrabold text-slate-900">
-                  {currentTier?.title ?? (error ? '—' : '...')}
-                </h2>
-                {sub && (
-                  <span className={`inline-block text-xs font-bold rounded-full px-2.5 py-0.5 border ${statusColor}`}>
-                    {STATUS_LABEL[sub.status] ?? sub.status}
-                  </span>
-                )}
-              </div>
-              {currentTier && 'price' in currentTier && currentTier.price != null && (
-                <p className="text-lg font-bold text-slate-700 mt-1">
-                  ₪{currentTier.price}
-                  <span className="text-xs font-medium text-slate-500 ms-1">/ חודש · חידוש אוטומטי</span>
-                </p>
-              )}
-              {trialDays !== null && (
-                <p className="text-sm text-amber-800 mt-2 font-medium">
-                  ⏳ נותרו {trialDays} ימים בתקופת הניסיון החינמית
-                </p>
-              )}
-              {periodDays !== null && (
-                <p className="text-sm text-emerald-800 mt-2 font-medium">
-                  ✓ החיוב הבא בעוד {periodDays} ימים
-                </p>
-              )}
-              {isLapsed && (
-                <p className="text-sm text-red-800 mt-2 font-medium">
-                  ⚠ המנוי לא פעיל. שדרג כדי להמשיך להשתמש.
-                </p>
-              )}
-            </div>
+        <div className="p-5 sm:p-6 space-y-3">
+          {/* B2 — hero line: label + status chip in one row.
+              Removes the vestigial flex-justify-between wrapper that
+              left the right half of the card empty on wide screens. */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="text-xs font-semibold text-brand-700 uppercase tracking-wider inline-flex items-center gap-1.5">
+              <Crown className="w-3.5 h-3.5" /> המנוי שלך
+            </p>
+            {sub && (
+              <span className={`inline-block text-[11px] font-bold rounded-full px-2.5 py-0.5 border ${statusColor}`}>
+                {STATUS_LABEL[sub.status] ?? sub.status}
+              </span>
+            )}
           </div>
 
-        {/* Usage vs limits — contractor sees reveals + user seats,
-             corp sees reveals + active ads. */}
-        {usage && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-slate-100">
-            <div>
-              <p className="text-xs text-slate-500">חשיפות פרטי קשר החודש</p>
-              <p className="text-base font-bold text-slate-900">
-                {usage.usage.reveals_this_month} / {usage.limits.reveals_per_month ?? '∞'}
+          <div className="flex items-baseline gap-3 flex-wrap">
+            <h2 className="text-3xl sm:text-4xl font-extrabold text-slate-900">
+              {currentTier?.title ?? (error ? '—' : (
+                <span className="inline-block w-24 h-8 rounded-md bg-slate-100 animate-pulse" aria-label="טוען" />
+              ))}
+            </h2>
+            {currentTier && 'price' in currentTier && currentTier.price != null && (
+              <p className="text-lg font-bold text-slate-700">
+                ₪{currentTier.price}
+                <span className="text-xs font-medium text-slate-500 ms-1">/ חודש · חידוש אוטומטי</span>
               </p>
-            </div>
+            )}
+          </div>
+
+          {trialDays !== null && (
+            <p className="text-sm text-amber-800 font-medium">
+              נותרו {trialDays} ימים בתקופת הניסיון החינמית
+            </p>
+          )}
+          {periodDays !== null && (
+            <p className="text-sm text-emerald-800 font-medium">
+              החיוב הבא בעוד {periodDays} ימים
+            </p>
+          )}
+          {isLapsed && (
+            <p className="text-sm text-red-800 font-medium">
+              המנוי לא פעיל. שדרג כדי להמשיך להשתמש.
+            </p>
+          )}
+
+        {/* Usage vs limits — B1 role-scoped grid:
+             contractor sees reveals-consumed + user seats;
+             corp sees active-ads + ad lifetime + user seats
+             (no reveal counter — corps receive reveals, don't spend). */}
+        {usage && (
+          <div className={`grid grid-cols-1 ${isContractor ? 'sm:grid-cols-2' : 'sm:grid-cols-3'} gap-3 pt-3 border-t border-slate-100`}>
             {isContractor ? (
-              <div>
-                <p className="text-xs text-slate-500">משתמשים במנוי</p>
-                <p className="text-base font-bold text-slate-900">
-                  {members.filter(m => m.is_active !== false).length} / {(usage.limits as unknown as { max_users?: number | null }).max_users ?? '∞'}
-                </p>
-              </div>
+              <>
+                <div>
+                  <p className="text-xs text-slate-500">חשיפות פרטי קשר החודש</p>
+                  <p className="text-base font-bold text-slate-900">
+                    {usage.usage.reveals_this_month} / {usage.limits.reveals_per_month ?? '∞'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">משתמשים במנוי</p>
+                  <p className="text-base font-bold text-slate-900">
+                    {members.filter(m => m.is_active !== false).length} / {(usage.limits as unknown as { max_users?: number | null }).max_users ?? '∞'}
+                  </p>
+                </div>
+              </>
             ) : (
-              <div>
-                <p className="text-xs text-slate-500">מודעות פעילות</p>
-                <p className="text-base font-bold text-slate-900">
-                  {usage.usage.active_ads} / {usage.limits.active_ads ?? '∞'}
-                </p>
-              </div>
+              <>
+                <div>
+                  <p className="text-xs text-slate-500">מודעות פעילות</p>
+                  <p className="text-base font-bold text-slate-900">
+                    {usage.usage.active_ads} / {usage.limits.active_ads ?? '∞'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">משך חיים מקסימלי למודעה</p>
+                  <p className="text-base font-bold text-slate-900">
+                    {(usage.limits as unknown as { max_ad_lifetime_days?: number | null }).max_ad_lifetime_days == null
+                      ? 'ללא הגבלה'
+                      : `${(usage.limits as unknown as { max_ad_lifetime_days?: number }).max_ad_lifetime_days} ימים`}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">משתמשים במנוי</p>
+                  <p className="text-base font-bold text-slate-900">
+                    <Link href="/corporation/users" className="text-brand-700 hover:underline">לניהול</Link>
+                    {' '}/ {(usage.limits as unknown as { max_users?: number | null }).max_users ?? '∞'}
+                  </p>
+                </div>
+              </>
             )}
           </div>
         )}
@@ -271,7 +310,7 @@ export default function BillingPage() {
                     <p className="text-sm font-medium text-slate-900 truncate">
                       {m.full_name || ((m.invited_first_name || '') + ' ' + (m.invited_last_name || '')).trim() || m.phone || '—'}
                     </p>
-                    <p className="text-xs text-slate-500">{m.phone || '—'}{m.pending ? ' · ממתין' : ''}</p>
+                    <p className="text-xs text-slate-500"><span dir="ltr">{m.phone || '—'}</span>{m.pending ? ' · ממתין' : ''}</p>
                   </div>
                   <button
                     type="button"
@@ -298,7 +337,7 @@ export default function BillingPage() {
               type="button"
               onClick={addMember}
               disabled={busyMem !== null || newPhone.trim().length < 9}
-              className="bg-brand-600 hover:bg-brand-500 text-white text-sm font-semibold px-4 py-2 rounded-lg disabled:bg-slate-300 inline-flex items-center gap-1.5"
+              className="bg-brand-800 hover:bg-brand-900 text-white text-sm font-semibold px-4 py-2 rounded-lg disabled:bg-slate-300 inline-flex items-center gap-1.5"
             >
               {busyMem === 'add' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
               הוסף
@@ -376,11 +415,11 @@ export default function BillingPage() {
                     ? 'bg-slate-100 text-slate-500 border border-slate-200'
                     : isDowngrade
                       ? 'bg-white text-slate-700 border-2 border-slate-300 hover:border-slate-400'
-                      : 'bg-brand-600 hover:bg-brand-500 text-white disabled:bg-slate-300'
+                      : 'bg-brand-800 hover:bg-brand-900 text-white disabled:bg-slate-300'
                 }`}
               >
                 {busyTier === t.code ? (
-                  <><Loader2 className="w-4 h-4 animate-spin" /> מעבד...</>
+                  <><Loader2 className="w-4 h-4 animate-spin" /> מעבד…</>
                 ) : isCurrent ? (
                   <><Crown className="w-4 h-4" /> המנוי הנוכחי</>
                 ) : isUpgrade ? (

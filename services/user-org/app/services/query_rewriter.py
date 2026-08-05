@@ -16,10 +16,17 @@ import hashlib
 import json
 import os
 import re
+import time
 from typing import Optional
 
 FAKE_MODE = os.getenv("LLM_REWRITER_FAKE_MODE", "1") == "1"
 CACHE_TTL_S = int(os.getenv("LLM_REWRITER_CACHE_TTL", "300"))
+# L3 — hard timeout on the Anthropic call. Above this we drop the LLM
+# result and fall back to fake-mode so search response time is bounded.
+# Search on / must feel instant even during Anthropic degradation.
+LLM_TIMEOUT_S = float(os.getenv("LLM_REWRITER_TIMEOUT_S", "3.0"))
+# Log any call that took longer than this — noise threshold for tuning.
+LLM_SLOW_THRESHOLD_S = float(os.getenv("LLM_REWRITER_SLOW_S", "1.5"))
 
 # Profession keyword → code. Values MUST match worker_db.profession_types.code
 # (lowercase english — flooring/mason/plumbing/etc.), not the ad_type enum.
@@ -164,13 +171,17 @@ def rewrite_real(query: str) -> dict:
     try:
         from anthropic import Anthropic
     except ImportError:
+        print("[qrewrite] anthropic sdk missing — falling back to fake")
         return rewrite_fake(query)
 
     api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
         return rewrite_fake(query)
 
-    client = Anthropic(api_key=api_key)
+    # L3 — bounded per-request timeout. Anthropic SDK's default is long
+    # enough to freeze the search under a degraded upstream; 3s keeps
+    # the /search endpoint responsive during outages.
+    client = Anthropic(api_key=api_key, timeout=LLM_TIMEOUT_S)
     system = (
         "You translate a Hebrew construction-marketplace query into a structured filter. "
         "Return ONLY a JSON object with keys: "
@@ -183,6 +194,7 @@ def rewrite_real(query: str) -> dict:
         "canonical_query (the user's request, lightly normalised). "
         "Output ONLY the JSON object — no prose, no markdown fences, no code blocks."
     )
+    t0 = time.perf_counter()
     try:
         resp = client.messages.create(
             model=ANTHROPIC_MODEL,
@@ -190,9 +202,11 @@ def rewrite_real(query: str) -> dict:
             system=system,
             messages=[{"role": "user", "content": query}],
         )
+        elapsed = time.perf_counter() - t0
         text = resp.content[0].text
         parsed = _extract_json(text)
         if not parsed or not isinstance(parsed, dict):
+            print(f"[qrewrite] llm_unparseable ({elapsed:.2f}s) → fallback")
             return rewrite_fake(query)
 
         # Normalise shape — the LLM might miss a field or two.
@@ -202,13 +216,32 @@ def rewrite_real(query: str) -> dict:
         if merged.get("ad_type") not in ("worker", "housing"):
             merged["ad_type"] = fake["ad_type"]
 
+        if elapsed > LLM_SLOW_THRESHOLD_S:
+            print(f"[qrewrite] slow ({elapsed:.2f}s) query='{query[:60]}'")
+
         if r:
             try:
                 r.setex(cache_key, CACHE_TTL_S, json.dumps(merged, ensure_ascii=False))
             except Exception:
                 pass
         return merged
-    except Exception:
+    except Exception as exc:  # noqa: BLE001 — search must never break on LLM outage
+        elapsed = time.perf_counter() - t0
+        # Classify so we can grep the log:
+        #   timeout        — Anthropic took >LLM_TIMEOUT_S
+        #   rate_limit     — 429 from upstream
+        #   auth           — 401 (bad key)
+        #   other          — everything else
+        msg = str(exc).lower()
+        if "timeout" in msg or "timed out" in msg:
+            kind = "timeout"
+        elif "429" in msg or "rate" in msg:
+            kind = "rate_limit"
+        elif "401" in msg or "auth" in msg:
+            kind = "auth"
+        else:
+            kind = "other"
+        print(f"[qrewrite] fallback:{kind} ({elapsed:.2f}s) — {type(exc).__name__}")
         return rewrite_fake(query)
 
 

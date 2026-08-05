@@ -1,0 +1,568 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TagidAI — Design System</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700&family=Heebo:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  /* Brand — vivid orange (CTA) */
+  --o-50:#FEF6EF; --o-100:#FDE9D8; --o-200:#FBD2AF; --o-300:#F8B57C;
+  --o-500:#f88b17; --o-600:#f78203; --o-700:#d26a02; --o-800:#a5530b; --o-900:#7a3d07;
+  --btn-bg:#a5530b; --btn-hover:#7a3d07; --text-brand:#a5530b;
+  --peach:#FEF3EC;            /* active nav / selected fill */
+  /* Gradients (boosted cards) */
+  --grad-worker:linear-gradient(135deg,#F97316 0%,#DC2626 100%);
+  --grad-housing:linear-gradient(135deg,#10B981 0%,#0D9488 100%);
+  /* Semantic */
+  --success:#16A34A; --success-bg:#DCFCE7;
+  --danger:#DC2626;  --danger-bg:#FEE2E2;
+  --admin:#EF4444;   --admin-bg:#FEF2F2; --admin-bd:#FCA5A5;
+  --teal:#0D9488;
+  /* Neutrals */
+  --ink:#111827; --text:#374151; --muted:#6B7280; --placeholder:#9CA3AF;
+  --border:#E5E7EB; --border-strong:#D1D5DB;
+  --bg:#F9FAFB; --surface:#FFFFFF; --surface-2:#FAFAFA;
+  /* Radius / elevation */
+  --r-sm:8px; --r-md:12px; --r-lg:16px; --r-pill:9999px;
+  --sh-1:0 1px 2px rgba(16,24,40,.06);
+  --sh-2:0 2px 8px rgba(16,24,40,.08);
+  --sh-card:0 1px 3px rgba(16,24,40,.08),0 1px 2px rgba(16,24,40,.04);
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:'Rubik','Heebo',system-ui,-apple-system,'Segoe UI',sans-serif;
+  background:var(--bg);color:var(--text);line-height:1.55;font-size:15px}
+.wrap{max-width:1080px;margin:0 auto;padding:0 20px 96px}
+header.hero{background:linear-gradient(135deg,#fff 0%,var(--o-50) 100%);
+  border-bottom:1px solid var(--border);padding:44px 0 34px;margin-bottom:8px}
+.hero .wrap{padding-bottom:0}
+.eyebrow{color:var(--o-600);font-weight:600;font-size:13px;letter-spacing:.04em;margin:0 0 6px}
+h1{font-size:40px;font-weight:700;color:var(--ink);margin:0 0 8px;line-height:1.1}
+.hero p{color:var(--muted);font-size:17px;max-width:640px;margin:0}
+.toc{display:flex;flex-wrap:wrap;gap:8px;margin-top:22px}
+.toc a{font-size:13px;color:var(--text);background:#fff;border:1px solid var(--border);
+  border-radius:var(--r-pill);padding:6px 14px;text-decoration:none}
+.toc a:hover{border-color:var(--o-500);color:var(--o-600)}
+section{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);
+  padding:28px 30px;margin-top:22px;box-shadow:var(--sh-card)}
+h2{font-size:24px;font-weight:700;color:var(--ink);margin:0 0 4px;
+  padding-bottom:12px;border-bottom:2px solid var(--peach)}
+h2 .n{color:var(--o-500);font-weight:700;margin-inline-end:8px}
+.lead{color:var(--muted);margin:12px 0 22px;max-width:720px}
+h3{font-size:16px;font-weight:600;color:var(--ink);margin:26px 0 12px}
+.grid{display:grid;gap:14px}
+.demo{background:var(--surface-2);border:1px dashed var(--border-strong);border-radius:var(--r-md);
+  padding:22px;display:flex;flex-wrap:wrap;gap:14px;align-items:center}
+.note{font-size:13px;color:var(--muted);margin-top:8px}
+code{font-family:'SFMono-Regular',Consolas,monospace;font-size:12.5px;background:#F3F4F6;
+  color:#B4570B;padding:1px 6px;border-radius:5px;direction:ltr;display:inline-block}
+/* ---- swatches ---- */
+.sw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+.sw{border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden;background:#fff}
+.sw .chip{height:64px}
+.sw .meta{padding:8px 10px}
+.sw .meta b{display:block;font-size:13px;color:var(--ink);font-weight:600}
+.sw .meta span{font-size:12px;color:var(--muted);direction:ltr}
+/* ---- buttons ---- */
+.btn{font-family:inherit;font-size:14px;font-weight:600;border:1px solid transparent;
+  border-radius:var(--r-sm);padding:10px 20px;cursor:pointer;display:inline-flex;
+  align-items:center;gap:8px;line-height:1;transition:.12s}
+.btn-primary{background:var(--btn-bg);color:#fff}
+.btn-primary:hover{background:var(--btn-hover)}
+.btn-secondary{background:#F3F4F6;color:var(--text);border-color:var(--border)}
+.btn-outline{background:#fff;color:var(--text);border-color:var(--border-strong)}
+.btn-outline:hover{border-color:var(--o-500);color:var(--o-600)}
+.btn-danger-ghost{background:#fff;color:var(--danger);border-color:transparent}
+.btn-ghost{background:transparent;color:var(--o-600)}
+.btn:disabled,.btn.is-disabled{background:#F3F4F6;color:var(--placeholder);border-color:var(--border);cursor:not-allowed}
+.btn-sm{padding:7px 14px;font-size:13px}
+.btn-lg{padding:13px 24px;font-size:15px;width:100%;justify-content:center}
+/* ---- inputs ---- */
+.field{max-width:360px}
+.field label{display:block;font-size:13px;font-weight:600;color:var(--text);margin-bottom:6px}
+.input{width:100%;font-family:inherit;font-size:15px;padding:11px 14px;border:1px solid var(--border-strong);
+  border-radius:var(--r-sm);background:#fff;color:var(--ink)}
+.input::placeholder{color:var(--placeholder)}
+.input:focus{outline:none;border-color:var(--o-500);box-shadow:0 0 0 3px var(--o-100)}
+.input.err{border-color:var(--danger)}
+.help{font-size:12px;color:var(--muted);margin-top:6px}
+.help.err{color:var(--danger)}
+/* ---- chips / badges ---- */
+.chip-pill{font-size:13px;color:var(--text);background:#fff;border:1px solid var(--border);
+  border-radius:var(--r-pill);padding:6px 14px;display:inline-flex;gap:6px;align-items:center}
+.badge{font-size:12px;font-weight:600;border-radius:var(--r-pill);padding:3px 10px;display:inline-flex;gap:5px;align-items:center}
+.badge-success{background:var(--success-bg);color:var(--success)}
+.badge-owner{background:#F3F4F6;color:var(--text)}
+.badge-admin{background:var(--admin-bg);color:var(--admin)}
+.badge-promoted{background:var(--o-100);color:var(--o-700)}
+.badge-expired{background:#F3F4F6;color:var(--muted)}
+/* ---- cards ---- */
+.cards-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px;width:100%}
+.tile{background:#fff;border:1px solid var(--border);border-radius:var(--r-md);padding:16px}
+.tile .ico{width:40px;height:40px;border-radius:10px;background:var(--peach);color:var(--o-600);
+  display:flex;align-items:center;justify-content:center;font-size:20px;margin-bottom:10px}
+.tile h4{margin:0 0 3px;font-size:15px;color:var(--ink);font-weight:600}
+.tile p{margin:0;font-size:12.5px;color:var(--muted)}
+.stat{background:#fff;border:1px solid var(--border);border-radius:var(--r-md);padding:16px;text-align:center}
+.stat .ico{color:var(--o-500);font-size:18px}
+.stat .num{font-size:26px;font-weight:700;color:var(--ink);line-height:1.1;margin:4px 0 2px}
+.stat .lbl{font-size:12px;color:var(--muted)}
+.adcard{background:#fff;border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden;box-shadow:var(--sh-card)}
+.adcard .head{padding:22px 18px;color:#fff;position:relative}
+.adcard .head.worker{background:var(--grad-worker)}
+.adcard .head.housing{background:var(--grad-housing)}
+.adcard .head .tag{position:absolute;top:12px;inset-inline-start:14px;background:rgba(0,0,0,.22);
+  color:#fff;font-size:11px;font-weight:600;padding:3px 10px;border-radius:var(--r-pill)}
+.adcard .head .big{font-size:22px;font-weight:700;margin:0}
+.adcard .head .sub{font-size:12px;opacity:.9;margin-top:2px}
+.adcard .body{padding:14px 18px}
+.adcard .body .t{font-weight:600;color:var(--ink);margin:0 0 6px}
+.adcard .body .d{font-size:13px;color:var(--muted);margin:0}
+.adcard .foot{display:flex;gap:16px;align-items:center;padding:12px 18px;border-top:1px solid var(--border);font-size:13px}
+.adcard .foot a{color:var(--o-600);text-decoration:none;display:inline-flex;gap:5px;align-items:center;cursor:pointer}
+.adcard .foot .del{color:var(--danger);margin-inline-start:auto}
+.tier{background:#fff;border:1px solid var(--border);border-radius:var(--r-lg);padding:22px 18px;position:relative}
+.tier.current{border:2px solid var(--o-500);box-shadow:0 0 0 4px var(--o-50)}
+.tier .cur-pill{position:absolute;top:-11px;inset-inline-start:18px;background:var(--peach);
+  color:var(--o-700);font-size:11px;font-weight:600;padding:3px 12px;border-radius:var(--r-pill);border:1px solid var(--o-200)}
+.tier h4{margin:0 0 2px;font-size:19px;color:var(--ink);text-align:start}
+.tier .desc{font-size:12px;color:var(--muted);margin:0 0 12px}
+.tier .price{font-size:15px;color:var(--ink);font-weight:600;margin-bottom:14px}
+.tier ul{list-style:none;padding:0;margin:0 0 16px}
+.tier li{font-size:13px;color:var(--text);padding:5px 0;display:flex;gap:8px;align-items:center}
+.tier li::before{content:"✓";color:var(--success);font-weight:700}
+.membership{display:flex;align-items:center;gap:14px;background:#fff;border:1px solid var(--border);
+  border-radius:var(--r-md);padding:14px 16px;width:100%;max-width:420px}
+.membership.sel{border-color:var(--admin-bd);background:var(--admin-bg)}
+.membership .mi{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px;background:var(--peach);color:var(--o-600)}
+.membership.sel .mi{background:#fff;color:var(--admin)}
+.membership .mt{flex:1}
+.membership .mt b{display:block;color:var(--ink);font-size:15px}
+.membership .mt span{font-size:12.5px;color:var(--muted)}
+/* sidebar */
+.side{width:230px;background:#fff;border:1px solid var(--border);border-radius:var(--r-md);padding:10px}
+.side .cap{font-size:11px;color:var(--muted);padding:8px 12px 4px;text-align:start}
+.nav-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:var(--r-sm);
+  font-size:14px;color:var(--text);cursor:pointer}
+.nav-item .ni{font-size:17px;opacity:.8}
+.nav-item.active{background:var(--peach);color:var(--o-700);font-weight:600}
+.nav-item:not(.active):hover{background:var(--surface-2)}
+/* tabs */
+.tabs{display:inline-flex;gap:8px;background:transparent}
+.tab{font-size:13px;padding:7px 14px;border-radius:var(--r-pill);border:1px solid var(--border);
+  background:#fff;color:var(--text);display:inline-flex;gap:6px;align-items:center;cursor:pointer}
+.tab .c{background:#F3F4F6;border-radius:var(--r-pill);padding:0 7px;font-size:12px}
+.tab.active{background:var(--ink);color:#fff;border-color:var(--ink)}
+.tab.active .c{background:rgba(255,255,255,.2);color:#fff}
+/* steps */
+.steps{display:flex;gap:8px;max-width:360px}
+.steps .seg{height:6px;flex:1;border-radius:var(--r-pill);background:var(--border)}
+.steps .seg.done{background:var(--o-500)}
+/* table */
+.tbl{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden}
+.tbl th{background:var(--surface-2);font-size:12px;color:var(--muted);font-weight:600;text-align:start;padding:11px 14px;border-bottom:1px solid var(--border)}
+.tbl td{padding:12px 14px;font-size:13.5px;color:var(--text);border-bottom:1px solid var(--border)}
+.tbl tr:last-child td{border-bottom:none}
+.toolbar{display:flex;gap:10px;align-items:center;background:#fff;border:1px solid var(--border);
+  border-radius:var(--r-md);padding:10px 12px;margin-bottom:10px;flex-wrap:wrap}
+.toolbar .search{flex:1;min-width:180px}
+/* toggles */
+.tgl{display:inline-flex;align-items:center;gap:7px;font-size:13px;color:var(--text);
+  border:1px solid var(--o-200);background:var(--o-50);border-radius:var(--r-sm);padding:6px 10px}
+.tgl input{accent-color:var(--o-500)}
+/* modal */
+.modal{max-width:400px;width:100%;background:#fff;border-radius:var(--r-lg);box-shadow:var(--sh-2);
+  border:1px solid var(--border);padding:24px;text-align:center}
+.modal .lock{width:48px;height:48px;border-radius:var(--r-pill);background:var(--peach);color:var(--o-600);
+  display:flex;align-items:center;justify-content:center;font-size:22px;margin:0 auto 12px}
+.modal h4{margin:0 0 6px;color:var(--ink);font-size:18px}
+.modal p{margin:0 0 16px;color:var(--muted);font-size:14px}
+/* avatar */
+.avatar{width:40px;height:40px;border-radius:var(--r-pill);background:var(--o-500);color:#fff;
+  display:flex;align-items:center;justify-content:center;font-weight:700;font-size:15px}
+/* do/dont */
+.dd{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.dd .col{border-radius:var(--r-md);padding:16px;border:1px solid var(--border)}
+.dd .do{background:#F0FDF4;border-color:#BBF7D0}
+.dd .dont{background:#FEF2F2;border-color:#FECACA}
+.dd h4{margin:0 0 10px;font-size:14px}
+.dd .do h4{color:var(--success)} .dd .dont h4{color:var(--danger)}
+.dd ul{margin:0;padding-inline-start:18px;font-size:13.5px;color:var(--text)}
+.dd li{margin-bottom:7px}
+table.spec{width:100%;border-collapse:collapse;margin-top:6px}
+table.spec th,table.spec td{border:1px solid var(--border);padding:9px 12px;font-size:13px;text-align:start}
+table.spec th{background:var(--surface-2);color:var(--ink);font-weight:600}
+.scale-row{display:flex;align-items:baseline;gap:16px;padding:8px 0;border-bottom:1px solid var(--border)}
+.scale-row .sample{color:var(--ink);flex:1}
+.scale-row .meta{font-size:12px;color:var(--muted);direction:ltr}
+.space-bar{background:var(--o-300);height:16px;border-radius:3px;display:inline-block;vertical-align:middle;margin-inline-end:10px}
+@media(max-width:640px){.dd{grid-template-columns:1fr}h1{font-size:30px}}
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <p class="eyebrow">DESIGN SYSTEM · v1</p>
+    <h1>TagidAI — מערכת עיצוב</h1>
+    <p>שפת העיצוב של פלטפורמת המודעות — מעוגנת במסכים החיים. עברית RTL, Mobile-First, כתום כצבע פעולה. מסמך זה הוא מקור האמת ל-tokens ולקומפוננטות; כל מסך חדש נבנה ממנו.</p>
+    <nav class="toc">
+      <a href="#colors">צבעים</a>
+      <a href="#type">טיפוגרפיה</a>
+      <a href="#space">מרווחים ו-radius</a>
+      <a href="#buttons">כפתורים</a>
+      <a href="#inputs">שדות</a>
+      <a href="#badges">תגיות ו-chips</a>
+      <a href="#cards">כרטיסים</a>
+      <a href="#nav">ניווט</a>
+      <a href="#tables">טבלאות</a>
+      <a href="#patterns">דפוסים</a>
+      <a href="#a11y">נגישות</a>
+      <a href="#dodont">Do / Don't</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+
+<!-- GOALS -->
+<section>
+  <h2><span class="n">0</span>מטרות המערכת</h2>
+  <p class="lead">חמישה עקרונות שמנחים כל החלטת עיצוב במוצר:</p>
+  <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(190px,1fr))">
+    <div class="tile"><div class="ico">①</div><h4>עקביות לפני חדשנות</h4><p>אותו רכיב, אותה התנהגות, בכל מסך.</p></div>
+    <div class="tile"><div class="ico">②</div><h4>הכתום = פעולה</h4><p>כתום שמור ל-CTA ולמצב פעיל בלבד — לא לקישוט.</p></div>
+    <div class="tile"><div class="ico">③</div><h4>RTL כברירת מחדל</h4><p>עברית ראשית; תוכן LTR (מספרים, קודים) מטופל נכון.</p></div>
+    <div class="tile"><div class="ico">④</div><h4>Mobile-First</h4><p>רוב המשתמשים מהסמארטפון — יעדי מגע ומרווחים בהתאם.</p></div>
+    <div class="tile"><div class="ico">⑤</div><h4>אמון בתצוגה</h4><p>מקודם מסומן; מצב לא מועבר בצבע בלבד.</p></div>
+  </div>
+</section>
+
+<!-- COLORS -->
+<section id="colors">
+  <h2><span class="n">1</span>צבעים (Color roles)</h2>
+  <p class="lead">צבע מוגדר לפי <b>תפקיד</b>, לא לפי גוון. הכתום הוא צבע המותג והפעולה; הגרדיאנטים מבדילים בין סוגי מודעות; הירוק/אדום הם סמנטיים בלבד.</p>
+
+  <h3>מותג — סקאלה + Action tokens (קנוני לסוויפ · יחס מול לבן)</h3>
+  <div class="sw-grid">
+    <div class="sw"><div class="chip" style="background:var(--o-500)"></div><div class="meta"><b>brand-500 · זהות</b><span>#f88b17 · 2.24:1</span></div></div>
+    <div class="sw"><div class="chip" style="background:var(--o-600)"></div><div class="meta"><b>brand-600 · לוגו</b><span>#f78203 · 2.60:1</span></div></div>
+    <div class="sw"><div class="chip" style="background:var(--o-700)"></div><div class="meta"><b>brand-700 · אייקון</b><span>#d26a02 · 3.66:1</span></div></div>
+    <div class="sw"><div class="chip" style="background:var(--o-800)"></div><div class="meta"><b>brand-800 · כפתור+טקסט</b><span>#a5530b · 5.41:1 ✓AA</span></div></div>
+    <div class="sw"><div class="chip" style="background:var(--o-900)"></div><div class="meta"><b>brand-900 · hover</b><span>#7a3d07 · 8.42:1</span></div></div>
+    <div class="sw"><div class="chip" style="background:var(--peach);border-bottom:1px solid var(--border)"></div><div class="meta"><b>peach · מצב פעיל</b><span>#FEF3EC</span></div></div>
+  </div>
+  <p class="note"><b>Action tokens:</b> <code>--btn-bg = brand-800 #a5530b</code> (רקע כפתור + טקסט לבן) · <code>--btn-hover = brand-900 #7a3d07</code> (hover, token מוגדר) · <code>--text-brand = brand-800</code> · placeholder = <code>slate-400 #94A3B8</code>. זהות ≠ פעולה: הלוגו נשאר בהיר (500/600), הכפתורים כהים (800) כדי לעבור AA.
+
+  <h3>גרדיאנטים — לפי סוג מודעה</h3>
+  <div class="sw-grid">
+    <div class="sw"><div class="chip" style="background:var(--grad-worker)"></div><div class="meta"><b>מודעת עובדים</b><span>#F97316 → #DC2626</span></div></div>
+    <div class="sw"><div class="chip" style="background:var(--grad-housing)"></div><div class="meta"><b>מודעת דיור</b><span>#10B981 → #0D9488</span></div></div>
+  </div>
+
+  <h3>סמנטי + ניטרלים</h3>
+  <div class="sw-grid">
+    <div class="sw"><div class="chip" style="background:var(--success)"></div><div class="meta"><b>הצלחה / פעיל</b><span>#16A34A</span></div></div>
+    <div class="sw"><div class="chip" style="background:var(--danger)"></div><div class="meta"><b>סכנה / מחיקה</b><span>#DC2626</span></div></div>
+    <div class="sw"><div class="chip" style="background:var(--admin);"></div><div class="meta"><b>מנהל (Admin)</b><span>#EF4444</span></div></div>
+    <div class="sw"><div class="chip" style="background:var(--ink)"></div><div class="meta"><b>Ink · כותרות</b><span>#111827</span></div></div>
+    <div class="sw"><div class="chip" style="background:var(--muted)"></div><div class="meta"><b>Muted · משני</b><span>#6B7280</span></div></div>
+    <div class="sw"><div class="chip" style="background:var(--bg);border-bottom:1px solid var(--border)"></div><div class="meta"><b>רקע עמוד</b><span>#F9FAFB</span></div></div>
+    <div class="sw"><div class="chip" style="background:#fff;border-bottom:1px solid var(--border)"></div><div class="meta"><b>Surface</b><span>#FFFFFF</span></div></div>
+    <div class="sw"><div class="chip" style="background:var(--border)"></div><div class="meta"><b>Border</b><span>#E5E7EB</span></div></div>
+  </div>
+  <p class="note">⚠️ נגישות (מתוקן): הכתום החי (500/600) <b>נכשל</b> ל-AA כטקסט וגם כרקע-כפתור עם טקסט לבן (2.2–2.6:1). 14–15px semibold = טקסט <b>רגיל</b> ב-WCAG (לא "large"), אז דורש 4.5:1 → כפתורים על <code>brand-800</code>, hover <code>brand-900</code>. אייקון על לבן = סף UI 3:1 → <code>brand-700</code>. focus ring נשאר ב-500 (סוויפ נפרד).</p>
+</section>
+
+<!-- TYPE -->
+<section id="type">
+  <h2><span class="n">2</span>טיפוגרפיה</h2>
+  <p class="lead">גופן: <b>Rubik</b> (עברית + לטינית), fallback ל-Heebo ו-system. משקלים: 400 / 500 / 600 / 700.</p>
+  <div class="demo" style="display:block">
+    <div class="scale-row"><span class="sample" style="font-size:40px;font-weight:700;line-height:1.1">כותרת ראשית</span><span class="meta">40 / 700 / 1.1 — Display</span></div>
+    <div class="scale-row"><span class="sample" style="font-size:30px;font-weight:700">כותרת מסך</span><span class="meta">30 / 700 — H1</span></div>
+    <div class="scale-row"><span class="sample" style="font-size:24px;font-weight:700">כותרת מקטע</span><span class="meta">24 / 700 — H2</span></div>
+    <div class="scale-row"><span class="sample" style="font-size:18px;font-weight:600">כותרת כרטיס</span><span class="meta">18 / 600 — H3</span></div>
+    <div class="scale-row"><span class="sample" style="font-size:15px;font-weight:400">טקסט גוף — פסקה רגילה במערכת</span><span class="meta">15 / 400 — Body</span></div>
+    <div class="scale-row"><span class="sample" style="font-size:13px;font-weight:600;color:var(--text)">תווית שדה / Label</span><span class="meta">13 / 600 — Label</span></div>
+    <div class="scale-row"><span class="sample" style="font-size:12px;color:var(--muted)">טקסט משני / helper / caption</span><span class="meta">12 / 400 — Caption (muted)</span></div>
+  </div>
+  <p class="note">כלל: משקל 600–700 לכותרות ולתוויות; 400 לגוף. אל תשתמש ב-bold להדגשה בתוך פסקה — השתמש בצבע/רכיב.</p>
+</section>
+
+<!-- SPACE -->
+<section id="space">
+  <h2><span class="n">3</span>מרווחים, Radius, Elevation</h2>
+  <h3>סקאלת מרווחים (בסיס 4px)</h3>
+  <div class="demo" style="display:block">
+    <div><span class="space-bar" style="width:4px"></span><code>4</code> &nbsp; xs</div>
+    <div><span class="space-bar" style="width:8px"></span><code>8</code> &nbsp; sm — פנימי צמוד</div>
+    <div><span class="space-bar" style="width:12px"></span><code>12</code> &nbsp; md</div>
+    <div><span class="space-bar" style="width:16px"></span><code>16</code> &nbsp; lg — padding כרטיס</div>
+    <div><span class="space-bar" style="width:24px"></span><code>24</code> &nbsp; xl — בין קומפוננטות</div>
+    <div><span class="space-bar" style="width:32px"></span><code>32</code> &nbsp; 2xl — בין מקטעים</div>
+  </div>
+  <h3>Radius &amp; Elevation</h3>
+  <div class="demo">
+    <div style="text-align:center"><div style="width:80px;height:56px;background:#fff;border:1px solid var(--border);border-radius:8px"></div><div class="note">8 — כפתור/שדה</div></div>
+    <div style="text-align:center"><div style="width:80px;height:56px;background:#fff;border:1px solid var(--border);border-radius:12px"></div><div class="note">12 — כרטיס פנימי</div></div>
+    <div style="text-align:center"><div style="width:80px;height:56px;background:#fff;border:1px solid var(--border);border-radius:16px"></div><div class="note">16 — כרטיס/מקטע</div></div>
+    <div style="text-align:center"><div style="width:80px;height:56px;background:#fff;border:1px solid var(--border);border-radius:9999px"></div><div class="note">pill — chips/badges</div></div>
+    <div style="text-align:center"><div style="width:80px;height:56px;background:#fff;border-radius:12px;box-shadow:var(--sh-card)"></div><div class="note">shadow-card</div></div>
+    <div style="text-align:center"><div style="width:80px;height:56px;background:#fff;border-radius:12px;box-shadow:var(--sh-2)"></div><div class="note">shadow-2 (מודאל)</div></div>
+  </div>
+</section>
+
+<!-- BUTTONS -->
+<section id="buttons">
+  <h2><span class="n">4</span>כפתורים</h2>
+  <p class="lead">היררכיה: <b>Primary</b> אחד למסך (הפעולה הראשית). שאר הפעולות משניות/outline. מחיקה = ghost אדום.</p>
+  <div class="demo">
+    <button class="btn btn-primary">שלח קוד אימות</button>
+    <button class="btn btn-secondary">ביטול</button>
+    <button class="btn btn-outline">עבור לבסיסי</button>
+    <button class="btn btn-ghost">קדם 7 ימים ⚡</button>
+    <button class="btn btn-danger-ghost">מחק 🗑</button>
+    <button class="btn is-disabled">המנוי הנוכחי</button>
+  </div>
+  <div class="demo">
+    <button class="btn btn-primary btn-sm">+ מודעה חדשה</button>
+    <button class="btn btn-primary">רגיל</button>
+    <div style="width:100%;max-width:340px"><button class="btn btn-primary btn-lg">כפתור מלא-רוחב (טפסים)</button></div>
+  </div>
+  <table class="spec">
+    <tr><th>סוג</th><th>שימוש</th><th>רקע / טקסט</th></tr>
+    <tr><td>Primary</td><td>פעולה ראשית יחידה</td><td><code>#F5821F</code> / לבן · hover <code>#DB6E10</code></td></tr>
+    <tr><td>Secondary</td><td>פעולה משנית</td><td><code>#F3F4F6</code> / <code>#374151</code></td></tr>
+    <tr><td>Outline</td><td>פעולה חלופית/שדרוג-למטה</td><td>לבן + מסגרת</td></tr>
+    <tr><td>Ghost (כתום)</td><td>קידום / פעולות inline בכרטיס</td><td>שקוף / <code>#DB6E10</code></td></tr>
+    <tr><td>Danger ghost</td><td>מחיקה</td><td>שקוף / <code>#DC2626</code></td></tr>
+    <tr><td>Disabled</td><td>מצב נוכחי / חסום</td><td>אפור / <code>#9CA3AF</code></td></tr>
+  </table>
+</section>
+
+<!-- INPUTS -->
+<section id="inputs">
+  <h2><span class="n">5</span>שדות ופרוגרס</h2>
+  <div class="demo" style="gap:26px">
+    <div class="field">
+      <label>שם מלא</label>
+      <input class="input" placeholder="ישראל ישראלי">
+      <div class="help">כפי שמופיע בתעודת הזהות.</div>
+    </div>
+    <div class="field">
+      <label>מספר טלפון נייד</label>
+      <input class="input err" value="050-000" style="direction:ltr;text-align:right">
+      <div class="help err">מספר לא תקין — נדרשות 10 ספרות.</div>
+    </div>
+  </div>
+  <h3>אשף שלבים (Progress steps)</h3>
+  <div class="demo" style="display:block">
+    <div class="note" style="margin-bottom:8px;color:var(--o-600);font-weight:600">שלב 1 מתוך 3</div>
+    <div class="steps"><span class="seg done"></span><span class="seg"></span><span class="seg"></span></div>
+  </div>
+  <p class="note">כללי שדה: תווית גלויה תמיד (לא placeholder בלבד) · הוראת פורמט <b>לפני</b> כשל · focus ring כתום · שגיאה אומרת מה קרה ואיך לתקן · מספרים/קודים ב-<code>dir=ltr</code>.</p>
+</section>
+
+<!-- BADGES -->
+<section id="badges">
+  <h2><span class="n">6</span>תגיות מצב ו-Chips</h2>
+  <p class="lead">מצב אף פעם לא בצבע בלבד — תמיד טקסט (ובמצבים חשובים גם אייקון).</p>
+  <div class="demo">
+    <span class="badge badge-success">● מנוי פעיל</span>
+    <span class="badge badge-owner">בעלים</span>
+    <span class="badge badge-owner">מנהל</span>
+    <span class="badge badge-admin">🛡 מנהל מערכת</span>
+    <span class="badge badge-promoted">⚡ מקודם</span>
+    <span class="badge badge-expired">פג תוקף</span>
+  </div>
+  <h3>Chips (הצעות חיפוש / פילטרים)</h3>
+  <div class="demo">
+    <span class="chip-pill">מחפש 4 פועלים סינים לריצוף</span>
+    <span class="chip-pill">חשמלאים אוקראינים בתל אביב</span>
+    <span class="chip-pill">רתך מיומן באזור הצפון</span>
+  </div>
+</section>
+
+<!-- CARDS -->
+<section id="cards">
+  <h2><span class="n">7</span>כרטיסים (Component library)</h2>
+
+  <h3>אריחי קטגוריה + Stat tiles</h3>
+  <div class="demo" style="display:block">
+    <div class="cards-row" style="margin-bottom:16px">
+      <div class="tile"><div class="ico">👥</div><h4>עובדים לזמינות מיידית</h4><p>ריצוף · חשמל · ריתוך · ועוד</p></div>
+      <div class="tile"><div class="ico">🏠</div><h4>דיור לפועלים</h4><p>מיטות פנויות לפי עיר</p></div>
+      <div class="tile"><div class="ico">🌐</div><h4>ייבוא עובדים מחו״ל</h4><p>בקשה מובנית · הצעות מתאגידים</p></div>
+    </div>
+    <div class="cards-row">
+      <div class="stat"><div class="ico">👁</div><div class="num">0</div><div class="lbl">חשיפות ב-30 יום</div></div>
+      <div class="stat"><div class="ico">🏠</div><div class="num">1</div><div class="lbl">מודעות דיור</div></div>
+      <div class="stat"><div class="ico">👥</div><div class="num">1</div><div class="lbl">מודעות עובדים</div></div>
+      <div class="stat"><div class="ico">🏢</div><div class="num">4</div><div class="lbl">תאגידים פעילים</div></div>
+    </div>
+  </div>
+
+  <h3>כרטיס מודעה (עובדים / דיור)</h3>
+  <div class="demo">
+    <div class="adcard" style="max-width:300px">
+      <div class="head worker"><span class="tag">ריצוף</span><p class="big">4 · ריצוף</p><div class="sub">מוצא: סין · center</div></div>
+      <div class="body"><p class="t">4 רצפים מסין זמינים מיידית</p><p class="d">צוות מנוסה, ניסיון 5+ שנים בפרויקטים גדולים.</p></div>
+      <div class="foot"><a>✏️ ערוך</a><a>⚡ קדם 7 ימים</a><a class="del">🗑 מחק</a></div>
+    </div>
+    <div class="adcard" style="max-width:300px">
+      <div class="head housing"><span class="tag">דיור</span><p class="big">4 · מיטות פנויות</p><div class="sub">תל אביב · 1000₪/מיטה</div></div>
+      <div class="body"><p class="t">5 מיטות פנויות באזור המרכז</p><p class="d">מזוג, WiFi, מטבח משותף.</p></div>
+      <div class="foot"><a>✏️ ערוך</a><a>⚡ קדם 7 ימים</a><a class="del">🗑 מחק</a></div>
+    </div>
+  </div>
+
+  <h3>כרטיסי מנוי (Tier cards)</h3>
+  <div class="demo">
+    <div class="tier" style="max-width:220px"><h4>בסיסי</h4><div class="desc">התחלה זריזה</div><div class="price">₪80 / חודש</div><ul><li>3 משתמשים</li><li>3 מודעות</li><li>פרסום עד 30 יום</li></ul><button class="btn btn-outline" style="width:100%;justify-content:center">עבור לבסיסי</button></div>
+    <div class="tier current" style="max-width:220px"><span class="cur-pill">👑 המנוי שלך</span><h4>מתקדם</h4><div class="desc">לתאגידים פעילים</div><div class="price">₪140 / חודש</div><ul><li>6 משתמשים</li><li>6 מודעות</li><li>פרסום עד 90 יום · קידום</li></ul><button class="btn is-disabled" style="width:100%;justify-content:center">המנוי הנוכחי</button></div>
+    <div class="tier" style="max-width:220px"><h4>פרו</h4><div class="desc">ללא הגבלות</div><div class="price">₪170 / חודש</div><ul><li>12 משתמשים</li><li>12 מודעות</li><li>פרסום ללא הגבלה · קידום</li></ul><button class="btn btn-primary" style="width:100%;justify-content:center">שדרג לפרו →</button></div>
+  </div>
+
+  <h3>כרטיס חברות (Entity picker)</h3>
+  <div class="demo" style="display:block">
+    <div class="membership sel" style="margin-bottom:10px"><div class="mi">🛡</div><div class="mt"><b>מנהל מערכת</b><span>פאנל ניהול הפלטפורמה</span></div></div>
+    <div class="membership" style="margin-bottom:10px"><div class="mi">👷</div><div class="mt"><b>חברת הבנייה שלי</b><span>קבלן · בעלים</span></div></div>
+    <div class="membership"><div class="mi">🏢</div><div class="mt"><b>תאגיד לדוגמה</b><span>תאגיד · בעלים</span></div></div>
+  </div>
+</section>
+
+<!-- NAV -->
+<section id="nav">
+  <h2><span class="n">8</span>ניווט ו-Tabs</h2>
+  <div class="demo" style="align-items:flex-start;gap:26px">
+    <div class="side">
+      <div class="cap">תאגיד</div>
+      <div class="nav-item"><span class="ni">🏠</span> דף הבית</div>
+      <div class="nav-item"><span class="ni">▦</span> לוח בקרה</div>
+      <div class="nav-item active"><span class="ni">📢</span> מודעות שלי</div>
+      <div class="nav-item"><span class="ni">🌐</span> בקשות ייבוא מחו״ל</div>
+      <div class="nav-item"><span class="ni">👥</span> צוות התאגיד</div>
+      <div class="nav-item"><span class="ni">💳</span> חשבון ומנוי</div>
+    </div>
+    <div>
+      <h3 style="margin-top:0">Tabs / פילטר-ספירה</h3>
+      <div class="tabs">
+        <span class="tab active">הכל <span class="c">3</span></span>
+        <span class="tab">בעלים <span class="c">1</span></span>
+        <span class="tab">מנהלים <span class="c">2</span></span>
+        <span class="tab">צופים <span class="c">0</span></span>
+      </div>
+      <p class="note">סרגל צד ב-RTL בצד ימין. פריט פעיל = רקע פיץ' + טקסט/אייקון כתום + משקל 600. Tab פעיל = מילוי כהה (ink).</p>
+    </div>
+  </div>
+</section>
+
+<!-- TABLES -->
+<section id="tables">
+  <h2><span class="n">9</span>טבלאות (TableToolbar)</h2>
+  <p class="lead">דפוס אחיד לכל הטבלאות: toolbar (חיפוש + פילטר + מיון) מעל, שורות עם פעולות inline, ניווט <code>j/k</code> לצד Tab.</p>
+  <div class="demo" style="display:block">
+    <div class="toolbar">
+      <span class="chip-pill">⛃ פילטר</span>
+      <input class="input search" placeholder="חיפוש: שם / טלפון / תפקיד">
+      <button class="btn btn-secondary btn-sm">תאריך הצטרפות ▾</button>
+    </div>
+    <table class="tbl">
+      <tr><th>שם</th><th>תפקיד</th><th>טלפון</th><th>הרשאה</th><th>איש קשר</th><th>פעולות</th></tr>
+      <tr><td>רונן המכונן</td><td>—</td><td style="direction:ltr;text-align:right">+972 52-527-8625</td><td><span class="badge badge-owner">בעלים</span></td><td><span class="badge badge-promoted">מוצג לקבלן</span></td><td>✏️ 🗑</td></tr>
+      <tr><td>אפרת המהמם</td><td>מנהלת</td><td style="direction:ltr;text-align:right">054-462-2719</td><td><span class="badge badge-owner">מנהל</span></td><td>—</td><td>✏️ 🗑</td></tr>
+    </table>
+  </div>
+</section>
+
+<!-- PATTERNS -->
+<section id="patterns">
+  <h2><span class="n">10</span>דפוסים ומצבים</h2>
+
+  <h3>Reveal / Paywall (המנגנון המרכזי)</h3>
+  <div class="demo">
+    <div class="modal">
+      <div class="lock">🔒</div>
+      <h4>חשיפת פרטי התאגיד</h4>
+      <p>כדי לראות את פרטי הקשר יש להירשם ולהתחיל תקופת ניסיון של 14 יום.</p>
+      <button class="btn btn-primary btn-lg">הצטרפות וחשיפה</button>
+      <p class="note" style="margin-top:12px">לאחר חשיפה — הפרטים שמורים לך ולא ייגבו שוב.</p>
+    </div>
+  </div>
+
+  <h3>תיוג "מקודם" (חובה אמון + גילוי נאות)</h3>
+  <div class="demo">
+    <div class="adcard" style="max-width:300px">
+      <div class="head worker"><span class="tag">⚡ מקודם</span><p class="big">רתך · דחוף</p><div class="sub">אזור הצפון</div></div>
+      <div class="body"><p class="t">מודעת boost — חייבת תגית "מקודם" גלויה</p><p class="d">קידום דוחף מיקום בלבד; אינו משנה רלוונטיות אמיתית לחיפוש.</p></div>
+    </div>
+  </div>
+
+  <h3>מצבים (States)</h3>
+  <table class="spec">
+    <tr><th>מצב</th><th>טיפול</th></tr>
+    <tr><td>Empty</td><td>אייקון + משפט + כפתור Primary לפעולה הבאה ("+ מודעה חדשה" / "פרסם בקשה").</td></tr>
+    <tr><td>Loading</td><td>Skeleton בצורת התוכן (לא ספינר בודד); pre-warm למסכים על הנתיב הקריטי.</td></tr>
+    <tr><td>Error</td><td>באנר עם סיבה + כפתור "נסה שוב"; לא הודעה גנרית.</td></tr>
+    <tr><td>Disabled</td><td>אפור + טקסט מסביר ("המנוי הנוכחי", "מוצה — שדרג").</td></tr>
+    <tr><td>Focus</td><td>טבעת כתומה <code>0 0 0 3px #FDE9D8</code> על כל אלמנט אינטראקטיבי.</td></tr>
+  </table>
+</section>
+
+<!-- A11Y -->
+<section id="a11y">
+  <h2><span class="n">11</span>נגישות (WCAG 2.2)</h2>
+  <table class="spec">
+    <tr><th>דרישה</th><th>יישום במערכת</th></tr>
+    <tr><td>ניגודיות</td><td>טקסט ≥ 4.5:1. כתום <code>#F5821F</code> רק כרקע-כפתור/אייקון; לטקסט על לבן <code>#B4570B</code>.</td></tr>
+    <tr><td>אי-תלות בצבע</td><td>כל badge נושא טקסט (ולעיתים אייקון), לא רק גוון.</td></tr>
+    <tr><td>Focus</td><td>טבעת focus גלויה בכל אינטראקטיבי; לא להסתיר outline.</td></tr>
+    <tr><td>יעדי מגע</td><td>≥ 44×44px; פעולות inline צפופות → תפריט "⋯" במובייל.</td></tr>
+    <tr><td>מודאלים</td><td><code>role=dialog</code> + <code>aria-modal</code>, focus-trap, Esc, החזרת focus. קריטי ל-RevealModal.</td></tr>
+    <tr><td>טפסים/OTP</td><td>תווית מפורשת, <code>autocomplete=one-time-code</code>, טיימר ב-<code>aria-live</code>.</td></tr>
+    <tr><td>RTL</td><td><code>dir=rtl</code> ראשי; מספרים/קודים <code>dir=ltr</code>; אייקונים כיווניים מתהפכים.</td></tr>
+    <tr><td>Reduced motion</td><td>כבד <code>prefers-reduced-motion</code> — בלי אנימציות מעבר חיוניות.</td></tr>
+  </table>
+  <p class="note">מסמך זה מתכתב עם "סקירת ה-UX/נגישות" — שם הממצאים המלאים והתיקונים המדורגים.</p>
+</section>
+
+<!-- DO/DONT -->
+<section id="dodont">
+  <h2><span class="n">12</span>Do / Don't</h2>
+  <div class="dd">
+    <div class="col do"><h4>✓ מומלץ</h4><ul>
+      <li>כתום ל-CTA אחד ולמצב פעיל בלבד.</li>
+      <li>גרדיאנט כתום=עובדים, טורקיז=דיור — עקבי בכל מקום.</li>
+      <li>כל תגית מצב עם טקסט; "מקודם" גלוי תמיד.</li>
+      <li>תווית מעל השדה; מספרים ב-LTR.</li>
+      <li>Empty state עם פעולה ראשית.</li>
+    </ul></div>
+    <div class="col dont"><h4>✕ להימנע</h4><ul>
+      <li>כתום כטקסט גוף על לבן (נכשל ניגודיות).</li>
+      <li>שני כפתורי Primary באותו מסך.</li>
+      <li>מצב שמועבר בצבע בלבד (ירוק/אדום ללא טקסט).</li>
+      <li>Boost שמזהם רלוונטיות בלי תגית "מקודם".</li>
+      <li>placeholder במקום תווית.</li>
+    </ul></div>
+  </div>
+</section>
+
+<!-- ADOPTION -->
+<section>
+  <h2><span class="n">13</span>אימוץ (Designers &amp; Engineers)</h2>
+  <ul style="color:var(--text);font-size:14px;line-height:1.7">
+    <li><b>Tokens כמקור אמת:</b> הגדר את הצבעים/מרווחים/radius כ-CSS variables (או Tailwind theme) — אל תשתמש ב-hex ישיר בקומפוננטות.</li>
+    <li><b>מיפוי לקוד:</b> שמות ה-roles כאן (<code>brand-500</code>, <code>peach</code>, <code>grad-worker</code>) ממופים 1:1 ל-tokens.</li>
+    <li><b>קומפוננטות משותפות:</b> Button, Input, Badge, Card, TierCard, AdCard, StatTile, TableToolbar, NavItem, Modal — ספרייה אחת, לא העתקות.</li>
+    <li><b>RTL first:</b> השתמש ב-<code>inline-start/end</code> ובלוגיקת flex ולא ב-left/right קשיח.</li>
+    <li><b>גרסאות:</b> מסמך זה v1 מהמסכים החיים (אוג׳ 2026). כל שינוי token עובר דרכו.</li>
+  </ul>
+</section>
+
+</div>
+</body>
+</html>

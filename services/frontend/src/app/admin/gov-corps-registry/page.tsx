@@ -129,7 +129,7 @@ export default function AdminGovCorpsPage() {
 
             <Button type="submit" disabled={uploading || !file} className="w-full sm:w-auto">
               {uploading
-                ? <><Loader2 className="h-4 w-4 animate-spin" /> מעלה ומפענח...</>
+                ? <><Loader2 className="h-4 w-4 animate-spin" /> מעלה ומפענח…</>
                 : <><FilePlus className="h-4 w-4" /> טען רשימה לשנת {sourceYear}</>}
             </Button>
           </form>

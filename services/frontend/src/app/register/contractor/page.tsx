@@ -346,17 +346,48 @@ function RegisterContractorInner() {
   );
 
   // ── Success screen (only when no tokens were returned — fallback) ────────
+  // O5 — full "awaiting admin" surface: SLA + what's next + how to
+  // reach a human. Previously showed only "עד 48 שעות" with a login
+  // link, which left users guessing whether something else was
+  // needed.
   if (success) return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
-      <Card className="w-full max-w-md shadow-md text-center">
-        <CardContent className="pt-8 pb-8 flex flex-col items-center gap-4">
-          <CheckCircle2 className="h-16 w-16 text-green-500" />
-          <h2 className="text-xl font-bold text-slate-900">הבקשה התקבלה!</h2>
-          <p className="text-slate-600">ממתין לאישור מנהל — עד 48 שעות</p>
-          <p className="text-slate-500 text-sm">נשלח אליך SMS / WhatsApp לאחר האישור</p>
-          <Link href="/login" className="text-brand-600 font-medium hover:underline text-sm">
-            חזרה לכניסה
-          </Link>
+      <Card className="w-full max-w-lg shadow-md">
+        <CardContent className="pt-8 pb-8 flex flex-col items-center gap-4 text-center">
+          <CheckCircle2 className="h-16 w-16 text-emerald-500" />
+          <div>
+            <h2 className="text-xl font-bold text-slate-900">הבקשה התקבלה — ממתין לאישור מנהל</h2>
+            <p className="text-slate-600 mt-1">מנהל המערכת בודק את הרישום מול פנקס הקבלנים.</p>
+          </div>
+
+          <ol className="w-full text-start bg-slate-50 border border-slate-200 rounded-lg p-4 space-y-2 text-sm">
+            <li className="flex items-start gap-2">
+              <span className="flex-shrink-0 mt-0.5 inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 text-xs font-bold">✓</span>
+              <span className="text-slate-800">הרישום שלכם נשמר במערכת</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="flex-shrink-0 mt-0.5 inline-flex items-center justify-center w-5 h-5 rounded-full bg-amber-100 text-amber-700 text-xs font-bold">2</span>
+              <span className="text-slate-800">
+                מנהל מערכת יעבור על הרישום ויאשר תוך <b>עד 48 שעות</b>
+                <span className="block text-xs text-slate-500 mt-0.5">רוב הבקשות מטופלות תוך יום עבודה. יום שישי-שבת יגררו עיכוב.</span>
+              </span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="flex-shrink-0 mt-0.5 inline-flex items-center justify-center w-5 h-5 rounded-full bg-slate-200 text-slate-600 text-xs font-bold">3</span>
+              <span className="text-slate-800">
+                תקבלו SMS / WhatsApp מיד עם האישור. אז ניתן להיכנס למערכת עם אותו מספר הטלפון.
+              </span>
+            </li>
+          </ol>
+
+          <div className="w-full flex flex-col gap-2 pt-2">
+            <Link href="/login" className="w-full inline-flex items-center justify-center bg-brand-800 hover:bg-brand-900 text-white text-sm font-semibold px-4 py-2.5 rounded-lg">
+              חזרה לכניסה
+            </Link>
+            <Link href="/support" className="text-xs text-slate-500 hover:text-brand-700 hover:underline">
+              משהו לא ברור? צור קשר עם התמיכה →
+            </Link>
+          </div>
         </CardContent>
       </Card>
     </div>
@@ -383,7 +414,7 @@ function RegisterContractorInner() {
                           bg-white/85 backdrop-blur-sm rounded-xl"
                aria-live="polite" aria-busy="true">
             <Loader2 className="h-12 w-12 animate-spin text-brand-600 mb-4" />
-            <p className="text-base font-semibold text-slate-800">מבצע רישום...</p>
+            <p className="text-base font-semibold text-slate-800">מבצע רישום…</p>
             <p className="text-sm text-slate-500 mt-1">אל תסגור את הדף</p>
           </div>
         )}
@@ -427,10 +458,10 @@ function RegisterContractorInner() {
                   dir="ltr"
                 />
                 {error && (
-                  <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">{error}</p>
+                  <p role="alert" aria-live="assertive" className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">{error}</p>
                 )}
                 <Button type="submit" disabled={loading} className="w-full">
-                  {loading ? <><Loader2 className="h-4 w-4 animate-spin" /> שולח קוד...</> : 'שלח קוד אימות'}
+                  {loading ? <><Loader2 className="h-4 w-4 animate-spin" /> שולח קוד…</> : 'שלח קוד אימות'}
                 </Button>
                 {/* The "יש לך חשבון? כניסה" link was removed — the user
                     is already inside the registration flow; the link
@@ -463,10 +494,10 @@ function RegisterContractorInner() {
                   className="text-center text-xl tracking-widest"
                 />
                 {error && (
-                  <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">{error}</p>
+                  <p role="alert" aria-live="assertive" className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">{error}</p>
                 )}
                 <Button type="submit" disabled={loading} className="w-full">
-                  {loading ? <><Loader2 className="h-4 w-4 animate-spin" /> מאמת...</> : 'אמת מספר טלפון'}
+                  {loading ? <><Loader2 className="h-4 w-4 animate-spin" /> מאמת…</> : 'אמת מספר טלפון'}
                 </Button>
                 <button
                   type="button"
@@ -579,20 +610,31 @@ function RegisterContractorInner() {
                     pre-fill from the registry response (that would
                     defeat the verification — the whole point is that
                     the user proves they know their own license number). */}
-                <Input
-                  label="מספר רישיון קבלן"
-                  placeholder="לדוגמה: 3842"
-                  value={step2.kablan_number}
-                  onChange={(e) => setStep2((p) => ({ ...p, kablan_number: e.target.value.replace(/\D/g, '') }))}
-                  inputMode="numeric"
-                  dir="ltr"
-                />
+                <div>
+                  <Input
+                    label="מספר רישיון קבלן"
+                    placeholder="לדוגמה: 3842"
+                    value={step2.kablan_number}
+                    onChange={(e) => setStep2((p) => ({ ...p, kablan_number: e.target.value.replace(/\D/g, '') }))}
+                    inputMode="numeric"
+                    dir="ltr"
+                  />
+                  {/* O2 — explain why we ask for kablan number. Users skip
+                      or fabricate the field otherwise; this reframes it
+                      from friction to a trust signal. */}
+                  <p className="text-xs text-slate-500 mt-1 flex items-start gap-1.5">
+                    <ShieldCheck className="h-3.5 w-3.5 mt-0.5 text-brand-700 shrink-0" />
+                    <span>
+                      אנו מצליבים מול פנקס הקבלנים כדי להוכיח לתאגידים שאתם קבלנים אמיתיים. התאמה מיידית = מסלול tier_2 מהיר; חוסר התאמה עובר לבדיקה ידנית של מנהל המערכת.
+                    </span>
+                  </p>
+                </div>
 
                 <div className="flex flex-col gap-2">
                   <label className="text-sm font-medium text-slate-700">אזורי פעילות</label>
                   <div className="grid grid-cols-2 gap-2 max-h-44 overflow-y-auto border border-slate-200 rounded-md p-3">
                     {regions.length === 0
-                      ? <p className="text-sm text-slate-500 col-span-2">טוען אזורים...</p>
+                      ? <p className="text-sm text-slate-500 col-span-2">טוען אזורים…</p>
                       : regions.map((r) => (
                         <label key={r.code} className="flex items-center gap-2 text-sm cursor-pointer">
                           <input
@@ -607,7 +649,7 @@ function RegisterContractorInner() {
                   </div>
                 </div>
                 {error && (
-                  <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">{error}</p>
+                  <p role="alert" aria-live="assertive" className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">{error}</p>
                 )}
                 <div className="flex gap-3">
                   <Button
@@ -680,7 +722,7 @@ function RegisterContractorInner() {
                 </div>
 
                 {error && (
-                  <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">{error}</p>
+                  <p role="alert" aria-live="assertive" className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">{error}</p>
                 )}
                 <div className="flex gap-3">
                   <Button
@@ -692,7 +734,7 @@ function RegisterContractorInner() {
                     חזור
                   </Button>
                   <Button type="submit" disabled={loading || !step3.tc_accepted} className="flex-1">
-                    {loading ? <><Loader2 className="h-4 w-4 animate-spin" /> שולח...</> : 'הירשם'}
+                    {loading ? <><Loader2 className="h-4 w-4 animate-spin" /> שולח…</> : 'הירשם'}
                   </Button>
                 </div>
               </form>
@@ -749,20 +791,22 @@ function RegisterContractorInner() {
                       label="קוד אימות (6 ספרות)"
                       type="text"
                       inputMode="numeric"
+                      pattern="\d{6}"
                       maxLength={6}
                       value={verify.code}
                       onChange={(e) => setVerify({ ...verify, code: e.target.value.replace(/\D/g, '') })}
+                      autoComplete="one-time-code"
                       dir="ltr"
                       className="text-center text-xl tracking-widest"
                     />
                     <Button type="submit" disabled={loading}>
-                      {loading ? <><Loader2 className="h-4 w-4 animate-spin" /> מאמת...</> : 'אמת'}
+                      {loading ? <><Loader2 className="h-4 w-4 animate-spin" /> מאמת…</> : 'אמת'}
                     </Button>
                   </form>
                 )}
 
                 {verifyError && (
-                  <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+                  <p role="alert" aria-live="assertive" className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">
                     {verifyError === 'target_mismatch' ? 'הערוץ אינו תואם את הרשום בפנקס' :
                      verifyError === 'invalid_token'   ? 'קוד שגוי' :
                      verifyError === 'expired'         ? 'הקוד פג תוקף — חזור ובחר ערוץ שוב' :

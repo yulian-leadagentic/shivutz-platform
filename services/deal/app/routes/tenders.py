@@ -185,6 +185,37 @@ def _anon_label_map(bids: List[dict]) -> dict:
 
 # ── Contractor: create / list / detail ──────────────────────────────
 
+# T1 — auto-publish tier ranks. Comparison is by RANK, not string
+# equality, so a future 'tier_3' or 'pro' contractor tier auto-
+# publishes without a code change (spec Q4 correction). Only ranks
+# >= tier_2 are trusted enough to skip admin review.
+TIER_RANK = {"tier_1": 1, "tier_2": 2, "tier_3": 3}
+AUTO_PUBLISH_MIN_RANK = TIER_RANK["tier_2"]
+
+
+def _should_auto_publish(cur, contractor_id: str) -> bool:
+    """Guard for T1 — auto-publish only if contractor is tier_2+ AND
+    was verified against פנקס הקבלנים. Cross-schema lookup into
+    org_db.contractors uses root credentials which the deal service
+    already has. Returns False on any error so a lookup failure
+    defaults to the safer manual-review path."""
+    try:
+        cur.execute(
+            """SELECT verification_tier, kablan_verified_at
+                 FROM org_db.contractors
+                WHERE id=%s AND deleted_at IS NULL""",
+            (contractor_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            return False
+        if row.get("kablan_verified_at") is None:
+            return False
+        return TIER_RANK.get(row.get("verification_tier") or "", 0) >= AUTO_PUBLISH_MIN_RANK
+    except Exception:
+        return False
+
+
 @router.post("", status_code=201)
 async def create_tender(
     data: TenderCreate,
@@ -203,14 +234,20 @@ async def create_tender(
     conn = get_db()
     try:
         cur = conn.cursor()
-        # Created in 'pending_admin' — NOT broadcast yet. The admin must
-        # approve it for publishing first (see /admin/publish below).
+
+        # T1 — auto-publish for tier_2+ kablan-verified. Publish-gate
+        # only; bid approval (the reveal moment) stays manual — see
+        # docs/tender-anon-flow.md.
+        auto = _should_auto_publish(cur, x_org_id)
+        status  = "open" if auto else "pending_admin"
+        auto_int = 1 if auto else 0
+
         cur.execute(
             """INSERT INTO foreign_tenders
-               (id, contractor_id, title, target_start_date, notes, status)
-               VALUES (%s,%s,%s,%s,%s,'pending_admin')""",
+               (id, contractor_id, title, target_start_date, notes, status, auto_published)
+               VALUES (%s,%s,%s,%s,%s,%s,%s)""",
             (tender_id, x_org_id, data.title,
-             data.target_start_date or None, data.notes),
+             data.target_start_date or None, data.notes, status, auto_int),
         )
         for it in data.items:
             cur.execute(
@@ -221,16 +258,29 @@ async def create_tender(
                  it.quantity, it.min_experience, it.notes),
             )
         conn.commit()
-        audit.log("foreign_tender", tender_id, "created_pending_admin", x_user_id or "unknown",
-                  new_value={"items": len(data.items)})
+        audit.log("foreign_tender", tender_id,
+                  "created_auto_published" if auto else "created_pending_admin",
+                  x_user_id or "unknown",
+                  new_value={"items": len(data.items), "auto": auto})
     except Exception as e:
         conn.rollback()
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         conn.close()
 
-    # Tell admins a tender is waiting for publish approval (no corp
-    # broadcast yet — that happens on admin publish).
+    if auto:
+        # Broadcast straight to corps — same event the admin publish
+        # button would have fired.
+        await publish_event("tender.published", {
+            "tender_id": tender_id,
+            "contractor_id": x_org_id,
+            "professions": [it.profession_type for it in data.items],
+            "total_quantity": sum(it.quantity for it in data.items),
+            "auto_published": True,
+        })
+        return {"id": tender_id, "status": "open", "auto_published": True}
+
+    # Manual path — tell admins a tender is waiting for publish approval.
     await publish_event("tender.pending_admin", {
         "tender_id": tender_id,
         "contractor_id": x_org_id,
@@ -881,13 +931,23 @@ def unfreeze_tender(
 @router.get("/admin/all")
 def admin_list_tenders(
     x_user_role: Optional[str] = Header(default=None),
+    auto_published: Optional[str] = None,
 ):
+    """List tenders for admin. `auto_published=true` filters to rows
+    that skipped the publish-gate — this is the T1 spot-check queue.
+    Without it, admin might never notice a bad actor that bypassed
+    review."""
     if x_user_role != "admin":
         raise HTTPException(status_code=403, detail="admin_only")
     conn = get_db()
     try:
         cur = conn.cursor()
-        cur.execute("SELECT * FROM foreign_tenders ORDER BY created_at DESC")
+        if auto_published and auto_published.lower() in ("true", "1", "yes"):
+            cur.execute(
+                "SELECT * FROM foreign_tenders WHERE auto_published=1 ORDER BY created_at DESC"
+            )
+        else:
+            cur.execute("SELECT * FROM foreign_tenders ORDER BY created_at DESC")
         rows = [_ser(r) for r in cur.fetchall()]
         for t in rows:
             t["items"] = _load_items(conn, t["id"])

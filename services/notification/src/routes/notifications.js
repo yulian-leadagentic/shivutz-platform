@@ -99,6 +99,71 @@ router.get('/notifications/user/:userId', async (req, res) => {
   res.json(rows);
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// G5 — In-app notification inbox
+//
+// Bell menu + /notifications page read from here. The gateway injects
+// x-user-id from the caller's JWT; we do NOT trust a client-supplied
+// user id.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// GET /notifications/inbox — most recent 50 rows for the calling user.
+router.get('/notifications/inbox', async (req, res) => {
+  const userId = req.header('x-user-id');
+  if (!userId) return res.status(401).json({ error: 'unauthenticated' });
+  const pool = getPool();
+  const [rows] = await pool.query(
+    `SELECT id, event_key, title_he, body_he, target_href, channels_sent, read_at, created_at
+       FROM notifications_inbox
+      WHERE recipient_user_id = ?
+      ORDER BY created_at DESC
+      LIMIT 50`,
+    [userId],
+  );
+  res.json(rows);
+});
+
+// GET /notifications/unread-count — bell badge polls this cheaply.
+router.get('/notifications/unread-count', async (req, res) => {
+  const userId = req.header('x-user-id');
+  if (!userId) return res.status(401).json({ error: 'unauthenticated' });
+  const pool = getPool();
+  const [[row]] = await pool.query(
+    `SELECT COUNT(*) AS n FROM notifications_inbox
+      WHERE recipient_user_id = ? AND read_at IS NULL`,
+    [userId],
+  );
+  res.json({ unread: row.n });
+});
+
+// PATCH /notifications/:id/read — user opened this notification.
+router.patch('/notifications/:id/read', async (req, res) => {
+  const userId = req.header('x-user-id');
+  if (!userId) return res.status(401).json({ error: 'unauthenticated' });
+  const pool = getPool();
+  const [r] = await pool.query(
+    `UPDATE notifications_inbox
+        SET read_at = NOW()
+      WHERE id = ? AND recipient_user_id = ? AND read_at IS NULL`,
+    [req.params.id, userId],
+  );
+  res.json({ updated: r.affectedRows > 0 });
+});
+
+// POST /notifications/mark-all-read — bell "clear all" action.
+router.post('/notifications/mark-all-read', async (req, res) => {
+  const userId = req.header('x-user-id');
+  if (!userId) return res.status(401).json({ error: 'unauthenticated' });
+  const pool = getPool();
+  const [r] = await pool.query(
+    `UPDATE notifications_inbox
+        SET read_at = NOW()
+      WHERE recipient_user_id = ? AND read_at IS NULL`,
+    [userId],
+  );
+  res.json({ updated: r.affectedRows });
+});
+
 // GET /admin/notification-log
 router.get('/admin/notification-log', async (_, res) => {
   const pool = getPool();

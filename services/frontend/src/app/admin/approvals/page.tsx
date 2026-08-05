@@ -142,11 +142,13 @@ function OrgRow({
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); onToggleSelected(); }}
-              aria-label={selected ? 'הסר מהבחירה' : 'הוסף לבחירה'}
+              aria-label={selected
+                ? `הסר מהבחירה: ${org.company_name || 'ארגון'}`
+                : `בחר: ${org.company_name || 'ארגון'}`}
               aria-pressed={selected}
               className={`shrink-0 inline-flex items-center justify-center w-6 h-6 rounded-md border transition-colors ${
                 selected
-                  ? 'bg-brand-600 border-brand-600 text-white'
+                  ? 'bg-brand-800 border-brand-800 text-white'
                   : 'bg-white border-slate-300 text-slate-400 hover:border-brand-500 hover:text-brand-600'
               }`}
             >
@@ -204,7 +206,10 @@ function OrgRow({
             ].map(([k, v]) => (
               <div key={k}>
                 <p className="text-slate-400 text-xs">{k}</p>
-                <p className="font-medium text-slate-800 truncate">{v || '—'}</p>
+                {/* G6 — plaintext bidi resolves per-value: Hebrew names
+                    stay RTL, phone/email/ח.פ render LTR without a
+                    per-field metadata flag. */}
+                <p className="font-medium text-slate-800 truncate" style={{ unicodeBidi: 'plaintext' }}>{v || '—'}</p>
               </div>
             ))}
           </div>
@@ -533,7 +538,7 @@ function ApprovalsContent() {
         pills={{
           options: [
             { key: 'all',         label: 'הכל',     count: orgs.length,                                            tone: 'bg-slate-900 text-white' },
-            { key: 'contractor',  label: 'קבלנים',  count: orgs.filter((o) => o.org_type === 'contractor').length, tone: 'bg-brand-600 text-white' },
+            { key: 'contractor',  label: 'קבלנים',  count: orgs.filter((o) => o.org_type === 'contractor').length, tone: 'bg-brand-800 text-white' },
             { key: 'corporation', label: 'תאגידים', count: orgs.filter((o) => o.org_type === 'corporation').length, tone: 'bg-navy-600 text-white' },
           ],
           active: typeFilter,
@@ -568,7 +573,7 @@ function ApprovalsContent() {
             aria-pressed={allVisibleSelected}
             className={`inline-flex items-center justify-center w-6 h-6 rounded-md border transition-colors ${
               allVisibleSelected
-                ? 'bg-brand-600 border-brand-600 text-white'
+                ? 'bg-brand-800 border-brand-800 text-white'
                 : someVisibleSelected
                   ? 'bg-brand-100 border-brand-400 text-brand-700'
                   : 'bg-white border-slate-300 text-slate-400 hover:border-brand-500 hover:text-brand-600'
@@ -632,23 +637,37 @@ function ApprovalsContent() {
         </div>
       )}
 
+      {/* A2 — live region so screen readers announce selection count
+          changes without needing focus to move. Off-screen but
+          polled by every mainstream AT. */}
+      <div className="sr-only" role="status" aria-live="polite">
+        {selectedOrgs.length > 0
+          ? `${selectedOrgs.length} ארגונים נבחרו`
+          : 'אין ארגונים נבחרים'}
+      </div>
+
       {/* Bulk confirm dialog. The "reject" variant shows a textarea
-       *  for a shared reason that's applied to every rejected row. */}
+       *  for a shared reason that's applied to every rejected row.
+       *  A2 — aria-labelledby ties to the h2 (title read on open);
+       *  aria-describedby ties to the prose (read after the title). */}
       {pendingBulk && (
         <div
           className="fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-4"
           role="dialog"
           aria-modal="true"
+          aria-labelledby="bulk-confirm-title"
+          aria-describedby="bulk-confirm-desc"
+          onKeyDown={(e) => { if (e.key === 'Escape' && !bulkBusy) { setPendingBulk(null); setBulkReason(''); } }}
           onClick={(e) => { if (e.target === e.currentTarget && !bulkBusy) { setPendingBulk(null); setBulkReason(''); } }}
         >
           <div className="bg-white rounded-2xl w-full max-w-md shadow-xl overflow-hidden">
             <div className="px-5 pt-4 pb-3 border-b border-slate-100">
-              <h2 className="text-base font-bold text-slate-900">
+              <h2 id="bulk-confirm-title" className="text-base font-bold text-slate-900">
                 {pendingBulk === 'approve' ? 'אישור קבוצתי' : 'דחייה קבוצתית'}
               </h2>
             </div>
             <div className="px-5 py-4 space-y-3">
-              <p className="text-sm text-slate-700">
+              <p id="bulk-confirm-desc" className="text-sm text-slate-700">
                 {pendingBulk === 'approve'
                   ? `לאשר ${selectedOrgs.length} ארגונים? כל ארגון יקבל את העמלה שכבר הוגדרה לו בכרטיס.`
                   : `לדחות ${selectedOrgs.length} ארגונים? אם תזין סיבה, היא תופיע באותו טקסט בכל ההתראות.`}
@@ -703,7 +722,7 @@ function ApprovalsContent() {
 
 export default function ApprovalsPage() {
   return (
-    <Suspense fallback={<div className="flex justify-center py-12"><span className="text-slate-400 text-sm">טוען...</span></div>}>
+    <Suspense fallback={<div className="flex justify-center py-12"><span className="text-slate-400 text-sm">טוען…</span></div>}>
       <ApprovalsContent />
     </Suspense>
   );

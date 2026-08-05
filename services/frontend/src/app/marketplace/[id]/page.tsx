@@ -59,7 +59,7 @@ export default function ListingDetailPage() {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center text-slate-400">
-        <Loader2 className="h-6 w-6 animate-spin me-2" />טוען מודעה...
+        <Loader2 className="h-6 w-6 animate-spin me-2" />טוען מודעה…
       </div>
     );
   }
@@ -127,7 +127,7 @@ export default function ListingDetailPage() {
                         className="shrink-0 h-20 w-28 rounded-lg overflow-hidden bg-slate-100 border border-slate-200"
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={url} alt="" className="w-full h-full object-cover" loading="lazy" />
+                        <img src={url} alt={listing.title ?? ''} className="w-full h-full object-cover" loading="lazy" />
                       </div>
                     ))}
                   </div>
@@ -255,10 +255,10 @@ export default function ListingDetailPage() {
                   {listing.contact_phone && (
                     <a
                       href={`tel:${listing.contact_phone}`}
-                      className="flex items-center gap-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition-colors"
+                      className="flex items-center gap-2 bg-brand-800 hover:bg-brand-900 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition-colors"
                     >
                       <Phone className="h-4 w-4" />
-                      {listing.contact_phone}
+                      <span dir="ltr">{listing.contact_phone}</span>
                     </a>
                   )}
                 </div>

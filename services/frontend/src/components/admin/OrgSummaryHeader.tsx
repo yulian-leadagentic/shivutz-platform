@@ -70,7 +70,7 @@ export function OrgSummaryHeader({ orgId, orgType, refreshKey }: {
   if (loading) {
     return (
       <div className="flex items-center gap-2 text-slate-400 text-sm py-4">
-        <Loader2 className="h-4 w-4 animate-spin" /> טוען מידע מצרפי...
+        <Loader2 className="h-4 w-4 animate-spin" /> טוען מידע מצרפי…
       </div>
     );
   }
@@ -267,7 +267,7 @@ function DealStatusStrip({ counts, teamCount, workers, openSearches, orgType }: 
           icon={<FileSearch className="h-4 w-4" />}
           label="בקשות פתוחות"
           value={openSearches}
-          tone="bg-brand-600 text-white"
+          tone="bg-brand-800 text-white"
         />
       )}
       {orgType === 'corporation' && workers && (
@@ -275,7 +275,7 @@ function DealStatusStrip({ counts, teamCount, workers, openSearches, orgType }: 
           icon={<HardHat className="h-4 w-4" />}
           label="עובדים בסה״כ"
           value={workers.total}
-          tone="bg-brand-600 text-white"
+          tone="bg-brand-800 text-white"
           subtitle={`${workers.available} זמינים · ${workers.assigned} משובצים`}
         />
       )}

@@ -77,6 +77,41 @@ export function writePendingSearch(s: PendingSearch) {
 }
 export function clearPendingSearch() { clear(PENDING_SEARCH_KEY); }
 
+// ── Pending reveal (O1 — reveal-intent resilience) ─────────────────
+// When a visitor clicks Reveal on an ad but hits an unauth/expired/quota
+// block, we stash the intent so the click resumes automatically after
+// login/register/renewal — even if the returnTo URL param is lost to
+// a refresh, tab-close, or OTP restart. 30-minute expiry so a stale
+// tab doesn't hijack a later session.
+export interface PendingReveal {
+  adId: string;
+  kind: 'unauth' | 'expired' | 'quota';
+  /** ISO string — 30 min after intent captured. */
+  expires_at: string;
+}
+
+const PENDING_REVEAL_KEY = 'pending_reveal';
+const PENDING_REVEAL_TTL_MS = 30 * 60_000;
+
+export function readPendingReveal(): PendingReveal | null {
+  const r = readJson<PendingReveal>(PENDING_REVEAL_KEY);
+  if (!r) return null;
+  if (new Date(r.expires_at).getTime() < Date.now()) {
+    clear(PENDING_REVEAL_KEY);
+    return null;
+  }
+  return r;
+}
+
+export function writePendingReveal(intent: { adId: string; kind: PendingReveal['kind'] }) {
+  writeJson(PENDING_REVEAL_KEY, {
+    ...intent,
+    expires_at: new Date(Date.now() + PENDING_REVEAL_TTL_MS).toISOString(),
+  });
+}
+
+export function clearPendingReveal() { clear(PENDING_REVEAL_KEY); }
+
 /** React hook — reads prospect from sessionStorage on mount, returns
  *  null during SSR. Returns null after expiry too. */
 export function useProspect(): ProspectSession | null {

@@ -290,7 +290,7 @@ function RegisterCorporationInner() {
             <Link href="/login" className="px-4 py-2 rounded-lg border border-slate-300 text-sm font-medium text-slate-700 hover:bg-slate-50">
               חזרה לכניסה
             </Link>
-            <Link href="/" className="px-4 py-2 rounded-lg bg-brand-600 text-sm font-medium text-white hover:bg-brand-700">
+            <Link href="/" className="px-4 py-2 rounded-lg bg-brand-800 text-sm font-medium text-white hover:bg-brand-900">
               חזרה לדף הבית
             </Link>
           </div>
@@ -309,14 +309,14 @@ function RegisterCorporationInner() {
             submit. The submit's button-level spinner is too small to
             register as feedback on a fast network — users were double-
             clicking the submit because nothing visible happened. This
-            covers the whole card with a clear "מבצע רישום..." panel so
+            covers the whole card with a clear "מבצע רישום…" panel so
             it's obvious the request is in flight. */}
         {loading && step === 3 && (
           <div className="absolute inset-0 z-10 flex flex-col items-center justify-center
                           bg-white/85 backdrop-blur-sm rounded-xl"
                aria-live="polite" aria-busy="true">
             <Loader2 className="h-12 w-12 animate-spin text-brand-600 mb-4" />
-            <p className="text-base font-semibold text-slate-800">מבצע רישום...</p>
+            <p className="text-base font-semibold text-slate-800">מבצע רישום…</p>
             <p className="text-sm text-slate-500 mt-1">אל תסגור את הדף</p>
           </div>
         )}
@@ -358,10 +358,10 @@ function RegisterCorporationInner() {
                   dir="ltr"
                 />
                 {error && (
-                  <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">{error}</p>
+                  <p role="alert" aria-live="assertive" className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">{error}</p>
                 )}
                 <Button type="submit" disabled={loading} className="w-full">
-                  {loading ? <><Loader2 className="h-4 w-4 animate-spin" /> שולח קוד...</> : 'שלח קוד אימות'}
+                  {loading ? <><Loader2 className="h-4 w-4 animate-spin" /> שולח קוד…</> : 'שלח קוד אימות'}
                 </Button>
                 <p className="text-center text-sm text-slate-600">
                   יש לך חשבון?{' '}
@@ -392,10 +392,10 @@ function RegisterCorporationInner() {
                   className="text-center text-xl tracking-widest"
                 />
                 {error && (
-                  <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">{error}</p>
+                  <p role="alert" aria-live="assertive" className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">{error}</p>
                 )}
                 <Button type="submit" disabled={loading} className="w-full">
-                  {loading ? <><Loader2 className="h-4 w-4 animate-spin" /> מאמת...</> : 'אמת מספר טלפון'}
+                  {loading ? <><Loader2 className="h-4 w-4 animate-spin" /> מאמת…</> : 'אמת מספר טלפון'}
                 </Button>
                 <button
                   type="button"
@@ -515,7 +515,7 @@ function RegisterCorporationInner() {
                   <label className="text-sm font-medium text-slate-700">מדינות מוצא עובדים</label>
                   <div className="grid grid-cols-2 gap-2 border border-slate-200 rounded-md p-3">
                     {origins.length === 0 ? (
-                      <p className="text-sm text-slate-400 col-span-2">טוען מדינות...</p>
+                      <p className="text-sm text-slate-400 col-span-2">טוען מדינות…</p>
                     ) : origins.map((o) => (
                       <label key={o.code} className="flex items-center gap-2 text-sm cursor-pointer">
                         <input
@@ -552,7 +552,7 @@ function RegisterCorporationInner() {
                 </div>
 
                 {error && (
-                  <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">{error}</p>
+                  <p role="alert" aria-live="assertive" className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">{error}</p>
                 )}
                 <div className="flex gap-3">
                   <Button
@@ -616,7 +616,7 @@ function RegisterCorporationInner() {
                 </div>
 
                 {error && (
-                  <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">{error}</p>
+                  <p role="alert" aria-live="assertive" className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">{error}</p>
                 )}
                 <div className="flex gap-3">
                   <Button
@@ -628,7 +628,7 @@ function RegisterCorporationInner() {
                     חזור
                   </Button>
                   <Button type="submit" disabled={loading || !step3.tc_accepted} className="flex-1">
-                    {loading ? <><Loader2 className="h-4 w-4 animate-spin" /> שולח...</> : 'הירשמו'}
+                    {loading ? <><Loader2 className="h-4 w-4 animate-spin" /> שולח…</> : 'הירשמו'}
                   </Button>
                 </div>
               </form>

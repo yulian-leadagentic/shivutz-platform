@@ -133,7 +133,7 @@ export default function NewWorkerPage() {
               aria-pressed={isActive}
               className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-bold transition-all ${
                 isActive
-                  ? 'bg-brand-600 text-white shadow-sm'
+                  ? 'bg-brand-800 text-white shadow-sm'
                   : 'bg-white text-slate-800 border border-slate-300 hover:border-brand-400 hover:bg-brand-50/40'
               }`}
             >
@@ -197,7 +197,7 @@ export default function NewWorkerPage() {
               </Button>
             ) : (
               <Button type="submit" disabled={submitting} className="flex-1">
-                {submitting ? <><Loader2 className="h-4 w-4 animate-spin" /> שומר...</> : <><Plus className="h-4 w-4" /> שמור עובד</>}
+                {submitting ? <><Loader2 className="h-4 w-4 animate-spin" /> שומר…</> : <><Plus className="h-4 w-4" /> שמור עובד</>}
               </Button>
             )}
             <Button type="button" variant="outline" onClick={() => router.push('/corporation/workers')}>סיום</Button>

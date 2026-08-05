@@ -45,6 +45,10 @@ export default function AdminTendersPage() {
   const [error, setError]     = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [acting, setActing]   = useState<string | null>(null);
+  // T1 — spot-check filter. Flips the fetch to WHERE auto_published=1
+  // so admin can review recent tier_2 auto-publishes and catch a bad
+  // actor before the reveal moment.
+  const [autoOnly, setAutoOnly] = useState(false);
   // Resolved party names keyed by org id (admin sees real identities).
   const [names, setNames]     = useState<Record<string, string>>({});
   // Inline reject (free-text reason) + edit (PII scrub) + delete confirm.
@@ -61,7 +65,7 @@ export default function AdminTendersPage() {
 
   const load = useCallback(() => {
     setLoading(true);
-    tenderApi.adminListAll()
+    tenderApi.adminListAll({ autoPublished: autoOnly })
       .then((rows) => {
         setTenders(rows);
         // Resolve contractor + corp names for display.
@@ -80,7 +84,7 @@ export default function AdminTendersPage() {
       })
       .catch(() => setError(true))
       .finally(() => setLoading(false));
-  }, []);
+  }, [autoOnly]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -232,6 +236,21 @@ export default function AdminTendersPage() {
       <header className="flex items-center gap-2">
         <Globe2 className="h-6 w-6 text-brand-600" />
         <h1 className="text-2xl font-bold text-slate-900">בקשות ייבוא עובדים</h1>
+        {/* T1 — spot-check toggle for auto-published rows. Off by
+            default so admin sees the full list; toggling narrows to
+            the trust-based auto path to spot-check for bad actors. */}
+        <button
+          type="button"
+          onClick={() => setAutoOnly((v) => !v)}
+          className={`ms-auto text-xs font-semibold rounded-full border px-3 py-1 transition ${
+            autoOnly
+              ? 'bg-brand-800 text-white border-brand-800'
+              : 'bg-white text-slate-600 border-slate-300 hover:border-brand-400'
+          }`}
+          title="הצג רק בקשות שפורסמו אוטומטית (tier_2+ + kablan-verified) — לבדיקה בדיעבד"
+        >
+          {autoOnly ? '✓ פורסמו אוטומטית בלבד' : 'פורסמו אוטומטית'}
+        </button>
       </header>
 
       <TableToolbar

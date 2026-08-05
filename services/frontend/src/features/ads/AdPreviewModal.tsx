@@ -121,9 +121,9 @@ export function AdPreviewModal({
             )}
             {isHousing && Array.isArray(payload.photos) && payload.photos.length > 0 && (
               <div className="mt-2 flex gap-1.5 overflow-x-auto">
-                {payload.photos.slice(0, 4).map((url) => (
+                {payload.photos.slice(0, 4).map((url, i) => (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img key={url} src={url} alt="" className="w-16 h-16 rounded object-cover shrink-0 border border-slate-200" />
+                  <img key={url} src={url} alt={`${payload.title_he ?? 'תמונה'} (${i + 1})`} className="w-16 h-16 rounded object-cover shrink-0 border border-slate-200" />
                 ))}
               </div>
             )}
@@ -147,7 +147,7 @@ export function AdPreviewModal({
             type="button"
             onClick={confirm}
             disabled={busy}
-            className="flex-[2] bg-brand-600 hover:bg-brand-500 text-white font-semibold py-2.5 rounded-lg disabled:bg-slate-300 inline-flex items-center justify-center gap-2"
+            className="flex-[2] bg-brand-800 hover:bg-brand-900 text-white font-semibold py-2.5 rounded-lg disabled:bg-slate-300 inline-flex items-center justify-center gap-2"
           >
             {busy ? <><Loader2 className="w-4 h-4 animate-spin" /> מפרסם…</> : <><Send className="w-4 h-4" /> אשר ופרסם</>}
           </button>

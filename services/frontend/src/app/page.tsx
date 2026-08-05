@@ -19,7 +19,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Loader2, Search as SearchIcon, Mail, Phone, Building2, Sparkles,
-  Users, Home as HomeIcon, Globe2, Boxes,
+  Users, Home as HomeIcon, Globe2, Boxes, Zap, ArrowLeft,
 } from 'lucide-react';
 import LandingNav from '@/components/landing/LandingNav';
 import LandingFooter from '@/components/landing/LandingFooter';
@@ -34,7 +34,10 @@ import { FeaturedAdsCarousel } from '@/features/advertising/FeaturedAdsCarousel'
 import { LandingTrustBar } from '@/features/advertising/LandingTrustBar';
 import { searchApi, type SearchResponse, type AdSearchResult, type ContactReveal } from '@/lib/api/search';
 import { apiFetch } from '@/lib/api/client';
+import { enumApi } from '@/lib/api/enums';
 import { isLoggedIn } from '@/lib/auth';
+import { readPendingReveal, clearPendingReveal } from '@/features/prospect/state';
+import type { Profession } from '@/types';
 
 const EXAMPLES = [
   'מחפש 4 פועלים סינים לריצוף',
@@ -83,14 +86,43 @@ export default function LandingPage() {
 
   const [recent, setRecent] = useState<PublicAd[]>([]);
 
+  // L2 — structured filter chips alongside free-text. Selected values
+  // get prepended to the LLM query on submit; the rewriter already
+  // knows how to fold "flooring, center, china" into enum filters, so
+  // this is a pure client-side add — no backend contract change.
+  const [professions, setProfessions] = useState<Profession[]>([]);
+  const [regions,     setRegions]     = useState<{ code: string; name_he: string }[]>([]);
+  const [origins,     setOrigins]     = useState<{ code: string; name_he: string }[]>([]);
+  const [fProf,       setFProf]       = useState('');
+  const [fRegion,     setFRegion]     = useState('');
+  const [fOrigin,     setFOrigin]     = useState('');
+
   useEffect(() => {
     apiFetch<{ results: PublicAd[] }>('/ads/public/recent?limit=12')
       .then((r) => setRecent(r.results))
       .catch(() => setRecent([]));
+    // Best-effort: filters degrade to empty selects if the endpoints
+    // 500 or the anon rate limit is hit.
+    enumApi.professions().then(setProfessions).catch(() => setProfessions([]));
+    enumApi.regions().then(setRegions).catch(() => setRegions([]));
+    enumApi.origins().then(setOrigins).catch(() => setOrigins([]));
   }, []);
 
+  function labelFor<T extends { code: string; name_he: string }>(list: T[], code: string): string {
+    return list.find((r) => r.code === code)?.name_he ?? code;
+  }
+
   async function runSearch(rawQ?: string) {
-    const query = (rawQ ?? q).trim();
+    let query = (rawQ ?? q).trim();
+    // Prepend the active filter labels so the LLM sees them as intent.
+    const chips: string[] = [];
+    if (fProf)   chips.push(labelFor(professions, fProf));
+    if (fRegion) chips.push('אזור: ' + labelFor(regions, fRegion));
+    if (fOrigin) chips.push('מוצא: ' + labelFor(origins, fOrigin));
+    if (chips.length) {
+      const prefix = chips.join(' · ') + (query ? ' — ' : '');
+      query = prefix + query;
+    }
     if (query.length < 2) return;
     setQ(query);
     setLoading(true);
@@ -99,6 +131,11 @@ export default function LandingPage() {
     catch (e) { setError((e as Error).message ?? 'שגיאה בחיפוש'); }
     finally { setLoading(false); }
   }
+
+  function clearFilters() {
+    setFProf(''); setFRegion(''); setFOrigin('');
+  }
+  const anyFilter = !!(fProf || fRegion || fOrigin);
 
   function pickCategory(cat: typeof CATEGORIES[number]) {
     if (cat.soon) return;
@@ -117,6 +154,8 @@ export default function LandingPage() {
     try {
       const r = await searchApi.revealContact(adId);
       setReveals((s) => ({ ...s, [adId]: r }));
+      // O1 — the intent that survived login/renew is now spent.
+      clearPendingReveal();
     } catch (e) {
       const msg = (e as Error).message ?? '';
       if (/401|Unauthorized/i.test(msg))                      setBlock({ kind: 'unauth', adId });
@@ -126,16 +165,36 @@ export default function LandingPage() {
     } finally { setRevealing(null); }
   }, [revealing]);
 
+  // O1 — restore a reveal intent that outlived its URL. If the visitor
+  // came back logged-in with no ?reveal= (returnTo lost to refresh /
+  // OTP restart / tab close), promote the stashed adId to a URL param
+  // so the existing reveal-on-mount effect below picks it up.
+  useEffect(() => {
+    if (params.get('reveal')) return;
+    if (!isLoggedIn()) return;
+    const pending = readPendingReveal();
+    if (!pending) return;
+    const url = new URL(window.location.href);
+    url.searchParams.set('reveal', pending.adId);
+    router.replace(url.pathname + url.search + url.hash);
+  }, [params, router]);
+
   useEffect(() => {
     const target = params.get('reveal');
-    if (!target || !resp) return;
+    if (!target) return;
     if (reveals[target] || block) return;
-    const ad = resp.results.find((a) => a.id === target);
-    if (ad) revealFor(ad.id);
+    // Look in search results OR the recent-ads grid — after a
+    // post-register redirect the user typically lands here without a
+    // query, so recent is the only surface where the target card
+    // exists yet.
+    const ad = resp?.results.find((a) => a.id === target)
+            ?? recent.find((a) => a.id === target);
+    if (!ad) return;  // ad not currently rendered; wait for search / recent to load
+    revealFor(ad.id);
     const url = new URL(window.location.href);
     url.searchParams.delete('reveal');
     router.replace(url.pathname + url.search + url.hash);
-  }, [params, resp, reveals, block, revealFor, router]);
+  }, [params, resp, recent, reveals, block, revealFor, router]);
 
   return (
     <>
@@ -177,7 +236,7 @@ export default function LandingPage() {
                           <Icon className="w-5 h-5" />
                         </div>
                         {cat.soon && (
-                          <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 rounded-full px-2 py-0.5">בקרוב</span>
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 bg-slate-100 rounded-full px-2 py-0.5">בקרוב</span>
                         )}
                       </div>
                       <h3 className="text-sm font-bold text-slate-900">{cat.label}</h3>
@@ -190,8 +249,56 @@ export default function LandingPage() {
               {/* Fat search bar */}
               <form
                 onSubmit={(e) => { e.preventDefault(); runSearch(); }}
-                className="bg-white border border-slate-200 rounded-2xl p-3 shadow-md"
+                className="bg-white border border-slate-200 rounded-2xl p-3 shadow-md space-y-2"
               >
+                {/* L2 — filter chips row. Selected values fold into the
+                    LLM query on submit. Native selects for touch-friendly
+                    picking on mobile; no popover libs needed. */}
+                <div className="flex flex-wrap items-center gap-2 text-sm">
+                  <select
+                    value={fProf}
+                    onChange={(e) => setFProf(e.target.value)}
+                    aria-label="מקצוע"
+                    className="h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm text-slate-800 max-w-[45%] sm:max-w-none"
+                  >
+                    <option value="">כל המקצועות</option>
+                    {professions.map((p) => (
+                      <option key={p.code} value={p.code}>{p.name_he}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={fRegion}
+                    onChange={(e) => setFRegion(e.target.value)}
+                    aria-label="אזור"
+                    className="h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm text-slate-800 max-w-[45%] sm:max-w-none"
+                  >
+                    <option value="">כל הארץ</option>
+                    {regions.map((r) => (
+                      <option key={r.code} value={r.code}>{r.name_he}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={fOrigin}
+                    onChange={(e) => setFOrigin(e.target.value)}
+                    aria-label="ארץ מוצא"
+                    className="h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm text-slate-800 max-w-[45%] sm:max-w-none"
+                  >
+                    <option value="">כל הארצות</option>
+                    {origins.map((o) => (
+                      <option key={o.code} value={o.code}>{o.name_he}</option>
+                    ))}
+                  </select>
+                  {anyFilter && (
+                    <button
+                      type="button"
+                      onClick={clearFilters}
+                      className="text-xs text-slate-500 hover:text-brand-800 underline underline-offset-2"
+                    >
+                      נקה סינון
+                    </button>
+                  )}
+                </div>
+
                 <div className="flex items-center gap-2">
                   <SearchIcon className="w-5 h-5 text-slate-400 shrink-0" />
                   <input
@@ -203,10 +310,10 @@ export default function LandingPage() {
                   />
                   <button
                     type="submit"
-                    disabled={loading || q.trim().length < 2}
-                    className="bg-brand-600 hover:bg-brand-500 text-white text-sm font-semibold px-5 py-2.5 rounded-lg disabled:bg-slate-300 inline-flex items-center gap-2"
+                    disabled={loading || (q.trim().length < 2 && !anyFilter)}
+                    className="bg-brand-800 hover:bg-brand-900 text-white text-base font-bold px-6 py-3 rounded-xl disabled:bg-slate-300 inline-flex items-center gap-2 shrink-0"
                   >
-                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <SearchIcon className="w-4 h-4" />}
+                    {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <SearchIcon className="w-5 h-5" />}
                     חפש
                   </button>
                 </div>
@@ -400,7 +507,8 @@ function AdCard({
           </p>
         </div>
         {boosted && (
-          <span className="shrink-0 inline-flex items-center gap-1 text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5">
+          <span className="shrink-0 inline-flex items-center gap-1 text-xs font-semibold text-brand-700 bg-brand-100 rounded-full px-2 py-0.5">
+            <Zap className="w-3 h-3 fill-brand-500" />
             מקודם
           </span>
         )}
@@ -416,7 +524,12 @@ function AdCard({
       {ad.ad_type === 'housing' && Array.isArray(ad.photos) && ad.photos.length > 0 && (
         <div className="mt-2 flex gap-2 overflow-x-auto">
           {ad.photos.slice(0, 4).map((url) => (
-            <img key={url} src={url} alt="" className="w-24 h-24 rounded-lg object-cover shrink-0 border border-slate-200" />
+            <img
+              key={url}
+              src={url}
+              alt={ad.title_he ?? ''}
+              className="w-24 h-24 rounded-lg object-cover shrink-0 border border-slate-200"
+            />
           ))}
         </div>
       )}
@@ -431,14 +544,34 @@ function AdCard({
             </div>
             {revealed.phone && (
               <a href={`tel:${revealed.phone}`} className="text-brand-700 hover:underline flex items-center gap-1.5">
-                <Phone className="w-4 h-4" /> {revealed.phone}
+                <Phone className="w-4 h-4" /> <span dir="ltr">{revealed.phone}</span>
               </a>
             )}
             {revealed.email && (
               <a href={`mailto:${revealed.email}`} className="text-brand-700 hover:underline flex items-center gap-1.5">
-                <Mail className="w-4 h-4" /> {revealed.email}
+                <Mail className="w-4 h-4" /> <span dir="ltr">{revealed.email}</span>
               </a>
             )}
+            {/* R2 — reassure the user that a re-view of this ad won't
+                cost a second reveal. Meets the top churn interview
+                complaint on paywalled directories: 'did that click
+                just charge me?' */}
+            <p className="text-xs text-slate-500 pt-1">
+              נשמר לך — לא ייגבו חשיפות נוספות על מודעה זו.
+            </p>
+            {/* R4 — cross-flow discovery on the "warm" moment after a
+                successful reveal. Contractor who just got a corp's
+                phone number is a warm lead for related surfaces. */}
+            <Link
+              href={ad.ad_type === 'worker' ? '/marketplace?category=housing' : '/'}
+              className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-brand-700 hover:text-brand-900"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              {ad.ad_type === 'worker'
+                ? 'צריך גם דיור לפועלים? עיין בשירותים נלווים'
+                : 'מחפש גם עובדים? חפש כאן'}
+              <ArrowLeft className="w-3.5 h-3.5" />
+            </Link>
           </div>
         ) : (
           <button

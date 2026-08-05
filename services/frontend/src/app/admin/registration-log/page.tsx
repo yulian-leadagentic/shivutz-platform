@@ -137,7 +137,7 @@ export default function RegistrationLogPage() {
       <div className="bg-white rounded-2xl border border-slate-200 shadow-card overflow-hidden">
         {loading ? (
           <div className="flex items-center justify-center py-16 text-slate-400">
-            <Loader2 className="h-5 w-5 animate-spin me-2" />טוען...
+            <Loader2 className="h-5 w-5 animate-spin me-2" />טוען…
           </div>
         ) : visibleEntries.length === 0 ? (
           <div className="text-center py-16 text-slate-400">

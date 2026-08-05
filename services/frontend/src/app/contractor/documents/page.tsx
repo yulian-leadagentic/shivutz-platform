@@ -167,12 +167,12 @@ function LicenseSection({
           <div className="space-y-3 pt-1">
             <div className="flex rounded-lg border border-slate-200 overflow-hidden text-sm font-medium">
               <button type="button" onClick={() => setAddMode('file')}
-                className={`flex-1 flex items-center justify-center gap-2 py-2 transition-colors ${addMode === 'file' ? 'bg-brand-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
+                className={`flex-1 flex items-center justify-center gap-2 py-2 transition-colors ${addMode === 'file' ? 'bg-brand-800 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
                 <UploadCloud className="h-4 w-4" />
                 העלאת קובץ
               </button>
               <button type="button" onClick={() => setAddMode('url')}
-                className={`flex-1 flex items-center justify-center gap-2 py-2 transition-colors ${addMode === 'url' ? 'bg-brand-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
+                className={`flex-1 flex items-center justify-center gap-2 py-2 transition-colors ${addMode === 'url' ? 'bg-brand-800 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
                 <Link2 className="h-4 w-4" />
                 קישור חיצוני
               </button>
@@ -218,7 +218,7 @@ function LicenseSection({
             <div className="flex gap-2">
               <Button type="button" onClick={handleUpload} disabled={saving} className="flex-1 h-10">
                 {saving
-                  ? <><Loader2 className="h-4 w-4 animate-spin" /> {addMode === 'file' ? 'מעלה...' : 'שומר...'}</>
+                  ? <><Loader2 className="h-4 w-4 animate-spin" /> {addMode === 'file' ? 'מעלה…' : 'שומר…'}</>
                   : license ? 'החלף רישיון' : 'העלה רישיון'}
               </Button>
               <Button type="button" variant="outline" onClick={() => { setOpen(false); reset(); }} className="h-10">
@@ -364,12 +364,12 @@ function OtherDocsSection({
             {/* Mode toggle */}
             <div className="flex rounded-lg border border-slate-200 overflow-hidden text-sm font-medium">
               <button type="button" onClick={() => setAddMode('file')}
-                className={`flex-1 flex items-center justify-center gap-2 py-2 transition-colors ${addMode === 'file' ? 'bg-brand-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
+                className={`flex-1 flex items-center justify-center gap-2 py-2 transition-colors ${addMode === 'file' ? 'bg-brand-800 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
                 <UploadCloud className="h-4 w-4" />
                 העלאת קובץ
               </button>
               <button type="button" onClick={() => setAddMode('url')}
-                className={`flex-1 flex items-center justify-center gap-2 py-2 transition-colors ${addMode === 'url' ? 'bg-brand-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
+                className={`flex-1 flex items-center justify-center gap-2 py-2 transition-colors ${addMode === 'url' ? 'bg-brand-800 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
                 <Link2 className="h-4 w-4" />
                 קישור חיצוני
               </button>
@@ -435,7 +435,7 @@ function OtherDocsSection({
 
             <Button type="button" onClick={handleAdd} disabled={saving} className="w-full h-11">
               {saving
-                ? <><Loader2 className="h-4 w-4 animate-spin" /> {addMode === 'file' ? 'מעלה...' : 'שומר...'}</>
+                ? <><Loader2 className="h-4 w-4 animate-spin" /> {addMode === 'file' ? 'מעלה…' : 'שומר…'}</>
                 : addMode === 'file' ? 'העלה מסמך' : 'הוסף קישור'}
             </Button>
           </div>

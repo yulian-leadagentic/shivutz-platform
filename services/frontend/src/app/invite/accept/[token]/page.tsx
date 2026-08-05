@@ -218,10 +218,10 @@ export default function InviteAcceptPage() {
                     )}
 
                     {error && (
-                      <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">{error}</p>
+                      <p role="alert" aria-live="assertive" className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">{error}</p>
                     )}
                     <Button type="submit" disabled={loading} className="w-full">
-                      {loading ? <><Loader2 className="h-4 w-4 animate-spin" /> שולח...</> : 'שלח קוד אימות'}
+                      {loading ? <><Loader2 className="h-4 w-4 animate-spin" /> שולח…</> : 'שלח קוד אימות'}
                     </Button>
                   </form>
                 )}
@@ -256,10 +256,10 @@ export default function InviteAcceptPage() {
                       className="text-center text-xl tracking-widest"
                     />
                     {error && (
-                      <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">{error}</p>
+                      <p role="alert" aria-live="assertive" className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">{error}</p>
                     )}
                     <Button type="submit" disabled={loading} className="w-full">
-                      {loading ? <><Loader2 className="h-4 w-4 animate-spin" /> מאמת...</> : 'אשר הזמנה'}
+                      {loading ? <><Loader2 className="h-4 w-4 animate-spin" /> מאמת…</> : 'אשר הזמנה'}
                     </Button>
                     <button
                       type="button"
@@ -278,7 +278,7 @@ export default function InviteAcceptPage() {
               <div className="flex flex-col items-center gap-4 py-6 text-center">
                 <CheckCircle2 className="h-16 w-16 text-green-500" />
                 <h2 className="text-xl font-bold text-slate-900">ברוך הבא!</h2>
-                <p className="text-slate-600">ההזמנה אושרה. מעביר אותך לדשבורד...</p>
+                <p className="text-slate-600">ההזמנה אושרה. מעביר אותך לדשבורד…</p>
                 <Loader2 className="h-5 w-5 animate-spin text-brand-600" />
               </div>
             )}

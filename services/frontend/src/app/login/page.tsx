@@ -52,8 +52,15 @@ function otpError(msg: string): string {
  *  would only mislead. */
 function ErrorBlock({ error }: { error: string }) {
   if (!error) return null;
+  // O3 — screen readers announce the error as soon as it appears
+  // (assertive because a wrong OTP or bad phone stops the user from
+  // proceeding — worth interrupting current speech).
   return (
-    <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2.5 text-start">
+    <div
+      role="alert"
+      aria-live="assertive"
+      className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2.5 text-start"
+    >
       <p>{error}</p>
     </div>
   );
@@ -342,7 +349,7 @@ function LoginPageInner() {
                   onClick={() => handleSendOtp()}
                 >
                   {loading
-                    ? <><Loader2 className="h-4 w-4 animate-spin" /><span>שולח...</span></>
+                    ? <><Loader2 className="h-4 w-4 animate-spin" /><span>שולח…</span></>
                     : copy.existingLabel}
                 </Button>
               </form>
@@ -381,7 +388,7 @@ function LoginPageInner() {
                   onClick={() => handleOtpLogin()}
                 >
                   {loading
-                    ? <><Loader2 className="h-4 w-4 animate-spin" /><span>מאמת...</span></>
+                    ? <><Loader2 className="h-4 w-4 animate-spin" /><span>מאמת…</span></>
                     : 'כניסה'}
                 </Button>
                 <button

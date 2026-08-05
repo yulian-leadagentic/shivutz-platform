@@ -30,7 +30,9 @@ router = APIRouter()
 PAYMENT_SVC = os.getenv("PAYMENT_SERVICE_URL", "http://payment:3009")
 
 AD_DEFAULT_DAYS = 30
-BOOST_DAYS      = 7
+BOOST_DAYS         = 7
+BOOST_PER_DAY_NIS  = 5   # D1 anchor — mirrors the frontend CP3 CTA
+BOOST_TOTAL_NIS    = BOOST_DAYS * BOOST_PER_DAY_NIS
 
 
 def _serialize(row: dict) -> dict:
@@ -229,6 +231,22 @@ def usage(
             (x_entity_id, x_entity_type),
         )
         reveals_used = int(cur.fetchone()["n"])
+
+        # B3 — grace fields for the corp trial-end banner. Frontend
+        # decides grace state client-side by comparing NOW to these.
+        cur.execute(
+            """SELECT trial_ends_at, grace_ends_at
+                 FROM payment_db.subscriptions
+                WHERE entity_id=%s AND entity_type=%s
+                LIMIT 1""",
+            (x_entity_id, x_entity_type),
+        )
+        sub_row = cur.fetchone()
+        trial_ends_at = (sub_row["trial_ends_at"].isoformat()
+                         if sub_row and sub_row["trial_ends_at"] else None)
+        grace_ends_at = (sub_row["grace_ends_at"].isoformat()
+                         if sub_row and sub_row["grace_ends_at"] else None)
+
         active_ads_used         = 0
         ads_by_type: dict[str, int] = {"worker": 0, "housing": 0}
         reveals_received_30d    = 0
@@ -264,6 +282,8 @@ def usage(
         "status":   ent["status"],
         "entitled": ent["entitled"],
         "limits":   limits,
+        "trial_ends_at": trial_ends_at,
+        "grace_ends_at": grace_ends_at,
         "usage": {
             "reveals_this_month":    reveals_used,
             "active_ads":            active_ads_used,
@@ -373,14 +393,22 @@ def list_my_ads(
     x_entity_id:   Optional[str] = Header(default=None),
     x_entity_type: Optional[str] = Header(default=None),
 ):
+    """Corp's own ads with a per-ad reveal_count subquery.
+
+    Pivot/v2 (CP2): reveals is the value metric — corps see how many
+    contractors actually revealed their contact info, not raw views.
+    """
     corp_id = _require_corp(x_entity_id, x_entity_type)
     conn = get_db()
     try:
         cur = conn.cursor()
         cur.execute(
-            """SELECT * FROM ads
-                WHERE owner_entity_id=%s AND deleted_at IS NULL
-                ORDER BY featured_until DESC, created_at DESC""",
+            """SELECT a.*,
+                      (SELECT COUNT(*) FROM contact_reveals cr
+                        WHERE cr.ad_id = a.id) AS reveal_count
+                 FROM ads a
+                WHERE a.owner_entity_id=%s AND a.deleted_at IS NULL
+                ORDER BY a.featured_until DESC, a.created_at DESC""",
             (corp_id,),
         )
         return [_serialize(r) for r in cur.fetchall()]
@@ -616,6 +644,115 @@ def ad_expiring_batch(days_ahead: int = 3):
         conn.close()
 
 
+@router.post("/internal/grace-batch")
+def grace_batch():
+    """Corp trial-end grace SMS batch (spec B3).
+
+    Sequence of 4 sends after `trial_ends_at`:
+      step 1 = day 0 (trial just ended, 7 days until pause)
+      step 2 = day 3
+      step 3 = day 6 (tomorrow the ads pause)
+      step 4 = day 7 (ads paused — renew to restore)
+
+    Returns every sub whose "due step" (derived from days since
+    trial_ends_at) is greater than its `grace_sms_step` counter — so
+    if the cron missed a day, it catches up on the next run instead
+    of silently skipping. Latches each returned row to its new step
+    in the same tx so a retry can't double-send.
+    """
+    GRACE_OFFSETS = [(1, 0), (2, 3), (3, 6), (4, 7)]  # (step, day-offset)
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT s.id AS sub_id, s.entity_id, s.entity_type, s.tier,
+                      s.trial_ends_at, s.grace_ends_at, s.grace_sms_step,
+                      TIMESTAMPDIFF(DAY, s.trial_ends_at, NOW()) AS days_since_trial,
+                      COALESCE(c.contact_phone, ct.contact_phone) AS phone,
+                      COALESCE(c.company_name_he, c.company_name,
+                               ct.company_name_he, ct.company_name)     AS entity_name
+                 FROM payment_db.subscriptions s
+                 LEFT JOIN corporations c  ON s.entity_type='corporation' AND c.id  = s.entity_id
+                 LEFT JOIN contractors  ct ON s.entity_type='contractor'  AND ct.id = s.entity_id
+                WHERE s.status='trialing'
+                  AND s.trial_ends_at IS NOT NULL
+                  AND s.trial_ends_at <= NOW()
+                  AND s.grace_sms_step < 4"""
+        )
+        targets = []
+        for r in cur.fetchall():
+            days = int(r["days_since_trial"] or 0)
+            due_step = 0
+            for step, offset in GRACE_OFFSETS:
+                if days >= offset:
+                    due_step = step
+            if due_step <= int(r["grace_sms_step"] or 0):
+                continue
+            if not r["phone"]:
+                continue
+            targets.append({
+                "sub_id":      r["sub_id"],
+                "entity_type": r["entity_type"],
+                "entity_name": r["entity_name"],
+                "tier":        r["tier"],
+                "phone":       r["phone"],
+                "step":        due_step,
+                "days_since_trial": days,
+            })
+
+        # Latch — bump grace_sms_step in the same tx so a retry can't
+        # re-send. Per-sub because different subs land on different steps.
+        for t in targets:
+            cur.execute(
+                "UPDATE payment_db.subscriptions SET grace_sms_step=%s WHERE id=%s",
+                (t["step"], t["sub_id"]),
+            )
+        if targets:
+            conn.commit()
+        return {"targets": targets}
+    finally:
+        conn.close()
+
+
+@router.post("/internal/grace-hard-cap")
+def grace_hard_cap():
+    """Pause corp ads whose grace window has closed (spec B3).
+
+    Runs daily. Sets ads.active=FALSE and paused_by='grace_hard_cap'
+    for every ad owned by a corp whose grace has expired. Idempotent —
+    only touches ads that are still active. Renewal path in
+    /payments/subscriptions/start restores paused ads back to active.
+    """
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT s.entity_id
+                 FROM payment_db.subscriptions s
+                WHERE s.status='trialing'
+                  AND s.entity_type='corporation'
+                  AND s.grace_ends_at IS NOT NULL
+                  AND s.grace_ends_at <= NOW()"""
+        )
+        ids = [r["entity_id"] for r in cur.fetchall()]
+        if not ids:
+            return {"paused": 0}
+        ph = ",".join(["%s"] * len(ids))
+        cur.execute(
+            f"""UPDATE ads SET active=FALSE, paused_by='grace_hard_cap'
+                 WHERE owner_entity_id IN ({ph})
+                   AND active=TRUE
+                   AND deleted_at IS NULL
+                   AND (paused_by IS NULL OR paused_by='grace_hard_cap')""",
+            ids,
+        )
+        n = cur.rowcount
+        conn.commit()
+        return {"paused": n}
+    finally:
+        conn.close()
+
+
 @router.get("/{ad_id}/contact-reveal")
 async def contact_reveal(
     ad_id: str,
@@ -736,7 +873,8 @@ def boost_ad(
             "message": "שדרג ל'מתקדם' או 'פרו' כדי לקדם מודעות",
         })
 
-    until = datetime.utcnow() + timedelta(days=BOOST_DAYS)
+    now   = datetime.utcnow()
+    until = now + timedelta(days=BOOST_DAYS)
     conn = get_db()
     try:
         cur = conn.cursor()
@@ -746,6 +884,25 @@ def boost_ad(
         )
         if cur.rowcount == 0:
             raise HTTPException(status_code=404, detail="ad_not_found")
+
+        # D1 — write to promotions too so ROI attribution + billing
+        # sourcing can move to that table without a schema change.
+        # Read paths still use ads.featured_until until Wave 5 (D2)
+        # swaps them over. Wrapped in try/except so a missing table
+        # (fresh DB / pre-064 environment) doesn't 500 the boost.
+        try:
+            cur.execute(
+                """INSERT INTO promotions
+                     (id, kind, target_type, target_id,
+                      owner_entity_id, owner_entity_type,
+                      starts_at, ends_at, price_nis, status)
+                   VALUES (%s, 'boost', 'ad', %s, %s, 'corporation',
+                           %s, %s, %s, 'active')""",
+                (str(uuid.uuid4()), ad_id, corp_id, now, until, BOOST_TOTAL_NIS),
+            )
+        except Exception as exc:  # noqa: BLE001
+            print(f"[boost] promotions insert skipped: {exc}")
+
         conn.commit()
         return {"id": ad_id, "featured_until": until.isoformat()}
     finally:
