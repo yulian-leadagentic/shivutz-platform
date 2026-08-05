@@ -161,7 +161,9 @@ export default function CorporationDashboardPage() {
                 </span>
               </p>
               {trialDays !== null && (
-                <p className="text-sm text-amber-700 mt-0.5">נותרו {trialDays} ימים לניסיון</p>
+                <p className="text-sm text-amber-700 mt-0.5">
+                  נותרו {trialDays} ימים לניסיון <span className="text-amber-600">· ללא כרטיס אשראי</span>
+                </p>
               )}
             </div>
             <Link

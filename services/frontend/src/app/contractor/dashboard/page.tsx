@@ -90,8 +90,13 @@ export default function ContractorDashboardPage() {
               </span>
             </p>
             {trialDays !== null && (
-              <p className="text-sm text-amber-700 mt-1 inline-flex items-center gap-1">
-                <Clock className="w-3.5 h-3.5" /> נותרו {trialDays} ימים לניסיון
+              <p className="text-sm text-amber-700 mt-1 inline-flex items-center gap-1.5 flex-wrap">
+                <Clock className="w-3.5 h-3.5" />
+                נותרו {trialDays} ימים לניסיון
+                {revealsLimit != null && (
+                  <>· {revealsLimit} חשיפות</>
+                )}
+                <span className="text-amber-600">· ללא כרטיס אשראי</span>
               </p>
             )}
             {usage && (
