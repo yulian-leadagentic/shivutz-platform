@@ -9,6 +9,7 @@ import { otpApi, type Membership } from '@/lib/api';
 import { adApi } from '@/lib/api/ads';
 import { useAuth } from '@/lib/AuthContext';
 import MobileNavDrawer from './MobileNavDrawer';
+import { NotificationBell } from './NotificationBell';
 
 const pageTitles: Record<string, string> = {
   '/contractor':               'לוח בקרה',
@@ -192,6 +193,12 @@ export default function TopBar({ mobileNav }: TopBarProps = {}) {
       </div>
 
       <div className="flex items-center gap-2 min-w-0">
+      {/* G5 — in-app notification bell. Only meaningful once the user
+          is signed in; when there is no name (logged-out) we skip it
+          entirely so the anonymous landing/marketing surfaces don't
+          poll /notifications and 401. */}
+      {name && <NotificationBell />}
+
       {/* R3 — reveal quota gauge (contractors only). Amber at ≥80%,
           rose at 100%. Click routes to /billing so the upgrade path
           is one click from anywhere in the app. */}

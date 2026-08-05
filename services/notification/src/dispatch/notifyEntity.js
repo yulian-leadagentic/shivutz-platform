@@ -15,7 +15,28 @@
 // every team member with `is_recipient` + `channels[]` joined in; we
 // filter to active recipients here.
 
+const { v4: uuidv4 } = require('uuid');
+const { getPool } = require('../db');
+
 const USER_ORG_URL = process.env.USER_ORG_SERVICE_URL || 'http://user-org:3002';
+
+// G5 — write an in-app inbox row for each recipient so the bell menu
+// mirrors what was sent. Silent if the write fails (SMS/email is the
+// primary; inbox is a convenience surface).
+async function writeInboxRow({ recipient_user_id, event_key, title_he, body_he, target_href, channels_sent }) {
+  if (!recipient_user_id) return; // anonymous SMS never appears in-app
+  try {
+    const pool = getPool();
+    await pool.query(
+      `INSERT INTO notifications_inbox
+         (id, recipient_user_id, event_key, title_he, body_he, target_href, channels_sent)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [uuidv4(), recipient_user_id, event_key, title_he || event_key, body_he || '', target_href || null, channels_sent || null],
+    );
+  } catch (e) {
+    console.error(`[notifyEntity] inbox insert failed event=${event_key}:`, e.message);
+  }
+}
 
 async function fetchRecipients(entityType, entityId) {
   const path = entityType === 'corporation'
@@ -68,10 +89,12 @@ async function notifyEntity({
   let sent = 0;
   for (const r of recipients) {
     const channels = r.channels || [];
+    const channelsUsed = [];
 
     if (channels.includes('email') && r.email) {
       try {
         await sendEmail(eventKey, r.email, r.user_id || null, emailVars);
+        channelsUsed.push('email');
         sent++;
       } catch (e) { console.error(`[notifyEntity] email ${eventKey} → ${r.email}:`, e.message); }
     }
@@ -79,6 +102,7 @@ async function notifyEntity({
     if (channels.includes('sms') && r.phone && smsText) {
       try {
         await sendSms(r.phone, smsText);
+        channelsUsed.push('sms');
         sent++;
       } catch (e) { console.error(`[notifyEntity] sms ${eventKey} → ${r.phone}:`, e.message); }
     }
@@ -88,6 +112,20 @@ async function notifyEntity({
       // opt-ins are durable through the rollout.
       // eslint-disable-next-line no-console
       console.log(`[notifyEntity] whatsapp skip (provider not live) event=${eventKey} → ${r.phone}`);
+    }
+
+    // G5 — inbox mirror. Uses smsText as body_he when available (already
+    // rendered for humans). target_href is passed through emailVars.action_url
+    // when the template supplies one.
+    if (r.user_id && channelsUsed.length > 0) {
+      await writeInboxRow({
+        recipient_user_id: r.user_id,
+        event_key: eventKey,
+        title_he: emailVars?.title_he || emailVars?.subject_he || eventKey,
+        body_he: smsText || emailVars?.body_he || '',
+        target_href: emailVars?.action_url || null,
+        channels_sent: channelsUsed.join(','),
+      });
     }
   }
   return { count: sent, fellBack: false };
