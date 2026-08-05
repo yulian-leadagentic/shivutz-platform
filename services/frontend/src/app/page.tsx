@@ -547,6 +547,13 @@ function AdCard({
                 <Mail className="w-4 h-4" /> {revealed.email}
               </a>
             )}
+            {/* R2 — reassure the user that a re-view of this ad won't
+                cost a second reveal. Meets the top churn interview
+                complaint on paywalled directories: 'did that click
+                just charge me?' */}
+            <p className="text-xs text-slate-500 pt-1">
+              נשמר לך — לא ייגבו חשיפות נוספות על מודעה זו.
+            </p>
           </div>
         ) : (
           <button
