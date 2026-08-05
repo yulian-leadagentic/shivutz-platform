@@ -13,6 +13,9 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { HomeLink } from '@/components/HomeLink';
 import Logo from '@/components/Logo';
 import { readProspect, clearProspect } from '@/features/prospect/state';
+import {
+  writeReturnTo, clearReturnTo, resolveReturnTo, sanitizeReturnTo,
+} from '@/features/prospect/returnTo';
 import type { RegistryChannel, RegistryLookupResult } from '@/types';
 
 const TOTAL_STEPS = 3;
@@ -102,6 +105,25 @@ function RegisterContractorInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const fromTrial = searchParams?.get('from') === 'trial';
+  // O1 — reveal→register funnel resilience.
+  // Capture ?returnTo=... from the query on mount so it survives OTP
+  // resend, a mid-wizard refresh (URL params re-parse fine, but store
+  // is the belt+braces), or a browser back/forward. The sanitizer
+  // rejects external URLs so a crafted ?returnTo=https://evil.com
+  // can't turn into a redirect.
+  const returnToParam = searchParams?.get('returnTo') ?? null;
+  useEffect(() => {
+    const safe = sanitizeReturnTo(returnToParam);
+    if (safe) writeReturnTo(safe);
+  }, [returnToParam]);
+  // Redirect on success. URL param wins when present; sessionStorage
+  // is the fallback (survived a lost URL param). Clears the store
+  // after read so the next tab visit doesn't inherit a stale intent.
+  const gotoAfterRegister = () => {
+    const target = resolveReturnTo(returnToParam, '/contractor/dashboard');
+    clearReturnTo();
+    router.push(target);
+  };
   const [step, setStep]       = useState<1 | 2 | 3 | 'verify'>(1);
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState('');
@@ -264,10 +286,12 @@ function RegisterContractorInner() {
       clearProspect();
 
       if (result.kablan_matched) {
-        router.push('/contractor/dashboard');
+        gotoAfterRegister();
       } else {
         // Mismatch — pending admin queue. Surface the success-screen
-        // copy with the "ממתין לאישור" message.
+        // copy with the "ממתין לאישור" message. Reveal-intent users
+        // stuck in this state won't get their auto-redirect; that's
+        // by design — they can't reveal until admin approves.
         setSuccess(true);
       }
     } catch (err) {
@@ -310,14 +334,14 @@ function RegisterContractorInner() {
     setLoading(true);
     try {
       await orgApi.verifyConfirm(verify.contractor_id, 'sms', verify.code);
-      router.push('/contractor/dashboard');
+      gotoAfterRegister();
     } catch (err) {
       setVerifyError(err instanceof Error ? err.message : 'verify_failed');
     } finally { setLoading(false); }
   }
 
   function skipVerification() {
-    router.push('/contractor/dashboard');
+    gotoAfterRegister();
   }
 
   // Duplicate ח.פ → 'we asked the owner' screen
