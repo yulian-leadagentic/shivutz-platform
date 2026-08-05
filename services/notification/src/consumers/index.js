@@ -28,7 +28,8 @@ async function startConsumer() {
   const keys = [
     'org.registered', 'org.approved', 'org.rejected', 'org.sla.warning',
     'deal.proposed', 'deal.accepted', 'deal.discrepancy.flagged',
-    'message.new', 'commission.invoiced',
+    'message.new',
+    // D3: commission.invoiced handler removed with the commission sweep.
     'worker.visa.expiring_30d', 'worker.visa.expiring_7d', 'worker.visa.expired',
     'team.invited',   // Phase 4: SMS invitation
     // Match-found notification flow — these drive the background re-match

@@ -28,7 +28,6 @@ type OrgRow = {
   contact_phone: string | null;
   notes: string | null;
   approval_status: string | null;
-  commission_per_worker_amount: number | null;
   // Contractor-only registry fields
   kablan_number?: string | null;
   kvutza?: string | null;
@@ -102,7 +101,6 @@ function OrgDetailContent() {
           contact_email:   row.contact_email   ?? '',
           contact_phone:   row.contact_phone   ?? '',
           notes:           row.notes           ?? '',
-          commission_per_worker_amount: row.commission_per_worker_amount ?? 500,
           business_number:    row.business_number ?? '',
           gov_company_status: row.gov_company_status ?? '',
           kablan_number:      row.kablan_number ?? '',
@@ -334,13 +332,6 @@ function OrgDetailContent() {
               <label className="text-xs text-slate-500 block mb-1">טלפון</label>
               <input value={form.contact_phone ?? ''} dir="ltr"
                 onChange={(e) => setForm((p) => ({ ...p, contact_phone: e.target.value }))}
-                className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm" />
-            </div>
-            <div>
-              <label className="text-xs text-slate-500 block mb-1">עמלת פלטפורמה לעובד (₪)</label>
-              <input type="number" step="0.01" min="0" dir="ltr"
-                value={form.commission_per_worker_amount ?? 0}
-                onChange={(e) => setForm((p) => ({ ...p, commission_per_worker_amount: parseFloat(e.target.value) }))}
                 className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm" />
             </div>
             <div className="sm:col-span-2">

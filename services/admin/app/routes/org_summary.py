@@ -82,18 +82,15 @@ def _deal_counts(deal_cur, org_id: str, org_type: str) -> dict:
 
 
 def _recent_deals(deal_cur, org_id: str, org_type: str, limit: int = 10) -> list:
-    """Last N deals for this org. Includes the bits the admin scans
-    on each row: status, party ids, worker count (from deal_workers
-    subquery — the old deals.workers_count column was dropped in
-    migration 014), commission, key dates, and a derived stuck_on
-    tag so the table shows 'waiting for whom' inline. Party-NAME
-    enrichment happens in the calling route (it pulls from org_db).
+    """Last N deals for this org. D3 removed the commission read; the
+    whole function is orphaned (deals table dropped in migration 058)
+    and the calling route already short-circuits to []. Kept for
+    reference but not called.
     """
     col = "contractor_id" if org_type == "contractor" else "corporation_id"
     # Migration 024 renamed deals.request_line_item_id → search_id.
     deal_cur.execute(
         f"""SELECT d.id, d.status, d.contractor_id, d.corporation_id,
-                   d.commission_amount,
                    d.search_id,
                    d.created_at, d.updated_at,
                    d.corp_committed_at, d.approved_at,

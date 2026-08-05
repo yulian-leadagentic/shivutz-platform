@@ -4,7 +4,7 @@ import { Fragment, useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
   Loader2, ChevronDown, ChevronLeft, Pencil, Mail, Phone, Hash, User,
-  Building2, ShieldCheck, MapPin, CalendarDays, Info,
+  Building2, ShieldCheck, MapPin, CalendarDays,
 } from 'lucide-react';
 import { adminApi, type PendingOrg } from '@/lib/adminApi';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -371,13 +371,6 @@ function ExpandedDetail({
             label="רמת אימות"
             value={<VerificationCell tier={org.verification_tier} method={org.verification_method} />}
           />
-          {org.commission_per_worker_amount != null && (
-            <DetailRow
-              icon={<Info className="h-3.5 w-3.5" />}
-              label="עמלת פלטפורמה לעובד"
-              value={`${Number(org.commission_per_worker_amount).toLocaleString('he-IL')} ₪`}
-            />
-          )}
         </div>
 
         {/* Type-specific registry block */}

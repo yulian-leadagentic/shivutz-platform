@@ -3,23 +3,6 @@ import { BASE } from './api/client';
 import { getAccessToken } from './auth';
 import type { Deal, Worker } from '@/types';
 
-// ── Commission types ────────────────────────────────────────────────────────
-
-export interface Commission {
-  id: string;
-  deal_id: string;
-  gross_amount: number;
-  commission_rate: number;
-  commission_amount: number;
-  invoice_number?: string;
-  invoice_date?: string;
-  invoice_url?: string;
-  notes?: string;
-  status: 'pending' | 'invoiced' | 'paid' | 'disputed';
-  created_by: string;
-  created_at: string;
-}
-
 export interface DealReport {
   id: string;
   deal_id: string;
@@ -33,9 +16,9 @@ export interface DealReport {
 }
 
 /** Row returned by GET /admin/deals — the listing endpoint. Lighter
- *  than `AdminDealDetail` (no reports, commission, or full worker
- *  list) but carries party contacts + stuck-stage so the admin can
- *  scan the table without clicking through. */
+ *  than `AdminDealDetail` (no reports or full worker list) but carries
+ *  party contacts + stuck-stage so the admin can scan the table
+ *  without clicking through. */
 export interface AdminDealRow extends Deal {
   contractor_name:    string | null;
   corporation_name:   string | null;
@@ -63,7 +46,6 @@ export interface AdminDealDetail extends Deal {
   contractor_name: string;
   corporation_name: string;
   reports: DealReport[];
-  commission: Commission | null;
   workers: Worker[];
   discrepancy_flag: boolean;
   discrepancy_details?: string;
@@ -82,7 +64,6 @@ export interface PendingOrg {
   approval_sla_deadline: string;
   created_at: string;
   org_type: 'contractor' | 'corporation';
-  commission_per_worker_amount?: number | null;
   // Contractor-only verification fields (NULL for corporations)
   kablan_number?: string | null;
   kvutza?: string | null;
@@ -99,7 +80,6 @@ export interface OrgEditPayload {
   contact_name?: string;
   contact_email?: string;
   contact_phone?: string;
-  commission_per_worker_amount?: number;
   notes?: string;
   // Registry / business fields
   business_number?: string;
@@ -194,7 +174,6 @@ export interface DashWaitingForContractor {
   id: string;
   contractor_id: string;
   corporation_id: string;
-  commission_amount: number | null;
   corp_committed_at: string | null;
   expires_at: string | null;
   hours_waiting: number | null;
@@ -205,7 +184,6 @@ export interface DashWaitingForCapture {
   id: string;
   contractor_id: string;
   corporation_id: string;
-  commission_amount: number | null;
   approved_at: string | null;
   scheduled_capture_at: string | null;
   hours_until_capture: number | null;
@@ -282,7 +260,6 @@ export const adminApi = {
         contractor_id: string;
         corporation_id: string;
         workers_count: number | null;
-        commission_amount: number | null;
         created_at: string;
         updated_at: string;
         corp_committed_at: string | null;
@@ -339,8 +316,7 @@ export const adminApi = {
       } | null;
     }>(`/admin/orgs/${id}/summary?org_type=${orgType}`),
 
-  decide: (id: string, orgType: string, approved: boolean, reason?: string,
-           commission_per_worker_amount?: number) =>
+  decide: (id: string, orgType: string, approved: boolean, reason?: string) =>
     apiFetch<{ id: string; status: string; company_name: string }>(
       `/admin/approvals/${id}?org_type=${orgType}`,
       {
@@ -348,7 +324,6 @@ export const adminApi = {
         body: JSON.stringify({
           approved,
           reason: reason || null,
-          commission_per_worker_amount: commission_per_worker_amount ?? null,
         }),
       }
     ),
@@ -435,30 +410,6 @@ export const adminApi = {
 
   getDeal: (id: string) => apiFetch<AdminDealDetail>(`/admin/deals/${id}`),
 
-  createCommission: (dealId: string, data: {
-    gross_amount: number;
-    commission_rate: number;
-    invoice_number?: string;
-    invoice_date?: string;
-    invoice_url?: string;
-    notes?: string;
-  }) =>
-    apiFetch<Commission>(`/admin/deals/${dealId}/commission`, {
-      method: 'POST',
-      body: JSON.stringify(data),
-    }),
-
-  updateCommissionStatus: (commissionId: string, data: {
-    status: string;
-    invoice_number?: string;
-    invoice_date?: string;
-    invoice_url?: string;
-  }) =>
-    apiFetch<{ id: string; status: string }>(`/admin/commissions/${commissionId}/status`, {
-      method: 'PATCH',
-      body: JSON.stringify(data),
-    }),
-
   // ── VAT periods ──────────────────────────────────────────────────────────
 
   listVatPeriods: () => apiFetch<VATPeriod[]>('/admin/vat-periods'),
@@ -507,19 +458,6 @@ export const adminApi = {
     apiFetch<{ ok: boolean; duplicate: boolean }>('/admin/refund-requests', {
       method: 'POST',
       body: JSON.stringify({ deal_id, reason }),
-    }),
-
-  // ── Platform-wide commission rate (single ₪/worker setting) ─────────────
-
-  getPlatformCommissionRate: () =>
-    apiFetch<{ commission_per_worker_nis: number | null; updated_at: string | null; updated_by_user_id: string | null }>(
-      '/admin/settings/commission-rate'
-    ),
-
-  setPlatformCommissionRate: (commission_per_worker_nis: number) =>
-    apiFetch<{ commission_per_worker_nis: number }>('/admin/settings/commission-rate', {
-      method: 'PATCH',
-      body: JSON.stringify({ commission_per_worker_nis }),
     }),
 
   // ── Customer-service inbox (QA-R3 #24) ──────────────────────────────────

@@ -415,13 +415,6 @@ async function handle(routingKey, payload, sendEmail) {
       break;
     }
 
-    case 'commission.invoiced':
-      await sendEmail('commission.invoiced', ADMIN_EMAIL, null, {
-        invoice_number: payload.commission_id,
-        deal_id:        payload.deal_id,
-      });
-      break;
-
     case 'worker.visa.expiring_30d':
     case 'worker.visa.expiring_7d':
       await sendEmail('worker.visa.expiring_30d', payload.corporation_email || ADMIN_EMAIL, null, {
@@ -606,7 +599,6 @@ async function handle(routingKey, payload, sendEmail) {
           worker_count:      payload.worker_count || 0,
           profession_he:     payload.profession_he || 'עובדים',
           corp_name:         payload.corp_name || 'התאגיד',
-          commission_amount: payload.commission_amount || 0,
           capture_at:        captureFmt,
         });
       }
@@ -646,7 +638,6 @@ async function handle(routingKey, payload, sendEmail) {
         worker_count:      payload.worker_count || 0,
         profession_he:     payload.profession_he || 'עובדים',
         region_he:         payload.region_he || '',
-        commission_amount: payload.commission_amount || 0,
         rejected_at:       payload.rejected_at
           ? new Date(payload.rejected_at).toLocaleString('he-IL') : '',
       });
@@ -671,7 +662,6 @@ async function handle(routingKey, payload, sendEmail) {
         corp_name:         payload.corp_name || '',
         worker_count:      payload.worker_count || 0,
         profession_he:     payload.profession_he || 'עובדים',
-        commission_amount: payload.commission_amount || 0,
       });
       break;
     }
@@ -698,7 +688,6 @@ async function handle(routingKey, payload, sendEmail) {
         worker_count:        payload.worker_count || 0,
         profession_he:       payload.profession_he || 'עובדים',
         region_he:           payload.region_he || '',
-        commission_amount:   payload.commission_amount || 0,
         cancellation_reason: payload.cancellation_reason || '—',
         cancelled_at:        payload.cancelled_at
           ? new Date(payload.cancelled_at).toLocaleString('he-IL') : '',
@@ -714,7 +703,6 @@ async function handle(routingKey, payload, sendEmail) {
           worker_count:      payload.worker_count || 0,
           profession_he:     payload.profession_he || 'עובדים',
           invoice_number:    payload.invoice_number || (payload.deal_id_short || ''),
-          commission_amount: payload.commission_amount || 0,
           invoice_url:       payload.invoice_url || '',
           deal_id_short:     payload.deal_id_short || '',
         });
@@ -737,7 +725,6 @@ async function handle(routingKey, payload, sendEmail) {
         worker_count:      payload.worker_count || 0,
         profession_he:     payload.profession_he || 'עובדים',
         region_he:         payload.region_he || '',
-        commission_amount: payload.commission_amount || 0,
         hours_pending:     payload.hours_pending || 0,
         expires_at:        payload.expires_at
           ? new Date(payload.expires_at).toLocaleString('he-IL') : '',

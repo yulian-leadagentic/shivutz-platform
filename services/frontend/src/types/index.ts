@@ -155,7 +155,6 @@ export interface Deal {
   notes?: string;
   created_at: string;
   // Lifecycle (M2)
-  commission_amount?: number | null;
   corp_committed_at?: string | null;
   /** Contractor revealed corp identity (step 1 of post-proposal flow).
    *  null = corp identity still hidden; truthy = corp details visible
@@ -276,26 +275,6 @@ export interface PaymentMethod {
   status: string;
   created_at: string | null;
   last_used_at: string | null;
-}
-
-export interface CommitEngagementResult {
-  transaction_id: string;
-  status: string;
-  grace_period_expires_at: string;
-  amounts: {
-    base_amount: number;
-    vat_rate: number;
-    vat_amount: number;
-    total_amount: number;
-  };
-  /** Pattern A (J5): when true, the backend ran in PAYMENT_FAKE_MODE and
-   *  the transaction is already authorized — the frontend can skip the
-   *  Cardcom redirect step. */
-  fake_mode?: boolean;
-  low_profile_id?: string;
-  /** Pattern A (J5): URL to redirect the user to for card entry. Null in
-   *  fake mode. */
-  redirect_url?: string | null;
 }
 
 export interface PaymentTransactionRow {
