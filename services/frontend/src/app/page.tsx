@@ -109,8 +109,36 @@ export default function LandingPage() {
     enumApi.origins().then(setOrigins).catch(() => setOrigins([]));
   }, []);
 
+  // verify(L2) — URL persistence for filter chips. A shared URL with
+  // ?prof=&region=&origin= must arrive with the same filter state so
+  // the results are reproducible + back/forward remembers the pick.
+  // Runs once against the current searchParams; runSearch and
+  // clearFilters write the reverse direction on user action.
+  useEffect(() => {
+    const p = params?.get('prof');
+    const r = params?.get('region');
+    const o = params?.get('origin');
+    if (p) setFProf(p);
+    if (r) setFRegion(r);
+    if (o) setFOrigin(o);
+    // Intentional single-shot read: don't want a subsequent
+    // router.replace to loop this back into state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   function labelFor<T extends { code: string; name_he: string }>(list: T[], code: string): string {
     return list.find((r) => r.code === code)?.name_he ?? code;
+  }
+
+  // verify(L2) — mirror current filter chips into the URL. Kept as a
+  // helper so runSearch + clearFilters both write via the same path.
+  function syncFiltersToUrl(prof: string, region: string, origin: string) {
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    prof   ? url.searchParams.set('prof',   prof)   : url.searchParams.delete('prof');
+    region ? url.searchParams.set('region', region) : url.searchParams.delete('region');
+    origin ? url.searchParams.set('origin', origin) : url.searchParams.delete('origin');
+    router.replace(url.pathname + url.search + url.hash);
   }
 
   async function runSearch(rawQ?: string) {
@@ -126,6 +154,7 @@ export default function LandingPage() {
     }
     if (query.length < 2) return;
     setQ(query);
+    syncFiltersToUrl(fProf, fRegion, fOrigin);
     setLoading(true);
     setError('');
     try { setResp(await searchApi.query(query)); }
@@ -135,6 +164,7 @@ export default function LandingPage() {
 
   function clearFilters() {
     setFProf(''); setFRegion(''); setFOrigin('');
+    syncFiltersToUrl('', '', '');
   }
   const anyFilter = !!(fProf || fRegion || fOrigin);
 
@@ -351,6 +381,21 @@ export default function LandingPage() {
           <section className="px-4 pb-6">
             <AdCarousel />
           </section>
+
+          {/* verify(L2) — screen-reader status region. Always in the DOM so
+              aria-live triggers when text changes. Announces search
+              lifecycle: loading → result count / no-match / error. */}
+          <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+            {loading
+              ? 'מחפש מודעות…'
+              : error
+                ? `שגיאה בחיפוש: ${error}`
+                : resp
+                  ? (resp.total === 0
+                      ? 'לא נמצאו מודעות התואמות לחיפוש'
+                      : `נמצאו ${resp.total} תוצאות`)
+                  : ''}
+          </div>
 
           {/* Search results (when query is active) */}
           {(resp || error) && (
