@@ -5,7 +5,7 @@
 // edit / boost / delete actions. Boost is currently free (sets
 // featured_until = now+7d); paid promotion lands in Phase 5.
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Loader2, Plus, Pencil, Trash2, Zap, Eye, ArrowLeft, CreditCard, CheckCircle2, X } from 'lucide-react';
@@ -34,7 +34,7 @@ function daysLeft(iso: string | null): number | null {
   return Number.isFinite(ms) ? Math.max(0, Math.ceil(ms / (24 * 60 * 60 * 1000))) : null;
 }
 
-export default function CorporationAdsPage() {
+function CorporationAdsPageInner() {
   const params = useSearchParams();
   const router = useRouter();
   const [ads, setAds]         = useState<AdRow[]>([]);
@@ -249,5 +249,21 @@ export default function CorporationAdsPage() {
         </ul>
       )}
     </div>
+  );
+}
+
+// Next 16 requires useSearchParams() to sit inside a Suspense boundary
+// or the page bails out of static generation with a prerender error.
+// Fallback matches the loading state the inner component shows once it
+// mounts, so the visual transition is invisible.
+export default function CorporationAdsPage() {
+  return (
+    <Suspense fallback={
+      <div className="max-w-5xl mx-auto px-4 py-6">
+        <div className="text-center py-16"><Loader2 className="w-6 h-6 animate-spin mx-auto text-slate-400" /></div>
+      </div>
+    }>
+      <CorporationAdsPageInner />
+    </Suspense>
   );
 }

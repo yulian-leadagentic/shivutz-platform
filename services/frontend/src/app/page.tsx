@@ -14,7 +14,7 @@
 //   7. Recent ads grid (yad2 mosaic — when no query)
 //   8. Role register picker + "how it works" + footer
 
-import { useCallback, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -72,7 +72,7 @@ interface PublicAd {
   published_at: string;
 }
 
-export default function LandingPage() {
+function LandingPageInner() {
   const router = useRouter();
   const params = useSearchParams();
   const [leadModalOpen, setLeadModalOpen] = useState(false);
@@ -627,5 +627,16 @@ function AdCard({
         )}
       </div>
     </li>
+  );
+}
+
+// Next 16 requires useSearchParams() to sit inside a Suspense boundary
+// or the page bails out of static generation with a prerender error.
+// Fallback keeps the layout height stable while the CSR-bail resolves.
+export default function LandingPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-gradient-to-b from-slate-50 to-white" />}>
+      <LandingPageInner />
+    </Suspense>
   );
 }
