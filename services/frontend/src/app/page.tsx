@@ -19,8 +19,9 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Loader2, Search as SearchIcon, Mail, Phone, Building2, Sparkles,
-  Users, Home as HomeIcon, Globe2, Boxes, Zap, ArrowLeft,
+  Users, Home as HomeIcon, Globe2, Boxes, ArrowLeft,
 } from 'lucide-react';
+import { PromotedBadge } from '@/components/ads/PromotedBadge';
 import LandingNav from '@/components/landing/LandingNav';
 import LandingFooter from '@/components/landing/LandingFooter';
 import LeadCaptureModal from '@/components/landing/LeadCaptureModal';
@@ -506,12 +507,7 @@ function AdCard({
             )}
           </p>
         </div>
-        {boosted && (
-          <span className="shrink-0 inline-flex items-center gap-1 text-xs font-semibold text-brand-700 bg-brand-100 rounded-full px-2 py-0.5">
-            <Zap className="w-3 h-3 fill-brand-500" />
-            מקודם
-          </span>
-        )}
+        {boosted && <PromotedBadge />}
       </div>
 
       {ad.ad_type === 'housing' && Array.isArray(ad.amenities) && ad.amenities.length > 0 && (

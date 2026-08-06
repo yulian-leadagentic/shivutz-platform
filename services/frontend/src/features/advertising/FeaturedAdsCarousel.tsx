@@ -8,10 +8,11 @@
 
 import { useEffect, useRef, useState } from 'react';
 import {
-  ChevronRight, ChevronLeft, Flame, Zap, Home, Users,
+  ChevronRight, ChevronLeft, Flame, Home, Users,
   Building2, Hammer, Wrench, PaintBucket, Bolt, Plug, Layers, Boxes,
 } from 'lucide-react';
 import { apiFetch } from '@/lib/api/client';
+import { PromotedBadge } from '@/components/ads/PromotedBadge';
 
 interface PublicAd {
   id:              string;
@@ -135,12 +136,7 @@ export function FeaturedAdsCarousel() {
                   <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider bg-white/25 backdrop-blur-sm rounded-full px-2 py-0.5">
                     {isHousing ? 'דיור' : (profLabel || 'עובדים')}
                   </span>
-                  {boosted && (
-                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-brand-700 bg-brand-100 rounded-full px-2 py-0.5">
-                      <Zap className="w-3 h-3 fill-brand-500" />
-                      מקודם
-                    </span>
-                  )}
+                  {boosted && <PromotedBadge size="sm" />}
                 </div>
                 <div className="relative mt-3">
                   <p className="text-2xl font-extrabold leading-tight drop-shadow-sm">
