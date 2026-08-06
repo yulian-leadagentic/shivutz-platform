@@ -190,7 +190,14 @@ export default function ContractorTenderDetailPage() {
   const revealed = !!tender.revealed_at;
   const locked = ['pending_admin', 'in_progress', 'closed', 'cancelled', 'frozen', 'rejected'].includes(tender.status);
   const totalWorkers = tender.items.reduce((s, i) => s + i.quantity, 0);
-  const liveBids = (tender.bids ?? []).filter((b) => b.status !== 'withdrawn' && b.status !== 'rejected' && b.status !== 'pending_admin');
+  // verify(C3) — keep rejected bids visible so the contractor sees
+  // WHY a bid isn't in the running (admin's rejection_reason). Only
+  // withdrawn + pending_admin bids are hidden; rejected is shown
+  // dimmed with the reason inline. `liveBids` still gates the
+  // selection flow (checkboxes, sticky submit) so rejected bids
+  // can't be picked.
+  const visibleBids = (tender.bids ?? []).filter((b) => b.status !== 'withdrawn' && b.status !== 'pending_admin');
+  const liveBids = visibleBids.filter((b) => b.status !== 'rejected');
 
   // Edit only while still editable and no responses arrived yet.
   const canEdit   = ['pending_admin', 'open'].includes(tender.status) && liveBids.length === 0;
@@ -199,15 +206,19 @@ export default function ContractorTenderDetailPage() {
   const canCancel = !['pending_admin', 'in_progress', 'closed', 'cancelled', 'rejected'].includes(tender.status);
 
   // Flatten into per-line offers: for each tender item, the competing
-  // bid lines from all live bids.
+  // bid lines from all visible bids (live + rejected). Rejected rows
+  // render dimmed with the admin's rejection reason so the
+  // contractor knows why a bid isn't selectable, instead of it
+  // silently disappearing.
   const offersByLine = tender.items.map((ti) => {
-    const offers = liveBids.flatMap((b) =>
+    const offers = visibleBids.flatMap((b) =>
       b.items
         .filter((bi) => bi.tender_item_id === ti.id)
         .map((bi) => ({
           bi, corpAnon: b.corp_anon, corpId: b.corporation_id, arrival: b.arrival_date, bidStatus: b.status,
           includesHousing: b.includes_housing ?? null,
           housingNotes: b.housing_notes ?? null,
+          rejectionReason: b.rejection_reason ?? null,
         })),
     );
     return { ti, offers };
@@ -375,14 +386,29 @@ export default function ContractorTenderDetailPage() {
               <p className="px-4 py-4 text-sm text-slate-400 text-center">עדיין אין הצעות לשורה זו</p>
             ) : (
               <div className="divide-y divide-slate-100">
-                {offers.map(({ bi, corpAnon, corpId, arrival, bidStatus, includesHousing, housingNotes }) => {
+                {offers.map(({ bi, corpAnon, corpId, arrival, bidStatus, includesHousing, housingNotes, rejectionReason }) => {
                   const isSel = selected.has(bi.id);
                   const corp = corpId ? corpById[corpId] : undefined;
                   const partial = bi.quantity_offered < ti.quantity;
                   const confirmed = bidStatus === 'confirmed' && bi.selected;
+                  // verify(C3) — rejected bids stay visible but dimmed
+                  // and non-selectable; the admin's rejection reason
+                  // renders below the row so the contractor sees WHY.
+                  const isRejected = bidStatus === 'rejected';
                   return (
-                    <div key={bi.id} className={`px-4 py-3 flex items-center gap-3 ${isSel ? 'bg-brand-50/40' : ''}`}>
-                      {!locked ? (
+                    <div key={bi.id}
+                      className={`px-4 py-3 flex flex-wrap items-center gap-3 ${
+                        isRejected ? 'bg-slate-50 opacity-60' : isSel ? 'bg-brand-50/40' : ''
+                      }`}>
+                      {isRejected ? (
+                        <span
+                          className="h-6 w-6 rounded-md bg-rose-100 text-rose-600 flex items-center justify-center shrink-0"
+                          aria-label="הצעה נדחתה"
+                          title="הצעה נדחתה על ידי מנהל המערכת"
+                        >
+                          <XCircle className="h-4 w-4" />
+                        </span>
+                      ) : !locked ? (
                         <button type="button" onClick={() => toggle(bi.id)}
                           className={`h-6 w-6 rounded-md border-2 flex items-center justify-center shrink-0 transition ${
                             isSel ? 'bg-brand-800 border-brand-800 text-white' : 'border-slate-300 hover:border-brand-400'}`}
@@ -429,6 +455,11 @@ export default function ContractorTenderDetailPage() {
                         </div>
                         {arrival && <div className="text-[11px] text-slate-400">הגעה: {fmtDate(arrival)}</div>}
                       </div>
+                      {isRejected && (
+                        <p className="basis-full text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded px-2 py-1">
+                          <span className="font-semibold">סיבת דחייה:</span> {rejectionReason || 'לא צוינה — פנה למנהל המערכת'}
+                        </p>
+                      )}
                     </div>
                   );
                 })}

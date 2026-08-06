@@ -47,6 +47,7 @@ export function RevealModal({
   }, [onClose]);
 
   // R1 — a11y: focus-trap, Esc-to-close, return-focus-on-close.
+  // pre-verify-r1 audit added: body-scroll-lock while open.
   useEffect(() => {
     if (!block) return;
     // Remember what was focused when the modal opened (typically the
@@ -58,6 +59,11 @@ export function RevealModal({
     // dialog root as the anchor so tab starts inside.
     const first = dialogRef.current?.querySelector<HTMLElement>(FOCUSABLE);
     (first ?? dialogRef.current)?.focus();
+
+    // Body-scroll lock. Preserve whatever inline overflow was there
+    // (usually empty) so we don't clobber an unrelated caller's lock.
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
 
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') {
@@ -83,6 +89,7 @@ export function RevealModal({
     document.addEventListener('keydown', onKey);
     return () => {
       document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
       // Return focus to whatever opened the modal.
       returnFocusTo.current?.focus?.();
     };
@@ -102,6 +109,7 @@ export function RevealModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="reveal-modal-title"
+        aria-describedby="reveal-modal-desc"
         tabIndex={-1}
       >
         <button
@@ -120,7 +128,7 @@ export function RevealModal({
             </div>
             <div>
               <h2 id="reveal-modal-title" className="text-lg font-bold text-slate-900">כדי לראות פרטי קשר</h2>
-              <p className="text-sm text-slate-600 mt-1 leading-relaxed">
+              <p id="reveal-modal-desc" className="text-sm text-slate-600 mt-1 leading-relaxed">
                 חפשו אצלנו בחינם. חשיפת פרטי הקשר של תאגידים דורשת חשבון עם מנוי פעיל — 14 ימי ניסיון חינם.
               </p>
             </div>
@@ -150,7 +158,7 @@ export function RevealModal({
             </div>
             <div>
               <h2 id="reveal-modal-title" className="text-lg font-bold text-slate-900">המנוי לא פעיל</h2>
-              <p className="text-sm text-slate-600 mt-1 leading-relaxed">
+              <p id="reveal-modal-desc" className="text-sm text-slate-600 mt-1 leading-relaxed">
                 תקופת הניסיון או המנוי שלך הסתיים. חדש את המנוי כדי להמשיך לחשוף פרטי קשר.
               </p>
             </div>
@@ -170,7 +178,7 @@ export function RevealModal({
             </div>
             <div>
               <h2 id="reveal-modal-title" className="text-lg font-bold text-slate-900">הגעת למגבלת החודש</h2>
-              <p className="text-sm text-slate-600 mt-1 leading-relaxed">
+              <p id="reveal-modal-desc" className="text-sm text-slate-600 mt-1 leading-relaxed">
                 השתמשת ב-{block.used} מתוך {block.limit} חשיפות במסלול <b>{block.tier}</b>. שדרג את המנוי לחשיפות ללא הגבלה.
               </p>
             </div>
@@ -190,7 +198,7 @@ export function RevealModal({
             </div>
             <div>
               <h2 id="reveal-modal-title" className="text-lg font-bold text-slate-900">שגיאה</h2>
-              <p className="text-sm text-slate-600 mt-1 leading-relaxed">{block.message}</p>
+              <p id="reveal-modal-desc" className="text-sm text-slate-600 mt-1 leading-relaxed">{block.message}</p>
             </div>
             <button
               type="button"

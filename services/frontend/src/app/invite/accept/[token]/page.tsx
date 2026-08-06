@@ -229,7 +229,9 @@ export default function InviteAcceptPage() {
                 {/* VERIFY: just OTP. Name + phone are already locked in. */}
                 {phase === 'verify' && (
                   <form onSubmit={handleAccept} className="flex flex-col gap-4" noValidate>
-                    <p className="text-sm text-slate-600 text-center">
+                    {/* verify(O3) — role=status aria-live so SR users
+                        hear the 'code sent' transition. */}
+                    <p role="status" aria-live="polite" className="text-sm text-slate-600 text-center">
                       קוד אימות נשלח אל <span className="font-medium" dir="ltr">{normPhone}</span>
                     </p>
                     {needsLegacyName && (

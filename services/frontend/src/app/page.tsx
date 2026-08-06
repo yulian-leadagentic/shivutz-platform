@@ -19,8 +19,9 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Loader2, Search as SearchIcon, Mail, Phone, Building2, Sparkles,
-  Users, Home as HomeIcon, Globe2, Boxes, Zap, ArrowLeft,
+  Users, Home as HomeIcon, Globe2, Boxes, ArrowLeft,
 } from 'lucide-react';
+import { PromotedBadge } from '@/components/ads/PromotedBadge';
 import LandingNav from '@/components/landing/LandingNav';
 import LandingFooter from '@/components/landing/LandingFooter';
 import LeadCaptureModal from '@/components/landing/LeadCaptureModal';
@@ -108,8 +109,36 @@ export default function LandingPage() {
     enumApi.origins().then(setOrigins).catch(() => setOrigins([]));
   }, []);
 
+  // verify(L2) — URL persistence for filter chips. A shared URL with
+  // ?prof=&region=&origin= must arrive with the same filter state so
+  // the results are reproducible + back/forward remembers the pick.
+  // Runs once against the current searchParams; runSearch and
+  // clearFilters write the reverse direction on user action.
+  useEffect(() => {
+    const p = params?.get('prof');
+    const r = params?.get('region');
+    const o = params?.get('origin');
+    if (p) setFProf(p);
+    if (r) setFRegion(r);
+    if (o) setFOrigin(o);
+    // Intentional single-shot read: don't want a subsequent
+    // router.replace to loop this back into state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   function labelFor<T extends { code: string; name_he: string }>(list: T[], code: string): string {
     return list.find((r) => r.code === code)?.name_he ?? code;
+  }
+
+  // verify(L2) — mirror current filter chips into the URL. Kept as a
+  // helper so runSearch + clearFilters both write via the same path.
+  function syncFiltersToUrl(prof: string, region: string, origin: string) {
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    prof   ? url.searchParams.set('prof',   prof)   : url.searchParams.delete('prof');
+    region ? url.searchParams.set('region', region) : url.searchParams.delete('region');
+    origin ? url.searchParams.set('origin', origin) : url.searchParams.delete('origin');
+    router.replace(url.pathname + url.search + url.hash);
   }
 
   async function runSearch(rawQ?: string) {
@@ -125,6 +154,7 @@ export default function LandingPage() {
     }
     if (query.length < 2) return;
     setQ(query);
+    syncFiltersToUrl(fProf, fRegion, fOrigin);
     setLoading(true);
     setError('');
     try { setResp(await searchApi.query(query)); }
@@ -134,6 +164,7 @@ export default function LandingPage() {
 
   function clearFilters() {
     setFProf(''); setFRegion(''); setFOrigin('');
+    syncFiltersToUrl('', '', '');
   }
   const anyFilter = !!(fProf || fRegion || fOrigin);
 
@@ -208,10 +239,10 @@ export default function LandingPage() {
             <div className="max-w-5xl mx-auto px-4 space-y-6">
               <div className="text-center space-y-2">
                 <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900">
-                  שוק העובדים והדיור לענף הבנייה
+                  לעובדים זרים בענף הבנייה
                 </h1>
                 <p className="text-base sm:text-lg font-semibold text-slate-700">
-                  תאגידים וקבלנים מתחברים אצלינו
+                  פלטפורמת השיבוץ הראשונה בישראל
                 </p>
               </div>
 
@@ -350,6 +381,21 @@ export default function LandingPage() {
           <section className="px-4 pb-6">
             <AdCarousel />
           </section>
+
+          {/* verify(L2) — screen-reader status region. Always in the DOM so
+              aria-live triggers when text changes. Announces search
+              lifecycle: loading → result count / no-match / error. */}
+          <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+            {loading
+              ? 'מחפש מודעות…'
+              : error
+                ? `שגיאה בחיפוש: ${error}`
+                : resp
+                  ? (resp.total === 0
+                      ? 'לא נמצאו מודעות התואמות לחיפוש'
+                      : `נמצאו ${resp.total} תוצאות`)
+                  : ''}
+          </div>
 
           {/* Search results (when query is active) */}
           {(resp || error) && (
@@ -506,12 +552,7 @@ function AdCard({
             )}
           </p>
         </div>
-        {boosted && (
-          <span className="shrink-0 inline-flex items-center gap-1 text-xs font-semibold text-brand-700 bg-brand-100 rounded-full px-2 py-0.5">
-            <Zap className="w-3 h-3 fill-brand-500" />
-            מקודם
-          </span>
-        )}
+        {boosted && <PromotedBadge />}
       </div>
 
       {ad.ad_type === 'housing' && Array.isArray(ad.amenities) && ad.amenities.length > 0 && (

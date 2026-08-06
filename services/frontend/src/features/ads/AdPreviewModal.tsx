@@ -6,12 +6,13 @@
 // endpoint. Prevents "wait, that's not what I meant to publish" the
 // moment the ad hits the public feed.
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   X, Loader2, Send, Home, Users, Building2,
   Layers, Bolt, Wrench, PaintBucket, Hammer, Boxes,
 } from 'lucide-react';
 import type { AdCreateInput } from '@/lib/api/ads';
+import { useModalA11y } from '@/components/ui/useModalA11y';
 
 const PROFESSION_STYLE: Record<string, { grad: string; icon: typeof Hammer; label: string }> = {
   flooring:    { grad: 'from-orange-500 to-rose-600',    icon: Layers,       label: 'ריצוף' },
@@ -51,6 +52,16 @@ export function AdPreviewModal({
 }) {
   const [busy, setBusy]   = useState(false);
   const [error, setError] = useState('');
+  const dialogRef         = useRef<HTMLDivElement>(null);
+
+  // R1 shared primitive: focus-trap + Esc + return-focus + scroll lock.
+  // Guard Esc/backdrop-close against the busy-during-publish window
+  // by wrapping onCancel.
+  useModalA11y({
+    open: payload !== null,
+    onClose: () => { if (!busy) onCancel(); },
+    dialogRef,
+  });
 
   if (!payload) return null;
   const isHousing = payload.ad_type === 'housing';
@@ -71,10 +82,14 @@ export function AdPreviewModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4"
-         onClick={() => !busy && onCancel()}
-         role="dialog"
-         aria-modal="true">
-      <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl p-6 space-y-4 relative"
+         onClick={() => !busy && onCancel()}>
+      <div ref={dialogRef}
+           role="dialog"
+           aria-modal="true"
+           aria-labelledby="ad-preview-title"
+           aria-describedby="ad-preview-desc"
+           tabIndex={-1}
+           className="w-full max-w-lg rounded-2xl bg-white shadow-xl p-6 space-y-4 relative outline-none"
            onClick={(e) => e.stopPropagation()}>
         <button
           type="button"
@@ -86,8 +101,8 @@ export function AdPreviewModal({
         </button>
 
         <div>
-          <h3 className="text-lg font-bold text-slate-900">תצוגה מקדימה</h3>
-          <p className="text-sm text-slate-500 mt-1">כך המודעה תיראה לקבלנים המחפשים. בדוק ואשר לפרסום.</p>
+          <h3 id="ad-preview-title" className="text-lg font-bold text-slate-900">תצוגה מקדימה</h3>
+          <p id="ad-preview-desc" className="text-sm text-slate-500 mt-1">כך המודעה תיראה לקבלנים המחפשים. בדוק ואשר לפרסום.</p>
         </div>
 
         {/* Preview card — mirrors the FeaturedAdsCarousel card style */}

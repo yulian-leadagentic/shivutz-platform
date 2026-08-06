@@ -500,7 +500,11 @@ function RegisterContractorInner() {
             {step === 1 && step1.otpPhase === 'verify' && (
               <form onSubmit={handleVerifyOtp} className="flex flex-col gap-4" noValidate>
                 <h3 className="font-semibold text-slate-800">אימות מספר טלפון</h3>
-                <p className="text-sm text-slate-600">
+                {/* verify(O3) — screen-reader announcement that the code
+                    was sent. Wrapper takes role=status + aria-live=polite
+                    so SR users hear the transition from 'enter phone'
+                    to 'enter code' instead of it being invisible. */}
+                <p role="status" aria-live="polite" className="text-sm text-slate-600">
                   קוד אימות נשלח אל <span className="font-medium" dir="ltr">{step1.normPhone}</span>
                 </p>
                 <Input
@@ -808,7 +812,9 @@ function RegisterContractorInner() {
 
                 {verify.sent && verify.picked?.type === 'sms' && (
                   <form onSubmit={handleConfirmSms} className="flex flex-col gap-3">
-                    <p className="text-sm text-slate-600">
+                    {/* verify(O3) — same SR-announcement pattern as
+                        Step 1's OTP-verify sub-step. */}
+                    <p role="status" aria-live="polite" className="text-sm text-slate-600">
                       קוד נשלח ל-<span dir="ltr">{verify.picked.target}</span>
                     </p>
                     <Input

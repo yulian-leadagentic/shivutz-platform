@@ -6,9 +6,10 @@
 // /admin/support alongside customer-service tickets. Admin can then
 // call the lead back or reply from there.
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { X, Loader2, CheckCircle2, Send } from 'lucide-react';
 import { apiFetch } from '@/lib/api/client';
+import { useModalA11y } from '@/components/ui/useModalA11y';
 
 export function AdInquiryModal({
   open,
@@ -29,6 +30,17 @@ export function AdInquiryModal({
   const [busy, setBusy]       = useState(false);
   const [error, setError]     = useState('');
   const [sent, setSent]       = useState(false);
+  const dialogRef             = useRef<HTMLDivElement>(null);
+
+  function close() {
+    if (busy) return;
+    setName(''); setPhone(''); setMessage('');
+    setSent(false); setError('');
+    onClose();
+  }
+
+  // R1 shared primitive: focus-trap + Esc + return-focus + scroll lock.
+  useModalA11y({ open, onClose: close, dialogRef });
 
   if (!open) return null;
 
@@ -55,22 +67,19 @@ export function AdInquiryModal({
     } finally { setBusy(false); }
   }
 
-  function close() {
-    if (busy) return;
-    setName(''); setPhone(''); setMessage('');
-    setSent(false); setError('');
-    onClose();
-  }
-
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4"
       onClick={close}
-      role="dialog"
-      aria-modal="true"
     >
       <div
-        className="w-full max-w-md rounded-2xl bg-white shadow-xl p-6 space-y-4 relative"
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="ad-inquiry-title"
+        aria-describedby="ad-inquiry-desc"
+        tabIndex={-1}
+        className="w-full max-w-md rounded-2xl bg-white shadow-xl p-6 space-y-4 relative outline-none"
         onClick={(e) => e.stopPropagation()}
       >
         <button
@@ -85,8 +94,8 @@ export function AdInquiryModal({
         {sent ? (
           <div className="text-center py-6 space-y-3">
             <CheckCircle2 className="w-12 h-12 text-emerald-500 mx-auto" />
-            <h3 className="text-lg font-bold text-slate-900">תודה, קיבלנו!</h3>
-            <p className="text-sm text-slate-600">נחזור אליך בהקדם עם הצעת מחיר.</p>
+            <h3 id="ad-inquiry-title" className="text-lg font-bold text-slate-900">תודה, קיבלנו!</h3>
+            <p id="ad-inquiry-desc" className="text-sm text-slate-600">נחזור אליך בהקדם עם הצעת מחיר.</p>
             <button
               type="button"
               onClick={close}
@@ -98,8 +107,8 @@ export function AdInquiryModal({
         ) : (
           <>
             <div>
-              <h3 className="text-lg font-bold text-slate-900">{heading}</h3>
-              <p className="text-sm text-slate-500 mt-1">{tagline}</p>
+              <h3 id="ad-inquiry-title" className="text-lg font-bold text-slate-900">{heading}</h3>
+              <p id="ad-inquiry-desc" className="text-sm text-slate-500 mt-1">{tagline}</p>
             </div>
 
             <form onSubmit={submit} className="space-y-3">
