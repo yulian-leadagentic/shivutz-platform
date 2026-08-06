@@ -48,6 +48,7 @@ export interface AdCreateInput {
   ad_type: AdType;
   title_he: string;
   body_he?: string;
+  // Worker-ad fields (ad_type='worker')
   profession_code?: string;
   origin_country?: string;
   region?: string;
@@ -55,6 +56,17 @@ export interface AdCreateInput {
   experience_min_months?: number;
   visa_valid_until?: string;
   languages?: string[];
+  // Housing-ad fields (ad_type='housing'). Backend accepts these
+  // on the same POST /ads endpoint; the frontend forms already send
+  // them via a Partial<AdCreateInput> cast — declare them here so
+  // AdPreviewModal and the edit page type-check cleanly.
+  city?: string;
+  address_he?: string;
+  total_beds?: number;
+  available_beds?: number;
+  price_per_bed_nis?: number;
+  amenities?: string[];
+  photos?: string[];
   expires_at?: string;
 }
 

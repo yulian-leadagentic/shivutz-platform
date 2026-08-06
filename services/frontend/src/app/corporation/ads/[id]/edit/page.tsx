@@ -63,7 +63,11 @@ export default function EditAdPage() {
             available_beds:    ad.available_beds ?? 4,
             price_per_bed_nis: ad.price_per_bed_nis ?? 0,
             amenities:         ad.amenities ?? [],
-            photos:            (ad.photos ?? []).join(', '),
+            // photos is an array on both AdRow and HousingAdFormValues —
+            // the prior `.join(', ')` collapsed it into a string, which
+            // (a) tripped TS and (b) would have broken the URL-list
+            // control at runtime by rendering one CSV item instead of N.
+            photos:            ad.photos ?? [],
           }}
           onSubmit={async (payload) => {
             await adApi.update(id, payload);
