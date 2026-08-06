@@ -372,7 +372,10 @@ function RegisterCorporationInner() {
             {step === 1 && step1.otpPhase === 'verify' && (
               <form onSubmit={handleVerifyOtp} className="flex flex-col gap-4" noValidate>
                 <h3 className="font-semibold text-slate-800">אימות מספר טלפון</h3>
-                <p className="text-sm text-slate-600">
+                {/* verify(O3) — role=status aria-live so SR users hear
+                    the 'code sent' transition, not just the visual
+                    step change. */}
+                <p role="status" aria-live="polite" className="text-sm text-slate-600">
                   קוד אימות נשלח אל <span className="font-medium" dir="ltr">{step1.normPhone}</span>
                 </p>
                 <Input

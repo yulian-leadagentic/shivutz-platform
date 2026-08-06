@@ -362,7 +362,9 @@ function LoginPageInner() {
                 className="flex flex-col gap-4"
                 noValidate
               >
-                <p className="text-sm text-slate-600 text-center">
+                {/* verify(O3) — role=status aria-live so SR users hear
+                    the 'code sent' transition. */}
+                <p role="status" aria-live="polite" className="text-sm text-slate-600 text-center">
                   קוד אימות נשלח אל <span className="font-medium" dir="ltr">{normPhone}</span>
                 </p>
                 <Input
