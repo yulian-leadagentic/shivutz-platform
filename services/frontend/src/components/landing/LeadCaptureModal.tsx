@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useRef } from 'react';
 import { X, Phone, User, CheckCircle2, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { useModalA11y } from '@/components/ui/useModalA11y';
 import { leadsApi } from '@/lib/api';
 import type { LeadFormData } from '@/types';
 
@@ -24,26 +25,17 @@ export default function LeadCaptureModal({ open, onClose }: LeadCaptureModalProp
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState('');
   const overlayRef = useRef<HTMLDivElement>(null);
-
-  // Prevent body scroll when open
-  useEffect(() => {
-    if (open) document.body.style.overflow = 'hidden';
-    else document.body.style.overflow = '';
-    return () => { document.body.style.overflow = ''; };
-  }, [open]);
-
-  // Close on Escape
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') handleClose(); };
-    if (open) window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [open]);
+  const dialogRef  = useRef<HTMLDivElement>(null);
 
   function handleClose() {
     if (submitting) return;
     onClose();
     setTimeout(() => { setSubmitted(false); setError(''); setForm({ full_name: '', phone: '', org_type: 'contractor', notes: '' }); }, 300);
   }
+
+  // R1 shared primitive: focus-trap + Esc + return-focus + body scroll
+  // lock. Replaced the two local useEffects that only did Esc + scroll.
+  useModalA11y({ open, onClose: handleClose, dialogRef });
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -75,7 +67,15 @@ export default function LeadCaptureModal({ open, onClose }: LeadCaptureModalProp
       <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm" />
 
       {/* Modal */}
-      <div className="relative bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden animate-slide-up">
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="lead-capture-title"
+        aria-describedby="lead-capture-desc"
+        tabIndex={-1}
+        className="relative bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden animate-slide-up outline-none"
+      >
         {/* Header gradient */}
         <div className="bg-gradient-to-br from-brand-600 to-brand-700 px-7 pt-7 pb-8">
           <button
@@ -85,8 +85,8 @@ export default function LeadCaptureModal({ open, onClose }: LeadCaptureModalProp
           >
             <X className="h-5 w-5" />
           </button>
-          <h2 className="text-xl font-bold text-white mb-1">השאר פרטים — נחזור אליך</h2>
-          <p className="text-brand-200 text-sm">
+          <h2 id="lead-capture-title" className="text-xl font-bold text-white mb-1">השאר פרטים — נחזור אליך</h2>
+          <p id="lead-capture-desc" className="text-brand-200 text-sm">
             נציג שלנו יצור איתך קשר לסיוע ברישום ובהתחלה
           </p>
         </div>
