@@ -74,7 +74,6 @@ docker compose up -d
 | auth | 3001 |
 | user-org | 3002 |
 | worker | 3003 |
-| job-match | 3004 |
 | deal | 3005 |
 | notification | 3006 |
 | admin | 3007 |

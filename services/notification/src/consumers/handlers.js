@@ -1,5 +1,4 @@
 const USER_ORG_URL   = process.env.USER_ORG_SERVICE_URL || 'http://user-org:3002';
-const JOB_MATCH_URL  = process.env.JOB_MATCH_SERVICE_URL || 'http://job-match:3004';
 const DEAL_URL       = process.env.DEAL_SERVICE_URL     || 'http://deal:3005';
 const ADMIN_EMAIL    = process.env.ADMIN_EMAIL || 'admin@shivutz-platform.co.il';
 const NOTIF_URL      = `http://localhost:${process.env.PORT || 3006}`;
@@ -119,189 +118,6 @@ async function sendSmsInternal(phone, message) {
     if (!resp.ok) console.error('[handlers] SMS failed:', await resp.text());
   } catch (err) {
     console.error('[handlers] SMS unreachable:', err.message);
-  }
-}
-
-// ── Match-found helpers ─────────────────────────────────────────────────
-//
-// matchInternalResult shape (from job-match's /internal endpoints):
-//   {
-//     search_id, should_notify, skipped,
-//     contractor_id, contact_name, contact_phone, contact_email,
-//     profession, region, worker_count, best_fill_pct
-//   }
-//
-// We send SMS + email for every entry where should_notify=true. Skipped
-// entries (debounced) are silently ignored.
-
-async function notifyMatchFound(result, sendEmail) {
-  if (!result || !result.should_notify) return;
-
-  const matchUrl   = `${FRONTEND_URL}/contractor/searches/${result.search_id}`;
-  // The match-found event from the job-match service carries the
-  // profession TYPE (e.g. 'skeleton', 'plasterer') instead of the
-  // Hebrew label. Translate via the worker-service enum so the SMS
-  // reads as "...לחיפוש 'תפסנים' (1 עובדים)" instead of the raw code.
-  const profession = await translateProfession(result.profession);
-  const workerCt   = result.worker_count || 0;
-  const smsBody    = `TagidAI — נמצאה התאמה מלאה לחיפוש "${profession}" (${workerCt} עובדים). לצפייה: ${matchUrl}`;
-
-  // Fan-out across the contractor's notification recipients (Phase 1).
-  // Falls back to the single contact_phone / contact_email pair when
-  // the contractor hasn't configured a recipient list yet.
-  await notifyEntity({
-    entityType: 'contractor',
-    entityId:   result.contractor_id,
-    eventKey:   'match.found',
-    emailVars: {
-      contact_name: result.contact_name || '',
-      profession,
-      worker_count: workerCt,
-      region:       result.region || '',
-      match_url:    matchUrl,
-    },
-    smsText: smsBody,
-    sendEmail, sendSms: sendSmsInternal,
-    fallback: { email: result.contact_email, phone: result.contact_phone },
-  });
-}
-
-async function rematchForCorp(corporationId, professionType) {
-  if (!professionType) return [];
-  try {
-    const resp = await fetch(`${JOB_MATCH_URL}/internal/rematch-for-corp`, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ corporation_id: corporationId, profession_type: professionType }),
-    });
-    if (!resp.ok) {
-      console.error('[rematch-corp] non-2xx:', resp.status, await resp.text());
-      return [];
-    }
-    const json = await resp.json();
-    return json.results || [];
-  } catch (err) {
-    console.error('[rematch-corp] unreachable:', err.message);
-    return [];
-  }
-}
-
-// Materialise new `deals` rows for any corp the rematch surfaced that
-// doesn't already have one against this search, and SMS both sides.
-//
-// Called off `worker.changed`: when a corp uploads/edits workers, the
-// matcher may now reach a contractor's existing open search via a corp
-// that wasn't present at search-creation time. The initial-match flow
-// creates deals client-side (frontend per matched corp); the rematch
-// flow has to create them here, otherwise neither side sees the new
-// match in /contractor/deals or /corporation/deals.
-async function materialiseNewDeals(result, sendEmail) {
-  if (!result || !Array.isArray(result.matched_corps) || result.matched_corps.length === 0) return;
-  if (!result.contractor_id || !result.search_id) return;
-
-  // Existing (corp,deal) pairs for this search — skip corps already
-  // covered, regardless of deal status (proposed/committed/cancelled/...).
-  let existingCorps = new Set();
-  try {
-    const resp = await fetch(`${DEAL_URL}/deals/internal/by-search/${result.search_id}`);
-    if (resp.ok) {
-      const rows = await resp.json();
-      for (const r of (rows || [])) existingCorps.add(r.corporation_id);
-    } else {
-      console.error('[rematch-deals] by-search non-2xx:', resp.status, await resp.text());
-      return;
-    }
-  } catch (err) {
-    console.error('[rematch-deals] by-search unreachable:', err.message);
-    return;
-  }
-
-  const newCorps = result.matched_corps.filter((cid) => cid && !existingCorps.has(cid));
-  if (newCorps.length === 0) return;
-
-  // Translate profession code → Hebrew label for the corp-side SMS.
-  const profHe = await translateProfession(result.profession);
-
-  let createdAny = false;
-  for (const corpId of newCorps) {
-    let dealId = null;
-    try {
-      const resp = await fetch(`${DEAL_URL}/deals`, {
-        method:  'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          // System-initiated: don't trip the "contractor must be tier_2"
-          // gate inside create_deal. Any non-"contractor" role works.
-          'x-user-role': 'system',
-          'x-user-id':   'system-rematch',
-        },
-        body: JSON.stringify({
-          search_id:      result.search_id,
-          contractor_id:  result.contractor_id,
-          corporation_id: corpId,
-          proposed_by:    'system-rematch',
-        }),
-      });
-      if (!resp.ok) {
-        console.error('[rematch-deals] create non-2xx:', resp.status, await resp.text());
-        continue;
-      }
-      const body = await resp.json();
-      dealId = body?.id || null;
-      createdAny = true;
-    } catch (err) {
-      console.error('[rematch-deals] create unreachable:', err.message);
-      continue;
-    }
-
-    // SMS the corp that they now have a request waiting for them.
-    let corpPhone = null;
-    try {
-      const r = await fetch(`${USER_ORG_URL}/organizations/corporations/${corpId}`);
-      if (r.ok) {
-        const data = await r.json();
-        corpPhone = data?.contact_phone || null;
-      }
-    } catch (err) {
-      console.error('[rematch-deals] corp lookup unreachable:', err.message);
-    }
-    if (corpPhone) {
-      const corpLink = `${FRONTEND_URL}/corporation/deals`;
-      const profPlural = professionPlural(result.profession, profHe);
-      await sendSmsInternal(
-        corpPhone,
-        `TagidAI — יש דרישה חדשה ל${profPlural}. אנא פתח את לוח העסקאות: ${corpLink}`
-      );
-    }
-  }
-
-  // SMS the contractor ONCE that an additional corp is now available.
-  if (createdAny && result.contact_phone) {
-    const dealsLink = `${FRONTEND_URL}/contractor/deals`;
-    const firstName = (result.contact_name || '').split(' ')[0] || 'שלום';
-    const profPlural = professionPlural(result.profession, profHe);
-    await sendSmsInternal(
-      result.contact_phone,
-      `TagidAI — ${firstName}, תאגיד נוסף יכול לתת מענה לדרישה שלך ל${profPlural}. היכנס לבדוק: ${dealsLink}`
-    );
-  }
-}
-
-async function rematchForSearch(searchId, force) {
-  try {
-    const resp = await fetch(`${JOB_MATCH_URL}/internal/rematch-for-search`, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ search_id: searchId, force: !!force }),
-    });
-    if (!resp.ok) {
-      console.error('[rematch-search] non-2xx:', resp.status, await resp.text());
-      return null;
-    }
-    return await resp.json();
-  } catch (err) {
-    console.error('[rematch-search] unreachable:', err.message);
-    return null;
   }
 }
 
@@ -659,36 +475,11 @@ async function handle(routingKey, payload, sendEmail) {
     // in consumers/index.js never bound their routing keys either.
     // See git log and migration 068 for the exact event names.
 
-    // ── Match-found notification flow ───────────────────────────────────
-
-    case 'worker.changed': {
-      // Corp added/edited/deactivated a worker. Re-match every open
-      // request whose line items include that profession. job-match
-      // applies the 5-min per-request debounce internally.
-      //
-      // Two downstream effects per rematch result:
-      //   1. notifyMatchFound — fires only on the "first time we hit
-      //      complete" edge, sends the legacy "match found!" SMS/email.
-      //   2. materialiseNewDeals — creates `deals` rows for any newly
-      //      matching corp and SMSes both sides, every rematch where
-      //      a new corp appears (independent of the complete edge).
-      const results = await rematchForCorp(payload.corporation_id, payload.profession_type);
-      for (const r of results) {
-        await notifyMatchFound(r, sendEmail);
-        await materialiseNewDeals(r, sendEmail);
-      }
-      break;
-    }
-
-    case 'worker_search.changed': {
-      // Contractor created/edited their own search. Re-match just this
-      // one, force=true to bypass the debounce (the contractor's edit
-      // should be reflected immediately).
-      const result = await rematchForSearch(payload.search_id, true);
-      await notifyMatchFound(result, sendEmail);
-      await materialiseNewDeals(result, sendEmail);
-      break;
-    }
+    // Post-sunset: worker.changed / worker_search.changed no longer
+    // fan out to a matcher — the pivot removed job-match, so there's
+    // nowhere for those events to route. Their queue bindings were
+    // dropped in consumers/index.js. Publishers on the deal side are
+    // also gone (see git log for the D4 sunset).
 
     case 'search.no_match':
       // Contractor's search returned 0 results. Fan out to every approved

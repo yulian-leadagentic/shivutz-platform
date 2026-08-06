@@ -32,11 +32,9 @@ async function startConsumer() {
     // D3: commission.invoiced handler removed with the commission sweep.
     'worker.visa.expiring_30d', 'worker.visa.expiring_7d', 'worker.visa.expired',
     'team.invited',   // Phase 4: SMS invitation
-    // Match-found notification flow — these drive the background re-match
-    // path. The handler calls the job-match service's /internal endpoints
-    // and sends SMS+email only when fill_state transitions to 'complete'.
-    'worker.changed',
-    'worker_search.changed',
+    // worker.changed / worker_search.changed bindings dropped with
+    // job-match sunset — there's no matcher to route them to. Handler
+    // cases were removed too; see git log.
     // Wave 5: contractor's search returned 0 corps with workers in the
     // requested profession. We SMS every approved corp telling them
     // there's a contractor actively looking — turns dead-ends into

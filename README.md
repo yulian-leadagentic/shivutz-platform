@@ -7,17 +7,16 @@ End-to-end flow: contractor publishes a job → AI-assisted matching against cor
 ## Repository layout
 
 ```
-services/                — 9 backends + the Next.js frontend, each independently deployable
+services/                — 8 backends + the Next.js frontend, each independently deployable
   frontend/              — Next.js 16 (App Router), Tailwind, shadcn/ui-derived components
   gateway/               — public API surface; routes to internal services
   auth/                  — phone + email OTP, JWT issue/refresh
-  user-org/              — users, organizations (contractor, corporation), memberships
+  user-org/              — users, organizations (contractor, corporation), memberships, ads, subscriptions
   worker/                — corporation worker rosters, professions, regions, origins
-  job-match/             — contractor job-requests + matching engine
-  deal/                  — proposed/active/completed deals between contractors and corporations
+  deal/                  — foreign-worker import tenders (contractor request → corp bid → admin-gated reveal)
   notification/          — SMS (Vonage), email (SendGrid placeholder), webhooks
-  admin/                 — admin-only views over user-org, job-match, deal
-  payment/               — Cardcom J5 holds, billing, marketplace subscriptions
+  admin/                 — admin-only views over user-org, deal
+  payment/               — Cardcom subscriptions + boost billing (post-pivot)
 db/migrations/           — versioned SQL applied across all services' DBs
 docs/                    — operational and engineering reference (read these first)
 scripts/                 — Python utilities for seeding, smoke-tests, registry probes

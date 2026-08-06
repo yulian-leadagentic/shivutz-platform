@@ -39,7 +39,6 @@ App services to touch (in `pivot-staging`):
 - `user-org`
 - `worker`
 - `deal`
-- `job-match`
 - `notification`
 - `payment`
 - `admin`

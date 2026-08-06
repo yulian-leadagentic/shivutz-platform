@@ -52,7 +52,6 @@ both envs because the migration files reference them by name.
 | `AUTH_DB_NAME`     | `auth_db`     | auth |
 | `ORG_DB_NAME`      | `org_db`      | user-org, admin |
 | `WORKER_DB_NAME`   | `worker_db`   | worker, admin |
-| `JOB_DB_NAME`      | `job_db`      | job-match, admin |
 | `DEAL_DB_NAME`     | `deal_db`     | deal, admin |
 | `NOTIF_DB_NAME`    | `notif_db`    | notification, admin |
 | `PAYMENT_DB_NAME`  | `payment_db`  | payment, admin |
@@ -89,7 +88,6 @@ low-latency, never leaves Railway's network.
 | `AUTH_SERVICE_URL`         | gateway, user-org, admin | `http://${{auth.RAILWAY_PRIVATE_DOMAIN}}:3001` |
 | `USER_ORG_SERVICE_URL`     | gateway, admin, notification | `http://${{user-org.RAILWAY_PRIVATE_DOMAIN}}:3002` |
 | `WORKER_SERVICE_URL`       | gateway, deal, notification | `http://${{worker.RAILWAY_PRIVATE_DOMAIN}}:3003` |
-| `JOB_MATCH_SERVICE_URL`    | gateway, deal | `http://${{job-match.RAILWAY_PRIVATE_DOMAIN}}:3004` |
 | `DEAL_SERVICE_URL`         | gateway, notification | `http://${{deal.RAILWAY_PRIVATE_DOMAIN}}:3005` |
 | `NOTIFICATION_SERVICE_URL` | gateway, user-org, admin | `http://${{notification.RAILWAY_PRIVATE_DOMAIN}}:3006` |
 | `ADMIN_SERVICE_URL`        | gateway | `http://${{admin.RAILWAY_PRIVATE_DOMAIN}}:3007` |
@@ -150,9 +148,8 @@ Use Cardcom's TEST terminal in staging, real terminal in production.
 
 ## Match cache
 
-| Variable | Set on | Value |
-|---|---|---|
-| `MATCH_CACHE_TTL_SECONDS` | job-match | `300` (same in both envs) |
+*(No per-service tunables at the moment — the matcher service was
+sunset with the pivot. Anything added here belongs in this section.)*
 
 ---
 
@@ -214,7 +211,6 @@ this checklist updates accordingly.
 | auth | ❌ private only | — |
 | user-org | ❌ private only | ✅ `/app/uploads` |
 | worker | ❌ private only | — |
-| job-match | ❌ private only | — |
 | deal | ❌ private only | — |
 | notification | ❌ private only | — |
 | admin | ❌ private only | — |

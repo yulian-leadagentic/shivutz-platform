@@ -1,11 +1,10 @@
 'use client';
 
-// Matcher waiting-state animation.
+// Long-running wait-state animation.
 //
 // Brand-led loader: the TagidAI mark spins (progress_bar2.mp4) while
-// the job-match service scores every corp's roster against the
-// contractor's search. Used during a 5–30s wait; for sub-second
-// loads use a normal spinner instead.
+// a slow backend task completes. Used during a 5–30s wait; for
+// sub-second loads use a normal spinner instead.
 //
 // Container is intentionally a 192px CIRCLE with object-cover — same
 // shape, size, and fit as the post-match success card. That way the

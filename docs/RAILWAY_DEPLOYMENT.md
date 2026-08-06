@@ -12,7 +12,6 @@ Railway project: Shivutz
 │   ├── auth           (Node, private)
 │   ├── user-org       (Python, private, persistent volume for uploads)
 │   ├── worker         (Python, private)
-│   ├── job-match      (Go, private)
 │   ├── deal           (Python, private)
 │   ├── notification   (Node + cron, private)
 │   ├── admin          (Python, private)
@@ -21,7 +20,7 @@ Railway project: Shivutz
 │   ├── Redis          (Railway plugin)
 │   └── RabbitMQ       (own container)
 └── Environment: staging                 ← deploys from staging
-    ├── (same 10 services + 3 plugins, independent data, weaker secrets)
+    ├── (same 9 services + 3 plugins, independent data, weaker secrets)
 ```
 
 Why this layout:
@@ -74,7 +73,6 @@ Browser ─▶ https://frontend-prod.up.railway.app   (frontend, Next.js)
                   ├─▶ http://auth.railway.internal:3001
                   ├─▶ http://user-org.railway.internal:3002
                   ├─▶ http://worker.railway.internal:3003
-                  ├─▶ http://job-match.railway.internal:3004
                   ├─▶ http://deal.railway.internal:3005
                   ├─▶ http://notification.railway.internal:3006
                   ├─▶ http://admin.railway.internal:3007
@@ -132,7 +130,6 @@ For each of the 8 backend services + frontend, do:
 | auth | `services/auth/Dockerfile` | 3001 | ❌ private | `services/auth/**` |
 | user-org | `services/user-org/Dockerfile` | 3002 | ❌ private | `services/user-org/**`, `db/migrations/**`, `scripts/**` |
 | worker | `services/worker/Dockerfile` | 3003 | ❌ private | `services/worker/**` |
-| job-match | `services/job-match/Dockerfile` | 3004 | ❌ private | `services/job-match/**` |
 | deal | `services/deal/Dockerfile` | 3005 | ❌ private | `services/deal/**` |
 | notification | `services/notification/Dockerfile` | 3006 | ❌ private | `services/notification/**` |
 | admin | `services/admin/Dockerfile` | 3007 | ❌ private | `services/admin/**` |

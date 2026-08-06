@@ -106,46 +106,6 @@ export interface WorkerSearchUpdate {
   status?: string;
 }
 
-// ─── Match types (Go job-match service response) ──────────────────────────────
-
-export interface MatchedWorkerDetail {
-  id: string;
-  corporation_id: string;
-  profession_type: string;
-  experience_years: number;
-  origin_country: string;
-  languages: string[];
-  visa_valid_until?: string;
-  status: string;
-  available_region?: string;
-}
-
-export interface WorkerMatchResult {
-  worker: MatchedWorkerDetail;
-  score: number;           // raw 0-110
-  search_id: string;
-  match_tier: string;      // "perfect" | "good" | "partial"
-  matched_criteria: string[];
-  missing_criteria: string[];
-}
-
-// CorpMatch — for a single search, a single corporation's offer of
-// up to N workers. The matcher returns a sorted list of these per
-// search (one entry per corp that has any matching worker).
-export interface CorpMatch {
-  search_id: string;
-  corporation_id: string;
-  corporation_name?: string;   // resolved client-side after fetch
-  threshold_requirements?: Record<string, unknown> | null;
-  profession: string;
-  needed: number;
-  workers: WorkerMatchResult[];
-  filled_workers: number;
-  is_complete: boolean;
-  fill_percentage: number;     // 0-100
-  total_score: number;
-}
-
 export interface Deal {
   id: string;
   search_id: string;

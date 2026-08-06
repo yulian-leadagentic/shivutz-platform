@@ -156,10 +156,10 @@ for (const [prefix, target] of Object.entries(services)) {
       // present, project entity_id into x-org-id; only fall back
       // to the legacy org_id when there's no entity context (admins
       // with no org, old single-entity users).
-      // Audit 2026-05-17: every x-org-id reader (deals, job-match,
-      // payment, user-org/marketplace*, worker) treats this as
-      // "current acting entity" already, so the projection is
-      // semantically lossless.
+      // Audit 2026-05-17: every x-org-id reader (deals, payment,
+      // user-org/marketplace*, worker) treats this as "current
+      // acting entity" already, so the projection is semantically
+      // lossless.
       const effectiveOrgId = user.entity_id || user.org_id;
       if (effectiveOrgId)       req.headers['x-org-id']          = effectiveOrgId;
       else                      delete req.headers['x-org-id'];
