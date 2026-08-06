@@ -31,7 +31,21 @@ PAYMENT_SVC = os.getenv("PAYMENT_SERVICE_URL", "http://payment:3009")
 
 AD_DEFAULT_DAYS = 30
 BOOST_DAYS         = 7
-BOOST_PER_DAY_NIS  = 5   # D1 anchor — mirrors the frontend CP3 CTA
+# verify(CP3) — boost pricing is intentionally FREE during launch.
+# The ₪5/day × 7d = ₪35 total is shown on the CTA and stamped into
+# the promotions row for eventual ROI attribution, but no charge is
+# taken (the boost endpoint below does not call the payment service).
+# When paid boost turns on post-launch:
+#   1. Move BOOST_PER_DAY_NIS to payment_db.system_settings (same
+#      pattern subscription pricing already follows) and read at
+#      boost-time so admins can retune without a redeploy.
+#   2. In boost_ad() below, call payment service /pay/boost with
+#      (corp_id, ad_id, amount_nis, duration_days) BEFORE writing
+#      featured_until — on charge failure raise 402 and skip the DB
+#      writes so the corp isn't charged for a boost that didn't land.
+# Until then these are constants; the "boost is free" state is a
+# product decision, not a schema gap.
+BOOST_PER_DAY_NIS  = 5
 BOOST_TOTAL_NIS    = BOOST_DAYS * BOOST_PER_DAY_NIS
 
 

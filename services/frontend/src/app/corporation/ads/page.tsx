@@ -12,9 +12,12 @@ import { Loader2, Plus, Pencil, Trash2, Zap, Eye, ArrowLeft, CreditCard, CheckCi
 import { adApi, type AdRow } from '@/lib/api/ads';
 import { PromotedBadge } from '@/components/ads/PromotedBadge';
 
-// CP3 — boost commercial anchors. Pivot v2 decision: per-day flat.
-// If admin edits the tier's boost pricing later, we'll pull these from
-// the subscription-plans row instead — for launch they're constants.
+// verify(CP3) — boost is FREE during launch (intentional product
+// decision). The CTA shows the eventual price so corps see the future
+// commitment; no charge is taken today. When paid boost turns on
+// post-launch, these constants move to config (see services/user-org/
+// app/routes/ads.py for the backend equivalent + the payment-service
+// wire-up plan) and the CTA switches to a real confirmation flow.
 const BOOST_DAYS   = 7;
 const BOOST_PER_DAY_NIS = 5;
 const BOOST_TOTAL_NIS   = BOOST_DAYS * BOOST_PER_DAY_NIS;
