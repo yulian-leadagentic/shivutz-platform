@@ -239,10 +239,10 @@ export default function LandingPage() {
             <div className="max-w-5xl mx-auto px-4 space-y-6">
               <div className="text-center space-y-2">
                 <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900">
-                  שוק העובדים והדיור לענף הבנייה
+                  לעובדים זרים בענף הבנייה
                 </h1>
                 <p className="text-base sm:text-lg font-semibold text-slate-700">
-                  תאגידים וקבלנים מתחברים אצלינו
+                  פלטפורמת השיבוץ הראשונה בישראל
                 </p>
               </div>
 
