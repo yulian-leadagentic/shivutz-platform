@@ -10,6 +10,15 @@ export const metadata: Metadata = {
   title: 'TagidAI — גיוס עובדים זרים לבנייה',
   description: 'TagidAI — מערכת מבוססת AI להתאמת עובדים זרים, שיבוץ וניהול תהליך הגיוס בענף הבנייה.',
   applicationName: 'TagidAI',
+  // Deployment marker — bumped whenever we need to force-verify that a
+  // new build is actually serving. Renders as <meta name="build-tag">
+  // in every page's <head>, so an outside probe can grep the HTML to
+  // confirm the deploy landed (instead of guessing from an unchanged
+  // etag). Bump this on any deploy where the etag alone won't tell us
+  // whether the rollout completed.
+  other: {
+    'build-tag': '2026-08-09-a',
+  },
   icons: {
     icon: '/brand/buildup-icon.png',
     apple: '/brand/buildup-icon.png',
