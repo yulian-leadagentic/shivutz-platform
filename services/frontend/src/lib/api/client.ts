@@ -1,6 +1,8 @@
 // `||` (not `??`) so that an empty-string build arg also falls back —
 // docker-compose used to leak NEXT_PUBLIC_API_URL='' into the bundle,
 // which produced relative `/auth/...` fetches that 404'd on port 3008.
+import { mapApiError, type ApiErrorPayload } from './errors';
+
 export const BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api';
 
 /**
@@ -157,32 +159,39 @@ function translatePydanticMessage(msg: string, loc?: unknown): string {
  *   { detail: "string" }              (old FastAPI)
  *   { detail: [{ msg, loc, ... }] }   (FastAPI validation errors)
  */
-async function extractErrorMessage(res: Response): Promise<string> {
+// Parse a non-2xx response body into a shape mapApiError understands.
+// Kept small: pass the WHOLE body through when we can, so the central
+// mapper sees `message` + `error`/`code` together and can prefer the
+// server's Hebrew string.
+async function extractErrorPayload(res: Response): Promise<ApiErrorPayload & { _raw: string }> {
   const body = await res.json().catch(() => null) as unknown;
   if (body && typeof body === 'object') {
     const b = body as Record<string, unknown>;
-    const errObj = b.error;
-    if (errObj && typeof errObj === 'object') {
-      const e = errObj as Record<string, unknown>;
-      if (typeof e.message === 'string') return e.message;
-      if (typeof e.code === 'string')    return e.code;
+
+    // P0-1 shape from Node services: { error: code, message: hebrew, ... }
+    if (typeof b.error === 'string' || typeof b.message === 'string') {
+      return { ...b as ApiErrorPayload, _raw: (b.message as string) || (b.error as string) || res.statusText };
     }
-    if (typeof errObj === 'string') return errObj;
-    if (typeof b.detail === 'string') return b.detail;
-    // FastAPI HTTPException(detail={...}) serializes as `{"detail": {code, message, ...}}`.
+    // Node legacy: { error: { message, code } }
+    if (b.error && typeof b.error === 'object') {
+      const e = b.error as Record<string, unknown>;
+      return { error: e.code as string, message: e.message as string, _raw: (e.message as string) || (e.code as string) || res.statusText };
+    }
+    // FastAPI: { detail: "..." } OR { detail: {message, code} } OR { detail: [{msg, loc, ...}] }
+    if (typeof b.detail === 'string') return { error: b.detail as string, _raw: b.detail as string };
     if (b.detail && typeof b.detail === 'object' && !Array.isArray(b.detail)) {
       const d = b.detail as Record<string, unknown>;
-      if (typeof d.message === 'string') return d.message;
-      if (typeof d.code    === 'string') return d.code;
+      return { error: d.code as string, message: d.message as string, _raw: (d.message as string) || (d.code as string) || res.statusText };
     }
     if (Array.isArray(b.detail) && b.detail.length > 0) {
       const first = b.detail[0] as Record<string, unknown>;
       if (typeof first?.msg === 'string') {
-        return translatePydanticMessage(first.msg, first.loc);
+        const translated = translatePydanticMessage(first.msg, first.loc);
+        return { message: translated, _raw: translated };
       }
     }
   }
-  return res.statusText;
+  return { _raw: res.statusText };
 }
 
 /**
@@ -234,6 +243,21 @@ function friendlyError(raw: string): string {
   return raw;
 }
 
+// Central error-to-Hebrew pipeline: parse body → try SQL/network
+// pattern matching (friendlyError catches things the backend can't
+// pre-tag, like MySQL duplicate-entry errors) → fall through to the
+// mapApiError code lookup → generic default. mapApiError itself
+// prefers a server-supplied `message` when present, so P0-1 responses
+// display verbatim without touching the frontend map.
+async function toHebrew(res: Response): Promise<string> {
+  const payload = await extractErrorPayload(res);
+  const friendly = friendlyError(payload._raw);
+  // If the SQL/network layer matched something specific (i.e. returned
+  // Hebrew, not the raw code back), prefer that — it's contextual.
+  if (friendly !== payload._raw && /[֐-׿]/.test(friendly)) return friendly;
+  return mapApiError(payload);
+}
+
 export async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = getToken();
   const headers: HeadersInit = {
@@ -252,7 +276,7 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
       };
       const retry = await fetch(`${BASE}${path}`, { ...options, headers: retryHeaders });
       if (retry.status !== 401) {
-        if (!retry.ok) throw new Error(friendlyError(await extractErrorMessage(retry)));
+        if (!retry.ok) throw new Error(await toHebrew(retry));
         if (retry.status === 204) return undefined as T;
         return retry.json() as Promise<T>;
       }
@@ -260,7 +284,7 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
     window.location.href = '/login';
     throw new Error('Unauthorized');
   }
-  if (!res.ok) throw new Error(friendlyError(await extractErrorMessage(res)));
+  if (!res.ok) throw new Error(await toHebrew(res));
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
 }

@@ -94,13 +94,9 @@ interface VerifyState {
   sent: boolean;
 }
 
-function otpErrorMsg(msg: string): string {
-  if (msg === 'rate_limited')             return 'יותר מדי ניסיונות. נסה שוב מאוחר יותר';
-  if (msg === 'wrong_code')               return 'קוד לא נכון. נסה שנית';
-  if (msg === 'max_attempts')             return 'יותר מדי ניסיונות. בקש קוד חדש';
-  if (msg === 'otp_expired_or_not_found') return 'הקוד פג תוקף. שלח קוד חדש';
-  return 'שגיאה באימות. נסה שוב';
-}
+// P0-1 — delegates to the central mapper; see lib/api/errors.ts.
+import { mapApiError } from '@/lib/api/errors';
+function otpErrorMsg(msg: string): string { return mapApiError(msg); }
 
 function RegisterContractorInner() {
   const router = useRouter();

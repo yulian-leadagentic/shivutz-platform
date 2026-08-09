@@ -128,6 +128,31 @@ async function getWhatsappOptIn(normPhone) {
   }
 }
 
+// P0-1 — Uniform error contract for the auth service.
+//
+// Every response carries THREE fields the frontend can rely on:
+//   error   : stable machine code ('internal_error', 'wrong_code', ...)
+//   message : Hebrew text safe to display verbatim to the user
+//   ...    : optional extras (retryAfter, remaining, …)
+//
+// Real exception stacks + upstream error bodies stay server-side —
+// they're logged, never mirrored into the response. The frontend's
+// central mapper (`lib/api/errors.ts`) prefers `message` when present
+// and falls back to a per-code lookup, so both new + legacy call sites
+// keep working.
+function apiError(res, status, code, message, extras) {
+  return res.status(status).json({ error: code, message, ...(extras || {}) });
+}
+const M_INTERNAL       = 'קרתה תקלה, נסה שוב עוד רגע';
+const M_RATE_LIMITED   = 'יותר מדי בקשות, נסה שוב עוד רגע';
+const M_INVALID_PHONE  = 'מספר טלפון לא תקין';
+const M_INVALID_PURPOSE= 'בקשה לא תקינה';
+const M_MISSING_FIELDS = 'חסר מידע בבקשה';
+const M_WRONG_CODE     = 'קוד לא נכון. נסה שנית';
+const M_MAX_ATTEMPTS   = 'יותר מדי ניסיונות שגויים. בקש קוד חדש';
+const M_OTP_EXPIRED    = 'הקוד פג תוקף. בקש קוד חדש';
+const M_OTP_NONE       = 'לא נמצא קוד תקף — בקש קוד חדש';
+
 /**
  * Send OTP via notification service. Channel is picked downstream from
  * the whatsapp_opt_in flag (WhatsApp first → SMS fallback for opted-in
@@ -159,9 +184,9 @@ async function sendOtp(phone, code) {
 router.post('/auth/send-otp', async (req, res) => {
   try {
     const { phone, purpose } = req.body;
-    if (!phone) return res.status(400).json({ error: 'phone required' });
+    if (!phone) return apiError(res, 400, 'phone_required', M_INVALID_PHONE);
     if (!['login', 'register', 'invite_accept'].includes(purpose)) {
-      return res.status(400).json({ error: 'invalid purpose' });
+      return apiError(res, 400, 'invalid_purpose', M_INVALID_PURPOSE);
     }
 
     const ip = req.ip || req.headers['x-forwarded-for'];
@@ -170,10 +195,10 @@ router.post('/auth/send-otp', async (req, res) => {
 
     res.json({ sent: true, phone: normPhone });
   } catch (err) {
-    if (err.status === 429) return res.status(429).json({ error: 'rate_limited', retryAfter: err.retryAfter });
-    if (err.status === 400) return res.status(400).json({ error: err.message });
+    if (err.status === 429) return apiError(res, 429, 'rate_limited', M_RATE_LIMITED, { retryAfter: err.retryAfter });
+    if (err.status === 400) return apiError(res, 400, err.code || 'bad_request', err.message || M_MISSING_FIELDS);
     console.error('[send-otp]', err);
-    res.status(500).json({ error: 'internal_error' });
+    apiError(res, 500, 'internal_error', M_INTERNAL);
   }
 });
 
@@ -186,23 +211,17 @@ router.post('/auth/verify-otp', async (req, res) => {
   try {
     const { phone, code, purpose } = req.body;
     if (!phone || !code || !purpose) {
-      return res.status(400).json({ error: 'phone, code, purpose required' });
+      return apiError(res, 400, 'missing_fields', M_MISSING_FIELDS);
     }
 
     const { normPhone } = await verifyOtp(phone, code, purpose);
     res.json({ valid: true, phone: normPhone });
   } catch (err) {
-    if (err.reason === 'wrong_code') {
-      return res.status(401).json({ error: 'wrong_code', remaining: err.remaining });
-    }
-    if (err.reason === 'max_attempts') {
-      return res.status(401).json({ error: 'max_attempts' });
-    }
-    if (err.reason === 'not_found_or_expired') {
-      return res.status(401).json({ error: 'otp_expired_or_not_found' });
-    }
+    if (err.reason === 'wrong_code') return apiError(res, 401, 'wrong_code', M_WRONG_CODE, { remaining: err.remaining });
+    if (err.reason === 'max_attempts') return apiError(res, 401, 'max_attempts', M_MAX_ATTEMPTS);
+    if (err.reason === 'not_found_or_expired') return apiError(res, 401, 'otp_expired_or_not_found', M_OTP_EXPIRED);
     console.error('[verify-otp]', err);
-    res.status(500).json({ error: 'internal_error' });
+    apiError(res, 500, 'internal_error', M_INTERNAL);
   }
 });
 
@@ -217,15 +236,15 @@ router.post('/auth/check-recent-otp', async (req, res) => {
   try {
     const { phone, purpose } = req.body;
     if (!phone || !purpose) {
-      return res.status(400).json({ error: 'phone, purpose required' });
+      return apiError(res, 400, 'missing_fields', M_MISSING_FIELDS);
     }
     const ok = await hasRecentVerifiedOtp(phone, purpose);
-    if (!ok) return res.status(401).json({ error: 'no_recent_otp' });
+    if (!ok) return apiError(res, 401, 'no_recent_otp', M_OTP_NONE);
     res.json({ verified: true });
   } catch (err) {
-    if (err.status === 400) return res.status(400).json({ error: err.message });
+    if (err.status === 400) return apiError(res, 400, err.code || 'bad_request', err.message || M_MISSING_FIELDS);
     console.error('[check-recent-otp]', err);
-    res.status(500).json({ error: 'internal_error' });
+    apiError(res, 500, 'internal_error', M_INTERNAL);
   }
 });
 
@@ -237,7 +256,7 @@ router.post('/auth/check-recent-otp', async (req, res) => {
 router.post('/auth/login/otp', async (req, res) => {
   try {
     const { phone, code } = req.body;
-    if (!phone || !code) return res.status(400).json({ error: 'phone and code required' });
+    if (!phone || !code) return apiError(res, 400, 'missing_fields', M_MISSING_FIELDS);
 
     // 1. Verify OTP
     const { normPhone } = await verifyOtp(phone, code, 'login');
@@ -279,7 +298,7 @@ router.post('/auth/login/otp', async (req, res) => {
         // If the promotion insert fails (DB hiccup), fall back to the
         // legacy 401 — better the prospect re-OTPs through /register
         // than that we silently lose the signal.
-        return res.status(401).json({ error: 'user_not_found' });
+        return apiError(res, 401, 'user_not_found', 'מספר הטלפון לא רשום במערכת');
       }
       return res.json({
         prospect: true,
@@ -329,11 +348,11 @@ router.post('/auth/login/otp', async (req, res) => {
       })) : undefined,
     });
   } catch (err) {
-    if (err.reason === 'wrong_code') return res.status(401).json({ error: 'wrong_code', remaining: err.remaining });
-    if (err.reason === 'max_attempts') return res.status(401).json({ error: 'max_attempts' });
-    if (err.reason === 'not_found_or_expired') return res.status(401).json({ error: 'otp_expired' });
+    if (err.reason === 'wrong_code') return apiError(res, 401, 'wrong_code', M_WRONG_CODE, { remaining: err.remaining });
+    if (err.reason === 'max_attempts') return apiError(res, 401, 'max_attempts', M_MAX_ATTEMPTS);
+    if (err.reason === 'not_found_or_expired') return apiError(res, 401, 'otp_expired', M_OTP_EXPIRED);
     console.error('[login/otp]', err);
-    res.status(500).json({ error: 'internal_error' });
+    apiError(res, 500, 'internal_error', M_INTERNAL);
   }
 });
 
@@ -528,11 +547,11 @@ router.post('/auth/invite/accept', async (req, res) => {
 
     res.json({ access_token: accessToken, refresh_token: refreshToken, role: user.role });
   } catch (err) {
-    if (err.reason === 'wrong_code') return res.status(401).json({ error: 'wrong_code', remaining: err.remaining });
-    if (err.reason === 'max_attempts') return res.status(401).json({ error: 'max_attempts' });
-    if (err.reason === 'not_found_or_expired') return res.status(401).json({ error: 'otp_expired' });
+    if (err.reason === 'wrong_code') return apiError(res, 401, 'wrong_code', M_WRONG_CODE, { remaining: err.remaining });
+    if (err.reason === 'max_attempts') return apiError(res, 401, 'max_attempts', M_MAX_ATTEMPTS);
+    if (err.reason === 'not_found_or_expired') return apiError(res, 401, 'otp_expired', M_OTP_EXPIRED);
     console.error('[invite/accept]', err);
-    res.status(500).json({ error: 'internal_error' });
+    apiError(res, 500, 'internal_error', M_INTERNAL);
   }
 });
 

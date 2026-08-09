@@ -19,28 +19,17 @@ type Mode = 'sms' | 'email';
 type OtpPhase = 'phone' | 'code';
 type Intent = 'contractor' | 'corporation' | null;
 
+import { mapApiError } from '@/lib/api/errors';
+
+// P0-1 — thin wrapper around the central mapper. The old per-code
+// list that lived here drifted from register/contractor's + register/
+// corporation's copies — that's exactly how new backend codes like
+// `internal_error` fell through to a generic "שגיאה בשליחת הקוד"
+// fallback. Everything now flows through mapApiError which prefers
+// the server-supplied Hebrew `message` (P0-1 contract) and only
+// falls back to a code lookup when the response body is missing it.
 function otpError(msg: string): string {
-  if (msg === 'rate_limited')               return 'יותר מדי ניסיונות. נסה שוב מאוחר יותר';
-  if (msg === 'wrong_code')                 return 'קוד לא נכון. נסה שנית';
-  if (msg === 'max_attempts')               return 'יותר מדי ניסיונות שגויים. בקש קוד חדש';
-  if (msg === 'otp_expired_or_not_found')   return 'הקוד פג תוקף. שלח קוד חדש';
-  if (msg === 'otp_expired')                return 'הקוד פג תוקף. שלח קוד חדש';
-  if (msg === 'invalid_phone'  || msg === 'phone_required')
-                                            return 'מספר טלפון לא תקין. יש להזין מספר ישראלי בפורמט 05XXXXXXXX';
-  if (msg === 'use_phone_login')            return 'חשבון זה מחייב כניסה עם SMS / WhatsApp';
-  // user_not_found can't really happen any more — the backend now
-  // returns `{ prospect: true }` for unregistered phones and the
-  // /login flow routes those to /try/contractor before showing an
-  // error. Kept for legacy clients that haven't redeployed yet.
-  if (msg === 'user_not_found')             return 'מספר הטלפון לא רשום במערכת';
-  // apiFetch's friendlyError already translates known codes — if the
-  // message is already Hebrew, surface it as-is.
-  if (/[֐-׿]/.test(msg))          return msg;
-  // Generic fallback. Previously this defaulted to "phone not
-  // registered" which sent prospects down a dead-end register path
-  // — misleading after the new prospect flow + unhelpful for every
-  // other failure mode (network, SMS gateway down, invalid format).
-  return 'שגיאה בשליחת הקוד. בדוק את המספר ונסה שוב';
+  return mapApiError(msg);
 }
 
 /** Error block — plain red alert. The inline "register here" CTA that
