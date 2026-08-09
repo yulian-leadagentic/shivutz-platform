@@ -160,12 +160,27 @@ function RegisterCorporationInner() {
     } finally { setLoading(false); }
   }
 
+  // P0-3 — Same routing as the contractor page: after OTP verifies, if
+  // the phone already resolves to a real user with active memberships,
+  // hand off to /login (intent=corporation) instead of walking them
+  // through the wizard. Kills the "walked through registration ends
+  // with a 409" UX bug.
   async function handleVerifyOtp(e: FormEvent) {
     e.preventDefault(); setError('');
     if (step1.code.length !== 6) { setError('קוד האימות חייב להכיל 6 ספרות'); return; }
     setLoading(true);
     try {
-      await otpApi.verifyOtp(step1.normPhone, step1.code, 'register');
+      const res = await otpApi.registerPrecheck(step1.normPhone, step1.code);
+      if (res.exists && res.has_memberships) {
+        const q = new URLSearchParams({
+          phone:  step1.normPhone,
+          intent: 'corporation',
+          hint:   res.memberships.some(m => m.entity_type === 'corporation')
+                    ? 'already_corporation' : 'has_account',
+        });
+        router.push(`/login?${q.toString()}`);
+        return;
+      }
       setStep1((p) => ({ ...p, otpVerified: true }));
       setStep(2);
     } catch (err) {

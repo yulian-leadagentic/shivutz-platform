@@ -58,6 +58,22 @@ export const otpApi = {
       body: JSON.stringify({ phone, code, purpose }),
     }),
 
+  /** P0-3 — Register-wizard step-1 exit. Verify a 'register' OTP AND
+   *  look up existing user + memberships in one round-trip. On
+   *  exists=true the wizard bounces to /login instead of walking the
+   *  known user through a 3-step form that ends in a 409. */
+  registerPrecheck: (phone: string, code: string) =>
+    apiFetch<
+      | { exists: false; phone: string }
+      | { exists: true;  phone: string; has_memberships: boolean;
+          memberships: { entity_type: 'contractor' | 'corporation';
+                         entity_id: string; entity_name: string | null;
+                         role: string }[] }
+    >('/auth/register-precheck', {
+      method: 'POST',
+      body: JSON.stringify({ phone, code }),
+    }),
+
   /** Full login: verify OTP + issue JWT. Returns entity context or
    *  needs_entity_selection on the registered-user path. When the
    *  phone has NO user record, returns `{ prospect: true, phone, intent }`

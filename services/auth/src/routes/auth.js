@@ -226,6 +226,60 @@ router.post('/auth/verify-otp', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// POST /auth/register-precheck
+// P0-3 — Verify a 'register' OTP + look up whether the phone already has a
+// user record with active memberships. Does NOT issue tokens (the OTP is
+// purpose='register', not 'login'). Used by the register wizard on step-1
+// exit so a KNOWN phone is redirected to /login instead of being walked
+// through the wizard to hit a 409 at the very end (previously landed on
+// "ממתין לאישור מנהל").
+//
+// Body: { phone, code }.
+// Response on success:
+//   { exists: false, phone }                       ← new phone, continue wizard
+//   { exists: true,  phone, has_memberships: bool,
+//     memberships: [{ entity_type, entity_id, entity_name, role }] }
+// OTP-verify errors are returned with the same structured contract as
+// /auth/verify-otp so mapApiError() renders them.
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/auth/register-precheck', async (req, res) => {
+  try {
+    const { phone, code } = req.body;
+    if (!phone || !code) return apiError(res, 400, 'missing_fields', M_MISSING_FIELDS);
+
+    const { normPhone } = await verifyOtp(phone, code, 'register');
+
+    const pool = getPool();
+    const [users] = await pool.query(
+      'SELECT id, is_active FROM users WHERE phone = ? AND deleted_at IS NULL LIMIT 1',
+      [normPhone]
+    );
+    const user = users[0];
+    if (!user || !user.is_active) {
+      return res.json({ exists: false, phone: normPhone });
+    }
+    const memberships = await getMemberships(pool, user.id);
+    res.json({
+      exists:           true,
+      phone:            normPhone,
+      has_memberships:  memberships.length > 0,
+      memberships:      memberships.map(m => ({
+        entity_type: m.entity_type,
+        entity_id:   m.entity_id,
+        entity_name: m.entity_name,
+        role:        m.role,
+      })),
+    });
+  } catch (err) {
+    if (err.reason === 'wrong_code') return apiError(res, 401, 'wrong_code', M_WRONG_CODE, { remaining: err.remaining });
+    if (err.reason === 'max_attempts') return apiError(res, 401, 'max_attempts', M_MAX_ATTEMPTS);
+    if (err.reason === 'not_found_or_expired') return apiError(res, 401, 'otp_expired_or_not_found', M_OTP_EXPIRED);
+    console.error('[register-precheck]', err);
+    apiError(res, 500, 'internal_error', M_INTERNAL);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // POST /auth/check-recent-otp
 // Internal — used by other services (e.g. user-org's contractor lookup) to
 // gate sensitive pre-registration calls behind a fresh OTP. Returns 200 if

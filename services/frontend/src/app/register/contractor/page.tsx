@@ -192,13 +192,32 @@ function RegisterContractorInner() {
   }
 
   // ── Step 1 sub-step B: verify OTP ────────────────────────────────────────
+  // P0-3 — Uses /auth/register-precheck instead of the raw verifyOtp.
+  // Same OTP semantics; the wrapper additionally reports whether the
+  // phone is a KNOWN user with active memberships. A known user gets
+  // redirected to /login (with intent=contractor + prefilled phone)
+  // rather than being walked through 3 more steps only to hit a 409
+  // at /organizations/contractors ("phone_already_contractor").
   async function handleVerifyOtp(e: FormEvent) {
     e.preventDefault(); setError('');
     if (step1.code.length !== 6) { setError('קוד האימות חייב להכיל 6 ספרות'); return; }
 
     setLoading(true);
     try {
-      await otpApi.verifyOtp(step1.normPhone, step1.code, 'register');
+      const res = await otpApi.registerPrecheck(step1.normPhone, step1.code);
+      if (res.exists && res.has_memberships) {
+        // Known user — hand off to login. Login page filters by intent
+        // and auto-picks a single matching membership; multi-match hits
+        // /select-entity. Either way, no shadow user gets created.
+        const q = new URLSearchParams({
+          phone:  step1.normPhone,
+          intent: 'contractor',
+          hint:   res.memberships.some(m => m.entity_type === 'contractor')
+                    ? 'already_contractor' : 'has_account',
+        });
+        router.push(`/login?${q.toString()}`);
+        return;
+      }
       setStep1((p) => ({ ...p, otpVerified: true }));
       setStep(2);
     } catch (err) {

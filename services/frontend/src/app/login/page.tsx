@@ -122,12 +122,25 @@ function LoginPageInner() {
   const intent: Intent = rawIntent === 'contractor' || rawIntent === 'corporation' ? rawIntent : null;
   const copy = intent ? COPY[intent] : COPY.generic;
 
+  // P0-3 — When the register wizard detects a KNOWN phone it bounces
+  // here with ?phone=…&hint=already_contractor|already_corporation|
+  // has_account. `phone` prefills the input; `hint` renders a small
+  // info-strip above the form so the user knows why they were sent
+  // over (avoiding a silent redirect that reads as a bug).
+  const preFillPhone = searchParams?.get('phone') || '';
+  const hint         = searchParams?.get('hint');
+  const hintCopy =
+    hint === 'already_contractor'  ? 'מספר זה כבר רשום כקבלן. אפשר להתחבר מכאן.' :
+    hint === 'already_corporation' ? 'מספר זה כבר רשום כתאגיד. אפשר להתחבר מכאן.' :
+    hint === 'has_account'         ? 'מספר זה כבר רשום במערכת. אפשר להתחבר מכאן.' :
+    null;
+
   const [mode, setMode]       = useState<Mode>('sms');
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState('');
 
   const [otpPhase, setOtpPhase]   = useState<OtpPhase>('phone');
-  const [phone, setPhone]         = useState('');
+  const [phone, setPhone]         = useState(preFillPhone);
   const [normPhone, setNormPhone] = useState('');
   const [code, setCode]           = useState('');
   const codeRef = useRef<HTMLInputElement>(null);
@@ -306,6 +319,17 @@ function LoginPageInner() {
           </CardHeader>
 
           <CardContent>
+            {/* P0-3 — hint strip when we arrived here from the register
+                wizard because the phone was already a known user. Kept
+                above the tabs so it renders in both SMS + email modes. */}
+            {hintCopy && (
+              <div
+                role="status"
+                className="mb-4 text-sm text-brand-900 bg-brand-50 border border-brand-200 rounded-md px-3 py-2.5 text-start"
+              >
+                {hintCopy}
+              </div>
+            )}
             {/* ── SMS (primary) ─────────────────────────────────────────── */}
             {/* action="#" + button type="button": defense in depth.
                 If preventDefault loses a race against native form
