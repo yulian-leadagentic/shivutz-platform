@@ -7,6 +7,11 @@ import { Home, LayoutDashboard, ClipboardCheck, Building2, LogOut, PhoneCall, Us
 import { clearTokens } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 import MobileNavDrawer from '@/components/layout/MobileNavDrawer';
+// P0-2 — every /admin/* route now flows through RoleGuard first. A
+// non-admin (contractor / corporation) landing here gets the admin-
+// only NoAccessCard instead of the admin chrome rendering with
+// broken API calls (which used to blank in some paths).
+import RoleGuard from '@/components/layout/RoleGuard';
 
 // Pivot/v2 admin nav — deal/tender/commission surfaces removed with the
 // old model. New: /admin/ads (moderation) + /admin/subscriptions (tier
@@ -93,6 +98,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   }
 
   return (
+    <RoleGuard expect="admin">
     <div className="flex min-h-screen bg-slate-50">
       {/* Desktop sidebar — hidden below lg; the hamburger in the admin
           header below exposes the same nav inside a slide-over drawer. */}
@@ -128,5 +134,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </main>
       </div>
     </div>
+    </RoleGuard>
   );
 }

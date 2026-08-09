@@ -1,75 +1,146 @@
 'use client';
 
-// Route-section guard. Drop one of these inside /contractor/layout
-// or /corporation/layout to make sure the rendered children only
-// reach a user whose CURRENT entity context matches.
+// P0-2 — Role/section access guard.
 //
-// Why: a user with multiple memberships (e.g. owns both a contractor
-// and a corporation) can land on /corporation/deals while their
-// active JWT is scoped to their contractor. The corp page then
-// fires API calls with `x-user-role: contractor`, gets back the
-// contractor's deals, renders them through corp-specific filters,
-// and surfaces a confused empty / error state. The honest fix is
-// to bounce the user to their own role's page before any of that
-// renders.
+// One component, one behavior, four outcomes. Mounted from
+// /contractor/layout.tsx, /corporation/layout.tsx, and /admin/layout.tsx.
+// Every /<role>/* route runs through this before it renders.
 //
-// Admins are passed through everywhere — no entity context on
-// their JWT and they need access to both sections.
+//   ┌─────────────────────────┬──────────────────────────────────────┐
+//   │ user state              │ what we render                       │
+//   ├─────────────────────────┼──────────────────────────────────────┤
+//   │ not logged in           │ redirect → /login                    │
+//   │ JWT lacks entity + not  │ redirect → /select-entity            │
+//   │   admin (mid-flow)      │                                      │
+//   │ current entity matches  │ render children (happy path)         │
+//   │ admin visiting anything │ render children (admins reach all)   │
+//   │ wrong entity, path has  │ redirect → equivalent path in the    │
+//   │   an equivalent in the  │   correct section                    │
+//   │   right section         │                                      │
+//   │ wrong entity, no        │ render <NoAccessCard/> with the      │
+//   │   equivalent path       │   right CTA (add-role / go back)     │
+//   └─────────────────────────┴──────────────────────────────────────┘
 //
-// While the redirect is in flight we render `null` rather than
-// the children — keeps the wrong-section UI from briefly painting
-// before navigation resolves.
+// Blank pages were happening because the previous version returned
+// `null` in the "wrong entity" branch and relied on router.replace
+// to redirect — but a Playwright-injected JWT (or a real JWT missing
+// entity claims) hit that branch and the redirect target was another
+// section-guarded route that also returned null. The user saw white.
+//
+// Now every non-render outcome renders SOMETHING: a redirect indicator
+// or a real access card with an actionable CTA — never a blank page.
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
+import { NoAccessCard } from './NoAccessCard';
+
+export type RoleSection = 'contractor' | 'corporation' | 'admin';
 
 interface Props {
-  expect: 'contractor' | 'corporation';
+  expect: RoleSection;
   children: React.ReactNode;
 }
+
+// Screens that exist in both /contractor/ and /corporation/. When a
+// user hits the wrong section on one of these, we translate the URL
+// 1:1 to the right section — same page, right context. Anything else
+// bounces to the section's dashboard.
+const SYMMETRIC_PATHS = new Set([
+  'dashboard', 'documents', 'tenders', 'users',
+]);
 
 export default function RoleGuard({ expect, children }: Props) {
   const router    = useRouter();
   const pathname  = usePathname();
   const { isLoggedIn, role, entityType, hasEntityContext } = useAuth();
 
+  // Track whether we've kicked off a redirect so we don't render the
+  // wrong-section chrome for a frame while navigation resolves.
+  const [redirecting, setRedirecting] = useState(false);
+
   useEffect(() => {
-    // Not logged in → let any page-level auth handler / 401 catcher
-    // do its thing. RoleGuard is only about matching ROLES, not
-    // bouncing unauthenticated users.
-    if (!isLoggedIn) return;
-    // Admins have no entity context and need to reach both sections
-    // (e.g. impersonating an org for support work).
+    // ── unauthenticated → login (with returnTo so post-login lands
+    // the user back where they started) ────────────────────────────
+    if (!isLoggedIn) {
+      setRedirecting(true);
+      const returnTo = encodeURIComponent(pathname || '/');
+      router.replace(`/login?returnTo=${returnTo}`);
+      return;
+    }
+
+    // ── admin section ─────────────────────────────────────────────
+    // Admins reach the admin section by role, not by entity claim.
+    // A non-admin visiting /admin/* renders NoAccessCard below.
+    if (expect === 'admin') {
+      if (role === 'admin') return;
+      // non-admin under /admin/* — fall through to the no-access
+      // card render at the bottom.
+      return;
+    }
+
+    // ── admins visiting /contractor or /corporation ────────────────
+    // Admins impersonating for support work — pass through.
     if (role === 'admin') return;
-    // Until entity context is on the JWT, don't gate — the user is
-    // mid-flow (just OTP'd, hasn't picked an entity yet).
-    if (!hasEntityContext) return;
-    // The current entity matches the section — let the page render.
+
+    // ── JWT missing entity context (multi-membership user picked
+    // nothing yet) → /select-entity ────────────────────────────────
+    if (!hasEntityContext) {
+      setRedirecting(true);
+      router.replace('/select-entity');
+      return;
+    }
+
+    // ── correct entity type — happy path ──────────────────────────
     if (entityType === expect) return;
 
-    // Mismatch. Translate the current path 1:1 onto the matching
-    // section so the user lands on the equivalent screen rather
-    // than a generic dashboard. e.g. /corporation/deals while
-    // acting as a contractor → /contractor/deals.
-    const wrongPrefix    = expect === 'contractor' ? '/corporation' : '/contractor';
-    const correctPrefix  = expect === 'contractor' ? '/contractor'  : '/corporation';
-    const target = pathname?.startsWith(wrongPrefix)
-      ? pathname.replace(wrongPrefix, correctPrefix)
-      : `${correctPrefix}/dashboard`;
-    router.replace(target);
+    // ── wrong entity type. If the current path has a mirror in the
+    // right section, translate 1:1; else drop the user on the right
+    // section's dashboard. Both paths guarantee we don't paint the
+    // wrong-section chrome and don't blank. ─────────────────────────
+    const wrongPrefix   = expect === 'contractor' ? '/corporation' : '/contractor';
+    const correctPrefix = expect === 'contractor' ? '/contractor'  : '/corporation';
+
+    // Extract the tail after the wrong prefix (e.g. /corporation/workers → 'workers').
+    const tail = pathname?.startsWith(wrongPrefix)
+      ? pathname.slice(wrongPrefix.length).replace(/^\//, '').split('/')[0]
+      : '';
+
+    if (tail && SYMMETRIC_PATHS.has(tail)) {
+      setRedirecting(true);
+      router.replace(pathname!.replace(wrongPrefix, correctPrefix));
+      return;
+    }
+    // Not symmetric → don't silently swap the URL to a page whose
+    // shape differs (that was the "blank" pattern). Fall through to
+    // the no-access card render, which explains the situation and
+    // offers a CTA.
   }, [isLoggedIn, role, entityType, hasEntityContext, expect, pathname, router]);
 
-  // Hold rendering when we know the role mismatches — avoids
-  // painting the wrong section's chrome for a frame before the
-  // redirect resolves.
+  // ── render decisions ─────────────────────────────────────────────
+
+  // Redirect in flight — show a light placeholder, not blank.
+  if (redirecting) return <NoAccessCard variant="redirecting" />;
+
+  // Not logged in yet — the effect above kicked off the redirect but
+  // the first paint would otherwise flash empty children.
+  if (!isLoggedIn) return <NoAccessCard variant="redirecting" />;
+
+  // /admin section, non-admin user → no-access card.
+  if (expect === 'admin' && role !== 'admin') {
+    return <NoAccessCard variant="admin-only" />;
+  }
+
+  // Non-admin user on wrong section, non-symmetric path → no-access
+  // card with add-role CTA.
   if (
-    isLoggedIn &&
     role !== 'admin' &&
     hasEntityContext &&
-    entityType !== expect
+    entityType !== expect &&
+    expect !== 'admin'
   ) {
-    return null;
+    return <NoAccessCard variant={expect === 'corporation' ? 'need-corporation' : 'need-contractor'} />;
   }
+
   return <>{children}</>;
 }
