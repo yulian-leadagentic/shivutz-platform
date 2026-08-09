@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Loader2, ShieldCheck, AlertCircle, Info, CheckCircle2 } from 'lucide-react';
 import { orgApi, otpApi } from '@/lib/api';
-import { saveTokens } from '@/lib/auth';
+import { saveTokens, isLoggedIn, getAccessToken, decodeJwtPayload } from '@/lib/auth';
 import { useEnums } from '@/features/enums/EnumsContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -93,6 +93,9 @@ function RegisterCorporationInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const fromTrial = searchParams?.get('from') === 'trial';
+  // P0-3 add-role — see register/contractor/page.tsx for the full
+  // explanation of add-mode. Same semantics on the corp side.
+  const isAddMode = searchParams?.get('add') === '1';
   // Live origin list — backend already filters to is_active=TRUE so
   // admin-deactivated countries never reach this dropdown.
   const { origins } = useEnums();
@@ -129,6 +132,28 @@ function RegisterCorporationInner() {
     }));
     setStep(2);
   }, [fromTrial]);
+
+  // P0-3 add-role — parallel to the contractor page's add-mode effect.
+  useEffect(() => {
+    if (!isAddMode) return;
+    if (!isLoggedIn()) {
+      router.replace('/login?returnTo=' + encodeURIComponent('/register/corporation?add=1'));
+      return;
+    }
+    const token = getAccessToken();
+    const p = token ? decodeJwtPayload(token) : null;
+    const phone = (p?.phone as string) ?? '';
+    const name  = (p?.full_name as string) ?? '';
+    setStep1((s) => ({
+      ...s,
+      phone,
+      normPhone: phone,
+      full_name: name,
+      otpPhase:  'verify',
+      otpVerified: true,
+    }));
+    setStep(2);
+  }, [isAddMode, router]);
   const [step2, setStep2] = useState<Step2>({
     company_name_he: '', business_number: '', countries_of_origin: [], minimum_contract_months: 3,
   });
@@ -243,7 +268,17 @@ function RegisterCorporationInner() {
         contact_email:           step3.contact_email || undefined,
         tc_version:              TC_VERSION,
         whatsapp_opt_in:         step3.whatsapp_opt_in,
+        // P0-3 add-role — see register/contractor/page.tsx.
+        add_role:                isAddMode || undefined,
       });
+      // P0-3 add-role — swap JWT to the new corp entity.
+      if (result.added_role && result.id) {
+        const t = await otpApi.selectEntity(result.id, 'corporation');
+        saveTokens(t.access_token, t.refresh_token);
+        clearProspect();
+        router.push('/corporation/dashboard');
+        return;
+      }
       if (result.access_token && result.refresh_token) {
         saveTokens(result.access_token, result.refresh_token);
       }
@@ -255,6 +290,20 @@ function RegisterCorporationInner() {
       router.push('/corporation/dashboard');
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'שגיאה בהרשמה';
+      // P0-3 add-role — already have a corp: hop into it via
+      // select-entity instead of rendering a red error.
+      if (isAddMode && msg.includes('already_have_corporation')) {
+        const idMatch = msg.match(/"existing_entity_id"\s*:\s*"([^"]+)"/);
+        const existingId = idMatch?.[1];
+        if (existingId) {
+          try {
+            const t = await otpApi.selectEntity(existingId, 'corporation');
+            saveTokens(t.access_token, t.refresh_token);
+            router.push('/corporation/dashboard');
+            return;
+          } catch { /* fall through */ }
+        }
+      }
       // Backend returns the duplicate-ח.פ case as a structured detail
       // object ({ code, message, existing_company_name }). apiFetch
       // wraps the response body in the Error message, so we sniff the
@@ -335,7 +384,7 @@ function RegisterCorporationInner() {
         <Card className="rounded-t-none shadow-md">
           <CardHeader className="pb-2">
             <div className="flex justify-center mb-3"><Logo size="md" variant="on-light" /></div>
-            <CardTitle className="text-center">הרשמת תאגיד</CardTitle>
+            <CardTitle className="text-center">{isAddMode ? 'הוספת חשבון תאגיד' : 'הרשמת תאגיד'}</CardTitle>
             <CardDescription className="text-center">שלב {step} מתוך {TOTAL_STEPS}</CardDescription>
             <div className="mt-3 flex gap-1.5">
               {Array.from({ length: TOTAL_STEPS }).map((_, i) => (

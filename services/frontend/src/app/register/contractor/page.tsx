@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Loader2, CheckCircle2, AlertCircle, Mail, Smartphone, ShieldCheck } from 'lucide-react';
 import { orgApi, otpApi } from '@/lib/api';
-import { saveTokens } from '@/lib/auth';
+import { saveTokens, isLoggedIn, getAccessToken, decodeJwtPayload } from '@/lib/auth';
 import { useEnums } from '@/features/enums/EnumsContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -102,6 +102,14 @@ function RegisterContractorInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const fromTrial = searchParams?.get('from') === 'trial';
+  // P0-3 add-role — the register wizard has TWO modes:
+  //   COLD SIGNUP (anonymous new user): identity+OTP → entity → T&C.
+  //   ADD ROLE (authenticated existing user, ?add=1): skip identity+OTP,
+  //     lock name/phone to the JWT values, append a contractor entity to
+  //     the caller's user_id via the backend's add_role branch.
+  // Also entered from NoAccessCard "הוסף חשבון קבלן" CTA and (later)
+  // from the TopBar entity switcher.
+  const isAddMode = searchParams?.get('add') === '1';
   // O1 — reveal→register funnel resilience.
   // Capture ?returnTo=... from the query on mount so it survives OTP
   // resend, a mid-wizard refresh (URL params re-parse fine, but store
@@ -156,6 +164,33 @@ function RegisterContractorInner() {
     }));
     setStep(2);
   }, [fromTrial]);
+
+  // P0-3 add-role bypass — an authenticated user hitting ?add=1
+  // (e.g. from NoAccessCard's "הוסף חשבון קבלן" CTA) skips identity+
+  // OTP: their name+phone come from the JWT, are read-only in the UI,
+  // and the backend appends the new contractor via add_role=true on
+  // submit. If they aren't logged in, we bounce to /login with a
+  // returnTo pointing back here so the CTA works end-to-end.
+  useEffect(() => {
+    if (!isAddMode) return;
+    if (!isLoggedIn()) {
+      router.replace('/login?returnTo=' + encodeURIComponent('/register/contractor?add=1'));
+      return;
+    }
+    const token = getAccessToken();
+    const p = token ? decodeJwtPayload(token) : null;
+    const phone = (p?.phone as string) ?? '';
+    const name  = (p?.full_name as string) ?? '';
+    setStep1((s) => ({
+      ...s,
+      phone,
+      normPhone: phone,
+      full_name: name,
+      otpPhase:  'verify',
+      otpVerified: true,
+    }));
+    setStep(2);
+  }, [isAddMode, router]);
   const [step2, setStep2] = useState<Step2>({
     company_name_he: '', business_number: '', kablan_number: '', operating_regions: [],
   });
@@ -294,7 +329,21 @@ function RegisterContractorInner() {
         contact_phone:      step1.normPhone,
         contact_email:      step3.contact_email || undefined,
         whatsapp_opt_in:    step3.whatsapp_opt_in,
+        // P0-3 add-role — safe pass-through; the backend only honors
+        // this when paired with the gateway-injected x-user-id header.
+        add_role:           isAddMode || undefined,
       });
+
+      // P0-3 add-role — the backend returns null tokens in add-mode
+      // (it doesn't have the caller's JWT signing key). Get a fresh
+      // one for the new contractor entity via /auth/select-entity.
+      if (result.added_role && result.id) {
+        const t = await otpApi.selectEntity(result.id, 'contractor');
+        saveTokens(t.access_token, t.refresh_token);
+        clearProspect();
+        router.push('/contractor/dashboard');
+        return;
+      }
 
       if (result.access_token && result.refresh_token) {
         saveTokens(result.access_token, result.refresh_token);
@@ -313,6 +362,22 @@ function RegisterContractorInner() {
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'שגיאה בהרשמה';
+      // P0-3 add-role — the caller already has a contractor. Instead
+      // of a red 409, hop them straight into that contractor via
+      // select-entity. Falls through to setError only if the backend
+      // couldn't determine which entity_id to hand back.
+      if (isAddMode && msg.includes('already_have_contractor')) {
+        const idMatch = msg.match(/"existing_entity_id"\s*:\s*"([^"]+)"/);
+        const existingId = idMatch?.[1];
+        if (existingId) {
+          try {
+            const t = await otpApi.selectEntity(existingId, 'contractor');
+            saveTokens(t.access_token, t.refresh_token);
+            router.push('/contractor/dashboard');
+            return;
+          } catch { /* fall through to setError */ }
+        }
+      }
       // Duplicate ח.פ → inverted-invite flow. Backend already SMS'd
       // the existing owner; land the user on the 'we asked' screen.
       if (msg.includes('contractor_already_registered')) {
@@ -461,7 +526,7 @@ function RegisterContractorInner() {
         <Card className="rounded-t-none shadow-md">
           <CardHeader className="pb-2">
             <div className="flex justify-center mb-3"><Logo size="md" variant="on-light" /></div>
-            <CardTitle className="text-center">הרשמת קבלן</CardTitle>
+            <CardTitle className="text-center">{isAddMode ? 'הוספת חשבון קבלן' : 'הרשמת קבלן'}</CardTitle>
             <CardDescription className="text-center">
               {step === 'verify' ? 'אימות בעלות' : `שלב ${step} מתוך ${TOTAL_STEPS}`}
             </CardDescription>

@@ -37,6 +37,8 @@ class CorporationCreate(BaseModel):
     # WhatsApp first with SMS fallback. Default False — explicit opt-in only.
     whatsapp_opt_in: Optional[bool] = False
     # password removed — phone-first OTP registration
+    # P0-3 add-role — see contractors.py for the same field.
+    add_role: Optional[bool] = False
 
 
 class CorpLookupRequest(BaseModel):
@@ -143,7 +145,15 @@ async def lookup_corporation_business(data: CorpLookupRequest):
 
 
 @router.post("", status_code=201)
-async def register_corporation(data: CorporationCreate):
+async def register_corporation(
+    data: CorporationCreate,
+    x_user_id: Optional[str] = Header(None, alias="x-user-id"),
+):
+    # P0-3 add-role — see contractors.py for the same body/header
+    # coupling; a request is in "append" mode only when BOTH the flag
+    # and the gateway-injected user id are present.
+    is_add_mode = bool(data.add_role and x_user_id)
+
     if not is_valid_israeli_id(data.business_number):
         raise HTTPException(status_code=400, detail="invalid_business_number")
 
@@ -205,6 +215,28 @@ async def register_corporation(data: CorporationCreate):
             (data.contact_phone,),
         )
         if cur.fetchone():
+            # P0-3 add-role — return the existing entity so the FE can
+            # select-entity into it (no red error state).
+            if is_add_mode:
+                cur.execute(
+                    """SELECT em.entity_id
+                       FROM auth_db.entity_memberships em
+                       WHERE em.user_id = %s
+                         AND em.entity_type = 'corporation'
+                         AND em.is_active = TRUE
+                       LIMIT 1""",
+                    (x_user_id,),
+                )
+                row = cur.fetchone()
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "already_have_corporation",
+                        "message": "כבר יש לך חשבון תאגיד — אנחנו מעבירים אותך אליו.",
+                        "existing_entity_id": row[0] if row else None,
+                        "entity_type": "corporation",
+                    },
+                )
             raise HTTPException(
                 status_code=409,
                 detail={
@@ -349,26 +381,30 @@ async def register_corporation(data: CorporationCreate):
              data.tc_version, tc_signed_at)
         )
 
-        # Phone-first registration — auth service verifies OTP was confirmed recently
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(f"{AUTH_SERVICE}/auth/register", json={
-                "phone":           data.contact_phone,
-                "full_name":       data.contact_name,
-                "role":            "corporation",
-                "org_id":          org_id,
-                "org_type":        "corporation",
-                "include_tokens":  True,
-                "whatsapp_opt_in": bool(data.whatsapp_opt_in),
-            })
-            if resp.status_code == 409:
-                conn.rollback()
-                raise HTTPException(status_code=409, detail="Phone already registered")
-            if resp.status_code == 400:
-                conn.rollback()
-                body = resp.json()
-                raise HTTPException(status_code=400, detail=body.get("error", "registration_failed"))
-            resp.raise_for_status()
-            user = resp.json()
+        if is_add_mode:
+            # P0-3 add-role — see contractors.py for the same pattern.
+            user = {"id": x_user_id, "access_token": None, "refresh_token": None}
+        else:
+            # Phone-first registration — auth service verifies OTP was confirmed recently
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(f"{AUTH_SERVICE}/auth/register", json={
+                    "phone":           data.contact_phone,
+                    "full_name":       data.contact_name,
+                    "role":            "corporation",
+                    "org_id":          org_id,
+                    "org_type":        "corporation",
+                    "include_tokens":  True,
+                    "whatsapp_opt_in": bool(data.whatsapp_opt_in),
+                })
+                if resp.status_code == 409:
+                    conn.rollback()
+                    raise HTTPException(status_code=409, detail="Phone already registered")
+                if resp.status_code == 400:
+                    conn.rollback()
+                    body = resp.json()
+                    raise HTTPException(status_code=400, detail=body.get("error", "registration_failed"))
+                resp.raise_for_status()
+                user = resp.json()
 
         cur.execute("UPDATE corporations SET user_owner_id = %s WHERE id = %s", (user["id"], org_id))
         # Legacy org_users row — UPSERT (uq_user_id only allows one org per
@@ -416,6 +452,8 @@ async def register_corporation(data: CorporationCreate):
             "phone_matched_gov": phone_matches_gov,
             "access_token":      user.get("access_token"),
             "refresh_token":     user.get("refresh_token"),
+            # P0-3 add-role — see contractors.py.
+            "added_role":        is_add_mode,
         }
     except HTTPException:
         raise

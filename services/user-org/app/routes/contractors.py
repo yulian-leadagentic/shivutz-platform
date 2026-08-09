@@ -43,6 +43,13 @@ class ContractorCreate(BaseModel):
     # Per-user preference: if True, OTP and (later) deal notifications go to
     # WhatsApp first with SMS fallback. Default False — explicit opt-in only.
     whatsapp_opt_in: Optional[bool] = False
+    # P0-3 add-role — when True AND the request carries a valid
+    # x-user-id header (from the gateway's JWT check), skip user
+    # creation and append the new contractor entity as an ADDITIONAL
+    # membership on the existing authenticated user. Never trust the
+    # body flag alone — pairing it with the gateway-injected header is
+    # what makes it safe.
+    add_role: Optional[bool] = False
 
 
 class LookupRequest(BaseModel):
@@ -104,7 +111,18 @@ async def lookup_business_number(data: LookupRequest):
 
 
 @router.post("", status_code=201)
-async def register_contractor(data: ContractorCreate):
+async def register_contractor(
+    data: ContractorCreate,
+    x_user_id: Optional[str] = Header(None, alias="x-user-id"),
+):
+    # P0-3 add-role — a request is in "append" mode only when BOTH the
+    # body flag AND the gateway-injected user id are present. Either
+    # alone is not enough: the body flag without the header would let a
+    # spoofed request skip user creation; the header without the flag
+    # is just a normal cold signup by a logged-in user (which the FE
+    # never emits — cold signup is anonymous).
+    is_add_mode = bool(data.add_role and x_user_id)
+
     if not is_valid_israeli_id(data.business_number):
         raise HTTPException(status_code=400, detail="invalid_business_number")
 
@@ -162,6 +180,30 @@ async def register_contractor(data: ContractorCreate):
             (data.contact_phone,),
         )
         if cur.fetchone():
+            # P0-3 add-role — in add-mode this isn't an error: the user
+            # already HAS a contractor and just tried to add another.
+            # Return the existing entity_id so the frontend can
+            # select-entity into it (no red error state).
+            if is_add_mode:
+                cur.execute(
+                    """SELECT em.entity_id
+                       FROM auth_db.entity_memberships em
+                       WHERE em.user_id = %s
+                         AND em.entity_type = 'contractor'
+                         AND em.is_active = TRUE
+                       LIMIT 1""",
+                    (x_user_id,),
+                )
+                row = cur.fetchone()
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "already_have_contractor",
+                        "message": "כבר יש לך חשבון קבלן — אנחנו מעבירים אותך אליו.",
+                        "existing_entity_id": row[0] if row else None,
+                        "entity_type": "contractor",
+                    },
+                )
             raise HTTPException(
                 status_code=409,
                 detail={
@@ -299,26 +341,36 @@ async def register_contractor(data: ContractorCreate):
              approval_status, approved_at, sla_deadline)
         )
 
-        # Phone-first registration — auth service verifies OTP was confirmed recently
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(f"{AUTH_SERVICE}/auth/register", json={
-                "phone":           data.contact_phone,
-                "full_name":       data.contact_name,
-                "role":            "contractor",
-                "org_id":          org_id,
-                "org_type":        "contractor",
-                "include_tokens":  True,
-                "whatsapp_opt_in": bool(data.whatsapp_opt_in),
-            })
-            if resp.status_code == 409:
-                conn.rollback()
-                raise HTTPException(status_code=409, detail="Phone already registered")
-            if resp.status_code == 400:
-                conn.rollback()
-                body = resp.json()
-                raise HTTPException(status_code=400, detail=body.get("error", "registration_failed"))
-            resp.raise_for_status()
-            user = resp.json()
+        if is_add_mode:
+            # P0-3 add-role — the user already exists; skip
+            # /auth/register (which would 409 anyway) and use the
+            # gateway-provided user id directly. The frontend will
+            # request a fresh JWT for this new entity by calling
+            # /auth/select-entity once we've inserted the membership
+            # below — that's why we return {access_token: None,
+            # refresh_token: None} from the response.
+            user = {"id": x_user_id, "access_token": None, "refresh_token": None}
+        else:
+            # Phone-first registration — auth service verifies OTP was confirmed recently
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(f"{AUTH_SERVICE}/auth/register", json={
+                    "phone":           data.contact_phone,
+                    "full_name":       data.contact_name,
+                    "role":            "contractor",
+                    "org_id":          org_id,
+                    "org_type":        "contractor",
+                    "include_tokens":  True,
+                    "whatsapp_opt_in": bool(data.whatsapp_opt_in),
+                })
+                if resp.status_code == 409:
+                    conn.rollback()
+                    raise HTTPException(status_code=409, detail="Phone already registered")
+                if resp.status_code == 400:
+                    conn.rollback()
+                    body = resp.json()
+                    raise HTTPException(status_code=400, detail=body.get("error", "registration_failed"))
+                resp.raise_for_status()
+                user = resp.json()
 
         cur.execute("UPDATE contractors SET user_owner_id = %s WHERE id = %s", (user["id"], org_id))
         # Legacy org_users row — UPSERT because uq_user_id only allows one org per
@@ -366,6 +418,10 @@ async def register_contractor(data: ContractorCreate):
             "available_channels":  lookup.get("channels", []),
             "access_token":        user.get("access_token"),
             "refresh_token":       user.get("refresh_token"),
+            # P0-3 add-role — signals the FE to call /auth/select-entity
+            # for `id` since add-mode returns null tokens (we don't have
+            # this user's JWT to re-sign here).
+            "added_role":          is_add_mode,
         }
     except HTTPException:
         raise

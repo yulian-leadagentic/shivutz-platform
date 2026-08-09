@@ -301,6 +301,11 @@ export interface ContractorRegistration {
    *  deal/event notifications) are sent via WhatsApp first with SMS as
    *  the fallback. Default false — explicit opt-in only. */
   whatsapp_opt_in?: boolean;
+  /** P0-3 add-role — when true AND the request carries a valid auth
+   *  header, the backend appends a contractor membership to the caller
+   *  instead of creating a new user row. Ignored server-side unless
+   *  paired with the gateway-injected x-user-id header. */
+  add_role?: boolean;
 }
 
 export interface RegistryChannel {
@@ -338,6 +343,8 @@ export interface CorporationRegistration {
   tc_version?: string;
   /** WhatsApp OTP opt-in. See ContractorRegistration above for semantics. */
   whatsapp_opt_in?: boolean;
+  /** P0-3 add-role — see ContractorRegistration above. */
+  add_role?: boolean;
 }
 
 export interface RegistrationResult {
@@ -361,6 +368,11 @@ export interface RegistrationResult {
    *    mismatch  → 'מאושר לפעולה, מנהל יבצע אימות נוסף תוך 48 שעות'. */
   phone_matched_gov?: boolean;
   available_channels?: RegistryChannel[];
+  /** P0-3 add-role — true when the entity was appended to an existing
+   *  authenticated user (no new user row created). Signals the FE to
+   *  call /auth/select-entity for `id` because add-mode returns null
+   *  tokens (backend can't re-sign the caller's JWT). */
+  added_role?: boolean;
   access_token?: string;
   refresh_token?: string;
 }
