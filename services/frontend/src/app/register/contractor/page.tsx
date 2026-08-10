@@ -428,7 +428,7 @@ function RegisterContractorInner() {
 
   // Duplicate ח.פ → 'we asked the owner' screen
   if (duplicateExistingName !== null) return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
+    <div className="min-h-screen flex flex-col items-center pt-6 sm:pt-0 sm:justify-center bg-slate-50 px-4">
       <Card className="w-full max-w-md shadow-md text-center border-2 border-emerald-300">
         <CardContent className="pt-8 pb-8 flex flex-col items-center gap-3">
           <CheckCircle2 className="h-16 w-16 text-emerald-500" />
@@ -455,7 +455,7 @@ function RegisterContractorInner() {
   // link, which left users guessing whether something else was
   // needed.
   if (success) return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
+    <div className="min-h-screen flex flex-col items-center pt-6 sm:pt-0 sm:justify-center bg-slate-50 px-4">
       <Card className="w-full max-w-lg shadow-md">
         <CardContent className="pt-8 pb-8 flex flex-col items-center gap-4 text-center">
           <CheckCircle2 className="h-16 w-16 text-emerald-500" />
@@ -485,7 +485,7 @@ function RegisterContractorInner() {
           </ol>
 
           <div className="w-full flex flex-col gap-2 pt-2">
-            <Link href="/login" className="w-full inline-flex items-center justify-center bg-brand-800 hover:bg-brand-900 text-white text-sm font-semibold px-4 py-2.5 rounded-lg">
+            <Link href="/login" className="w-full inline-flex items-center justify-center bg-brand-600 hover:bg-brand-800 text-slate-900 text-sm font-semibold px-4 py-2.5 rounded-lg min-h-11">
               חזרה לכניסה
             </Link>
             <Link href="/support" className="text-xs text-slate-500 hover:text-brand-700 hover:underline">
@@ -504,7 +504,7 @@ function RegisterContractorInner() {
   const namePrefilledFromRegistry = !!(lookup?.ok && lookup.prefill?.company_name_he);
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 px-4 py-8">
+    <div className="min-h-screen flex flex-col items-center pt-6 sm:pt-0 sm:justify-center bg-slate-50 px-4 py-8">
       <div className="w-full max-w-lg mb-3 flex justify-end">
         <HomeLink />
       </div>

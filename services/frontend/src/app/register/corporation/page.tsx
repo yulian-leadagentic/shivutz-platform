@@ -329,7 +329,7 @@ function RegisterCorporationInner() {
 
   if (duplicateExistingName !== null) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 px-4 py-8">
+      <div className="min-h-screen flex flex-col items-center pt-6 sm:pt-0 sm:justify-center bg-slate-50 px-4 py-8">
         <div className="w-full max-w-lg mb-3 flex justify-end">
           <HomeLink />
         </div>
@@ -350,7 +350,7 @@ function RegisterCorporationInner() {
             <Link href="/login" className="px-4 py-2 rounded-lg border border-slate-300 text-sm font-medium text-slate-700 hover:bg-slate-50">
               חזרה לכניסה
             </Link>
-            <Link href="/" className="px-4 py-2 rounded-lg bg-brand-800 text-sm font-medium text-white hover:bg-brand-900">
+            <Link href="/" className="px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-800 text-sm font-medium text-slate-900 min-h-11 inline-flex items-center">
               חזרה לדף הבית
             </Link>
           </div>
@@ -360,7 +360,7 @@ function RegisterCorporationInner() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 px-4 py-8">
+    <div className="min-h-screen flex flex-col items-center pt-6 sm:pt-0 sm:justify-center bg-slate-50 px-4 py-8">
       <div className="w-full max-w-lg mb-3 flex justify-end">
         <HomeLink />
       </div>

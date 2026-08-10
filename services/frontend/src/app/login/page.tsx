@@ -296,7 +296,7 @@ function LoginPageInner() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 px-4 py-6 relative">
+    <div className="min-h-screen flex flex-col items-center pt-6 sm:pt-0 sm:justify-center bg-slate-50 px-4 py-6 relative">
       {/* HomeLink lives in the top-right corner instead of stacked
        *  above the card. Keeping it in flow pushed the card visibly
        *  below the vertical center on desktop. Absolute keeps the
