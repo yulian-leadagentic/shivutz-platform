@@ -197,13 +197,17 @@ export default function AdminOriginsPage() {
       )}
 
       {/* Table */}
-      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+      {/* M3.1 scroll-safety — parent was `overflow-hidden` which
+          silently clipped this 5-column origins table at 390px.
+          overflow-x-auto lets the table scroll inside the card
+          instead of getting cropped. */}
+      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-x-auto">
         {loading ? (
           <div className="flex justify-center py-10"><Loader2 className="h-5 w-5 animate-spin text-slate-400" /></div>
         ) : rows.length === 0 ? (
           <div className="text-center py-10 text-sm text-slate-500">אין ארצות ברשימה.</div>
         ) : (
-          <table className="w-full text-sm">
+          <table className="w-full text-sm min-w-[560px]">
             <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
               <tr>
                 <th className="text-start px-4 py-2.5 font-semibold">קוד</th>

@@ -180,26 +180,32 @@ export default function AdminGovCorpsPage() {
               <p>עדיין אין רשימה במערכת — טען קובץ PDF כדי להתחיל.</p>
             </div>
           ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-slate-100 text-slate-500 text-xs">
-                  <th className="px-4 py-2 text-start font-medium">שנה</th>
-                  <th className="px-4 py-2 text-start font-medium">סה״כ שורות</th>
-                  <th className="px-4 py-2 text-start font-medium">עם ח.פ תקין</th>
-                  <th className="px-4 py-2 text-start font-medium">נטען בתאריך</th>
-                </tr>
-              </thead>
-              <tbody>
-                {years.map((y) => (
-                  <tr key={y.source_year} className="border-b border-slate-50 last:border-0 hover:bg-slate-50">
-                    <td className="px-4 py-2.5 font-semibold text-slate-900">{y.source_year}</td>
-                    <td className="px-4 py-2.5 text-slate-700">{y.row_count}</td>
-                    <td className="px-4 py-2.5 text-slate-700">{y.matchable_count}</td>
-                    <td className="px-4 py-2.5 text-slate-500 text-xs whitespace-nowrap">{fmt(y.last_imported_at)}</td>
+            // M3.1 scroll-safety — table has 4 numeric+date columns
+            // that push past 390px width. Wrap in overflow-x-auto so
+            // the scroll happens INSIDE the card, not on the whole
+            // page (silent clip / horizontal page scroll fix).
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm min-w-[520px]">
+                <thead>
+                  <tr className="border-b border-slate-100 text-slate-500 text-xs">
+                    <th className="px-4 py-2 text-start font-medium">שנה</th>
+                    <th className="px-4 py-2 text-start font-medium">סה״כ שורות</th>
+                    <th className="px-4 py-2 text-start font-medium">עם ח.פ תקין</th>
+                    <th className="px-4 py-2 text-start font-medium">נטען בתאריך</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {years.map((y) => (
+                    <tr key={y.source_year} className="border-b border-slate-50 last:border-0 hover:bg-slate-50">
+                      <td className="px-4 py-2.5 font-semibold text-slate-900">{y.source_year}</td>
+                      <td className="px-4 py-2.5 text-slate-700">{y.row_count}</td>
+                      <td className="px-4 py-2.5 text-slate-700">{y.matchable_count}</td>
+                      <td className="px-4 py-2.5 text-slate-500 text-xs whitespace-nowrap">{fmt(y.last_imported_at)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </CardContent>
       </Card>

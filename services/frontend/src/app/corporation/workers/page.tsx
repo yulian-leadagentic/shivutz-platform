@@ -665,7 +665,99 @@ export default function WorkersPage() {
       ) : filtered.length === 0 ? (
         <Card><CardContent className="p-8 text-center text-slate-400">לא נמצאו עובדים</CardContent></Card>
       ) : (
-        <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <>
+        {/* M3.1 mobile card view — the 10-column table below is
+            unusable at 390px (would need 900+px width). On ≤sm we
+            render each worker as a compact card: header row (name +
+            internal_id + status + delete) + a 2-column dl of the
+            remaining fields, each using the SAME editable cell
+            components as the desktop table so behavior is identical
+            (click-to-edit, save, error surface). Desktop table
+            unchanged below. */}
+        <div className="sm:hidden space-y-3">
+          {filtered.map((w) => {
+            const vr = visaStatus(w.visa_valid_until);
+            const sr = STATUS_LABELS[w.status] ?? { label: w.status, color: 'bg-slate-100 text-slate-600' };
+            const extra = w.extra_fields as Record<string, string> | undefined;
+            const availRegion = extra?.available_region;
+            const availFrom   = extra?.available_from;
+            const empNum      = extra?.employee_number ?? '';
+            const expCode     = w.experience_range ?? '';
+            const profLabel   = professionMap[w.profession_type] ?? w.profession_type;
+            const originLabel = originMap[w.origin_country] ?? w.origin_country;
+            const regionLabel = availRegion ? (regionMap[availRegion] ?? availRegion) : '—';
+            const internalId  = (w as unknown as { internal_id?: string }).internal_id || '';
+            return (
+              <div key={w.id} className={`rounded-2xl border border-slate-200 bg-white shadow-sm p-4 ${ROW_BG[w.status] ?? ''}`}>
+                <div className="flex items-start justify-between gap-3 mb-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="font-bold text-slate-900 truncate">{w.first_name} {w.last_name}</div>
+                    <div className="text-[11px] font-mono text-slate-400 mt-0.5">{internalId || '—'}</div>
+                  </div>
+                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium shrink-0 ${sr.color}`}>{sr.label}</span>
+                </div>
+                <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
+                  <div className="min-w-0">
+                    <dt className="text-[11px] text-slate-500 mb-0.5">מקצוע</dt>
+                    <dd><SelectCell workerId={w.id} value={w.profession_type} displayValue={profLabel} options={professionOptions} updateKey="profession_type" onSaved={(v) => handleFieldSaved(w.id, 'profession_type', v)} /></dd>
+                  </div>
+                  <div className="min-w-0">
+                    <dt className="text-[11px] text-slate-500 mb-0.5">ניסיון</dt>
+                    <dd><ExperienceCell workerId={w.id} value={expCode} onSaved={(v) => handleExpSaved(w.id, v)} /></dd>
+                  </div>
+                  <div className="min-w-0">
+                    <dt className="text-[11px] text-slate-500 mb-0.5">מדינה</dt>
+                    <dd><SelectCell workerId={w.id} value={w.origin_country} displayValue={originLabel} options={originOptions} updateKey="origin_country" onSaved={(v) => handleFieldSaved(w.id, 'origin_country', v)} /></dd>
+                  </div>
+                  <div className="min-w-0">
+                    <dt className="text-[11px] text-slate-500 mb-0.5">אזור זמינות</dt>
+                    <dd><SelectCell workerId={w.id} value={availRegion ?? ''} displayValue={regionLabel} options={regionOptions} updateKey="available_region" onSaved={(v) => handleExtraSaved(w.id, 'available_region', v)} /></dd>
+                  </div>
+                  <div className="min-w-0">
+                    <dt className="text-[11px] text-slate-500 mb-0.5">זמין מ-</dt>
+                    <dd><DateCell workerId={w.id} value={availFrom ?? ''} updateKey="available_from" onSaved={(v) => handleExtraSaved(w.id, 'available_from', v)} /></dd>
+                  </div>
+                  <div className="min-w-0">
+                    <dt className="text-[11px] text-slate-500 mb-0.5 flex items-center gap-1">
+                      ויזה {vr.urgent && <AlertTriangle className="h-3 w-3 text-red-600 shrink-0" />}
+                    </dt>
+                    <dd className={vr.urgent ? 'text-red-600' : ''}>
+                      <DateCell workerId={w.id} value={w.visa_valid_until ?? ''} updateKey="visa_valid_until" onSaved={(v) => handleFieldSaved(w.id, 'visa_valid_until', v)} />
+                    </dd>
+                  </div>
+                  <div className="min-w-0 col-span-2">
+                    <dt className="text-[11px] text-slate-500 mb-0.5">מס׳ עובד</dt>
+                    <dd><EmpNumCell workerId={w.id} value={empNum} onSaved={(v) => handleEmpNumSaved(w.id, v)} /></dd>
+                  </div>
+                </dl>
+                <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                  <SelectCell workerId={w.id} value={w.status} displayValue="שנה סטטוס" options={[
+                    { value: 'available',   label: 'זמין' },
+                    { value: 'assigned',    label: 'משובץ' },
+                    { value: 'on_leave',    label: 'בחופשה' },
+                    { value: 'deactivated', label: 'לא פעיל' },
+                  ]} updateKey="status" onSaved={(v) => handleFieldSaved(w.id, 'status', v)} />
+                  {w.status !== 'assigned' && (
+                    <button
+                      type="button"
+                      onClick={() => setPendingDelete(w)}
+                      aria-label={`מחק את ${w.first_name} ${w.last_name}`}
+                      className="inline-flex items-center justify-center min-h-11 min-w-11 rounded-full text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition-colors"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Desktop table — unchanged, hidden on ≤sm because the card
+            view above covers that viewport. overflow-x-auto retained
+            as a belt-and-braces safety in case the desktop tab gets
+            narrowed. */}
+        <div className="hidden sm:block overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 text-xs">
@@ -776,6 +868,7 @@ export default function WorkersPage() {
             </tbody>
           </table>
         </div>
+        </>
       )}
 
       {/* Delete confirmation modal — soft-deletes on the server and
