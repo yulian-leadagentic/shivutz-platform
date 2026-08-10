@@ -95,7 +95,7 @@ function CombinedCard({ side, ctaHref, switching, onClick }: CombinedCardProps) 
             {HERO_STAT.value}
           </div>
           <div className="text-[11px] md:text-sm text-slate-500 mb-1.5 md:mb-3">{HERO_STAT.label}</div>
-          <div className="inline-flex items-center gap-1 md:gap-2 px-3 md:px-6 py-1.5 md:py-2.5 rounded-full bg-brand-800 text-xs md:text-base font-bold text-white shadow-md group-hover:bg-brand-900 transition-colors">
+          <div className="inline-flex items-center gap-1 md:gap-2 px-3 md:px-6 py-1.5 md:py-2.5 rounded-full bg-brand-600 text-xs md:text-base font-bold text-slate-900 shadow-md group-hover:bg-brand-800 transition-colors">
             {isSwitching
               ? <><Loader2 className="h-3.5 w-3.5 md:h-4 md:w-4 animate-spin" /> מעביר…</>
               : <>חפש עובדים<ArrowLeft className="h-3.5 w-3.5 md:h-4 md:w-4 group-hover:-translate-x-1 transition-transform" /></>}
@@ -171,12 +171,19 @@ export default function LiveShowcase() {
     }
   }
 
+  // When the visitor is already logged in but their current entity
+  // is the WRONG role for the tile they clicked, route through
+  // /select-entity — not /login. The old behaviour re-ran the whole
+  // phone+OTP flow to a user who was already signed in and already
+  // a member of the target entity. /select-entity now fetches from
+  // /auth/memberships when sessionStorage is empty, so it's the
+  // right funnel for a re-prime (no OTP loop).
   const contractorHref = !isLoggedIn
     ? '/login?intent=contractor'
-    : (entityType === 'contractor' ? dashboardOf('contractor') : '/login?intent=contractor');
+    : (entityType === 'contractor' ? dashboardOf('contractor') : '/select-entity?intent=contractor');
   const corporationHref = !isLoggedIn
     ? '/login?intent=corporation'
-    : (entityType === 'corporation' ? dashboardOf('corporation') : '/login?intent=corporation');
+    : (entityType === 'corporation' ? dashboardOf('corporation') : '/select-entity?intent=corporation');
 
   return (
     <section

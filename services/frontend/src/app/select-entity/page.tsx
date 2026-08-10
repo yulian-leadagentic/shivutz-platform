@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { Suspense, useEffect, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Loader2, Building2, HardHat, ShieldCheck } from 'lucide-react';
 import { otpApi, type Membership } from '@/lib/api';
 import { saveTokens, getAccessToken, decodeJwtPayload } from '@/lib/auth';
@@ -23,8 +23,9 @@ const ROLE_LABELS: Record<string, string> = {
   viewer:   'צופה',
 };
 
-export default function SelectEntityPage() {
+function SelectEntityInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { refreshAuth } = useAuth();
 
   // Read role from the partial JWT issued by /auth/login/otp. When
@@ -50,19 +51,37 @@ export default function SelectEntityPage() {
       if (p && typeof p.role === 'string' && p.role === 'admin') setIsAdmin(true);
     }
 
+    // Two entry paths for this page:
+    //  (1) Login flow — /auth/login/otp seeded `pending_memberships`
+    //      into sessionStorage before pushing us here.
+    //  (2) An already-authed user hit this route directly (TopBar
+    //      switcher fallback, LandingNav dashboardHref for admins,
+    //      LiveShowcase "enter this role" for a user with multiple
+    //      matching memberships, RoleGuard bounce when the JWT lacks
+    //      entity context).
+    //
+    // Before this fix, path (2) always bounced to /login → OTP loop.
+    // Now we fall back to fetching memberships from the API when the
+    // sessionStorage seed is missing. The API is the source of truth
+    // (same endpoint TopBar's switcher uses), so there's only one
+    // membership list in the app regardless of how the user got here.
     const raw = sessionStorage.getItem('pending_memberships');
-    if (!raw) {
-      // No pending memberships — redirect to login
-      router.replace('/login');
+    let list: Membership[] | null = null;
+    if (raw) {
+      try { list = JSON.parse(raw) as Membership[]; } catch { list = null; }
+    }
+    if (!list) {
+      if (!token) { router.replace('/login'); return; }
+      otpApi.myMemberships()
+        .then((res) => finish(res.memberships ?? []))
+        .catch(() => router.replace('/login'));
       return;
     }
-    let list: Membership[];
-    try {
-      list = JSON.parse(raw) as Membership[];
-    } catch {
-      router.replace('/login');
-      return;
-    }
+    finish(list);
+    return;
+
+    // Post-load work shared by both entry paths.
+    function finish(list: Membership[]) {
 
     // Auto-pick / picker decision based on the landing intent.
     //
@@ -86,7 +105,10 @@ export default function SelectEntityPage() {
     // read null and fall through to the all-memberships branch
     // below, overwriting the filtered set. We let `select()` clear
     // it after a successful pick instead.
-    const intent = sessionStorage.getItem('pending_intent');
+    // Intent hint: prefer the URL param (entry via LiveShowcase +
+    // "enter as <role>" links → /select-entity?intent=<role>), fall
+    // back to sessionStorage (entry via login flow that seeded it).
+    const intent = searchParams?.get('intent') ?? sessionStorage.getItem('pending_intent');
     if (intent === 'contractor' || intent === 'corporation') {
       const matching = list.filter((m) => m.entity_type === intent);
       if (matching.length === 1) {
@@ -103,6 +125,7 @@ export default function SelectEntityPage() {
       // membership list (user does have other valid roles).
     }
     setMemberships(list);
+    }
     // Eslint disable — `select` and `router` are stable for this page
     // and re-running this effect would re-trigger the auto-select.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -213,5 +236,15 @@ export default function SelectEntityPage() {
         </Card>
       </div>
     </div>
+  );
+}
+
+// Next 16 requires useSearchParams() inside a Suspense boundary or
+// the page bails out of static generation with a prerender error.
+export default function SelectEntityPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
+      <SelectEntityInner />
+    </Suspense>
   );
 }
