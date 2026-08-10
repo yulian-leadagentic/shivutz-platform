@@ -125,26 +125,32 @@ export function FeaturedAdsCarousel() {
             <a
               key={ad.id}
               href={`/?ad=${ad.id}`}
-              className="snap-start shrink-0 w-[280px] rounded-2xl overflow-hidden shadow-md hover:shadow-lg transition group"
+              className="snap-start shrink-0 w-[260px] sm:w-[280px] rounded-2xl overflow-hidden shadow-md hover:shadow-lg transition group flex flex-col"
             >
-              {/* Gradient hero */}
-              <div className={`relative bg-gradient-to-br ${st.grad} text-white p-4 h-32 overflow-hidden`}>
-                <div className="absolute -bottom-4 -end-4 opacity-25 pointer-events-none">
-                  <Icon className="w-28 h-28" />
+              {/* Gradient hero.
+                  M1 — was `h-32 overflow-hidden`, which clipped Hebrew
+                  titles like "5 מיטות פנויות באזור המרכז" whose
+                  ascenders + subline pushed past 128px on mobile. Now
+                  `min-h-32` lets the box grow with content, and the
+                  decorative icon is smaller + more transparent so it
+                  reads as a watermark instead of crowding the copy. */}
+              <div className={`relative bg-gradient-to-br ${st.grad} text-white p-4 min-h-32 overflow-hidden`}>
+                <div className="absolute -bottom-4 -end-4 opacity-15 sm:opacity-25 pointer-events-none" aria-hidden="true">
+                  <Icon className="w-20 h-20 sm:w-28 sm:h-28" />
                 </div>
-                <div className="relative flex items-start justify-between">
+                <div className="relative flex items-start justify-between gap-2">
                   <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider bg-white/25 backdrop-blur-sm rounded-full px-2 py-0.5">
                     {isHousing ? 'דיור' : (profLabel || 'עובדים')}
                   </span>
                   {boosted && <PromotedBadge size="sm" />}
                 </div>
                 <div className="relative mt-3">
-                  <p className="text-2xl font-extrabold leading-tight drop-shadow-sm">
+                  <p className="text-xl sm:text-2xl font-extrabold leading-tight drop-shadow-sm break-words">
                     {isHousing
                       ? (ad.available_beds ? `${ad.available_beds} מיטות פנויות` : (ad.city || 'דיור'))
                       : (ad.quantity ? `${ad.quantity} ${profLabel || 'עובדים'}` : (profLabel || 'עובדים'))}
                   </p>
-                  <p className="text-xs text-white/85 mt-0.5">
+                  <p className="text-xs text-white/85 mt-0.5 break-words">
                     {isHousing
                       ? [ad.city, ad.price_per_bed_nis ? `₪${ad.price_per_bed_nis}/מיטה` : null].filter(Boolean).join(' · ')
                       : [orgLabel && `מוצא: ${orgLabel}`, ad.region].filter(Boolean).join(' · ')}
@@ -153,7 +159,7 @@ export function FeaturedAdsCarousel() {
               </div>
 
               {/* Body strip */}
-              <div className="bg-white p-3">
+              <div className="bg-white p-3 flex-1 flex flex-col">
                 <p className="text-sm font-bold text-slate-900 line-clamp-1">{ad.title_he}</p>
                 {ad.body_he && (
                   <p className="text-xs text-slate-500 mt-1 line-clamp-2 leading-relaxed">{ad.body_he}</p>

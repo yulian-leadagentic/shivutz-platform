@@ -297,27 +297,38 @@ function LandingPageInner() {
               {/* Hero search — smart free-text is the single primary entry.
                   The three enum selects that used to sit above and compete
                   with this input are now hidden behind the "סינון מתקדם"
-                  disclosure below. Button stays visually Primary (brand-800)
-                  even when disabled — opacity-60 fade instead of a grey
-                  swap — so the hero doesn't read as "greyed out". */}
+                  disclosure below.
+                  M1 mobile — at ≤sm the input row and the button STACK
+                  vertically full-width so the field doesn't get chopped by
+                  the button on a 390px viewport. sm+ reverts to the
+                  desktop single-row layout the earlier search rework
+                  established. Button height is min-h-11 (44px) both
+                  layouts so it stays a real tap target.
+                  G1 button — bright brand-600 (#f78203, the logo orange,
+                  closest DS token to the spec's #F5821F) with slate-900
+                  text (matches #111827, AA ~6:1). hover→brand-800 the
+                  spec's darkening step. disabled = opacity-60 fade, never
+                  swapped to grey. */}
               <form
                 onSubmit={(e) => { e.preventDefault(); runSearch(); }}
                 className="bg-white border border-slate-200 rounded-2xl p-3 sm:p-4 shadow-md"
               >
-                <div className="flex items-center gap-2 sm:gap-3">
-                  <SearchIcon className="w-6 h-6 text-slate-400 shrink-0" aria-hidden="true" />
-                  <input
-                    type="text"
-                    value={q}
-                    onChange={(e) => setQ(e.target.value)}
-                    placeholder="לדוגמה: מחפש 4 פועלים סינים לריצוף"
-                    aria-label="חיפוש חכם — תיאור חופשי בעברית"
-                    className="flex-1 text-base sm:text-lg outline-none placeholder:text-slate-400 py-2 bg-transparent"
-                  />
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
+                  <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
+                    <SearchIcon className="w-6 h-6 text-slate-400 shrink-0" aria-hidden="true" />
+                    <input
+                      type="text"
+                      value={q}
+                      onChange={(e) => setQ(e.target.value)}
+                      placeholder="לדוגמה: מחפש 4 פועלים סינים לריצוף"
+                      aria-label="חיפוש חכם — תיאור חופשי בעברית"
+                      className="flex-1 min-w-0 text-base sm:text-lg outline-none placeholder:text-slate-400 py-2 bg-transparent"
+                    />
+                  </div>
                   <button
                     type="submit"
                     disabled={loading || (q.trim().length < 2 && !anyFilter)}
-                    className="bg-brand-800 hover:bg-brand-900 text-white text-base font-bold px-5 sm:px-6 py-3 rounded-xl disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center gap-2 shrink-0"
+                    className="w-full sm:w-auto min-h-11 bg-brand-600 hover:bg-brand-800 text-slate-900 text-base font-bold px-5 sm:px-6 py-3 rounded-xl disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2 shrink-0"
                   >
                     {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <SearchIcon className="w-5 h-5" />}
                     חפש
@@ -371,13 +382,17 @@ function LandingPageInner() {
                 {advancedOpen && (
                   <div
                     id="advanced-filters-panel"
-                    className="mt-3 mx-auto max-w-3xl flex flex-wrap items-center justify-center gap-2 text-sm bg-white border border-slate-200 rounded-xl p-3"
+                    className="mt-3 mx-auto max-w-3xl flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center sm:justify-center gap-2 text-sm bg-white border border-slate-200 rounded-xl p-3"
                   >
+                    {/* M1 mobile — selects stack full-width so at 390px
+                        the labels + values are readable, not squeezed
+                        into a wrapping strip. min-h-11 keeps them tap-
+                        friendly. */}
                     <select
                       value={fProf}
                       onChange={(e) => setFProf(e.target.value)}
                       aria-label="מקצוע"
-                      className="h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm text-slate-800"
+                      className="w-full sm:w-auto min-h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-800"
                     >
                       <option value="">כל המקצועות</option>
                       {professions.map((p) => (
@@ -388,7 +403,7 @@ function LandingPageInner() {
                       value={fRegion}
                       onChange={(e) => setFRegion(e.target.value)}
                       aria-label="אזור"
-                      className="h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm text-slate-800"
+                      className="w-full sm:w-auto min-h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-800"
                     >
                       <option value="">כל הארץ</option>
                       {regions.map((r) => (
@@ -399,7 +414,7 @@ function LandingPageInner() {
                       value={fOrigin}
                       onChange={(e) => setFOrigin(e.target.value)}
                       aria-label="ארץ מוצא"
-                      className="h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm text-slate-800"
+                      className="w-full sm:w-auto min-h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-800"
                     >
                       <option value="">כל הארצות</option>
                       {origins.map((o) => (
@@ -410,7 +425,7 @@ function LandingPageInner() {
                       <button
                         type="button"
                         onClick={clearFilters}
-                        className="text-xs text-slate-500 hover:text-brand-800 underline underline-offset-2"
+                        className="text-xs text-slate-500 hover:text-brand-800 underline underline-offset-2 min-h-11"
                       >
                         נקה סינון
                       </button>
