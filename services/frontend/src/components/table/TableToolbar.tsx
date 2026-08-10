@@ -165,14 +165,15 @@ export function TableToolbar<P extends string = string, S extends string = strin
       )}
 
       {showControl && (
-        // Single-row control strip — never wraps. Narrow viewports get
-        // horizontal scroll instead of breaking into 3 rows. All
-        // children are h-9 so the row reads as one continuous bar.
-        // The bg-white + border + rounded-lg replaces the previous
-        // Card wrapper for a tighter footprint.
+        // M3.3 — the row USED to be a single-line strip with
+        // overflow-x-auto ("narrow viewports get horizontal scroll").
+        // That made mobile pages carry an internal scrollbar to reach
+        // sort/filter, which nobody discovers. Now the strip stacks
+        // VERTICALLY on ≤sm (each control full-width, ≥44px tall) and
+        // stays a single row on sm+. Same controls, both viewports.
         <div className="bg-white border border-slate-200 rounded-lg shadow-sm">
-          <div className="flex items-center gap-2 p-2 overflow-x-auto">
-            <FilterIcon className="h-4 w-4 text-slate-400 shrink-0" />
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2 p-2 sm:overflow-x-auto">
+            <FilterIcon className="hidden sm:block h-4 w-4 text-slate-400 shrink-0" />
 
             {showSelects && selects.map((s) => (
               <select
@@ -180,7 +181,7 @@ export function TableToolbar<P extends string = string, S extends string = strin
                 aria-label={s.ariaLabel}
                 value={s.value}
                 onChange={(e) => s.onChange(e.target.value)}
-                className="h-9 text-sm border border-slate-300 rounded-md px-2 bg-white shrink-0 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+                className="w-full sm:w-auto min-h-11 sm:h-9 text-sm border border-slate-300 rounded-md px-3 sm:px-2 bg-white sm:shrink-0 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
               >
                 {s.options.map((o) => (
                   <option key={o.value} value={o.value}>{o.label}</option>
@@ -196,7 +197,7 @@ export function TableToolbar<P extends string = string, S extends string = strin
               // input (see the global useEffect below); Esc inside
               // the input clears it. The data-table-search attribute
               // is the marker the global handler looks for.
-              <div className="relative flex-1 min-w-[140px]">
+              <div className="relative w-full sm:flex-1 sm:min-w-[140px]">
                 <Search className="h-4 w-4 text-slate-400 absolute top-1/2 -translate-y-1/2 start-2.5 pointer-events-none" />
                 <input
                   type="search"
@@ -213,7 +214,7 @@ export function TableToolbar<P extends string = string, S extends string = strin
                       onSearchSubmit();
                     }
                   }}
-                  className="h-9 w-full ps-8 pe-2 text-sm rounded-md border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+                  className="min-h-11 sm:h-9 w-full ps-8 pe-2 text-sm rounded-md border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
                 />
                 <span
                   className="absolute end-2 top-1/2 -translate-y-1/2 text-[10px] text-slate-300 font-mono pointer-events-none select-none hidden sm:inline-block"
@@ -225,14 +226,16 @@ export function TableToolbar<P extends string = string, S extends string = strin
             )}
 
             {showSort && (
-              // Sort key dropdown + direction toggle, side by side.
-              // Both are h-9 so visually they're the same row size.
-              <>
+              // Sort key + direction toggle. Mobile: sit on their own
+              // row (`flex gap-2`), the select flex-grows so both fit
+              // side by side without overflow. Desktop: unchanged
+              // inline behavior.
+              <div className="flex gap-2 sm:contents">
                 <select
                   aria-label="מיון לפי"
                   value={sortKey}
                   onChange={(e) => onSortKeyChange?.(e.target.value as S)}
-                  className="h-9 text-sm border border-slate-300 rounded-md px-2 bg-white shrink-0 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+                  className="flex-1 sm:flex-none min-h-11 sm:h-9 text-sm border border-slate-300 rounded-md px-3 sm:px-2 bg-white sm:shrink-0 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
                 >
                   {sortOptions.map((o) => (
                     <option key={o.key} value={o.key}>{o.label}</option>
@@ -243,20 +246,20 @@ export function TableToolbar<P extends string = string, S extends string = strin
                   onClick={onSortDirToggle}
                   aria-label={sortDir === 'asc' ? 'סדר עולה' : 'סדר יורד'}
                   title={sortDir === 'asc' ? 'סדר עולה' : 'סדר יורד'}
-                  className="h-9 w-9 inline-flex items-center justify-center rounded-md border border-slate-300 bg-white hover:bg-slate-50 text-slate-600 shrink-0"
+                  className="min-h-11 min-w-11 sm:h-9 sm:w-9 inline-flex items-center justify-center rounded-md border border-slate-300 bg-white hover:bg-slate-50 text-slate-600 shrink-0"
                 >
                   {sortDir === 'asc'
                     ? <ArrowUp className="h-4 w-4" />
                     : <ArrowDown className="h-4 w-4" />}
                 </button>
-              </>
+              </div>
             )}
 
             {hasActiveFilter && onClear && (
               <button
                 type="button"
                 onClick={onClear}
-                className="h-9 inline-flex items-center gap-1 px-3 text-sm font-medium rounded-md border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 shrink-0"
+                className="w-full sm:w-auto min-h-11 sm:h-9 inline-flex items-center justify-center sm:justify-start gap-1 px-3 text-sm font-medium rounded-md border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 sm:shrink-0"
               >
                 <X className="h-3.5 w-3.5" />
                 נקה
