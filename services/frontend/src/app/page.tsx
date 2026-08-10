@@ -14,7 +14,7 @@
 //   7. Recent ads grid (yad2 mosaic — when no query)
 //   8. Role register picker + "how it works" + footer
 
-import { useCallback, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -72,7 +72,7 @@ interface PublicAd {
   published_at: string;
 }
 
-export default function LandingPage() {
+function LandingPageInner() {
   const router = useRouter();
   const params = useSearchParams();
   const [leadModalOpen, setLeadModalOpen] = useState(false);
@@ -91,12 +91,29 @@ export default function LandingPage() {
   // get prepended to the LLM query on submit; the rewriter already
   // knows how to fold "flooring, center, china" into enum filters, so
   // this is a pure client-side add — no backend contract change.
+  //
+  // Search-rework — the three enum selects used to sit ABOVE the
+  // free-text input, competing with it. They're now hidden behind a
+  // "סינון מתקדם" toggle so the smart search reads as the primary
+  // entry. Filter logic (URL persistence, LLM chip-prepend, aria-live)
+  // is unchanged — this is a REPOSITION.
   const [professions, setProfessions] = useState<Profession[]>([]);
   const [regions,     setRegions]     = useState<{ code: string; name_he: string }[]>([]);
   const [origins,     setOrigins]     = useState<{ code: string; name_he: string }[]>([]);
   const [fProf,       setFProf]       = useState('');
   const [fRegion,     setFRegion]     = useState('');
   const [fOrigin,     setFOrigin]     = useState('');
+  // Advanced-filters disclosure. Starts CLOSED for a first-time visit,
+  // OPEN when the URL already carries a filter (a shared link with
+  // ?prof=… → we don't want to hide the currently-active filter from
+  // the user). Lazy initializer so we read the URL exactly once on
+  // mount and don't fight the state on subsequent syncFiltersToUrl
+  // rewrites.
+  const [advancedOpen, setAdvancedOpen] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    const sp = new URLSearchParams(window.location.search);
+    return !!(sp.get('prof') || sp.get('region') || sp.get('origin'));
+  });
 
   useEffect(() => {
     apiFetch<{ results: PublicAd[] }>('/ads/public/recent?limit=12')
@@ -277,72 +294,41 @@ export default function LandingPage() {
                 })}
               </div>
 
-              {/* Fat search bar */}
+              {/* Hero search — smart free-text is the single primary entry.
+                  The three enum selects that used to sit above and compete
+                  with this input are now hidden behind the "סינון מתקדם"
+                  disclosure below.
+                  M1 mobile — at ≤sm the input row and the button STACK
+                  vertically full-width so the field doesn't get chopped by
+                  the button on a 390px viewport. sm+ reverts to the
+                  desktop single-row layout the earlier search rework
+                  established. Button height is min-h-11 (44px) both
+                  layouts so it stays a real tap target.
+                  G1 button — bright brand-600 (#f78203, the logo orange,
+                  closest DS token to the spec's #F5821F) with slate-900
+                  text (matches #111827, AA ~6:1). hover→brand-800 the
+                  spec's darkening step. disabled = opacity-60 fade, never
+                  swapped to grey. */}
               <form
                 onSubmit={(e) => { e.preventDefault(); runSearch(); }}
-                className="bg-white border border-slate-200 rounded-2xl p-3 shadow-md space-y-2"
+                className="bg-white border border-slate-200 rounded-2xl p-3 sm:p-4 shadow-md"
               >
-                {/* L2 — filter chips row. Selected values fold into the
-                    LLM query on submit. Native selects for touch-friendly
-                    picking on mobile; no popover libs needed. */}
-                <div className="flex flex-wrap items-center gap-2 text-sm">
-                  <select
-                    value={fProf}
-                    onChange={(e) => setFProf(e.target.value)}
-                    aria-label="מקצוע"
-                    className="h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm text-slate-800 max-w-[45%] sm:max-w-none"
-                  >
-                    <option value="">כל המקצועות</option>
-                    {professions.map((p) => (
-                      <option key={p.code} value={p.code}>{p.name_he}</option>
-                    ))}
-                  </select>
-                  <select
-                    value={fRegion}
-                    onChange={(e) => setFRegion(e.target.value)}
-                    aria-label="אזור"
-                    className="h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm text-slate-800 max-w-[45%] sm:max-w-none"
-                  >
-                    <option value="">כל הארץ</option>
-                    {regions.map((r) => (
-                      <option key={r.code} value={r.code}>{r.name_he}</option>
-                    ))}
-                  </select>
-                  <select
-                    value={fOrigin}
-                    onChange={(e) => setFOrigin(e.target.value)}
-                    aria-label="ארץ מוצא"
-                    className="h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm text-slate-800 max-w-[45%] sm:max-w-none"
-                  >
-                    <option value="">כל הארצות</option>
-                    {origins.map((o) => (
-                      <option key={o.code} value={o.code}>{o.name_he}</option>
-                    ))}
-                  </select>
-                  {anyFilter && (
-                    <button
-                      type="button"
-                      onClick={clearFilters}
-                      className="text-xs text-slate-500 hover:text-brand-800 underline underline-offset-2"
-                    >
-                      נקה סינון
-                    </button>
-                  )}
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <SearchIcon className="w-5 h-5 text-slate-400 shrink-0" />
-                  <input
-                    type="text"
-                    value={q}
-                    onChange={(e) => setQ(e.target.value)}
-                    placeholder="לדוגמה: מחפש 4 פועלים סינים לריצוף"
-                    className="flex-1 text-base outline-none placeholder:text-slate-400 py-1"
-                  />
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
+                  <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
+                    <SearchIcon className="w-6 h-6 text-slate-400 shrink-0" aria-hidden="true" />
+                    <input
+                      type="text"
+                      value={q}
+                      onChange={(e) => setQ(e.target.value)}
+                      placeholder="לדוגמה: מחפש 4 פועלים סינים לריצוף"
+                      aria-label="חיפוש חכם — תיאור חופשי בעברית"
+                      className="flex-1 min-w-0 text-base sm:text-lg outline-none placeholder:text-slate-400 py-2 bg-transparent"
+                    />
+                  </div>
                   <button
                     type="submit"
                     disabled={loading || (q.trim().length < 2 && !anyFilter)}
-                    className="bg-brand-800 hover:bg-brand-900 text-white text-base font-bold px-6 py-3 rounded-xl disabled:bg-slate-300 inline-flex items-center gap-2 shrink-0"
+                    className="w-full sm:w-auto min-h-11 bg-brand-600 hover:bg-brand-800 text-slate-900 text-base font-bold px-5 sm:px-6 py-3 rounded-xl disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2 shrink-0"
                   >
                     {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <SearchIcon className="w-5 h-5" />}
                     חפש
@@ -350,6 +336,9 @@ export default function LandingPage() {
                 </div>
               </form>
 
+              {/* Suggestion chips — directly below the input, still the
+                  quickest way for a first-time visitor to learn the smart
+                  syntax by clicking an example. */}
               {!resp && !loading && (
                 <div className="flex flex-wrap gap-2 justify-center">
                   {EXAMPLES.map((ex) => (
@@ -364,6 +353,86 @@ export default function LandingPage() {
                   ))}
                 </div>
               )}
+
+              {/* Advanced filters — collapsed by default so they don't
+                  compete with the smart search. Auto-opens when the URL
+                  already carries a filter (shared link case). Same three
+                  enum selects as before; runSearch still folds them into
+                  the LLM query and syncFiltersToUrl still mirrors to
+                  ?prof=&region=&origin=. */}
+              <div className="text-center">
+                <button
+                  type="button"
+                  onClick={() => setAdvancedOpen((o) => !o)}
+                  aria-expanded={advancedOpen}
+                  aria-controls="advanced-filters-panel"
+                  className="inline-flex items-center gap-1.5 text-sm text-slate-600 hover:text-brand-800"
+                >
+                  <span aria-hidden="true">{advancedOpen ? '▴' : '▾'}</span>
+                  <span className="underline underline-offset-2">
+                    {advancedOpen ? 'סגור סינון מתקדם' : 'סינון מתקדם'}
+                  </span>
+                  {anyFilter && (
+                    <span className="text-[10px] font-bold text-brand-700 bg-brand-50 border border-brand-200 rounded-full px-1.5 py-0.5">
+                      פעיל
+                    </span>
+                  )}
+                </button>
+
+                {advancedOpen && (
+                  <div
+                    id="advanced-filters-panel"
+                    className="mt-3 mx-auto max-w-3xl flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center sm:justify-center gap-2 text-sm bg-white border border-slate-200 rounded-xl p-3"
+                  >
+                    {/* M1 mobile — selects stack full-width so at 390px
+                        the labels + values are readable, not squeezed
+                        into a wrapping strip. min-h-11 keeps them tap-
+                        friendly. */}
+                    <select
+                      value={fProf}
+                      onChange={(e) => setFProf(e.target.value)}
+                      aria-label="מקצוע"
+                      className="w-full sm:w-auto min-h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-800"
+                    >
+                      <option value="">כל המקצועות</option>
+                      {professions.map((p) => (
+                        <option key={p.code} value={p.code}>{p.name_he}</option>
+                      ))}
+                    </select>
+                    <select
+                      value={fRegion}
+                      onChange={(e) => setFRegion(e.target.value)}
+                      aria-label="אזור"
+                      className="w-full sm:w-auto min-h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-800"
+                    >
+                      <option value="">כל הארץ</option>
+                      {regions.map((r) => (
+                        <option key={r.code} value={r.code}>{r.name_he}</option>
+                      ))}
+                    </select>
+                    <select
+                      value={fOrigin}
+                      onChange={(e) => setFOrigin(e.target.value)}
+                      aria-label="ארץ מוצא"
+                      className="w-full sm:w-auto min-h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-800"
+                    >
+                      <option value="">כל הארצות</option>
+                      {origins.map((o) => (
+                        <option key={o.code} value={o.code}>{o.name_he}</option>
+                      ))}
+                    </select>
+                    {anyFilter && (
+                      <button
+                        type="button"
+                        onClick={clearFilters}
+                        className="text-xs text-slate-500 hover:text-brand-800 underline underline-offset-2 min-h-11"
+                      >
+                        נקה סינון
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           </section>
 
@@ -627,5 +696,16 @@ function AdCard({
         )}
       </div>
     </li>
+  );
+}
+
+// Next 16 requires useSearchParams() to sit inside a Suspense boundary
+// or the page bails out of static generation with a prerender error.
+// Fallback keeps the layout height stable while the CSR-bail resolves.
+export default function LandingPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-gradient-to-b from-slate-50 to-white" />}>
+      <LandingPageInner />
+    </Suspense>
   );
 }
