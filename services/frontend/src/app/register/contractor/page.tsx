@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Loader2, CheckCircle2, AlertCircle, Mail, Smartphone, ShieldCheck } from 'lucide-react';
 import { orgApi, otpApi } from '@/lib/api';
-import { saveTokens } from '@/lib/auth';
+import { saveTokens, isLoggedIn, getAccessToken, decodeJwtPayload } from '@/lib/auth';
 import { useEnums } from '@/features/enums/EnumsContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -57,11 +57,12 @@ interface Step2 {
 interface Step3 {
   contact_email: string;
   tc_accepted: boolean;
+  whatsapp_opt_in: boolean;
 }
 
 const CONTRACTOR_TC_VERSION = '2026-06-04.v1';
 const CONTRACTOR_TC_TEXT = `
-תנאי שימוש בפלטפורמת BuildUp לקבלנים — גרסה ${CONTRACTOR_TC_VERSION}
+תנאי שימוש בפלטפורמת TagidAI לקבלנים — גרסה ${CONTRACTOR_TC_VERSION}
 
 1. אישור והפעלה
 המערכת פתוחה לקבלן מיד עם הרישום. הגשת בקשות לעובדים וקבלת הצעות מתאגידים מותנית באימות הקבלן (מספר רישיון קבלן מול פנקס הקבלנים) או אישור ידני של מנהל המערכת.
@@ -79,7 +80,7 @@ const CONTRACTOR_TC_TEXT = `
 פרטי הבקשה שמסופקים על ידי הקבלן (מקצוע, כמות, אזור, תאריכי תחילה) נכונים למיטב ידיעתו ובאחריותו. שינויים בבקשה לאחר פרסומה מחייבים יידוע התאגידים שהציעו הצעה.
 
 6. אימות צד נגדי והגבלת אחריות
-BuildUp עושה כמיטב יכולתה לאמת תאגידים ומשתמשים בפלטפורמה (רשם החברות, רשימת תאגידי כוח אדם מורשים של רשות האוכלוסין וההגירה, אימות טלפון ועוד), אולם האחריות הסופית לבדיקת התאגיד שמולו פועל הקבלן — לרבות רישיון העסקת עובדים זרים, יכולת אספקה, ועמידה בחוקי העבודה — חלה על הקבלן עצמו. BuildUp לא תישא בכל הוצאה או נזק, ישיר או עקיף, הנובע מהתקשרות בין הקבלן לתאגיד.
+TagidAI עושה כמיטב יכולתה לאמת תאגידים ומשתמשים בפלטפורמה (רשם החברות, רשימת תאגידי כוח אדם מורשים של רשות האוכלוסין וההגירה, אימות טלפון ועוד), אולם האחריות הסופית לבדיקת התאגיד שמולו פועל הקבלן — לרבות רישיון העסקת עובדים זרים, יכולת אספקה, ועמידה בחוקי העבודה — חלה על הקבלן עצמו. TagidAI לא תישא בכל הוצאה או נזק, ישיר או עקיף, הנובע מהתקשרות בין הקבלן לתאגיד.
 
 7. תקשורת ויידוע
 על ידי הרישום הקבלן מסכים לקבל הודעות SMS, WhatsApp ואימייל הקשורות לעסקאות, אישורים ושינויי סטטוס.
@@ -93,18 +94,22 @@ interface VerifyState {
   sent: boolean;
 }
 
-function otpErrorMsg(msg: string): string {
-  if (msg === 'rate_limited')             return 'יותר מדי ניסיונות. נסה שוב מאוחר יותר';
-  if (msg === 'wrong_code')               return 'קוד לא נכון. נסה שנית';
-  if (msg === 'max_attempts')             return 'יותר מדי ניסיונות. בקש קוד חדש';
-  if (msg === 'otp_expired_or_not_found') return 'הקוד פג תוקף. שלח קוד חדש';
-  return 'שגיאה באימות. נסה שוב';
-}
+// P0-1 — delegates to the central mapper; see lib/api/errors.ts.
+import { mapApiError } from '@/lib/api/errors';
+function otpErrorMsg(msg: string): string { return mapApiError(msg); }
 
 function RegisterContractorInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const fromTrial = searchParams?.get('from') === 'trial';
+  // P0-3 add-role — the register wizard has TWO modes:
+  //   COLD SIGNUP (anonymous new user): identity+OTP → entity → T&C.
+  //   ADD ROLE (authenticated existing user, ?add=1): skip identity+OTP,
+  //     lock name/phone to the JWT values, append a contractor entity to
+  //     the caller's user_id via the backend's add_role branch.
+  // Also entered from NoAccessCard "הוסף חשבון קבלן" CTA and (later)
+  // from the TopBar entity switcher.
+  const isAddMode = searchParams?.get('add') === '1';
   // O1 — reveal→register funnel resilience.
   // Capture ?returnTo=... from the query on mount so it survives OTP
   // resend, a mid-wizard refresh (URL params re-parse fine, but store
@@ -159,10 +164,37 @@ function RegisterContractorInner() {
     }));
     setStep(2);
   }, [fromTrial]);
+
+  // P0-3 add-role bypass — an authenticated user hitting ?add=1
+  // (e.g. from NoAccessCard's "הוסף חשבון קבלן" CTA) skips identity+
+  // OTP: their name+phone come from the JWT, are read-only in the UI,
+  // and the backend appends the new contractor via add_role=true on
+  // submit. If they aren't logged in, we bounce to /login with a
+  // returnTo pointing back here so the CTA works end-to-end.
+  useEffect(() => {
+    if (!isAddMode) return;
+    if (!isLoggedIn()) {
+      router.replace('/login?returnTo=' + encodeURIComponent('/register/contractor?add=1'));
+      return;
+    }
+    const token = getAccessToken();
+    const p = token ? decodeJwtPayload(token) : null;
+    const phone = (p?.phone as string) ?? '';
+    const name  = (p?.full_name as string) ?? '';
+    setStep1((s) => ({
+      ...s,
+      phone,
+      normPhone: phone,
+      full_name: name,
+      otpPhase:  'verify',
+      otpVerified: true,
+    }));
+    setStep(2);
+  }, [isAddMode, router]);
   const [step2, setStep2] = useState<Step2>({
     company_name_he: '', business_number: '', kablan_number: '', operating_regions: [],
   });
-  const [step3, setStep3] = useState<Step3>({ contact_email: '', tc_accepted: false });
+  const [step3, setStep3] = useState<Step3>({ contact_email: '', tc_accepted: false, whatsapp_opt_in: false });
 
   const [lookup, setLookup]           = useState<RegistryLookupResult | null>(null);
   const [lookupLoading, setLookupLoading] = useState(false);
@@ -195,13 +227,32 @@ function RegisterContractorInner() {
   }
 
   // ── Step 1 sub-step B: verify OTP ────────────────────────────────────────
+  // P0-3 — Uses /auth/register-precheck instead of the raw verifyOtp.
+  // Same OTP semantics; the wrapper additionally reports whether the
+  // phone is a KNOWN user with active memberships. A known user gets
+  // redirected to /login (with intent=contractor + prefilled phone)
+  // rather than being walked through 3 more steps only to hit a 409
+  // at /organizations/contractors ("phone_already_contractor").
   async function handleVerifyOtp(e: FormEvent) {
     e.preventDefault(); setError('');
     if (step1.code.length !== 6) { setError('קוד האימות חייב להכיל 6 ספרות'); return; }
 
     setLoading(true);
     try {
-      await otpApi.verifyOtp(step1.normPhone, step1.code, 'register');
+      const res = await otpApi.registerPrecheck(step1.normPhone, step1.code);
+      if (res.exists && res.has_memberships) {
+        // Known user — hand off to login. Login page filters by intent
+        // and auto-picks a single matching membership; multi-match hits
+        // /select-entity. Either way, no shadow user gets created.
+        const q = new URLSearchParams({
+          phone:  step1.normPhone,
+          intent: 'contractor',
+          hint:   res.memberships.some(m => m.entity_type === 'contractor')
+                    ? 'already_contractor' : 'has_account',
+        });
+        router.push(`/login?${q.toString()}`);
+        return;
+      }
       setStep1((p) => ({ ...p, otpVerified: true }));
       setStep(2);
     } catch (err) {
@@ -277,7 +328,22 @@ function RegisterContractorInner() {
         contact_name:       step1.full_name,
         contact_phone:      step1.normPhone,
         contact_email:      step3.contact_email || undefined,
+        whatsapp_opt_in:    step3.whatsapp_opt_in,
+        // P0-3 add-role — safe pass-through; the backend only honors
+        // this when paired with the gateway-injected x-user-id header.
+        add_role:           isAddMode || undefined,
       });
+
+      // P0-3 add-role — the backend returns null tokens in add-mode
+      // (it doesn't have the caller's JWT signing key). Get a fresh
+      // one for the new contractor entity via /auth/select-entity.
+      if (result.added_role && result.id) {
+        const t = await otpApi.selectEntity(result.id, 'contractor');
+        saveTokens(t.access_token, t.refresh_token);
+        clearProspect();
+        router.push('/contractor/dashboard');
+        return;
+      }
 
       if (result.access_token && result.refresh_token) {
         saveTokens(result.access_token, result.refresh_token);
@@ -296,6 +362,22 @@ function RegisterContractorInner() {
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'שגיאה בהרשמה';
+      // P0-3 add-role — the caller already has a contractor. Instead
+      // of a red 409, hop them straight into that contractor via
+      // select-entity. Falls through to setError only if the backend
+      // couldn't determine which entity_id to hand back.
+      if (isAddMode && msg.includes('already_have_contractor')) {
+        const idMatch = msg.match(/"existing_entity_id"\s*:\s*"([^"]+)"/);
+        const existingId = idMatch?.[1];
+        if (existingId) {
+          try {
+            const t = await otpApi.selectEntity(existingId, 'contractor');
+            saveTokens(t.access_token, t.refresh_token);
+            router.push('/contractor/dashboard');
+            return;
+          } catch { /* fall through to setError */ }
+        }
+      }
       // Duplicate ח.פ → inverted-invite flow. Backend already SMS'd
       // the existing owner; land the user on the 'we asked' screen.
       if (msg.includes('contractor_already_registered')) {
@@ -346,7 +428,7 @@ function RegisterContractorInner() {
 
   // Duplicate ח.פ → 'we asked the owner' screen
   if (duplicateExistingName !== null) return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
+    <div className="min-h-screen flex flex-col items-center pt-6 sm:pt-0 sm:justify-center bg-slate-50 px-4">
       <Card className="w-full max-w-md shadow-md text-center border-2 border-emerald-300">
         <CardContent className="pt-8 pb-8 flex flex-col items-center gap-3">
           <CheckCircle2 className="h-16 w-16 text-emerald-500" />
@@ -373,7 +455,7 @@ function RegisterContractorInner() {
   // link, which left users guessing whether something else was
   // needed.
   if (success) return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
+    <div className="min-h-screen flex flex-col items-center pt-6 sm:pt-0 sm:justify-center bg-slate-50 px-4">
       <Card className="w-full max-w-lg shadow-md">
         <CardContent className="pt-8 pb-8 flex flex-col items-center gap-4 text-center">
           <CheckCircle2 className="h-16 w-16 text-emerald-500" />
@@ -403,7 +485,7 @@ function RegisterContractorInner() {
           </ol>
 
           <div className="w-full flex flex-col gap-2 pt-2">
-            <Link href="/login" className="w-full inline-flex items-center justify-center bg-brand-800 hover:bg-brand-900 text-white text-sm font-semibold px-4 py-2.5 rounded-lg">
+            <Link href="/login" className="w-full inline-flex items-center justify-center bg-brand-600 hover:bg-brand-800 text-slate-900 text-sm font-semibold px-4 py-2.5 rounded-lg min-h-11">
               חזרה לכניסה
             </Link>
             <Link href="/support" className="text-xs text-slate-500 hover:text-brand-700 hover:underline">
@@ -422,7 +504,7 @@ function RegisterContractorInner() {
   const namePrefilledFromRegistry = !!(lookup?.ok && lookup.prefill?.company_name_he);
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 px-4 py-8">
+    <div className="min-h-screen flex flex-col items-center pt-6 sm:pt-0 sm:justify-center bg-slate-50 px-4 py-8">
       <div className="w-full max-w-lg mb-3 flex justify-end">
         <HomeLink />
       </div>
@@ -444,7 +526,7 @@ function RegisterContractorInner() {
         <Card className="rounded-t-none shadow-md">
           <CardHeader className="pb-2">
             <div className="flex justify-center mb-3"><Logo size="md" variant="on-light" /></div>
-            <CardTitle className="text-center">הרשמת קבלן</CardTitle>
+            <CardTitle className="text-center">{isAddMode ? 'הוספת חשבון קבלן' : 'הרשמת קבלן'}</CardTitle>
             <CardDescription className="text-center">
               {step === 'verify' ? 'אימות בעלות' : `שלב ${step} מתוך ${TOTAL_STEPS}`}
             </CardDescription>
@@ -709,7 +791,22 @@ function RegisterContractorInner() {
                   autoComplete="email"
                 />
 
-                {/* T&C — scroll box + accept checkbox. BuildUp can't
+                {/* WhatsApp OTP opt-in — optional. When ticked, future
+                    login codes (and eventually deal notifications) go
+                    to WhatsApp first with SMS fallback. Not mandatory —
+                    SMS-only stays the default for everyone who doesn't
+                    actively want WhatsApp. */}
+                <label className="flex items-start gap-2 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={step3.whatsapp_opt_in}
+                    onChange={(e) => setStep3((p) => ({ ...p, whatsapp_opt_in: e.target.checked }))}
+                    className="rounded mt-0.5"
+                  />
+                  <span className="text-slate-700">קבל קודי אימות והתראות בWhatsApp במקום SMS</span>
+                </label>
+
+                {/* T&C — scroll box + accept checkbox. TagidAI can't
                     accept a contractor onto the platform without
                     explicit consent to the liability + verification
                     sections. */}

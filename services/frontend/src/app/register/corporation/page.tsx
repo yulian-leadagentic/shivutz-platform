@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Loader2, ShieldCheck, AlertCircle, Info, CheckCircle2 } from 'lucide-react';
 import { orgApi, otpApi } from '@/lib/api';
-import { saveTokens } from '@/lib/auth';
+import { saveTokens, isLoggedIn, getAccessToken, decodeJwtPayload } from '@/lib/auth';
 import { useEnums } from '@/features/enums/EnumsContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -53,11 +53,12 @@ interface Step2 {
 interface Step3 {
   contact_email: string;
   tc_accepted: boolean;
+  whatsapp_opt_in: boolean;
 }
 
 const TC_VERSION = '2026-06-04.v2';
 const TC_TEXT = `
-תנאי שימוש ופלטפורמת BuildUp — גרסה ${TC_VERSION}
+תנאי שימוש ופלטפורמת TagidAI — גרסה ${TC_VERSION}
 
 1. אישור והפעלה
 המערכת פתוחה לתאגיד מיד עם הרישום. פרסום עובדים והגשת הצעות מחייבים אישור ידני של מנהל המערכת ("תאגיד מאושר").
@@ -81,21 +82,20 @@ const TC_TEXT = `
 פרטי העובדים שמסופקים על ידי התאגיד נכונים למיטב ידיעתו ובאחריותו. תיאום ההצבה בפועל מתבצע ישירות מול הקבלן לאחר אישור העסקה.
 
 8. אימות צד נגדי והגבלת אחריות
-BuildUp עושה כמיטב יכולתה לאמת קבלנים ומשתמשים בפלטפורמה (פנקס הקבלנים, רשם החברות, אימות טלפון ועוד), אולם האחריות הסופית לבדיקת הקבלן שמולו פועל התאגיד — לרבות יכולת התשלום, רישיונותיו, ועמידה בחוקי העבודה — חלה על התאגיד עצמו. BuildUp לא תישא בכל הוצאה או נזק, ישיר או עקיף, הנובע מהתקשרות בין התאגיד לקבלן.
+TagidAI עושה כמיטב יכולתה לאמת קבלנים ומשתמשים בפלטפורמה (פנקס הקבלנים, רשם החברות, אימות טלפון ועוד), אולם האחריות הסופית לבדיקת הקבלן שמולו פועל התאגיד — לרבות יכולת התשלום, רישיונותיו, ועמידה בחוקי העבודה — חלה על התאגיד עצמו. TagidAI לא תישא בכל הוצאה או נזק, ישיר או עקיף, הנובע מהתקשרות בין התאגיד לקבלן.
 `.trim();
 
-function otpErrorMsg(msg: string): string {
-  if (msg === 'rate_limited')             return 'יותר מדי ניסיונות. נסה שוב מאוחר יותר';
-  if (msg === 'wrong_code')               return 'קוד לא נכון. נסה שנית';
-  if (msg === 'max_attempts')             return 'יותר מדי ניסיונות. בקש קוד חדש';
-  if (msg === 'otp_expired_or_not_found') return 'הקוד פג תוקף. שלח קוד חדש';
-  return 'שגיאה באימות. נסה שוב';
-}
+// P0-1 — delegates to the central mapper; see lib/api/errors.ts.
+import { mapApiError } from '@/lib/api/errors';
+function otpErrorMsg(msg: string): string { return mapApiError(msg); }
 
 function RegisterCorporationInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const fromTrial = searchParams?.get('from') === 'trial';
+  // P0-3 add-role — see register/contractor/page.tsx for the full
+  // explanation of add-mode. Same semantics on the corp side.
+  const isAddMode = searchParams?.get('add') === '1';
   // Live origin list — backend already filters to is_active=TRUE so
   // admin-deactivated countries never reach this dropdown.
   const { origins } = useEnums();
@@ -132,10 +132,32 @@ function RegisterCorporationInner() {
     }));
     setStep(2);
   }, [fromTrial]);
+
+  // P0-3 add-role — parallel to the contractor page's add-mode effect.
+  useEffect(() => {
+    if (!isAddMode) return;
+    if (!isLoggedIn()) {
+      router.replace('/login?returnTo=' + encodeURIComponent('/register/corporation?add=1'));
+      return;
+    }
+    const token = getAccessToken();
+    const p = token ? decodeJwtPayload(token) : null;
+    const phone = (p?.phone as string) ?? '';
+    const name  = (p?.full_name as string) ?? '';
+    setStep1((s) => ({
+      ...s,
+      phone,
+      normPhone: phone,
+      full_name: name,
+      otpPhase:  'verify',
+      otpVerified: true,
+    }));
+    setStep(2);
+  }, [isAddMode, router]);
   const [step2, setStep2] = useState<Step2>({
     company_name_he: '', business_number: '', countries_of_origin: [], minimum_contract_months: 3,
   });
-  const [step3, setStep3] = useState<Step3>({ contact_email: '', tc_accepted: false });
+  const [step3, setStep3] = useState<Step3>({ contact_email: '', tc_accepted: false, whatsapp_opt_in: false });
 
   const [lookup, setLookup]               = useState<CorporationLookupResult | null>(null);
   const [lookupLoading, setLookupLoading] = useState(false);
@@ -163,12 +185,27 @@ function RegisterCorporationInner() {
     } finally { setLoading(false); }
   }
 
+  // P0-3 — Same routing as the contractor page: after OTP verifies, if
+  // the phone already resolves to a real user with active memberships,
+  // hand off to /login (intent=corporation) instead of walking them
+  // through the wizard. Kills the "walked through registration ends
+  // with a 409" UX bug.
   async function handleVerifyOtp(e: FormEvent) {
     e.preventDefault(); setError('');
     if (step1.code.length !== 6) { setError('קוד האימות חייב להכיל 6 ספרות'); return; }
     setLoading(true);
     try {
-      await otpApi.verifyOtp(step1.normPhone, step1.code, 'register');
+      const res = await otpApi.registerPrecheck(step1.normPhone, step1.code);
+      if (res.exists && res.has_memberships) {
+        const q = new URLSearchParams({
+          phone:  step1.normPhone,
+          intent: 'corporation',
+          hint:   res.memberships.some(m => m.entity_type === 'corporation')
+                    ? 'already_corporation' : 'has_account',
+        });
+        router.push(`/login?${q.toString()}`);
+        return;
+      }
       setStep1((p) => ({ ...p, otpVerified: true }));
       setStep(2);
     } catch (err) {
@@ -230,7 +267,18 @@ function RegisterCorporationInner() {
         contact_phone:           step1.normPhone,
         contact_email:           step3.contact_email || undefined,
         tc_version:              TC_VERSION,
+        whatsapp_opt_in:         step3.whatsapp_opt_in,
+        // P0-3 add-role — see register/contractor/page.tsx.
+        add_role:                isAddMode || undefined,
       });
+      // P0-3 add-role — swap JWT to the new corp entity.
+      if (result.added_role && result.id) {
+        const t = await otpApi.selectEntity(result.id, 'corporation');
+        saveTokens(t.access_token, t.refresh_token);
+        clearProspect();
+        router.push('/corporation/dashboard');
+        return;
+      }
       if (result.access_token && result.refresh_token) {
         saveTokens(result.access_token, result.refresh_token);
       }
@@ -242,6 +290,20 @@ function RegisterCorporationInner() {
       router.push('/corporation/dashboard');
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'שגיאה בהרשמה';
+      // P0-3 add-role — already have a corp: hop into it via
+      // select-entity instead of rendering a red error.
+      if (isAddMode && msg.includes('already_have_corporation')) {
+        const idMatch = msg.match(/"existing_entity_id"\s*:\s*"([^"]+)"/);
+        const existingId = idMatch?.[1];
+        if (existingId) {
+          try {
+            const t = await otpApi.selectEntity(existingId, 'corporation');
+            saveTokens(t.access_token, t.refresh_token);
+            router.push('/corporation/dashboard');
+            return;
+          } catch { /* fall through */ }
+        }
+      }
       // Backend returns the duplicate-ח.פ case as a structured detail
       // object ({ code, message, existing_company_name }). apiFetch
       // wraps the response body in the Error message, so we sniff the
@@ -267,7 +329,7 @@ function RegisterCorporationInner() {
 
   if (duplicateExistingName !== null) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 px-4 py-8">
+      <div className="min-h-screen flex flex-col items-center pt-6 sm:pt-0 sm:justify-center bg-slate-50 px-4 py-8">
         <div className="w-full max-w-lg mb-3 flex justify-end">
           <HomeLink />
         </div>
@@ -288,7 +350,7 @@ function RegisterCorporationInner() {
             <Link href="/login" className="px-4 py-2 rounded-lg border border-slate-300 text-sm font-medium text-slate-700 hover:bg-slate-50">
               חזרה לכניסה
             </Link>
-            <Link href="/" className="px-4 py-2 rounded-lg bg-brand-800 text-sm font-medium text-white hover:bg-brand-900">
+            <Link href="/" className="px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-800 text-sm font-medium text-slate-900 min-h-11 inline-flex items-center">
               חזרה לדף הבית
             </Link>
           </div>
@@ -298,7 +360,7 @@ function RegisterCorporationInner() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 px-4 py-8">
+    <div className="min-h-screen flex flex-col items-center pt-6 sm:pt-0 sm:justify-center bg-slate-50 px-4 py-8">
       <div className="w-full max-w-lg mb-3 flex justify-end">
         <HomeLink />
       </div>
@@ -322,7 +384,7 @@ function RegisterCorporationInner() {
         <Card className="rounded-t-none shadow-md">
           <CardHeader className="pb-2">
             <div className="flex justify-center mb-3"><Logo size="md" variant="on-light" /></div>
-            <CardTitle className="text-center">הרשמת תאגיד</CardTitle>
+            <CardTitle className="text-center">{isAddMode ? 'הוספת חשבון תאגיד' : 'הרשמת תאגיד'}</CardTitle>
             <CardDescription className="text-center">שלב {step} מתוך {TOTAL_STEPS}</CardDescription>
             <div className="mt-3 flex gap-1.5">
               {Array.from({ length: TOTAL_STEPS }).map((_, i) => (
@@ -586,6 +648,19 @@ function RegisterCorporationInner() {
                   onChange={(e) => setStep3((p) => ({ ...p, contact_email: e.target.value }))}
                   autoComplete="email"
                 />
+
+                {/* WhatsApp OTP opt-in — see contractor register page for
+                    the same control and rationale. Default OFF; SMS only
+                    unless ticked. */}
+                <label className="flex items-start gap-2 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={step3.whatsapp_opt_in}
+                    onChange={(e) => setStep3((p) => ({ ...p, whatsapp_opt_in: e.target.checked }))}
+                    className="rounded mt-0.5"
+                  />
+                  <span className="text-slate-700">קבל קודי אימות והתראות בWhatsApp במקום SMS</span>
+                </label>
 
                 <div className="flex flex-col gap-2">
                   <label className="text-sm font-medium text-slate-700">תנאי שימוש</label>

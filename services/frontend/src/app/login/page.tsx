@@ -19,28 +19,17 @@ type Mode = 'sms' | 'email';
 type OtpPhase = 'phone' | 'code';
 type Intent = 'contractor' | 'corporation' | null;
 
+import { mapApiError } from '@/lib/api/errors';
+
+// P0-1 — thin wrapper around the central mapper. The old per-code
+// list that lived here drifted from register/contractor's + register/
+// corporation's copies — that's exactly how new backend codes like
+// `internal_error` fell through to a generic "שגיאה בשליחת הקוד"
+// fallback. Everything now flows through mapApiError which prefers
+// the server-supplied Hebrew `message` (P0-1 contract) and only
+// falls back to a code lookup when the response body is missing it.
 function otpError(msg: string): string {
-  if (msg === 'rate_limited')               return 'יותר מדי ניסיונות. נסה שוב מאוחר יותר';
-  if (msg === 'wrong_code')                 return 'קוד לא נכון. נסה שנית';
-  if (msg === 'max_attempts')               return 'יותר מדי ניסיונות שגויים. בקש קוד חדש';
-  if (msg === 'otp_expired_or_not_found')   return 'הקוד פג תוקף. שלח קוד חדש';
-  if (msg === 'otp_expired')                return 'הקוד פג תוקף. שלח קוד חדש';
-  if (msg === 'invalid_phone'  || msg === 'phone_required')
-                                            return 'מספר טלפון לא תקין. יש להזין מספר ישראלי בפורמט 05XXXXXXXX';
-  if (msg === 'use_phone_login')            return 'חשבון זה מחייב כניסה עם SMS / WhatsApp';
-  // user_not_found can't really happen any more — the backend now
-  // returns `{ prospect: true }` for unregistered phones and the
-  // /login flow routes those to /try/contractor before showing an
-  // error. Kept for legacy clients that haven't redeployed yet.
-  if (msg === 'user_not_found')             return 'מספר הטלפון לא רשום במערכת';
-  // apiFetch's friendlyError already translates known codes — if the
-  // message is already Hebrew, surface it as-is.
-  if (/[֐-׿]/.test(msg))          return msg;
-  // Generic fallback. Previously this defaulted to "phone not
-  // registered" which sent prospects down a dead-end register path
-  // — misleading after the new prospect flow + unhelpful for every
-  // other failure mode (network, SMS gateway down, invalid format).
-  return 'שגיאה בשליחת הקוד. בדוק את המספר ונסה שוב';
+  return mapApiError(msg);
 }
 
 /** Error block — plain red alert. The inline "register here" CTA that
@@ -133,12 +122,25 @@ function LoginPageInner() {
   const intent: Intent = rawIntent === 'contractor' || rawIntent === 'corporation' ? rawIntent : null;
   const copy = intent ? COPY[intent] : COPY.generic;
 
+  // P0-3 — When the register wizard detects a KNOWN phone it bounces
+  // here with ?phone=…&hint=already_contractor|already_corporation|
+  // has_account. `phone` prefills the input; `hint` renders a small
+  // info-strip above the form so the user knows why they were sent
+  // over (avoiding a silent redirect that reads as a bug).
+  const preFillPhone = searchParams?.get('phone') || '';
+  const hint         = searchParams?.get('hint');
+  const hintCopy =
+    hint === 'already_contractor'  ? 'מספר זה כבר רשום כקבלן. אפשר להתחבר מכאן.' :
+    hint === 'already_corporation' ? 'מספר זה כבר רשום כתאגיד. אפשר להתחבר מכאן.' :
+    hint === 'has_account'         ? 'מספר זה כבר רשום במערכת. אפשר להתחבר מכאן.' :
+    null;
+
   const [mode, setMode]       = useState<Mode>('sms');
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState('');
 
   const [otpPhase, setOtpPhase]   = useState<OtpPhase>('phone');
-  const [phone, setPhone]         = useState('');
+  const [phone, setPhone]         = useState(preFillPhone);
   const [normPhone, setNormPhone] = useState('');
   const [code, setCode]           = useState('');
   const codeRef = useRef<HTMLInputElement>(null);
@@ -294,7 +296,7 @@ function LoginPageInner() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 px-4 py-6 relative">
+    <div className="min-h-screen flex flex-col items-center pt-6 sm:pt-0 sm:justify-center bg-slate-50 px-4 py-6 relative">
       {/* HomeLink lives in the top-right corner instead of stacked
        *  above the card. Keeping it in flow pushed the card visibly
        *  below the vertical center on desktop. Absolute keeps the
@@ -317,6 +319,17 @@ function LoginPageInner() {
           </CardHeader>
 
           <CardContent>
+            {/* P0-3 — hint strip when we arrived here from the register
+                wizard because the phone was already a known user. Kept
+                above the tabs so it renders in both SMS + email modes. */}
+            {hintCopy && (
+              <div
+                role="status"
+                className="mb-4 text-sm text-brand-900 bg-brand-50 border border-brand-200 rounded-md px-3 py-2.5 text-start"
+              >
+                {hintCopy}
+              </div>
+            )}
             {/* ── SMS (primary) ─────────────────────────────────────────── */}
             {/* action="#" + button type="button": defense in depth.
                 If preventDefault loses a race against native form

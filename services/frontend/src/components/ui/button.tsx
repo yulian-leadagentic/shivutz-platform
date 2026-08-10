@@ -14,8 +14,16 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
+        // G1 lock (per docs/cc-prompts/cc_prompt_M*_*.md) — brand-600
+        // orange (#f78203, the logo) as the Primary background, with
+        // slate-900 dark text (#0f172a). Was `text-white` before, which
+        // computed to ~3:1 contrast against the orange — borderline
+        // WCAG. Dark text gives AA ~6:1. hover darkens to brand-800
+        // (M1's landing hero uses the same token pair so the whole
+        // system reads as one Primary style). "primary" and "brand"
+        // aliases resolve to the same palette (see tailwind.config.ts).
         default:
-          'bg-primary-600 text-white shadow-sm hover:bg-primary-700 active:bg-primary-800',
+          'bg-primary-600 text-slate-900 shadow-sm hover:bg-primary-800 active:bg-primary-900',
         outline:
           'border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50 hover:border-slate-300 hover:text-slate-900',
         // Transparent + white border/text — use on colored/dark backgrounds
