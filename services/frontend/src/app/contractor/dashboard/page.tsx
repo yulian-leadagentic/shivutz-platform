@@ -11,6 +11,7 @@ import { Loader2, Search as SearchIcon, CreditCard, Clock, Globe2, ArrowLeft } f
 import { adApi, type UsageResponse } from '@/lib/api/ads';
 import { orgApi } from '@/lib/api';
 import { getAccessToken, decodeJwtPayload } from '@/lib/auth';
+import { mapApiError } from '@/lib/api/errors';
 
 const STATUS_LABEL: Record<string, string> = {
   trialing: 'ניסיון', active: 'פעיל', past_due: 'תשלום נכשל', cancelled: 'בוטל', expired: 'פג',
@@ -25,6 +26,12 @@ function daysUntil(iso: string | null | undefined): number | null {
 
 export default function ContractorDashboardPage() {
   const [usage, setUsage] = useState<UsageResponse | null>(null);
+  // CU-3 — usageError tracks WHY `usage` is null so the UI can
+  // distinguish "no subscription (empty state)" from "API blew up
+  // (error state)". Was silently swallowed (.catch(() => {})),
+  // which is why every failure surfaced as "המנוי שלך —" with
+  // nothing to click.
+  const [usageError, setUsageError] = useState<string | null>(null);
   const [companyName, setCompanyName] = useState<string>('');
   const [loading, setLoading] = useState(true);
 
@@ -37,7 +44,10 @@ export default function ContractorDashboardPage() {
         setCompanyName(c.company_name_he || c.company_name || '');
       }).catch(() => {});
     }
-    adApi.usage().then(setUsage).catch(() => {}).finally(() => setLoading(false));
+    adApi.usage()
+      .then((u) => { setUsage(u); setUsageError(null); })
+      .catch((err) => setUsageError(mapApiError(err)))
+      .finally(() => setLoading(false));
   }, []);
 
   if (loading) return <div className="text-center py-16"><Loader2 className="w-6 h-6 animate-spin mx-auto text-slate-400" /></div>;
@@ -98,39 +108,61 @@ export default function ContractorDashboardPage() {
           Contractor layout mounts <KablanVerifyBanner /> globally, so
           duplicating it on the dashboard was double-messaging. */}
 
-      {/* Subscription card */}
+      {/* Subscription card.
+          CU-3 — three-state render replaces the old opaque em-dash.
+          Was: `{usage ? TIER_LABEL[usage.tier] : '—'}` — every
+          failure mode collapsed to a silent "—". Now:
+          - usage loaded → tier chip + trial/reveals meter (unchanged
+            happy path).
+          - usageError → Hebrew message from mapApiError, no dash.
+          - usage === null && no error → treat as "no subscription
+            yet" empty-state with a "רכוש מנוי" CTA into /billing. */}
       <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
         <div className="flex items-start justify-between gap-4 flex-wrap">
-          <div>
+          <div className="min-w-0 flex-1">
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">המנוי שלך</p>
-            <p className="text-lg font-bold text-slate-900 mt-1">
-              {usage ? TIER_LABEL[usage.tier] : '—'}
-              <span className="ms-2 text-sm font-medium text-slate-600">
-                {usage ? `(${STATUS_LABEL[usage.status] ?? usage.status})` : ''}
-              </span>
-            </p>
-            {trialDays !== null && (
-              <p className="text-sm text-amber-700 mt-1 inline-flex items-center gap-1.5 flex-wrap">
-                <Clock className="w-3.5 h-3.5" />
-                נותרו {trialDays} ימים לניסיון
-                {revealsLimit != null && (
-                  <>· {revealsLimit} חשיפות</>
+
+            {usage ? (
+              <>
+                <p className="text-lg font-bold text-slate-900 mt-1">
+                  {TIER_LABEL[usage.tier] ?? usage.tier}
+                  <span className="ms-2 text-sm font-medium text-slate-600">
+                    ({STATUS_LABEL[usage.status] ?? usage.status})
+                  </span>
+                </p>
+                {trialDays !== null && (
+                  <p className="text-sm text-amber-700 mt-1 inline-flex items-center gap-1.5 flex-wrap">
+                    <Clock className="w-3.5 h-3.5" />
+                    נותרו {trialDays} ימים לניסיון
+                    {revealsLimit != null && (
+                      <>· {revealsLimit} חשיפות</>
+                    )}
+                    <span className="text-amber-600">· ללא כרטיס אשראי</span>
+                  </p>
                 )}
-                <span className="text-amber-600">· ללא כרטיס אשראי</span>
+                <p className="text-sm text-slate-600 mt-1">
+                  חשיפות החודש: <b dir="ltr">{revealsUsed} / {revealsLimit ?? '∞'}</b>
+                </p>
+              </>
+            ) : usageError ? (
+              <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2 mt-1">
+                {usageError}
               </p>
-            )}
-            {usage && (
-              <p className="text-sm text-slate-600 mt-1">
-                חשיפות החודש: <b>{revealsUsed}</b> / <b>{revealsLimit ?? '∞'}</b>
-              </p>
+            ) : (
+              <>
+                <p className="text-lg font-bold text-slate-900 mt-1">אין מנוי פעיל</p>
+                <p className="text-sm text-slate-600 mt-1">
+                  רכשו מנוי כדי לחשוף פרטי תאגידים ולהגדיל את מכסת החשיפות שלכם.
+                </p>
+              </>
             )}
           </div>
           <Link
             href="/billing"
-            className="inline-flex items-center gap-2 bg-brand-600 hover:bg-brand-800 text-slate-900 text-sm font-semibold px-4 py-2 rounded-lg"
+            className="inline-flex items-center gap-2 bg-brand-600 hover:bg-brand-800 text-slate-900 text-sm font-semibold px-4 py-2 rounded-lg min-h-11"
           >
             <CreditCard className="w-4 h-4" />
-            ניהול מנוי
+            {usage ? 'ניהול מנוי' : 'רכשו מנוי'}
           </Link>
         </div>
       </div>

@@ -93,7 +93,11 @@ export function AdCarousel({
       >
         <div className="flex items-center justify-between mb-1.5 text-[10px] uppercase tracking-wide text-slate-400">
           <span>פרסומת</span>
-          <span>{safeI + 1} / {slides.length}</span>
+          {/* CU-2 — was rendering "3 / 1" instead of "1 / 3" because
+              the numeric string was inheriting the parent's RTL
+              direction. dir="ltr" isolates the counter into its own
+              bidi run, matching the DS "numbers/codes = LTR" rule. */}
+          <span dir="ltr">{safeI + 1} / {slides.length}</span>
         </div>
 
         <div className={`relative rounded-2xl overflow-hidden shadow-lg bg-gradient-to-l ${slide.gradient} text-white`}>

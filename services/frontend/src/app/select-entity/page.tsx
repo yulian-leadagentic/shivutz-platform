@@ -121,8 +121,18 @@ function SelectEntityInner() {
         setMemberships(matching);
         return;
       }
-      // matching.length === 0 — fall back to showing the full
-      // membership list (user does have other valid roles).
+      // CU-1 — no matching membership for the requested role. Was
+      // "fall back to the full picker", but a contractor-only user
+      // who clicked the corp landing tile has NOTHING useful in
+      // that picker (their contractor membership doesn't satisfy
+      // the intent, and no picker button will get them into a corp
+      // account they don't own). Route them to the add-role flow
+      // — same destination NoAccessCard's "הוסף חשבון X" links to,
+      // so the two entry points converge.
+      sessionStorage.removeItem('pending_memberships');
+      sessionStorage.removeItem('pending_intent');
+      router.replace(`/register/${intent}?add=1`);
+      return;
     }
     setMemberships(list);
     }
