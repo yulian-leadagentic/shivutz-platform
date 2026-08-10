@@ -1,0 +1,11 @@
+{
+  "name": "shivutz-seed",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Staging-only seed tool for realistic Hebrew test data (contractors, corporations, ads).",
+  "type": "module",
+  "scripts": {
+    "seed:staging": "node seed.mjs",
+    "seed:reset":   "node reset.mjs"
+  }
+}
