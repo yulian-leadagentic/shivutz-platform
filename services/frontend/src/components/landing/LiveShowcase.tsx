@@ -171,12 +171,19 @@ export default function LiveShowcase() {
     }
   }
 
+  // When the visitor is already logged in but their current entity
+  // is the WRONG role for the tile they clicked, route through
+  // /select-entity — not /login. The old behaviour re-ran the whole
+  // phone+OTP flow to a user who was already signed in and already
+  // a member of the target entity. /select-entity now fetches from
+  // /auth/memberships when sessionStorage is empty, so it's the
+  // right funnel for a re-prime (no OTP loop).
   const contractorHref = !isLoggedIn
     ? '/login?intent=contractor'
-    : (entityType === 'contractor' ? dashboardOf('contractor') : '/login?intent=contractor');
+    : (entityType === 'contractor' ? dashboardOf('contractor') : '/select-entity?intent=contractor');
   const corporationHref = !isLoggedIn
     ? '/login?intent=corporation'
-    : (entityType === 'corporation' ? dashboardOf('corporation') : '/login?intent=corporation');
+    : (entityType === 'corporation' ? dashboardOf('corporation') : '/select-entity?intent=corporation');
 
   return (
     <section
