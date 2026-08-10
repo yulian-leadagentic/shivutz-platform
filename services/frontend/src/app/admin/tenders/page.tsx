@@ -244,7 +244,7 @@ export default function AdminTendersPage() {
           onClick={() => setAutoOnly((v) => !v)}
           className={`ms-auto text-xs font-semibold rounded-full border px-3 py-1 transition ${
             autoOnly
-              ? 'bg-brand-800 text-white border-brand-800'
+              ? 'bg-brand-600 text-slate-900 border-brand-800'
               : 'bg-white text-slate-600 border-slate-300 hover:border-brand-400'
           }`}
           title="הצג רק בקשות שפורסמו אוטומטית (tier_2+ + kablan-verified) — לבדיקה בדיעבד"

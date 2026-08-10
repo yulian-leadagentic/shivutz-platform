@@ -83,7 +83,7 @@ export function NoAccessCard({ variant }: Props) {
         <div className="mt-6 flex flex-col sm:flex-row gap-2 sm:justify-center">
           <Link
             href={copy.ctaHref}
-            className="inline-flex items-center justify-center gap-2 bg-brand-800 hover:bg-brand-900 text-white text-sm font-semibold px-4 py-2.5 rounded-lg"
+            className="inline-flex items-center justify-center gap-2 bg-brand-600 hover:bg-brand-800 text-slate-900 text-sm font-semibold px-4 py-2.5 rounded-lg"
           >
             {copy.ctaLabel}
           </Link>

@@ -107,7 +107,7 @@ function CorporationAdsPageInner() {
         </div>
         <Link
           href="/corporation/ads/new"
-          className="inline-flex items-center gap-2 bg-brand-800 hover:bg-brand-900 text-white text-sm font-semibold px-4 py-2.5 rounded-lg"
+          className="inline-flex items-center gap-2 bg-brand-600 hover:bg-brand-800 text-slate-900 text-sm font-semibold px-4 py-2.5 rounded-lg"
         >
           <Plus className="w-4 h-4" />
           מודעה חדשה

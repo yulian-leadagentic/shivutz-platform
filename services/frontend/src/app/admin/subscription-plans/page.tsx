@@ -206,7 +206,7 @@ export default function SubscriptionPlansPage() {
                       type="button"
                       onClick={() => save(p)}
                       disabled={busy === p.id}
-                      className="w-full mt-2 bg-brand-800 hover:bg-brand-900 text-white text-sm font-semibold py-2 rounded-lg
+                      className="w-full mt-2 bg-brand-600 hover:bg-brand-800 text-slate-900 text-sm font-semibold py-2 rounded-lg
                                  disabled:bg-slate-300 inline-flex items-center justify-center gap-2"
                     >
                       {busy === p.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}

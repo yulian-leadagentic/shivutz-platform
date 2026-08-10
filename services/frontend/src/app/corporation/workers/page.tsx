@@ -91,7 +91,7 @@ function ExperienceCell({ workerId, value, onSaved }: {
               onClick={() => save(r.code)}
               className={`px-2 py-0.5 rounded text-xs font-medium border transition-colors ${
                 r.code === value
-                  ? 'bg-brand-800 text-white border-brand-600'
+                  ? 'bg-brand-600 text-slate-900 border-brand-600'
                   : 'bg-white text-slate-600 border-slate-300 hover:border-brand-400'
               }`}
             >

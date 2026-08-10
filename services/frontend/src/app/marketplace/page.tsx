@@ -130,7 +130,7 @@ export default function MarketplacePage() {
               onClick={() => setCategory(value)}
               className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all border ${
                 category === value
-                  ? 'bg-brand-800 text-white border-brand-600 shadow-sm'
+                  ? 'bg-brand-600 text-slate-900 border-brand-600 shadow-sm'
                   : 'bg-white text-slate-600 border-slate-200 hover:border-brand-300 hover:text-brand-700'
               }`}
             >

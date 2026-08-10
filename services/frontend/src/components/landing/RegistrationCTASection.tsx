@@ -54,7 +54,7 @@ export default function RegistrationCTASection({ onLeadCapture }: RegistrationCT
             <div className="space-y-2">
               <Link
                 href="/register/contractor"
-                className="flex items-center justify-between w-full bg-brand-800 hover:bg-brand-900 text-white font-semibold text-sm px-5 py-3 rounded-xl transition-colors"
+                className="flex items-center justify-between w-full bg-brand-600 hover:bg-brand-800 text-slate-900 font-semibold text-sm px-5 py-3 rounded-xl transition-colors"
               >
                 <span>הצטרף כקבלן — בחינם</span>
                 <ArrowLeft className="h-4 w-4" />

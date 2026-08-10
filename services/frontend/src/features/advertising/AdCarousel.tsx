@@ -65,13 +65,21 @@ export function AdCarousel({
   const [paused, setP]      = useState(false);
   const [inquiryOpen, setQ] = useState(false);
 
+  // Round-2 FIX-3 — counter showed "3 / 2" when the slides array
+  // shrank while `i` was already past the new max. Clamp on every
+  // slides-length change so display stays in-range.
+  useEffect(() => {
+    if (i >= slides.length) setI(Math.max(0, slides.length - 1));
+  }, [slides.length, i]);
+
   useEffect(() => {
     if (paused || inquiryOpen || slides.length <= 1) return;
     const t = setTimeout(() => setI((n) => (n + 1) % slides.length), autoAdvanceMs);
     return () => clearTimeout(t);
   }, [i, paused, inquiryOpen, slides.length, autoAdvanceMs]);
 
-  const slide = slides[i];
+  const safeI = Math.min(i, slides.length - 1);
+  const slide = slides[safeI];
   const Icon  = slide.icon;
 
   return (
@@ -85,31 +93,45 @@ export function AdCarousel({
       >
         <div className="flex items-center justify-between mb-1.5 text-[10px] uppercase tracking-wide text-slate-400">
           <span>פרסומת</span>
-          <span>{i + 1} / {slides.length}</span>
+          <span>{safeI + 1} / {slides.length}</span>
         </div>
 
         <div className={`relative rounded-2xl overflow-hidden shadow-lg bg-gradient-to-l ${slide.gradient} text-white`}>
-          {/* Decorative background glyph */}
-          <div className="absolute -bottom-8 -end-8 opacity-20 pointer-events-none">
+          {/* Decorative background glyph — hidden on mobile because at
+              390 the copy sits over it and reads as if the icon is
+              floating behind the text. Kept on sm+ where the card is
+              wide enough for the glyph to sit in the corner as
+              intended. */}
+          <div className="hidden sm:block absolute -bottom-8 -end-8 opacity-20 pointer-events-none" aria-hidden="true">
             <Icon className="w-56 h-56" />
           </div>
 
-          <div className="relative p-6 sm:p-8 flex items-center gap-4 flex-wrap sm:flex-nowrap">
-            <div className="w-14 h-14 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center shrink-0">
-              <Icon className="w-7 h-7" />
+          {/* Round-2 FIX-2 — was `flex items-center gap-4 flex-wrap
+              sm:flex-nowrap`, which at 390 tried to fit icon + text +
+              button in one row, wrapped the text word-per-line, and
+              let the button overlap the copy. Now mobile is a strict
+              vertical stack (icon+eyebrow on top, title, body,
+              full-width CTA at the bottom); sm+ keeps the desktop
+              horizontal row. */}
+          <div className="relative p-6 sm:p-8 flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
+            <div className="flex items-center gap-3 sm:contents">
+              <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center shrink-0">
+                <Icon className="w-6 h-6 sm:w-7 sm:h-7" />
+              </div>
+              <p className="sm:hidden text-[11px] font-semibold uppercase tracking-wider opacity-80">{slide.eyebrow}</p>
             </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-[11px] font-semibold uppercase tracking-wider opacity-80">{slide.eyebrow}</p>
-              <h3 className="text-lg sm:text-xl font-extrabold leading-tight mt-0.5 drop-shadow-sm">{slide.title}</h3>
-              <p className="text-sm text-white/90 mt-1 leading-relaxed">{slide.body}</p>
+            <div className="min-w-0 sm:flex-1">
+              <p className="hidden sm:block text-[11px] font-semibold uppercase tracking-wider opacity-80">{slide.eyebrow}</p>
+              <h3 className="text-lg sm:text-xl font-extrabold leading-tight sm:mt-0.5 drop-shadow-sm break-words">{slide.title}</h3>
+              <p className="text-sm text-white/90 mt-1 leading-relaxed break-words">{slide.body}</p>
             </div>
             <button
               type="button"
               onClick={() => setQ(true)}
-              className={`shrink-0 inline-flex items-center gap-2 ${slide.accent} font-semibold px-5 py-2.5 rounded-xl shadow-md text-sm`}
+              className={`w-full sm:w-auto sm:shrink-0 min-h-11 inline-flex items-center justify-center gap-2 ${slide.accent} font-semibold px-5 py-2.5 rounded-xl shadow-md text-sm`}
             >
               {slide.cta}
-              <ArrowLeft className="w-4 h-4" />
+              <ArrowLeft className="w-4 h-4" aria-hidden="true" />
             </button>
           </div>
         </div>
@@ -123,7 +145,7 @@ export function AdCarousel({
                 type="button"
                 onClick={() => setI(n)}
                 aria-label={`עבור לפרסומת ${n + 1}`}
-                className={`h-1.5 rounded-full transition-all ${n === i ? 'w-6 bg-slate-700' : 'w-1.5 bg-slate-300 hover:bg-slate-400'}`}
+                className={`h-1.5 rounded-full transition-all ${n === safeI ? 'w-6 bg-slate-700' : 'w-1.5 bg-slate-300 hover:bg-slate-400'}`}
               />
             ))}
           </div>

@@ -112,7 +112,7 @@ export default function CorporationDashboardPage() {
           </div>
           <Link
             href="/billing"
-            className="shrink-0 inline-flex items-center gap-2 bg-brand-800 hover:bg-brand-900 text-white text-sm font-semibold px-4 py-2 rounded-lg"
+            className="shrink-0 inline-flex items-center gap-2 bg-brand-600 hover:bg-brand-800 text-slate-900 text-sm font-semibold px-4 py-2 rounded-lg"
           >
             <CreditCard className="w-4 h-4" />
             חדש מנוי
@@ -168,7 +168,7 @@ export default function CorporationDashboardPage() {
             </div>
             <Link
               href="/billing"
-              className="inline-flex items-center gap-2 bg-brand-800 hover:bg-brand-900 text-white text-sm font-semibold px-4 py-2 rounded-lg"
+              className="inline-flex items-center gap-2 bg-brand-600 hover:bg-brand-800 text-slate-900 text-sm font-semibold px-4 py-2 rounded-lg"
             >
               <CreditCard className="w-4 h-4" />
               ניהול מנוי

@@ -178,7 +178,7 @@ export function PhotoUploader({
               type="button"
               onClick={applyPasted}
               disabled={!pastedText.trim()}
-              className="bg-brand-800 hover:bg-brand-900 text-white text-xs font-semibold px-3 py-2 rounded-lg disabled:bg-slate-300 inline-flex items-center gap-1"
+              className="bg-brand-600 hover:bg-brand-800 text-slate-900 text-xs font-semibold px-3 py-2 rounded-lg disabled:bg-slate-300 inline-flex items-center gap-1"
             >
               <ImageIcon className="w-3.5 h-3.5" /> הוסף
             </button>

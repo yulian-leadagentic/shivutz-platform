@@ -56,7 +56,7 @@ export function StateCard({
         action.href ? (
           <Link
             href={action.href}
-            className="mt-1 inline-flex items-center gap-1.5 bg-brand-800 hover:bg-brand-900 text-white text-sm font-semibold px-4 py-2 rounded-lg"
+            className="mt-1 inline-flex items-center gap-1.5 bg-brand-600 hover:bg-brand-800 text-slate-900 text-sm font-semibold px-4 py-2 rounded-lg"
           >
             {action.label}
           </Link>
@@ -64,7 +64,7 @@ export function StateCard({
           <button
             type="button"
             onClick={action.onClick}
-            className="mt-1 inline-flex items-center gap-1.5 bg-brand-800 hover:bg-brand-900 text-white text-sm font-semibold px-4 py-2 rounded-lg"
+            className="mt-1 inline-flex items-center gap-1.5 bg-brand-600 hover:bg-brand-800 text-slate-900 text-sm font-semibold px-4 py-2 rounded-lg"
           >
             {action.label}
           </button>

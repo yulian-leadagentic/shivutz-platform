@@ -95,7 +95,7 @@ function CombinedCard({ side, ctaHref, switching, onClick }: CombinedCardProps) 
             {HERO_STAT.value}
           </div>
           <div className="text-[11px] md:text-sm text-slate-500 mb-1.5 md:mb-3">{HERO_STAT.label}</div>
-          <div className="inline-flex items-center gap-1 md:gap-2 px-3 md:px-6 py-1.5 md:py-2.5 rounded-full bg-brand-800 text-xs md:text-base font-bold text-white shadow-md group-hover:bg-brand-900 transition-colors">
+          <div className="inline-flex items-center gap-1 md:gap-2 px-3 md:px-6 py-1.5 md:py-2.5 rounded-full bg-brand-600 text-xs md:text-base font-bold text-slate-900 shadow-md group-hover:bg-brand-800 transition-colors">
             {isSwitching
               ? <><Loader2 className="h-3.5 w-3.5 md:h-4 md:w-4 animate-spin" /> מעביר…</>
               : <>חפש עובדים<ArrowLeft className="h-3.5 w-3.5 md:h-4 md:w-4 group-hover:-translate-x-1 transition-transform" /></>}

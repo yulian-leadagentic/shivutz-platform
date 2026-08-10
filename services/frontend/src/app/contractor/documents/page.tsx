@@ -167,12 +167,12 @@ function LicenseSection({
           <div className="space-y-3 pt-1">
             <div className="flex rounded-lg border border-slate-200 overflow-hidden text-sm font-medium">
               <button type="button" onClick={() => setAddMode('file')}
-                className={`flex-1 flex items-center justify-center gap-2 py-2 transition-colors ${addMode === 'file' ? 'bg-brand-800 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
+                className={`flex-1 flex items-center justify-center gap-2 py-2 transition-colors ${addMode === 'file' ? 'bg-brand-600 text-slate-900' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
                 <UploadCloud className="h-4 w-4" />
                 העלאת קובץ
               </button>
               <button type="button" onClick={() => setAddMode('url')}
-                className={`flex-1 flex items-center justify-center gap-2 py-2 transition-colors ${addMode === 'url' ? 'bg-brand-800 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
+                className={`flex-1 flex items-center justify-center gap-2 py-2 transition-colors ${addMode === 'url' ? 'bg-brand-600 text-slate-900' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
                 <Link2 className="h-4 w-4" />
                 קישור חיצוני
               </button>
@@ -364,12 +364,12 @@ function OtherDocsSection({
             {/* Mode toggle */}
             <div className="flex rounded-lg border border-slate-200 overflow-hidden text-sm font-medium">
               <button type="button" onClick={() => setAddMode('file')}
-                className={`flex-1 flex items-center justify-center gap-2 py-2 transition-colors ${addMode === 'file' ? 'bg-brand-800 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
+                className={`flex-1 flex items-center justify-center gap-2 py-2 transition-colors ${addMode === 'file' ? 'bg-brand-600 text-slate-900' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
                 <UploadCloud className="h-4 w-4" />
                 העלאת קובץ
               </button>
               <button type="button" onClick={() => setAddMode('url')}
-                className={`flex-1 flex items-center justify-center gap-2 py-2 transition-colors ${addMode === 'url' ? 'bg-brand-800 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
+                className={`flex-1 flex items-center justify-center gap-2 py-2 transition-colors ${addMode === 'url' ? 'bg-brand-600 text-slate-900' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
                 <Link2 className="h-4 w-4" />
                 קישור חיצוני
               </button>

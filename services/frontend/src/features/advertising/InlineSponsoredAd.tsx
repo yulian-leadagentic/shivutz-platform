@@ -28,7 +28,7 @@ export function InlineSponsoredAd({
           <p className="text-xs text-slate-600 mt-1 leading-relaxed">{body}</p>
           <a
             href={href}
-            className="mt-2 inline-flex items-center bg-brand-800 hover:bg-brand-900 text-white text-xs font-semibold px-3.5 py-1.5 rounded-lg"
+            className="mt-2 inline-flex items-center bg-brand-600 hover:bg-brand-800 text-slate-900 text-xs font-semibold px-3.5 py-1.5 rounded-lg"
           >
             פרסום כאן
           </a>

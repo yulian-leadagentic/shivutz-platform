@@ -59,7 +59,7 @@ export default function ContractorDashboardPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Link
           href="/"
-          className="group flex flex-col justify-between gap-3 p-5 rounded-2xl bg-brand-800 hover:bg-brand-900 text-white shadow-md transition min-h-[160px]"
+          className="group flex flex-col justify-between gap-3 p-5 rounded-2xl bg-brand-600 hover:bg-brand-800 text-slate-900 shadow-md transition min-h-[160px]"
         >
           <div className="flex items-center gap-3">
             <div className="h-11 w-11 rounded-xl bg-white/15 flex items-center justify-center shrink-0">
@@ -127,7 +127,7 @@ export default function ContractorDashboardPage() {
           </div>
           <Link
             href="/billing"
-            className="inline-flex items-center gap-2 bg-brand-800 hover:bg-brand-900 text-white text-sm font-semibold px-4 py-2 rounded-lg"
+            className="inline-flex items-center gap-2 bg-brand-600 hover:bg-brand-800 text-slate-900 text-sm font-semibold px-4 py-2 rounded-lg"
           >
             <CreditCard className="w-4 h-4" />
             ניהול מנוי

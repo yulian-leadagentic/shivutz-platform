@@ -289,7 +289,7 @@ export default function EditListingPage() {
 
         {/* Actions */}
         <div className="flex gap-3">
-          <Button type="submit" disabled={saving || success} className="bg-brand-800 hover:bg-brand-900 text-white px-6">
+          <Button type="submit" disabled={saving || success} className="bg-brand-600 hover:bg-brand-800 text-slate-900 px-6">
             {saving ? <><Loader2 className="h-4 w-4 animate-spin me-2" />שומר…</> : <><Save className="h-4 w-4 me-2" />שמור שינויים</>}
           </Button>
           <Button type="button" variant="outline" onClick={() => router.back()} disabled={saving}>

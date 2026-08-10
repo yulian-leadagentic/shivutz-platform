@@ -135,7 +135,7 @@ export function RevealModal({
             <div className="space-y-2">
               <Link
                 href={`/register/contractor?returnTo=${encodeURIComponent(returnHref(block.adId))}`}
-                className="w-full bg-brand-800 hover:bg-brand-900 text-white text-sm font-semibold px-4 py-2.5 rounded-lg inline-flex items-center justify-center gap-2"
+                className="w-full bg-brand-600 hover:bg-brand-800 text-slate-900 text-sm font-semibold px-4 py-2.5 rounded-lg inline-flex items-center justify-center gap-2"
               >
                 <UserPlus className="w-4 h-4" />
                 הרשם כקבלן — 14 יום חינם
@@ -164,7 +164,7 @@ export function RevealModal({
             </div>
             <Link
               href="/billing"
-              className="w-full bg-brand-800 hover:bg-brand-900 text-white text-sm font-semibold px-4 py-2.5 rounded-lg inline-flex items-center justify-center gap-2"
+              className="w-full bg-brand-600 hover:bg-brand-800 text-slate-900 text-sm font-semibold px-4 py-2.5 rounded-lg inline-flex items-center justify-center gap-2"
             >
               חדש מנוי
             </Link>
@@ -184,7 +184,7 @@ export function RevealModal({
             </div>
             <Link
               href="/billing"
-              className="w-full bg-brand-800 hover:bg-brand-900 text-white text-sm font-semibold px-4 py-2.5 rounded-lg inline-flex items-center justify-center gap-2"
+              className="w-full bg-brand-600 hover:bg-brand-800 text-slate-900 text-sm font-semibold px-4 py-2.5 rounded-lg inline-flex items-center justify-center gap-2"
             >
               שדרג מנוי
             </Link>

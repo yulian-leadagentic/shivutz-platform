@@ -22,8 +22,15 @@ const buttonVariants = cva(
         // (M1's landing hero uses the same token pair so the whole
         // system reads as one Primary style). "primary" and "brand"
         // aliases resolve to the same palette (see tailwind.config.ts).
+        //
+        // Round-2 — disabled state overrides the base `opacity-40`
+        // (which faded the orange to a pale washed-out orange that
+        // read as "weak Primary" instead of "unavailable"). Now
+        // disabled = solid slate-200 bg + slate-500 text — clearly
+        // grey, no orange tint, no ambiguity. opacity forced back to
+        // 100 so the base rule doesn't fight this.
         default:
-          'bg-primary-600 text-slate-900 shadow-sm hover:bg-primary-800 active:bg-primary-900',
+          'bg-primary-600 text-slate-900 shadow-sm hover:bg-primary-800 active:bg-primary-900 disabled:bg-slate-200 disabled:text-slate-500 disabled:opacity-100',
         outline:
           'border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50 hover:border-slate-300 hover:text-slate-900',
         // Transparent + white border/text — use on colored/dark backgrounds

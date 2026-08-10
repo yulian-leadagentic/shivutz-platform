@@ -314,7 +314,7 @@ export default function ContractorTenderDetailPage() {
                   }`}>
                     <span className={`inline-flex w-4 h-4 items-center justify-center rounded-full text-[10px] ${
                       s.n < current  ? 'bg-emerald-600 text-white' :
-                      s.n === current ? 'bg-brand-800 text-white' :
+                      s.n === current ? 'bg-brand-600 text-slate-900' :
                                         'bg-slate-200 text-slate-500'
                     }`}>{s.n < current ? '✓' : s.n}</span>
                     {s.label}
@@ -411,7 +411,7 @@ export default function ContractorTenderDetailPage() {
                       ) : !locked ? (
                         <button type="button" onClick={() => toggle(bi.id)}
                           className={`h-6 w-6 rounded-md border-2 flex items-center justify-center shrink-0 transition ${
-                            isSel ? 'bg-brand-800 border-brand-800 text-white' : 'border-slate-300 hover:border-brand-400'}`}
+                            isSel ? 'bg-brand-600 border-brand-600 text-slate-900' : 'border-slate-300 hover:border-brand-400'}`}
                           aria-label="בחר שורה">
                           {isSel && <Check className="h-4 w-4" />}
                         </button>

@@ -255,7 +255,7 @@ export default function ListingDetailPage() {
                   {listing.contact_phone && (
                     <a
                       href={`tel:${listing.contact_phone}`}
-                      className="flex items-center gap-2 bg-brand-800 hover:bg-brand-900 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition-colors"
+                      className="flex items-center gap-2 bg-brand-600 hover:bg-brand-800 text-slate-900 text-sm font-semibold px-4 py-2.5 rounded-xl transition-colors"
                     >
                       <Phone className="h-4 w-4" />
                       <span dir="ltr">{listing.contact_phone}</span>
