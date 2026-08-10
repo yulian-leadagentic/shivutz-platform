@@ -256,10 +256,10 @@ function LandingPageInner() {
             <div className="max-w-5xl mx-auto px-4 space-y-6">
               <div className="text-center space-y-2">
                 <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900">
-                  לעובדים זרים בענף הבנייה
+                  פלטפורמת השיבוץ הראשונה בישראל
                 </h1>
                 <p className="text-base sm:text-lg font-semibold text-slate-700">
-                  פלטפורמת השיבוץ הראשונה בישראל
+                  לעובדים זרים בענף הבנייה
                 </p>
               </div>
 
