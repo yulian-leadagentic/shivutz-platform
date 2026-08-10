@@ -46,3 +46,15 @@ uploads/
 
 # Backup files
 *.bak
+
+# Screens-export output (Playwright shots + generated docs — tooling
+# lives in tools/screens-export/, output is disposable).
+# Root-anchored so the rule only hits the OUTPUT dir at repo root,
+# not the source-of-truth tools/screens-export/ (which was silently
+# ignored before, keeping screens.spec.ts uncommittable).
+/screens-export/
+tools/screens-export/node_modules/
+tools/screens-export/test-results/
+tools/screens-export/playwright-report/
+tools/screens-export/.playwright-artifacts/
+tools/screens-export/storageState.*.json
