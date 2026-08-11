@@ -26,6 +26,11 @@ import LandingNav from '@/components/landing/LandingNav';
 import LandingFooter from '@/components/landing/LandingFooter';
 import LeadCaptureModal from '@/components/landing/LeadCaptureModal';
 import HowItWorksSection from '@/components/landing/HowItWorksSection';
+// Landing IA — mount the mock-driven floating bubble. Was orphan
+// code; mounting it here surfaces marketplace-activity ambient
+// cues on the public landing (see LiveActivityFeed for the future
+// GET /api/marketplace/activity-feed swap point noted in-source).
+import LiveActivityFeed from '@/components/landing/LiveActivityFeed';
 import { AdCarousel } from '@/features/advertising/AdCarousel';
 import { AdSidebar } from '@/features/advertising/AdSidebar';
 import { InlineSponsoredAd } from '@/features/advertising/InlineSponsoredAd';
@@ -253,8 +258,21 @@ function LandingPageInner() {
         <main className="flex-1 pb-8">
           {/* Category tiles + search — the commercial hero */}
           <section id="search-hero" className="bg-gradient-to-b from-slate-50 to-white pt-24 pb-6">
-            <div className="max-w-5xl mx-auto px-4 space-y-6">
-              <div className="text-center space-y-2">
+            {/* Landing IA — search-first on mobile.
+                Was `space-y-6` (block layout, DOM order = display order:
+                heading → tiles → search → chips → advanced). At 390px
+                the 4 category tiles took up ~50% of first fold and
+                pushed the search — the actual primary action — below.
+                Now `flex flex-col` with `order-N`:
+                  order-1: heading (both viewports)
+                  order-2: SEARCH FORM on mobile (was 3rd)
+                  order-3: chips
+                  order-4: advanced-filters toggle
+                  order-5: category tiles on mobile (was 2nd)
+                sm+ overrides restore the desktop order (tiles above
+                the search) so the desktop layout doesn't regress. */}
+            <div className="max-w-5xl mx-auto px-4 flex flex-col gap-6">
+              <div className="order-1 text-center space-y-2">
                 <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900">
                   פלטפורמת השיבוץ הראשונה בישראל
                 </h1>
@@ -263,8 +281,13 @@ function LandingPageInner() {
                 </p>
               </div>
 
-              {/* Category tiles */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {/* Category tiles — moved to `order-5` on mobile so they
+                  fall below the search; `sm:order-2` restores the
+                  desktop position (right under the heading). "בקרוב"
+                  tiles are hidden entirely on mobile so they don't
+                  compete for first-fold real estate (see per-tile
+                  hidden-classes below). */}
+              <div className="order-5 sm:order-2 grid grid-cols-2 md:grid-cols-4 gap-3">
                 {CATEGORIES.map((cat) => {
                   const Icon = cat.icon;
                   return (
@@ -275,7 +298,7 @@ function LandingPageInner() {
                       disabled={cat.soon}
                       className={`text-start rounded-2xl border p-4 transition ${
                         cat.soon
-                          ? 'border-slate-200 bg-white opacity-60 cursor-not-allowed'
+                          ? 'hidden sm:block border-slate-200 bg-white opacity-60 cursor-not-allowed'
                           : 'border-slate-200 bg-white hover:border-brand-400 hover:shadow-md'
                       }`}
                     >
@@ -311,7 +334,7 @@ function LandingPageInner() {
                   swapped to grey. */}
               <form
                 onSubmit={(e) => { e.preventDefault(); runSearch(); }}
-                className="bg-white border border-slate-200 rounded-2xl p-3 sm:p-4 shadow-md"
+                className="order-2 sm:order-3 bg-white border border-slate-200 rounded-2xl p-3 sm:p-4 shadow-md"
               >
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
                   <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
@@ -340,7 +363,7 @@ function LandingPageInner() {
                   quickest way for a first-time visitor to learn the smart
                   syntax by clicking an example. */}
               {!resp && !loading && (
-                <div className="flex flex-wrap gap-2 justify-center">
+                <div className="order-3 sm:order-4 flex flex-wrap gap-2 justify-center">
                   {EXAMPLES.map((ex) => (
                     <button
                       key={ex}
@@ -360,7 +383,7 @@ function LandingPageInner() {
                   enum selects as before; runSearch still folds them into
                   the LLM query and syncFiltersToUrl still mirrors to
                   ?prof=&region=&origin=. */}
-              <div className="text-center">
+              <div className="order-4 sm:order-5 text-center">
                 <button
                   type="button"
                   onClick={() => setAdvancedOpen((o) => !o)}
@@ -583,6 +606,14 @@ function LandingPageInner() {
       </div>
 
       <LeadCaptureModal open={leadModalOpen} onClose={() => setLeadModalOpen(false)} />
+
+      {/* Landing IA — floating activity bubble. Mock-driven Phase 1
+          (see LiveActivityFeed source for the GET /api/marketplace/
+          activity-feed swap point when the backend is ready). Its
+          own positioning is bottom-corner + max-w so it doesn't
+          overlap the search or nav; it respects prefers-reduced-
+          motion and provides an accessible close. */}
+      <LiveActivityFeed />
     </>
   );
 }

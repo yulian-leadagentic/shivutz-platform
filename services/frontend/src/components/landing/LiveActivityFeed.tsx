@@ -215,7 +215,7 @@ export default function LiveActivityFeed() {
           type="button"
           onClick={skipToNext}
           aria-label="הצג עדכון הבא"
-          className="absolute top-2 end-2 h-6 w-6 rounded-full text-slate-300 hover:text-slate-600 hover:bg-slate-100 transition-colors inline-flex items-center justify-center"
+          className="absolute top-1 end-1 min-h-11 min-w-11 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors inline-flex items-center justify-center"
         >
           <X className="h-3.5 w-3.5" />
         </button>
