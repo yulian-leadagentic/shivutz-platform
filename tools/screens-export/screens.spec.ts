@@ -95,16 +95,23 @@ async function assertDeployFresh(request: APIRequestContext): Promise<void> {
     const resp = await request.get('/', { failOnStatusCode: false });
     if (resp.ok()) {
       const html = await resp.text();
+      // Markers must be observable in the SSR/shell HTML — Next 16
+      // client components don't ship their DOM until hydrate, so
+      // things like #search-hero and Hebrew text inside client
+      // components will NOT appear in the raw curl body. The three
+      // survivors here all live in the <head> metadata (rendered
+      // server-side by app/layout.tsx and app/manifest.ts).
       const checks: Array<[string, boolean]> = [
-        // landing-IA: hero section id (added when the search-first
-        // reflow landed).
-        ['search-hero id',       html.includes('id="search-hero"')],
-        // landing-IA: advanced-filters toggle copy (added in same pass).
-        ['סינון מתקדם toggle',   html.includes('סינון מתקדם')],
-        // logo-wiring: TagidAI lockup path replaces the old buildup asset.
-        ['tagidai brand asset',  /\/brand\/tagidai_/.test(html)],
-        // logo-wiring: multi-size favicon set (was single buildup-icon).
-        ['multi-size favicon',   /favicon-32\.png|favicon-48\.png/.test(html)],
+        // logo-wiring: 32px favicon link (added in commit 0b87531,
+        // metadata.icons in layout.tsx). Old build had a single
+        // /brand/buildup-icon.png reference — this pattern is unique
+        // to the current logo-wiring set.
+        ['favicon-32.png link',  html.includes('/brand/favicon-32.png')],
+        // logo-wiring: 48px favicon — belt-and-suspenders in case the
+        // 32 pattern collides with something else later.
+        ['favicon-48.png link',  html.includes('/brand/favicon-48.png')],
+        // logo-wiring: iOS apple-touch (also added in 0b87531).
+        ['apple-touch-icon link', html.includes('/brand/apple-touch-icon.png')],
       ];
 
       const missing = checks.filter(([, ok]) => !ok).map(([name]) => name);
