@@ -1,6 +1,6 @@
 import { Zap, Users, Award, ShieldCheck, type LucideIcon } from 'lucide-react';
 
-// "Why choose BuildUp" — four award-style stat badges. Each is a
+// "Why choose TagidAI" — four award-style stat badges. Each is a
 // shield shape (SVG path) with a floating circular emblem on top, a
 // big stat number, a one-line label, and a small laurel inside the
 // shield. A soft colored glow sits behind every card to give the

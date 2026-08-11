@@ -53,10 +53,10 @@ export default function HeroSection(_: HeroSectionProps) {
         <div className="max-w-6xl mx-auto px-6 w-full pt-14 md:pt-16 pb-3 md:pb-4">
           <div className="text-center space-y-1.5 md:space-y-2">
             <Image
-              src="/brand/buildup-lockup.png?v=4"
+              src="/brand/tagidai_lockup.png"
               alt="TagidAI"
               width={500}
-              height={400}
+              height={455}
               className="mx-auto object-contain h-16 md:h-24 w-auto"
               priority
               unoptimized

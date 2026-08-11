@@ -19,30 +19,17 @@ export default function manifest(): MetadataRoute.Manifest {
     scope: '/',
     background_color: '#ffffff',
     // Mirrors the brand orange used across the marketing surface so the
-    // status-bar tint on Android + iOS install reads "BuildUp" at a glance.
+    // status-bar tint on Android + iOS install reads "TagidAI" at a glance.
     theme_color: '#F78203',
     orientation: 'portrait',
     icons: [
-      // The PNGs in public/brand are square LEGO renders of the logo — fine
-      // as a maskable icon since the safe-zone padding is baked in.
-      {
-        src: '/brand/buildup-icon.png',
-        sizes: '512x512',
-        type: 'image/png',
-        purpose: 'maskable',
-      },
-      {
-        src: '/brand/buildup-icon.png',
-        sizes: '512x512',
-        type: 'image/png',
-        purpose: 'any',
-      },
-      {
-        src: '/brand/buildup-logo.png',
-        sizes: '512x512',
-        type: 'image/png',
-        purpose: 'any',
-      },
+      // Full-fidelity 512 (any) + downscaled 192 for launchers that
+      // prefer the smaller size. `maskable` reuses the 512 — the
+      // generated icon has ~10% padding around the globe/workers
+      // so the safe-zone crop won't lose the crown of the helmet.
+      { src: '/brand/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+      { src: '/brand/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+      { src: '/brand/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
     ],
   };
 }

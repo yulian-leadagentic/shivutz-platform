@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Menu, X, LayoutDashboard, LogOut, ShieldCheck, ChevronDown } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
 import { clearTokens } from '@/lib/auth';
+import Logo from '@/components/Logo';
 
 function getInitials(label: string): string {
   if (!label) return '?';
@@ -68,11 +69,18 @@ export default function LandingNav(_: LandingNavProps) {
     <header className={`fixed top-0 inset-x-0 z-50 transition-shadow duration-300 bg-white border-b border-slate-200 ${
       scrolled ? 'shadow-sm' : ''
     }`}>
-      {/* Corner-logo removed per request — the full brand lockup lives
-          in the hero, so the top corner sits empty. justify-end packs
-          nav + buttons toward the inline-end (left in RTL), leaving the
-          right corner clear. */}
-      <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-end gap-6">
+      {/* Corner-icon: compact TagidAI mark clicks back to /. The full
+          lockup lives in the hero; up here we only have room for the
+          globe+workers icon (~28px). Placed with justify-between so
+          the icon sits at the start (right in RTL) and nav+buttons
+          pack at the end. */}
+      <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between gap-6">
+        <Link href="/" aria-label="TagidAI · דף הבית" className="shrink-0 -my-1">
+          <Logo kind="icon" size="sm" decorative />
+        </Link>
+
+        {/* Right-side cluster (in RTL this is visually on the left) */}
+        <div className="flex items-center gap-6">
 
         {/* Desktop nav — "השאר פרטים" removed per QA (R2 #5): the lead-
             capture modal is already reachable from the per-role outlined
@@ -183,6 +191,7 @@ export default function LandingNav(_: LandingNavProps) {
         >
           {menuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
         </button>
+        </div>
       </div>
 
       {/* Mobile drawer */}

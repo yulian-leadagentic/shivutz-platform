@@ -19,9 +19,18 @@ export const metadata: Metadata = {
   other: {
     'build-tag': '2026-08-09-a',
   },
+  // Multi-size favicon set so browsers pick the sharpest bitmap for
+  // the tab-bar / bookmarks / taskbar (16→48 covers most; 192/512
+  // are picked up by the PWA manifest below). apple-touch is a
+  // separate flat 180×180 with a white background — iOS drops
+  // transparency and would otherwise render a jagged edge.
   icons: {
-    icon: '/brand/buildup-icon.png',
-    apple: '/brand/buildup-icon.png',
+    icon: [
+      { url: '/brand/favicon-16.png', sizes: '16x16', type: 'image/png' },
+      { url: '/brand/favicon-32.png', sizes: '32x32', type: 'image/png' },
+      { url: '/brand/favicon-48.png', sizes: '48x48', type: 'image/png' },
+    ],
+    apple: '/brand/apple-touch-icon.png',
   },
   appleWebApp: {
     capable: true,

@@ -44,10 +44,10 @@ function ComingSoonContent() {
     <main className="min-h-screen flex items-center justify-center bg-white px-6 py-10">
       <div className="flex flex-col items-center text-center">
         <Image
-          src="/brand/buildup-lockup.png?v=4"
+          src="/brand/tagidai_lockup.png"
           alt="TagidAI"
           width={500}
-          height={400}
+          height={455}
           priority
           unoptimized
           className="h-56 md:h-72 w-auto object-contain mb-8"
