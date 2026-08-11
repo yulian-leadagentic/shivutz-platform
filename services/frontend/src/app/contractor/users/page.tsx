@@ -287,77 +287,131 @@ export default function ContractorUsersPage() {
           ) : active.length === 0 ? (
             <p className="text-center text-slate-400 py-6 text-sm">אין חברי צוות</p>
           ) : (
-            <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-slate-100 text-slate-500">
-                  <th className="px-4 py-3 text-start font-medium">שם</th>
-                  <th className="px-4 py-3 text-start font-medium">תפקיד</th>
-                  <th className="px-4 py-3 text-start font-medium">טלפון</th>
-                  <th className="px-4 py-3 text-start font-medium">מייל</th>
-                  <th className="px-4 py-3 text-start font-medium">הרשאה</th>
-                  <th className="px-4 py-3 text-start font-medium">איש קשר לעסקאות</th>
-                  <th className="px-4 py-3 text-start font-medium">הצטרף</th>
-                  <th className="px-4 py-3 text-end font-medium w-12" aria-label="פעולות" />
-                </tr>
-              </thead>
-              <tbody>
+            <>
+              {/* Mobile card-view (≤sm) — 8 cols overflow at 390px. */}
+              <ul className="sm:hidden divide-y divide-slate-100">
                 {active.map((m) => (
-                  <tr key={m.membership_id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50">
-                    <td className="px-4 py-3 font-medium text-slate-900 whitespace-nowrap">{m.full_name ?? '—'}</td>
-                    <td className="px-4 py-3 text-slate-600">{m.job_title || '—'}</td>
-                    <td className="px-4 py-3 text-slate-600 whitespace-nowrap" dir="ltr">{m.phone || '—'}</td>
-                    <td className="px-4 py-3 text-slate-600 whitespace-nowrap" dir="ltr">
-                      {m.email ? <span className="text-xs">{m.email}</span> : <span className="text-xs text-slate-300">—</span>}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${ROLE_COLORS[m.role] ?? 'bg-slate-100 text-slate-600'}`}>
+                  <li key={m.membership_id} className="p-4 space-y-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <h3 className="font-medium text-slate-900 leading-snug">{m.full_name ?? '—'}</h3>
+                        {m.job_title && (
+                          <p className="text-xs text-slate-500 mt-0.5">{m.job_title}</p>
+                        )}
+                      </div>
+                      <span className={`shrink-0 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${ROLE_COLORS[m.role] ?? 'bg-slate-100 text-slate-600'}`}>
                         {ROLE_LABELS[m.role] ?? m.role}
                       </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      {/* Toggle: is this member exposed to the corp as
-                          a contact on approved deals? At least one
-                          row must stay on; server enforces. */}
-                      <label className="inline-flex items-center gap-2 cursor-pointer select-none">
-                        <input
-                          type="checkbox"
-                          checked={!!m.is_deal_contact}
-                          onChange={(e) => handleToggleDealContact(m, e.target.checked)}
-                          className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
-                          aria-label={`סמן את ${m.full_name ?? 'המשתמש'} כאיש קשר לעסקאות`}
-                        />
-                        <span className="text-xs text-slate-500">
-                          {m.is_deal_contact ? 'מוצג לתאגיד' : 'לא מוצג'}
-                        </span>
-                      </label>
-                    </td>
-                    <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{fmt(m.invitation_accepted_at)}</td>
-                    <td className="px-3 py-3 text-end whitespace-nowrap">
-                      <div className="inline-flex items-center gap-1">
-                        <button
-                          onClick={() => setEditing(m)}
-                          title="ערוך משתמש"
-                          aria-label={`ערוך את ${m.full_name ?? 'המשתמש'}`}
-                          className="inline-flex items-center justify-center h-11 w-11 sm:h-7 sm:w-7 rounded-full text-slate-400 hover:bg-brand-50 hover:text-brand-600 transition-colors"
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </button>
-                        <button
-                          onClick={() => setPendingDelete(m)}
-                          title="הסר משתמש"
-                          aria-label={`הסר את ${m.full_name ?? 'המשתמש'}`}
-                          className="inline-flex items-center justify-center h-11 w-11 sm:h-7 sm:w-7 rounded-full text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition-colors"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
+                    </div>
+                    <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm">
+                      <dt className="text-slate-500">טלפון</dt>
+                      <dd className="text-slate-700" dir="ltr">{m.phone || '—'}</dd>
+                      <dt className="text-slate-500">מייל</dt>
+                      <dd className="text-slate-700 break-all" dir="ltr">{m.email || '—'}</dd>
+                      <dt className="text-slate-500">הצטרף</dt>
+                      <dd className="text-slate-700">{fmt(m.invitation_accepted_at)}</dd>
+                    </dl>
+                    <label className="flex items-center gap-2 cursor-pointer select-none min-h-11 -mx-1 px-1">
+                      <input
+                        type="checkbox"
+                        checked={!!m.is_deal_contact}
+                        onChange={(e) => handleToggleDealContact(m, e.target.checked)}
+                        className="h-5 w-5 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                        aria-label={`סמן את ${m.full_name ?? 'המשתמש'} כאיש קשר לעסקאות`}
+                      />
+                      <span className="text-sm text-slate-700">
+                        איש קשר לעסקאות · {m.is_deal_contact ? 'מוצג לתאגיד' : 'לא מוצג'}
+                      </span>
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setEditing(m)}
+                        aria-label={`ערוך את ${m.full_name ?? 'המשתמש'}`}
+                        className="flex-1 min-h-11 inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-brand-50 hover:text-brand-700 hover:border-brand-200 transition-colors text-sm font-medium"
+                      >
+                        <Pencil className="h-4 w-4" />ערוך
+                      </button>
+                      <button
+                        onClick={() => setPendingDelete(m)}
+                        aria-label={`הסר את ${m.full_name ?? 'המשתמש'}`}
+                        className="min-h-11 min-w-11 inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white text-rose-500 hover:bg-rose-50 hover:border-rose-200 transition-colors"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </li>
                 ))}
-              </tbody>
-            </table>
-            </div>
+              </ul>
+
+              <div className="hidden sm:block overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-100 text-slate-500">
+                    <th className="px-4 py-3 text-start font-medium">שם</th>
+                    <th className="px-4 py-3 text-start font-medium">תפקיד</th>
+                    <th className="px-4 py-3 text-start font-medium">טלפון</th>
+                    <th className="px-4 py-3 text-start font-medium">מייל</th>
+                    <th className="px-4 py-3 text-start font-medium">הרשאה</th>
+                    <th className="px-4 py-3 text-start font-medium">איש קשר לעסקאות</th>
+                    <th className="px-4 py-3 text-start font-medium">הצטרף</th>
+                    <th className="px-4 py-3 text-end font-medium w-12" aria-label="פעולות" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {active.map((m) => (
+                    <tr key={m.membership_id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50">
+                      <td className="px-4 py-3 font-medium text-slate-900 whitespace-nowrap">{m.full_name ?? '—'}</td>
+                      <td className="px-4 py-3 text-slate-600">{m.job_title || '—'}</td>
+                      <td className="px-4 py-3 text-slate-600 whitespace-nowrap" dir="ltr">{m.phone || '—'}</td>
+                      <td className="px-4 py-3 text-slate-600 whitespace-nowrap" dir="ltr">
+                        {m.email ? <span className="text-xs">{m.email}</span> : <span className="text-xs text-slate-300">—</span>}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${ROLE_COLORS[m.role] ?? 'bg-slate-100 text-slate-600'}`}>
+                          {ROLE_LABELS[m.role] ?? m.role}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={!!m.is_deal_contact}
+                            onChange={(e) => handleToggleDealContact(m, e.target.checked)}
+                            className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                            aria-label={`סמן את ${m.full_name ?? 'המשתמש'} כאיש קשר לעסקאות`}
+                          />
+                          <span className="text-xs text-slate-500">
+                            {m.is_deal_contact ? 'מוצג לתאגיד' : 'לא מוצג'}
+                          </span>
+                        </label>
+                      </td>
+                      <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{fmt(m.invitation_accepted_at)}</td>
+                      <td className="px-3 py-3 text-end whitespace-nowrap">
+                        <div className="inline-flex items-center gap-1">
+                          <button
+                            onClick={() => setEditing(m)}
+                            title="ערוך משתמש"
+                            aria-label={`ערוך את ${m.full_name ?? 'המשתמש'}`}
+                            className="inline-flex items-center justify-center h-7 w-7 rounded-full text-slate-400 hover:bg-brand-50 hover:text-brand-600 transition-colors"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </button>
+                          <button
+                            onClick={() => setPendingDelete(m)}
+                            title="הסר משתמש"
+                            aria-label={`הסר את ${m.full_name ?? 'המשתמש'}`}
+                            className="inline-flex items-center justify-center h-7 w-7 rounded-full text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition-colors"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>
@@ -375,7 +429,50 @@ export default function ContractorUsersPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="p-0">
-            <div className="overflow-x-auto">
+            {/* Mobile card-view for pending invitations */}
+            <ul className="sm:hidden divide-y divide-slate-100">
+              {pending.map((m) => (
+                <li key={m.membership_id} className="p-4 space-y-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <h3 className="font-medium text-slate-900 leading-snug">{m.full_name ?? '—'}</h3>
+                      {m.job_title && (
+                        <p className="text-xs text-slate-500 mt-0.5">{m.job_title}</p>
+                      )}
+                    </div>
+                    <span className={`shrink-0 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${ROLE_COLORS[m.role] ?? 'bg-slate-100 text-slate-600'}`}>
+                      {ROLE_LABELS[m.role] ?? m.role}
+                    </span>
+                  </div>
+                  <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm">
+                    <dt className="text-slate-500">טלפון</dt>
+                    <dd className="text-slate-700" dir="ltr">{m.phone || '—'}</dd>
+                    <dt className="text-slate-500">מייל</dt>
+                    <dd className="text-slate-700 break-all" dir="ltr">{m.email || '—'}</dd>
+                    <dt className="text-slate-500">נשלח</dt>
+                    <dd className="text-slate-700">{fmt(m.created_at)}</dd>
+                  </dl>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setEditing(m)}
+                      aria-label="ערוך הזמנה"
+                      className="flex-1 min-h-11 inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-brand-50 hover:text-brand-700 hover:border-brand-200 transition-colors text-sm font-medium"
+                    >
+                      <Pencil className="h-4 w-4" />ערוך
+                    </button>
+                    <button
+                      onClick={() => setPendingDelete(m)}
+                      aria-label="בטל הזמנה"
+                      className="min-h-11 min-w-11 inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white text-rose-500 hover:bg-rose-50 hover:border-rose-200 transition-colors"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+
+            <div className="hidden sm:block overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-100 text-slate-500">
@@ -409,7 +506,7 @@ export default function ContractorUsersPage() {
                           onClick={() => setEditing(m)}
                           title="ערוך הזמנה"
                           aria-label="ערוך הזמנה"
-                          className="inline-flex items-center justify-center h-11 w-11 sm:h-7 sm:w-7 rounded-full text-slate-400 hover:bg-brand-50 hover:text-brand-600 transition-colors"
+                          className="inline-flex items-center justify-center h-7 w-7 rounded-full text-slate-400 hover:bg-brand-50 hover:text-brand-600 transition-colors"
                         >
                           <Pencil className="h-4 w-4" />
                         </button>
@@ -417,7 +514,7 @@ export default function ContractorUsersPage() {
                           onClick={() => setPendingDelete(m)}
                           title="בטל הזמנה"
                           aria-label="בטל הזמנה"
-                          className="inline-flex items-center justify-center h-11 w-11 sm:h-7 sm:w-7 rounded-full text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition-colors"
+                          className="inline-flex items-center justify-center h-7 w-7 rounded-full text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition-colors"
                         >
                           <Trash2 className="h-4 w-4" />
                         </button>
