@@ -577,8 +577,13 @@ def trial_ending_batch(days_ahead: int = 3):
                       COALESCE(c.company_name_he, c.company_name,
                                ct.company_name_he, ct.company_name)     AS entity_name
                  FROM payment_db.subscriptions s
-                 LEFT JOIN corporations c  ON s.entity_type='corporation' AND c.id  = s.entity_id
-                 LEFT JOIN contractors  ct ON s.entity_type='contractor'  AND ct.id = s.entity_id
+                 -- corporations.id / contractors.id inherit the legacy
+                 -- utf8mb4_unicode_ci collation; payment_db was created
+                 -- later on MySQL 8's default utf8mb4_0900_ai_ci, so a
+                 -- naked join throws "Illegal mix of collations" (1267).
+                 -- Force both sides to 0900_ai_ci for the comparison.
+                 LEFT JOIN corporations c  ON s.entity_type='corporation' AND c.id  COLLATE utf8mb4_0900_ai_ci = s.entity_id
+                 LEFT JOIN contractors  ct ON s.entity_type='contractor'  AND ct.id COLLATE utf8mb4_0900_ai_ci = s.entity_id
                 WHERE s.status='trialing'
                   AND s.trial_ends_at > NOW()
                   AND s.trial_ends_at <= DATE_ADD(NOW(), INTERVAL %s DAY)
@@ -624,7 +629,11 @@ def ad_expiring_batch(days_ahead: int = 3):
                       TIMESTAMPDIFF(DAY, NOW(), a.expires_at) AS days_left,
                       c.contact_phone AS phone
                  FROM ads a
-                 JOIN corporations c ON c.id = a.owner_entity_id
+                 -- Same collation mismatch as trial-ending-batch above:
+                 -- ads.owner_entity_id is 0900_ai_ci, corporations.id is
+                 -- legacy unicode_ci. Force corporations.id to 0900_ai_ci
+                 -- for the JOIN comparison.
+                 JOIN corporations c ON c.id COLLATE utf8mb4_0900_ai_ci = a.owner_entity_id
                 WHERE a.active = TRUE
                   AND a.deleted_at IS NULL
                   AND a.expires_at IS NOT NULL
@@ -686,8 +695,13 @@ def grace_batch():
                       COALESCE(c.company_name_he, c.company_name,
                                ct.company_name_he, ct.company_name)     AS entity_name
                  FROM payment_db.subscriptions s
-                 LEFT JOIN corporations c  ON s.entity_type='corporation' AND c.id  = s.entity_id
-                 LEFT JOIN contractors  ct ON s.entity_type='contractor'  AND ct.id = s.entity_id
+                 -- corporations.id / contractors.id inherit the legacy
+                 -- utf8mb4_unicode_ci collation; payment_db was created
+                 -- later on MySQL 8's default utf8mb4_0900_ai_ci, so a
+                 -- naked join throws "Illegal mix of collations" (1267).
+                 -- Force both sides to 0900_ai_ci for the comparison.
+                 LEFT JOIN corporations c  ON s.entity_type='corporation' AND c.id  COLLATE utf8mb4_0900_ai_ci = s.entity_id
+                 LEFT JOIN contractors  ct ON s.entity_type='contractor'  AND ct.id COLLATE utf8mb4_0900_ai_ci = s.entity_id
                 WHERE s.status='trialing'
                   AND s.trial_ends_at IS NOT NULL
                   AND s.trial_ends_at <= NOW()
