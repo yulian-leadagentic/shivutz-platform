@@ -9,6 +9,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Loader2, Search as SearchIcon, CreditCard, Clock, Globe2, ArrowLeft } from 'lucide-react';
 import { adApi, type UsageResponse } from '@/lib/api/ads';
+import { subscriptionApi, type SubscriptionRow } from '@/lib/api/payments';
 import { orgApi } from '@/lib/api';
 import { getAccessToken, decodeJwtPayload } from '@/lib/auth';
 import { mapApiError } from '@/lib/api/errors';
@@ -25,13 +26,17 @@ function daysUntil(iso: string | null | undefined): number | null {
 }
 
 export default function ContractorDashboardPage() {
+  // QA-5 — split "which subscription" (subscriptionApi.me — the same
+  // endpoint /billing uses successfully) from "how many reveals used"
+  // (adApi.usage, secondary). Old flow used only /ads/usage for both;
+  // when the ads endpoint returned any non-2xx (500 / 401 / anything)
+  // the whole card fell into the error state even when the real
+  // subscription row was fetchable via /payments/subscriptions/me.
+  // Now: tier + status come from `sub`, reveal meter from `usage`,
+  // and either can degrade gracefully without dragging the other.
+  const [sub, setSub] = useState<SubscriptionRow | null>(null);
+  const [subError, setSubError] = useState<string | null>(null);
   const [usage, setUsage] = useState<UsageResponse | null>(null);
-  // CU-3 — usageError tracks WHY `usage` is null so the UI can
-  // distinguish "no subscription (empty state)" from "API blew up
-  // (error state)". Was silently swallowed (.catch(() => {})),
-  // which is why every failure surfaced as "המנוי שלך —" with
-  // nothing to click.
-  const [usageError, setUsageError] = useState<string | null>(null);
   const [companyName, setCompanyName] = useState<string>('');
   const [loading, setLoading] = useState(true);
 
@@ -44,15 +49,30 @@ export default function ContractorDashboardPage() {
         setCompanyName(c.company_name_he || c.company_name || '');
       }).catch(() => {});
     }
+    // Primary: subscription row. 404 → no sub yet (empty state);
+    // other errors → shown Hebrew message.
+    subscriptionApi.me()
+      .then((s) => { setSub(s); setSubError(null); })
+      .catch((err) => {
+        const msg = (err as Error).message ?? '';
+        if (/404|not.?found|no.?subscription/i.test(msg)) {
+          setSub(null); setSubError(null);           // empty state
+        } else {
+          setSubError(mapApiError(err));             // real error
+        }
+      });
+    // Secondary: reveal meter. Any failure → hide meter, don't error.
     adApi.usage()
-      .then((u) => { setUsage(u); setUsageError(null); })
-      .catch((err) => setUsageError(mapApiError(err)))
+      .then((u) => setUsage(u))
+      .catch(() => setUsage(null))
       .finally(() => setLoading(false));
   }, []);
 
   if (loading) return <div className="text-center py-16"><Loader2 className="w-6 h-6 animate-spin mx-auto text-slate-400" /></div>;
 
-  const trialDays = daysUntil((usage as UsageResponse & { trial_ends_at?: string | null })?.trial_ends_at ?? null);
+  // Trial countdown comes from the subscription row (authoritative).
+  // Reveal counts remain best-effort from the usage endpoint.
+  const trialDays = daysUntil(sub?.trial_ends_at ?? null);
   const revealsUsed  = usage?.usage.reveals_this_month ?? 0;
   const revealsLimit = usage?.limits.reveals_per_month;
 
@@ -108,26 +128,28 @@ export default function ContractorDashboardPage() {
           Contractor layout mounts <KablanVerifyBanner /> globally, so
           duplicating it on the dashboard was double-messaging. */}
 
-      {/* Subscription card.
-          CU-3 — three-state render replaces the old opaque em-dash.
-          Was: `{usage ? TIER_LABEL[usage.tier] : '—'}` — every
-          failure mode collapsed to a silent "—". Now:
-          - usage loaded → tier chip + trial/reveals meter (unchanged
-            happy path).
-          - usageError → Hebrew message from mapApiError, no dash.
-          - usage === null && no error → treat as "no subscription
-            yet" empty-state with a "רכוש מנוי" CTA into /billing. */}
+      {/* Subscription card. QA-5 rewrite — three-state render sourced
+          from /payments/subscriptions/me (same endpoint /billing uses).
+          Was: single-source /ads/usage. If /ads/usage transiently 500'd
+          the whole card fell into an error state even when the sub row
+          was fine. Now sub + reveal-meter are independent:
+          - sub loaded → tier chip + optional trial countdown +
+            reveal meter (reveals only if secondary /ads/usage came
+            back too; hidden otherwise, no error).
+          - sub === null && subError → Hebrew error banner.
+          - sub === null && no error (404 / no-sub) → empty-state
+            "אין מנוי פעיל" + "רכשו מנוי" CTA into /billing. */}
       <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="min-w-0 flex-1">
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">המנוי שלך</p>
 
-            {usage ? (
+            {sub ? (
               <>
                 <p className="text-lg font-bold text-slate-900 mt-1">
-                  {TIER_LABEL[usage.tier] ?? usage.tier}
+                  {TIER_LABEL[sub.tier] ?? sub.tier}
                   <span className="ms-2 text-sm font-medium text-slate-600">
-                    ({STATUS_LABEL[usage.status] ?? usage.status})
+                    ({STATUS_LABEL[sub.status] ?? sub.status})
                   </span>
                 </p>
                 {trialDays !== null && (
@@ -140,13 +162,15 @@ export default function ContractorDashboardPage() {
                     <span className="text-amber-600">· ללא כרטיס אשראי</span>
                   </p>
                 )}
-                <p className="text-sm text-slate-600 mt-1">
-                  חשיפות החודש: <b dir="ltr">{revealsUsed} / {revealsLimit ?? '∞'}</b>
-                </p>
+                {usage && (
+                  <p className="text-sm text-slate-600 mt-1">
+                    חשיפות החודש: <b dir="ltr">{revealsUsed} / {revealsLimit ?? '∞'}</b>
+                  </p>
+                )}
               </>
-            ) : usageError ? (
+            ) : subError ? (
               <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2 mt-1">
-                {usageError}
+                {subError}
               </p>
             ) : (
               <>
@@ -162,7 +186,7 @@ export default function ContractorDashboardPage() {
             className="inline-flex items-center gap-2 bg-brand-600 hover:bg-brand-800 text-slate-900 text-sm font-semibold px-4 py-2 rounded-lg min-h-11"
           >
             <CreditCard className="w-4 h-4" />
-            {usage ? 'ניהול מנוי' : 'רכשו מנוי'}
+            {sub ? 'ניהול מנוי' : 'רכשו מנוי'}
           </Link>
         </div>
       </div>

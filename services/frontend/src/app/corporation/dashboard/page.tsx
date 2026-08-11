@@ -9,8 +9,10 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Loader2, Megaphone, Home, Eye, CreditCard, Clock, Plus } from 'lucide-react';
 import { adApi, type UsageResponse } from '@/lib/api/ads';
+import { subscriptionApi, type SubscriptionRow } from '@/lib/api/payments';
 import { orgApi } from '@/lib/api';
 import { getAccessToken, decodeJwtPayload } from '@/lib/auth';
+import { mapApiError } from '@/lib/api/errors';
 import { PublishFirstAdBanner } from '@/features/corporation/PublishFirstAdBanner';
 
 const STATUS_LABEL: Record<string, string> = {
@@ -54,6 +56,13 @@ function Tile({
 }
 
 export default function CorporationDashboardPage() {
+  // QA-5 — split subscription (source of truth for tier/status/trial)
+  // from usage (source of truth for ad counters + reveal counters).
+  // Same rationale as contractor dashboard: /ads/usage transient
+  // failure used to collapse tier + status to "—" even when
+  // /payments/subscriptions/me was fine.
+  const [sub, setSub] = useState<SubscriptionRow | null>(null);
+  const [subError, setSubError] = useState<string | null>(null);
   const [usage, setUsage] = useState<UsageResponse | null>(null);
   const [approvalStatus, setApproval] = useState<string | null>(null);
   const [companyName, setCompanyName] = useState<string>('');
@@ -69,20 +78,30 @@ export default function CorporationDashboardPage() {
         setCompanyName(c.company_name_he || c.company_name || '');
       }).catch(() => {});
     }
+    subscriptionApi.me()
+      .then((s) => { setSub(s); setSubError(null); })
+      .catch((err) => {
+        const msg = (err as Error).message ?? '';
+        if (/404|not.?found|no.?subscription/i.test(msg)) {
+          setSub(null); setSubError(null);
+        } else {
+          setSubError(mapApiError(err));
+        }
+      });
     adApi.usage().then(setUsage).catch(() => {}).finally(() => setLoading(false));
   }, []);
 
   if (loading) return <div className="text-center py-16"><Loader2 className="w-6 h-6 animate-spin mx-auto text-slate-400" /></div>;
 
-  const trialEndsAt = (usage as UsageResponse & { trial_ends_at?: string | null })?.trial_ends_at ?? null;
-  const graceEndsAt = (usage as UsageResponse & { grace_ends_at?: string | null })?.grace_ends_at ?? null;
-  // Trial "days left" — only when the trial itself is still active.
+  // Trial + grace state — driven by `sub` (authoritative). Server also
+  // publishes trial_ends_at / grace_ends_at inside /ads/usage; both are
+  // kept in sync but /payments/subscriptions/me is the source of truth.
+  const trialEndsAt = sub?.trial_ends_at ?? null;
+  const graceEndsAt = (sub as (SubscriptionRow & { grace_ends_at?: string | null }))?.grace_ends_at ?? null;
   const now = new Date();
-  const trialLive = usage?.status === 'trialing' && trialEndsAt !== null && new Date(trialEndsAt) > now;
+  const trialLive = sub?.status === 'trialing' && trialEndsAt !== null && new Date(trialEndsAt) > now;
   const trialDays = trialLive ? daysUntil(trialEndsAt) : null;
-  // B3 grace state — trial ended, grace not yet closed. Days-left uses
-  // grace_ends_at; server pauses ads on grace_ends_at + 1 day.
-  const inGrace = usage?.status === 'trialing'
+  const inGrace = sub?.status === 'trialing'
                && trialEndsAt !== null
                && new Date(trialEndsAt) <= now
                && (graceEndsAt === null || new Date(graceEndsAt) > now);
@@ -148,22 +167,35 @@ export default function CorporationDashboardPage() {
         </div>
       </div>
 
-      {/* Subscription */}
+      {/* Subscription — QA-5. Was `{usage ? TIER_LABEL[usage.tier] : '—'}`
+          which collapsed to a bare dash on any /ads/usage failure.
+          Now sub-driven with an explicit empty / error state so the
+          dashboard never shows a mystery dash. */}
       <div>
         <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">מנוי</p>
         <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-3">
           <div className="flex items-baseline justify-between gap-4 flex-wrap">
             <div>
-              <p className="text-lg font-bold text-slate-900">
-                {usage ? TIER_LABEL[usage.tier] : '—'}
-                <span className="ms-2 text-sm font-medium text-slate-600">
-                  {usage ? `(${STATUS_LABEL[usage.status] ?? usage.status})` : ''}
-                </span>
-              </p>
-              {trialDays !== null && (
-                <p className="text-sm text-amber-700 mt-0.5">
-                  נותרו {trialDays} ימים לניסיון <span className="text-amber-600">· ללא כרטיס אשראי</span>
+              {sub ? (
+                <>
+                  <p className="text-lg font-bold text-slate-900">
+                    {TIER_LABEL[sub.tier] ?? sub.tier}
+                    <span className="ms-2 text-sm font-medium text-slate-600">
+                      ({STATUS_LABEL[sub.status] ?? sub.status})
+                    </span>
+                  </p>
+                  {trialDays !== null && (
+                    <p className="text-sm text-amber-700 mt-0.5">
+                      נותרו {trialDays} ימים לניסיון <span className="text-amber-600">· ללא כרטיס אשראי</span>
+                    </p>
+                  )}
+                </>
+              ) : subError ? (
+                <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+                  {subError}
                 </p>
+              ) : (
+                <p className="text-lg font-bold text-slate-900">אין מנוי פעיל</p>
               )}
             </div>
             <Link
@@ -171,7 +203,7 @@ export default function CorporationDashboardPage() {
               className="inline-flex items-center gap-2 bg-brand-600 hover:bg-brand-800 text-slate-900 text-sm font-semibold px-4 py-2 rounded-lg"
             >
               <CreditCard className="w-4 h-4" />
-              ניהול מנוי
+              {sub ? 'ניהול מנוי' : 'רכשו מנוי'}
             </Link>
           </div>
         </div>
