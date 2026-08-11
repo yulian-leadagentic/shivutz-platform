@@ -213,3 +213,8 @@ app.listen(PORT, () => console.log(`API Gateway listening on ${PORT}`));
 // Wave 4 deploy probe — 2026-05-07T09:12:51Z
 // deploy probe — 2026-05-29 (pick up /api/tenders proxy route)
 // deploy probe — 2026-06-16 (rebuild gateway so /api/support-tickets is live on staging+prod)
+// deploy probe — 2026-08-11 (Railway gateway was stale post-pivot: /api/ads +
+//   /api/search proxy routes existed in-source since Phase 2/3 but the deployed
+//   gateway was returning "Cannot GET /api/ads/public/featured" — nuking the
+//   landing carousel, stats, and search. Bump forces Railway rebuild so the
+//   services{} table with /api/ads + /api/search is actually served.)
