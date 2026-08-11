@@ -14,10 +14,15 @@ export default function ContractorLayout({ children }: { children: React.ReactNo
           <Sidebar />
         </div>
 
-        {/* Main content area */}
+        {/* Main content area. Dropped `overflow-auto` from <main> so the
+            document scrolls at the body level — that lets TopBar's
+            `sticky top-0` (added for QA-4) actually stick to the
+            viewport. With overflow-auto, main became the scroll
+            container and TopBar (its sibling) had no scrolling ancestor
+            to stick to. */}
         <div className="flex flex-col flex-1 min-w-0">
           <TopBar mobileNav={<Sidebar />} />
-          <main className="flex-1 p-4 sm:p-6 overflow-auto">
+          <main className="flex-1 p-4 sm:p-6">
             <FreeLaunchBanner />
             {/* Sits above every contractor screen — nudges users who
                 haven't passed the kablan match yet, and surfaces the

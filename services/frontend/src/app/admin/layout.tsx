@@ -108,7 +108,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
       {/* Main */}
       <div className="flex-1 flex flex-col min-w-0">
-        <header className="bg-white border-b border-slate-200 px-3 sm:px-6 lg:px-8 py-3 sm:py-4 flex items-center justify-between gap-2">
+        {/* QA-4: sticky so the section title + logout stay accessible
+            on long admin tables. Same pattern as TopBar in contractor/
+            corporation layouts. */}
+        <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-sm border-b border-slate-200 shadow-sm px-3 sm:px-6 lg:px-8 py-3 sm:py-4 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
             <MobileNavDrawer
               nav={<AdminSidebarBody pathname={pathname} onLogout={logout} />}
@@ -129,7 +132,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             </button>
           </div>
         </header>
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-auto">
+        {/* overflow-auto dropped for QA-4 — body scrolls so sticky
+            header actually sticks (see contractor layout note). */}
+        <main className="flex-1 p-4 sm:p-6 lg:p-8">
           {children}
         </main>
       </div>

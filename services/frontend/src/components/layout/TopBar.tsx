@@ -227,7 +227,14 @@ export default function TopBar({ mobileNav }: TopBarProps = {}) {
     : (name ? ENTITY_CHIP['admin'] : null);
 
   return (
-    <header className="h-16 bg-white border-b border-slate-200/80 flex items-center justify-between gap-2 px-3 sm:px-4 lg:px-6 shrink-0">
+    // QA-4: sticky top-0 z-40 so the entity switcher + notification bell
+    // stay accessible on long scrolled pages. Works whether the layout
+    // hangs the scroll on <body> (default) or on an <main overflow-auto>
+    // wrapper (current contractor/corporation/admin layouts) — position
+    // sticky sticks to its nearest scrolling ancestor, so both patterns
+    // produce a fixed-feeling top bar. Opaque bg + subtle shadow keeps
+    // content readable when it scrolls behind.
+    <header className="sticky top-0 z-40 h-16 bg-white/95 backdrop-blur-sm border-b border-slate-200/80 shadow-sm flex items-center justify-between gap-2 px-3 sm:px-4 lg:px-6 shrink-0">
       <div className="flex items-center gap-2 min-w-0">
         {mobileNav && <MobileNavDrawer nav={mobileNav} />}
         {shouldShowBack(pathname) && (

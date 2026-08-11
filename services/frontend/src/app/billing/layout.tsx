@@ -24,7 +24,9 @@ export default function BillingLayout({ children }: { children: React.ReactNode 
       <div className="hidden lg:block">{SidebarEl}</div>
       <div className="flex flex-col flex-1 min-w-0">
         <TopBar mobileNav={SidebarEl} />
-        <main className="flex-1 p-4 sm:p-6 overflow-auto">{children}</main>
+        {/* overflow-auto dropped for QA-4 — body scrolls so TopBar's
+            sticky top-0 actually sticks. */}
+        <main className="flex-1 p-4 sm:p-6">{children}</main>
       </div>
     </div>
   );
