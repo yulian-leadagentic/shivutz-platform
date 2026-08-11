@@ -14,7 +14,7 @@
 //   7. Recent ads grid (yad2 mosaic — when no query)
 //   8. Role register picker + "how it works" + footer
 
-import { Suspense, useCallback, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -81,6 +81,12 @@ function LandingPageInner() {
   const router = useRouter();
   const params = useSearchParams();
   const [leadModalOpen, setLeadModalOpen] = useState(false);
+  // QA-2: LiveActivityFeed CTAs (check_match / anon check_match) route
+  // to `/?focus=search#search-hero`. When the visitor is already on
+  // the landing, the browser doesn't repaint, so the click has to
+  // manifest as *something visible* — focus the input + scroll to
+  // the hero.
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   const [q, setQ]           = useState('');
   const [resp, setResp]     = useState<SearchResponse | null>(null);
@@ -119,6 +125,20 @@ function LandingPageInner() {
     const sp = new URLSearchParams(window.location.search);
     return !!(sp.get('prof') || sp.get('region') || sp.get('origin'));
   });
+
+  // QA-2 — when arriving via a LiveActivityFeed CTA that targets the
+  // landing search (`?focus=search#search-hero`), focus the input so
+  // the click has a visible effect even for a same-page navigation.
+  // The hash-anchor already handles the scroll; `?focus=search`
+  // triggers the input focus once on mount and never re-fires.
+  useEffect(() => {
+    if (params?.get('focus') === 'search' && searchInputRef.current) {
+      // Small timeout — waits for the hash-scroll to settle so the
+      // caret lands inside a stable, visible input.
+      const t = setTimeout(() => searchInputRef.current?.focus(), 200);
+      return () => clearTimeout(t);
+    }
+  }, [params]);
 
   useEffect(() => {
     apiFetch<{ results: PublicAd[] }>('/ads/public/recent?limit=12')
@@ -340,6 +360,7 @@ function LandingPageInner() {
                   <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
                     <SearchIcon className="w-6 h-6 text-slate-400 shrink-0" aria-hidden="true" />
                     <input
+                      ref={searchInputRef}
                       type="text"
                       value={q}
                       onChange={(e) => setQ(e.target.value)}

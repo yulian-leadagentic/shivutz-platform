@@ -15,11 +15,18 @@ export interface ResolvedCta {
 
 type Resolver = (role: AudienceRole) => ResolvedCta | null;
 
+// Landing hash — jumps to (and scrolls to) the search hero section
+// so the CTA feels responsive even when the user is already on `/`.
+// Bare `/` used to make the popup CTA a no-op click when the visitor
+// was already on the landing page (browser routes same-path
+// navigation to nothing visible). See QA-2.
+const LANDING_SEARCH = '/?focus=search#search-hero';
+
 const RESOLVERS: Record<CtaIntent, Resolver> = {
   check_match: (role) => {
-    if (role === 'contractor')   return { label: 'חפש עובדים', href: '/' };
+    if (role === 'contractor')   return { label: 'חפש עובדים', href: LANDING_SEARCH };
     if (role === 'corporation')  return { label: 'המודעות שלי', href: '/corporation/ads' };
-    return { label: 'חפש עובדים', href: '/' };
+    return { label: 'חפש עובדים', href: LANDING_SEARCH };
   },
   see_requirements: (role) => {
     if (role === 'contractor')   return { label: 'בקשות ייבוא', href: '/contractor/tenders' };
@@ -28,7 +35,9 @@ const RESOLVERS: Record<CtaIntent, Resolver> = {
   },
   see_housing: () => ({ label: 'ראה מגורים', href: '/?category=housing' }),
   post_requirement: (role) => {
-    if (role === 'contractor')   return { label: 'חפש עובדים', href: '/' };
+    // Contractors post a "worker request" via the tender flow now
+    // (post-pivot: /contractor/tenders/new is the request builder).
+    if (role === 'contractor')   return { label: 'פרסם בקשה', href: '/contractor/tenders/new' };
     if (role === 'corporation')  return { label: '', href: '', hidden: true };
     return { label: 'הירשם וצפה', href: '/register/contractor' };
   },
