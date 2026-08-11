@@ -19,6 +19,7 @@ import {
 } from '@/lib/api/payments';
 import { adApi, type UsageResponse } from '@/lib/api/ads';
 import { memberApi, type TeamMember } from '@/lib/api/members';
+import { mapApiError } from '@/lib/api/errors';
 import { useAuth } from '@/lib/AuthContext';
 
 // Static tier taglines; the actual limits are pulled live from the
@@ -88,7 +89,9 @@ export default function BillingPage() {
           .catch(() => setMembers([]));
       }
     } catch (e) {
-      setError((e as Error).message ?? 'שגיאה בטעינת המנוי');
+      // QA-3 fallout: raw `.message` was surfacing English codes into
+      // the red banner. Route through mapApiError instead.
+      setError(mapApiError(e));
     } finally {
       setLoading(false);
     }
@@ -108,11 +111,16 @@ export default function BillingPage() {
       const next = await memberApi.list('contractors', entityId);
       setMembers(next);
     } catch (e) {
+      // QA-3: previously fell back to `(e.message || 'שגיאה בהוספה')`
+      // which surfaced raw English codes like "error" straight into
+      // the red banner. mapApiError translates known machine codes,
+      // preserves server-supplied Hebrew, and falls back to a Hebrew
+      // default — no more English leaks.
       const msg = (e as Error).message ?? '';
       if (/seat_limit/i.test(msg)) {
         setError('הגעת לתקרת המשתמשים במסלול הנוכחי — שדרג כדי להוסיף עוד.');
       } else {
-        setError(msg || 'שגיאה בהוספה');
+        setError(mapApiError(e));
       }
     }
     finally { setBusyMem(null); }
@@ -125,7 +133,7 @@ export default function BillingPage() {
     try {
       await memberApi.remove('contractors', entityId, m.membership_id);
       setMembers((rows) => rows.filter((r) => r.membership_id !== m.membership_id));
-    } catch (e) { setError((e as Error).message ?? 'שגיאה בהסרה'); }
+    } catch (e) { setError(mapApiError(e)); }
     finally { setBusyMem(null); }
   }
 
