@@ -55,9 +55,28 @@ export async function get(base, path, headers = {}) {
 
 /** Send-OTP + verify-OTP for the register purpose. Staging bypasses
  *  SMS via MASTER_OTP so the code we send is always known.
- *  Returns the normalized phone (with country code). */
-export async function verifyRegisterOtp(base, phone) {
+ *  Returns the normalized phone (with country code).
+ *
+ *  RATE LIMITS (learned the hard way): the auth service caps
+ *    · 3 OTPs per phone per 10-minute window
+ *    · 10 OTPs per IP  per 10-minute window   ← THIS is the killer for seed
+ *  On rate_limited we wait for the retryAfter the server tells us and
+ *  try once more, up to `retriesLeft`. Zero retries left → throw (loud).
+ *  The previous "swallow rate_limited silently" masked total corp-create
+ *  failure — every downstream POST /organizations/corporations then
+ *  400'd with phone_not_verified because verify never happened.
+ */
+export async function verifyRegisterOtp(base, phone, retriesLeft = 2) {
   const send = await post(base, '/api/auth/send-otp', { phone, purpose: 'register' });
+  if (send.status === 429 || /rate_limited/i.test(send.raw)) {
+    if (retriesLeft <= 0) {
+      throw new Error(`send-otp rate_limited for ${phone} after retries; ${send.raw.slice(0, 200)}`);
+    }
+    const wait = Math.min(605, Math.max(30, (send.body?.retryAfter ?? 60) + 5));
+    console.log(`  … rate_limited on ${phone}; waiting ${wait}s and retrying (${retriesLeft} left)`);
+    await sleep(wait * 1000);
+    return verifyRegisterOtp(base, phone, retriesLeft - 1);
+  }
   if (!send.ok) throw new Error(`send-otp failed ${send.status}: ${send.raw.slice(0, 200)}`);
   const normPhone = send.body?.phone ?? phone;
   const verify = await post(base, '/api/auth/verify-otp',
@@ -68,9 +87,23 @@ export async function verifyRegisterOtp(base, phone) {
 
 /** Full login: send-otp('login') + login/otp → access_token + refresh_token.
  *  Handles the "single membership" path AND the multi-membership path
- *  (by calling /auth/select-entity for the caller-specified entity). */
-export async function loginAs(base, phone, entityId, entityType) {
+ *  (by calling /auth/select-entity for the caller-specified entity).
+ *
+ *  Retries on rate_limited (same 10/IP/10-min ceiling as verifyRegisterOtp).
+ *  Without this, seeding 10 corp phones back-to-back exhausts the IP quota
+ *  after ~5 and the remaining logins fail — leaving the corps unable to
+ *  post ads. */
+export async function loginAs(base, phone, entityId, entityType, retriesLeft = 2) {
   const send = await post(base, '/api/auth/send-otp', { phone, purpose: 'login' });
+  if (send.status === 429 || /rate_limited/i.test(send.raw)) {
+    if (retriesLeft <= 0) {
+      throw new Error(`send-otp(login) rate_limited for ${phone} after retries; ${send.raw.slice(0, 200)}`);
+    }
+    const wait = Math.min(605, Math.max(30, (send.body?.retryAfter ?? 60) + 5));
+    console.log(`  … login rate_limited on ${phone}; waiting ${wait}s and retrying (${retriesLeft} left)`);
+    await sleep(wait * 1000);
+    return loginAs(base, phone, entityId, entityType, retriesLeft - 1);
+  }
   if (!send.ok) throw new Error(`send-otp(login) failed ${send.status}: ${send.raw.slice(0, 200)}`);
   const normPhone = send.body?.phone ?? phone;
   const login = await post(base, '/api/auth/login/otp', { phone: normPhone, code: MASTER_OTP });

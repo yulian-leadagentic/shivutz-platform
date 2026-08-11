@@ -37,16 +37,38 @@ const stats = { contractors: { created: 0, existed: 0, failed: 0 },
                 housing_ads: { created: 0, existed: 0, failed: 0 },
                 boosts:      { done: 0, failed: 0 } };
 
+// Optimistic-create pattern shared by contractor + corp seeds. Try
+// POST without touching the OTP flow first: if the entity already
+// exists we get a 409 immediately, saving one send-otp and one
+// verify-otp call — which matters because auth caps IP OTP calls at
+// 10 per 10-minute window, and burning them on entities that already
+// exist starves the fresh-create path.
+//
+// Returns:  { status: 'created'|'existed', body? }
+// On 400 phone_not_verified → does the OTP verify dance THEN retries.
+// Any other status → { status: 'failed', code, raw }.
+async function createOrVerifyThenCreate(base, path, phone, body) {
+  let res = await post(base, path, body);
+  if (res.ok)           return { status: 'created', body: res.body };
+  if (res.status === 409) return { status: 'existed' };
+  const isPhoneUnverified =
+    res.status === 400 && /phone_not_verified/i.test(res.raw);
+  if (!isPhoneUnverified) {
+    return { status: 'failed', code: res.status, raw: res.raw };
+  }
+  // Phone not verified → do the OTP dance, then retry the create.
+  await verifyRegisterOtp(base, phone);
+  res = await post(base, path, body);
+  if (res.ok)           return { status: 'created', body: res.body };
+  if (res.status === 409) return { status: 'existed' };
+  return { status: 'failed', code: res.status, raw: res.raw };
+}
+
 async function seedContractor(base, c) {
   const phone = seedPhone(c.i);
   const bn    = israeliIdWithChecksum(BN_BASE_CONTRACTOR + c.i);
   try {
-    // OTP-verify the phone. Skip on rate-limit — assume prior verify
-    // is still in the 15-min window.
-    await verifyRegisterOtp(base, phone).catch((e) => {
-      if (!/rate_limited|429/i.test(String(e))) throw e;
-    });
-    const res = await post(base, '/api/organizations/contractors', {
+    const r = await createOrVerifyThenCreate(base, '/api/organizations/contractors', phone, {
       company_name_he:    c.name_he,
       business_number:    bn,
       operating_regions:  c.regions,
@@ -54,16 +76,10 @@ async function seedContractor(base, c) {
       contact_phone:      phone,
       kablan_number:      c.kablan,
     });
-    if (res.ok) { stats.contractors.created++; console.log(`  + contractor [${c.i}] ${c.name_he} (${bn})`); return { id: res.body?.id, phone, bn }; }
-    if (res.status === 409) {
-      // phone_already_contractor OR contractor_already_registered —
-      // the fixture is already seeded. Look up the existing entity.
-      stats.contractors.existed++;
-      console.log(`  = contractor [${c.i}] ${c.name_he} already exists (skipped)`);
-      return { id: null, phone, bn };
-    }
+    if (r.status === 'created') { stats.contractors.created++; console.log(`  + contractor [${c.i}] ${c.name_he} (${bn})`); return { id: r.body?.id, phone, bn }; }
+    if (r.status === 'existed') { stats.contractors.existed++; console.log(`  = contractor [${c.i}] ${c.name_he} already exists (skipped)`); return { id: null, phone, bn }; }
     stats.contractors.failed++;
-    console.log(`  ! contractor [${c.i}] ${c.name_he} failed ${res.status}: ${res.raw.slice(0, 200)}`);
+    console.log(`  ! contractor [${c.i}] ${c.name_he} failed ${r.code}: ${r.raw?.slice(0, 200) ?? ''}`);
     return null;
   } catch (err) {
     stats.contractors.failed++;
@@ -76,10 +92,7 @@ async function seedCorp(base, c) {
   const phone = seedPhone(PH_OFFSET_CORP + c.i);
   const bn    = israeliIdWithChecksum(BN_BASE_CORP + c.i);
   try {
-    await verifyRegisterOtp(base, phone).catch((e) => {
-      if (!/rate_limited|429/i.test(String(e))) throw e;
-    });
-    const res = await post(base, '/api/organizations/corporations', {
+    const r = await createOrVerifyThenCreate(base, '/api/organizations/corporations', phone, {
       company_name_he:         c.name_he,
       business_number:         bn,
       countries_of_origin:     c.origins,
@@ -87,14 +100,10 @@ async function seedCorp(base, c) {
       contact_name:            c.contact,
       contact_phone:           phone,
     });
-    if (res.ok) { stats.corps.created++; console.log(`  + corporation [${c.i}] ${c.name_he} (${bn})`); return { id: res.body?.id, phone, bn }; }
-    if (res.status === 409) {
-      stats.corps.existed++;
-      console.log(`  = corporation [${c.i}] ${c.name_he} already exists (skipped)`);
-      return { id: null, phone, bn };
-    }
+    if (r.status === 'created') { stats.corps.created++; console.log(`  + corporation [${c.i}] ${c.name_he} (${bn})`); return { id: r.body?.id, phone, bn }; }
+    if (r.status === 'existed') { stats.corps.existed++; console.log(`  = corporation [${c.i}] ${c.name_he} already exists (skipped)`); return { id: null, phone, bn }; }
     stats.corps.failed++;
-    console.log(`  ! corporation [${c.i}] ${c.name_he} failed ${res.status}: ${res.raw.slice(0, 200)}`);
+    console.log(`  ! corporation [${c.i}] ${c.name_he} failed ${r.code}: ${r.raw?.slice(0, 200) ?? ''}`);
     return null;
   } catch (err) {
     stats.corps.failed++;
@@ -118,19 +127,21 @@ async function seedAds(base, corpRow, ads, kind /* 'worker' | 'housing' */) {
   if (!token) { bucket.failed += ads.length; return; }
 
   // Fetch existing ads for this corp so we can idempotent-skip by
-  // exact title_he match.
-  const mine = await get(base, '/api/organizations/ads?mine=1',
+  // exact title_he match. The corp-scoped endpoint is /api/ads/mine
+  // (proxied to user-org's GET /ads/mine) and returns a plain array,
+  // not {results: [...]}. Previous URL was /api/ads?mine=1
+  // which doesn't exist and returned an object without .map().
+  const mine = await get(base, '/api/ads/mine',
     { Authorization: `Bearer ${token}` });
-  const existingTitles = new Set(
-    ((mine.body?.results ?? mine.body) || []).map((a) => a.title_he)
-  );
+  const arr = Array.isArray(mine.body) ? mine.body : [];
+  const existingTitles = new Set(arr.map((a) => a.title_he));
 
   for (const ad of ads) {
     if (existingTitles.has(ad.title_he)) {
       bucket.existed++;
       continue;
     }
-    const res = await post(base, '/api/organizations/ads', {
+    const res = await post(base, '/api/ads', {
       ad_type:               ad.ad_type,
       title_he:              ad.title_he,
       body_he:               ad.body_he,
@@ -148,7 +159,7 @@ async function seedAds(base, corpRow, ads, kind /* 'worker' | 'housing' */) {
       bucket.created++;
       const adId = res.body?.id;
       if (ad.boosted && adId) {
-        const b = await post(base, `/api/organizations/ads/${adId}/boost`, {},
+        const b = await post(base, `/api/ads/${adId}/boost`, {},
           { Authorization: `Bearer ${token}` });
         if (b.ok) stats.boosts.done++; else stats.boosts.failed++;
       }

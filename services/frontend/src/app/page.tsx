@@ -532,11 +532,25 @@ function LandingPageInner() {
                     </div>
                   )}
 
-                  {resp && resp.results.length === 0 && (
+                  {resp && resp.results.length === 0 && (() => {
+                    // Public-ads-empty follow-up: only suggest "remove
+                    // filter" when the LLM actually extracted one. On
+                    // an unfiltered no-match the previous copy said
+                    // "נסה להסיר סינון" without a filter to remove —
+                    // dead advice.
+                    const hasFilter = !!(
+                      resp.filters.profession_code ||
+                      resp.filters.origin_country ||
+                      resp.filters.region ||
+                      resp.filters.quantity
+                    );
+                    return (
                     <div className="bg-amber-50 border-2 border-amber-200 rounded-2xl p-8 text-center shadow-sm">
                       <p className="text-lg font-bold text-amber-900 mb-2">לא נמצאו מודעות התואמות</p>
                       <p className="text-sm text-amber-800 mb-4">
-                        נסה לנסח אחרת, להסיר סינון (למשל ללא ציון מוצא), או לחפש מקצוע אחר.
+                        {hasFilter
+                          ? 'נסה לנסח אחרת, להסיר סינון (למשל ללא ציון מוצא), או לחפש מקצוע אחר.'
+                          : 'נסה לנסח אחרת או לחפש מקצוע אחר.'}
                       </p>
                       <div className="flex flex-wrap gap-2 justify-center">
                         {EXAMPLES.map((ex) => (
@@ -551,7 +565,8 @@ function LandingPageInner() {
                         ))}
                       </div>
                     </div>
-                  )}
+                    );
+                  })()}
 
                   {resp && resp.results.length > 0 && (
                     <ul className="space-y-3">
