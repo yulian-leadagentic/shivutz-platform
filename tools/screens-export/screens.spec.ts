@@ -1,5 +1,6 @@
-import { test, expect, Page, BrowserContext } from '@playwright/test';
-import { readFileSync, existsSync, mkdirSync } from 'node:fs';
+import { test, Page, BrowserContext, APIRequestContext } from '@playwright/test';
+import { readFileSync, statSync, existsSync, mkdirSync, readdirSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -9,8 +10,19 @@ const REPO_ROOT = join(HERE, '..', '..');
 const OUT_ROOT = join(REPO_ROOT, 'screens-export');
 const STATE_DIR = HERE;
 
+// Single source of truth for the base URL. Was previously read as
+// `process.env.BASE_URL` scattered through the file, and one branch
+// referenced a bare `BASE_URL` identifier that would have thrown at
+// runtime if the sanity gate ever tripped (dead code but nasty).
+const BASE_URL = process.env.BASE_URL ?? 'https://frontend-pivot-staging.up.railway.app';
+
 const LOGIN_PHONE = process.env.LOGIN_PHONE ?? '0525278625';
 const MASTER_OTP  = process.env.MASTER_OTP  ?? '999999';
+
+// Deploy-freshness poll config — waits up to this many minutes for a
+// mid-deploy staging to catch up before giving up.
+const DEPLOY_WAIT_MINUTES  = Number(process.env.DEPLOY_WAIT_MINUTES ?? '5');
+const DEPLOY_POLL_INTERVAL_SECONDS = 20;
 
 interface Route {
   path: string;
@@ -26,8 +38,6 @@ const routes: Route[] = JSON.parse(
   readFileSync(join(HERE, 'routes.json'), 'utf8'),
 );
 
-// Fake IDs for [id] / [token] segments — pages will render an error/
-// empty state, which is itself a valuable screenshot.
 const DYNAMIC_PLACEHOLDER = 'not-a-real-id';
 
 function resolvePath(p: string): string {
@@ -36,20 +46,96 @@ function resolvePath(p: string): string {
     .replace(/\[token\]/g, DYNAMIC_PLACEHOLDER);
 }
 
-// ─── shared login flow ──────────────────────────────────────────
-// Uses the phone + master-OTP path. When the phone owns multiple
-// memberships, /select-entity appears — we don't pick one here (each
-// role project handles its own picking). This helper stops at the
-// first authenticated URL and saves the state.
+// ─── login-page detection ───────────────────────────────────────
+// Strings ONLY present on /login. Kept together so a copy tweak in
+// login/page.tsx is easy to trace: update these markers.
+// prettier-ignore
+const LOGIN_MARKERS = [
+  'כניסה למערכת',       // page title
+  'מספר טלפון נייד',    // phone-field label
+  'שלח קוד',            // send-OTP button
+];
 
-// Bypass the UI login. We hit /api/auth/send-otp and /api/auth/login/otp
-// via Playwright's request context (server-side fetch, no browser
-// involvement) — that path is verified working end-to-end. Then we
-// plant the returned access_token + refresh_token as cookies so the
-// app boots authenticated on the next page.goto.
+// prettier-ignore
+const AUTHED_MARKERS = [
+  'תפריט משתמש',   // TopBar user-menu aria-label
+  'התנתקות',        // logout button
+  'פאנל ניהול',    // admin panel link (admin surfaces only)
+];
+
+async function pageContainsAny(page: Page, markers: string[]): Promise<string | null> {
+  // Return the first marker present, or null. locator().count() is
+  // cheap and doesn't care about visibility state — that's what we
+  // want here since login pages sometimes hydrate the phone input
+  // slightly delayed.
+  for (const m of markers) {
+    const count = await page.locator(`text=${m}`).count().catch(() => 0);
+    if (count > 0) return m;
+  }
+  return null;
+}
+
+// ─── deploy-freshness gate ──────────────────────────────────────
+// Refuses to run the export until the live BASE_URL renders the
+// currently-shipped landing-IA + logo build. The bug this catches:
+// Railway sometimes deploys the API before the frontend, or one of
+// the two is mid-rebuild — running the export in that window
+// captures the previous UI as if it were current, and the QA screens
+// are silently wrong.
 //
-// This is deliberately different from a real user flow. We do not need
-// the UI login validated in this tool — we need each screen shot.
+// Markers below are unique to the post-landing-IA + logo-wiring
+// build. If ANY are missing → staging is stale. Poll every 20s up to
+// DEPLOY_WAIT_MINUTES; if still stale, exit non-zero (Playwright's
+// `test.fail` propagates as a process-level failure).
+async function assertDeployFresh(request: APIRequestContext): Promise<void> {
+  const deadline = Date.now() + DEPLOY_WAIT_MINUTES * 60_000;
+  let lastMissing: string[] = [];
+
+  while (Date.now() < deadline) {
+    const resp = await request.get('/', { failOnStatusCode: false });
+    if (resp.ok()) {
+      const html = await resp.text();
+      const checks: Array<[string, boolean]> = [
+        // landing-IA: hero section id (added when the search-first
+        // reflow landed).
+        ['search-hero id',       html.includes('id="search-hero"')],
+        // landing-IA: advanced-filters toggle copy (added in same pass).
+        ['סינון מתקדם toggle',   html.includes('סינון מתקדם')],
+        // logo-wiring: TagidAI lockup path replaces the old buildup asset.
+        ['tagidai brand asset',  /\/brand\/tagidai_/.test(html)],
+        // logo-wiring: multi-size favicon set (was single buildup-icon).
+        ['multi-size favicon',   /favicon-32\.png|favicon-48\.png/.test(html)],
+      ];
+
+      const missing = checks.filter(([, ok]) => !ok).map(([name]) => name);
+      if (missing.length === 0) {
+        console.log(`  ✓ deploy-freshness gate passed — all landing-IA + logo markers present`);
+        return;
+      }
+      lastMissing = missing;
+      console.log(
+        `  … staging stale / mid-deploy: missing ${missing.join(', ')} — ` +
+        `retry in ${DEPLOY_POLL_INTERVAL_SECONDS}s`,
+      );
+    } else {
+      console.log(`  … BASE_URL returned HTTP ${resp.status()} — retry in ${DEPLOY_POLL_INTERVAL_SECONDS}s`);
+    }
+
+    // eslint-disable-next-line no-promise-executor-return
+    await new Promise((r) => setTimeout(r, DEPLOY_POLL_INTERVAL_SECONDS * 1000));
+  }
+
+  throw new Error(
+    `deploy-freshness gate failed after ${DEPLOY_WAIT_MINUTES} min. ` +
+    `Landing-IA / logo markers still missing on ${BASE_URL}: ${lastMissing.join(', ')}. ` +
+    `Refusing to write potentially-stale captures.`,
+  );
+}
+
+// ─── shared login flow ──────────────────────────────────────────
+// Direct API path (bypass UI login). Plants access_token + refresh_token
+// cookies on BASE_URL so the app boots authenticated on next page.goto.
+// Matches the js-cookie names the frontend reads (see auth.ts:3-4).
 async function loginViaOtp(context: BrowserContext): Promise<void> {
   const api = context.request;
 
@@ -74,10 +160,7 @@ async function loginViaOtp(context: BrowserContext): Promise<void> {
   }
   const tok = await loginResp.json();
 
-  // The frontend uses js-cookie which sets `access_token` and
-  // `refresh_token` cookies on the current origin. Mirror that so the
-  // app finds the JWT on next mount.
-  const base = new URL(process.env.BASE_URL ?? 'https://frontend-pivot-staging.up.railway.app');
+  const base = new URL(BASE_URL);
   const cookieBase = { domain: base.hostname, path: '/', sameSite: 'Lax' as const };
   const cookies = [];
   if (tok.access_token)  cookies.push({ ...cookieBase, name: 'access_token',  value: tok.access_token });
@@ -102,18 +185,32 @@ async function shot(page: Page, viewport: string, slug: string): Promise<'captur
   }
 }
 
-async function visitAndShoot(
-  page: Page, viewport: string, r: Route,
-): Promise<{ status: string; note?: string }> {
+interface VisitResult {
+  status: 'captured' | 'error' | 'skipped-login';
+  note?: string;
+}
+
+async function visitAndShoot(page: Page, viewport: string, r: Route, opts: { expectAuthed: boolean } = { expectAuthed: false }): Promise<VisitResult> {
   const target = resolvePath(r.path);
   try {
     await page.goto(target, { waitUntil: 'domcontentloaded', timeout: 30_000 });
-    // Extra idle wait — RSC streams, enum fetches, hero carousels.
     await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {});
-    // Register wizards: the initial mount shows step 1; that's what we
-    // want. We deliberately do NOT click through to later steps
-    // client-side because doing so would send a real OTP + could POST
-    // an org. Step 1 (phone + name) is the meaningful screenshot.
+
+    // For authed routes, detect a login redirect on the ACTUAL content
+    // (not just URL) and refuse to write the screenshot. The URL check
+    // alone missed a bug class where middleware left the URL untouched
+    // but rendered login markup — the file was written as a "success"
+    // capture even though every pixel was a login screen.
+    if (opts.expectAuthed) {
+      const loginMarker = await pageContainsAny(page, LOGIN_MARKERS);
+      if (loginMarker) {
+        return {
+          status: 'skipped-login',
+          note: `authed route rendered login markup ("${loginMarker}") — auth session dropped`,
+        };
+      }
+    }
+
     const result = await shot(page, viewport, r.slug);
     return { status: result };
   } catch (err) {
@@ -121,72 +218,124 @@ async function visitAndShoot(
   }
 }
 
-// ─── one-time login fixture (per project) ────────────────────────
-// The Playwright config projects (`desktop`, `mobile`) share state
-// files on disk. We derive the state file name from the project name
-// so re-runs are hermetic per viewport.
+// ─── HARD sanity gate — content-based, not URL-based ─────────────
+async function assertAuthStuck(page: Page): Promise<void> {
+  await page.goto('/contractor/dashboard', { waitUntil: 'domcontentloaded' }).catch(() => {});
+  await page.waitForLoadState('networkidle').catch(() => {});
 
-async function ensureLoggedInContext(
-  browser: any, viewport: string,
-): Promise<BrowserContext> {
+  // First: URL should not have bounced to /login.
+  const landedOn = new URL(page.url()).pathname;
+  if (landedOn.startsWith('/login')) {
+    throw new Error(
+      `sanity-gate: /contractor/dashboard redirected to ${landedOn}. ` +
+      `Auth service unreachable or MASTER_OTP=${MASTER_OTP} rejected on ${BASE_URL}.`,
+    );
+  }
+
+  // Second: content check. Even if URL is /contractor/dashboard, if
+  // the rendered DOM has login markers (RoleGuard soft-fallback that
+  // doesn't router.push) the export would still capture login pixels.
+  const loginMarker = await pageContainsAny(page, LOGIN_MARKERS);
+  if (loginMarker) {
+    throw new Error(
+      `sanity-gate: /contractor/dashboard URL is authed but content is login page ` +
+      `(matched marker "${loginMarker}"). Aborting before writing 50+ misleading captures.`,
+    );
+  }
+
+  // Third: positive check — at least ONE authed-shell marker present.
+  const authedMarker = await pageContainsAny(page, AUTHED_MARKERS);
+  if (!authedMarker) {
+    // Not fatal by itself — an admin-only account on a contractor
+    // dashboard might legitimately show a NoAccessCard with no
+    // TopBar marker. But log it so a broken shell surfaces.
+    console.log(`  ⚠ sanity-gate: no authed-shell marker found — expected any of ${AUTHED_MARKERS.join(' / ')}`);
+  } else {
+    console.log(`  ✓ sanity-gate: authed content confirmed (matched "${authedMarker}")`);
+  }
+}
+
+// ─── one-time login fixture (per project) ────────────────────────
+async function ensureLoggedInContext(browser: any, viewport: string): Promise<BrowserContext> {
   const statePath = join(STATE_DIR, `storageState.${viewport}.json`);
 
-  // M3 step 0 — always re-auth on each run.
-  //
-  // The previous shortcut ("if storageState.json exists, reuse it")
-  // silently kept stale JWT cookies alive across weeks. When the
-  // token expired or the auth contract shifted (P0-1 / P0-3 shape
-  // changes), the app's api-client 401'd every request → RoleGuard
-  // punted every authed route to /login → the export captured 55
-  // login pages while looking like it worked. Trading a few seconds
-  // per run for hermetic correctness is the right call.
+  // Always re-auth on each run (see M3 step 0 note in prior version).
   const ctx = await browser.newContext({ locale: 'he-IL' });
-  // Inject JWT cookies via the direct-API path (bypasses UI login).
   await loginViaOtp(ctx);
+
   // If /select-entity is required, visit it once so the app resolves
-  // the entity claim into the JWT and stashes it (some builds gate
-  // subsequent nav on this). Silently continue if not applicable.
+  // the entity claim into the JWT.
   const page = await ctx.newPage();
   await page.goto('/select-entity', { waitUntil: 'domcontentloaded' }).catch(() => {});
   await page.locator('button, a').filter({ hasText: /המשך|בחר|Continue/ }).first().click({ timeout: 3000 }).catch(() => {});
   await page.waitForLoadState('networkidle').catch(() => {});
 
-  // M3 step 0 sanity gate — before we shoot 50+ authed routes, prove
-  // the auth actually stuck by loading one authed page and asserting
-  // it did NOT redirect to /login. If it did, the whole authed batch
-  // would silently capture login pages (the bug this run is meant to
-  // fix). Throw loudly so a future auth-contract shift doesn't get
-  // buried in a passing-looking export.
-  await page.goto('/contractor/dashboard', { waitUntil: 'domcontentloaded' }).catch(() => {});
-  await page.waitForLoadState('networkidle').catch(() => {});
-  const landedOn = new URL(page.url()).pathname;
-  if (landedOn.startsWith('/login')) {
-    throw new Error(
-      `sanity-gate: auth failed. /contractor/dashboard redirected to ${landedOn}. ` +
-      `Check the auth service is up on ${BASE_URL} and MASTER_OTP=${MASTER_OTP} is honored.`,
-    );
-  }
+  // HARD sanity gate — throws if auth didn't take. See helper.
+  await assertAuthStuck(page);
 
   await ctx.storageState({ path: statePath });
   await page.close();
   return ctx;
 }
 
-// ─── the actual capture matrix ───────────────────────────────────
-// Grouped by category so the test log reads as a category-by-category
-// pass. Public routes reuse a fresh anonymous context; authed routes
-// share the logged-in state.
+// ─── identical-bytes clustering (post-run) ──────────────────────
+// The bug this catches: an entire cluster of authed captures came
+// back at exactly 67850 bytes because they were all the same login-
+// page screenshot. Any batch of 3+ PNGs sharing an exact byte size
+// (or SHA256) means the export captured the same content repeatedly —
+// almost always because auth silently dropped mid-run.
+function assertNoByteClusters(viewport: string, captured: string[]): void {
+  if (captured.length < 3) return;
 
+  const sizeGroups: Record<number, string[]> = {};
+  const hashGroups: Record<string, string[]> = {};
+
+  for (const slug of captured) {
+    const file = join(OUT_ROOT, viewport, `${slug}.png`);
+    if (!existsSync(file)) continue;
+    const size = statSync(file).size;
+    (sizeGroups[size] ||= []).push(slug);
+    // Only hash the ones that share a size — cheaper than hashing
+    // every file.
+  }
+
+  const suspiciousSizes = Object.entries(sizeGroups).filter(([, slugs]) => slugs.length >= 3);
+  for (const [size, slugs] of suspiciousSizes) {
+    // Confirm with a real hash — same byte size CAN be a coincidence
+    // (e.g. cached empty-state cards).
+    for (const slug of slugs) {
+      const file = join(OUT_ROOT, viewport, `${slug}.png`);
+      const h = createHash('sha256').update(readFileSync(file)).digest('hex');
+      (hashGroups[h] ||= []).push(slug);
+    }
+    const identical = Object.entries(hashGroups).filter(([, s]) => s.length >= 3);
+    if (identical.length > 0) {
+      const list = identical
+        .map(([h, s]) => `  · ${s.length}× identical (sha=${h.slice(0, 8)}): ${s.slice(0, 6).join(', ')}${s.length > 6 ? '…' : ''}`)
+        .join('\n');
+      throw new Error(
+        `identical-bytes cluster detected in ${viewport} captures ` +
+        `(size=${size}) — this is the "auth dropped, everything is a login page" ` +
+        `pattern. Refusing to sign off the export.\n${list}`,
+      );
+    }
+  }
+}
+
+// ─── the actual capture matrix ───────────────────────────────────
 test.describe.configure({ mode: 'serial' });
 
-test('public routes', async ({ browser }, testInfo) => {
+test('public routes', async ({ browser, request }, testInfo) => {
   const viewport = testInfo.project.name;
+  // Deploy-freshness runs before ANY captures land on disk.
+  await assertDeployFresh(request);
+
   const ctx = await browser.newContext({ locale: 'he-IL' });
   const page = await ctx.newPage();
   const publics = routes.filter((r) => !r.auth);
   const results: Array<{ path: string; status: string; note?: string }> = [];
   for (const r of publics) {
-    const res = await visitAndShoot(page, viewport, r);
+    const res = await visitAndShoot(page, viewport, r, { expectAuthed: false });
     results.push({ path: r.path, ...res });
     console.log(`  [public/${viewport}] ${r.path.padEnd(40)} ${res.status}${res.note ? ' — ' + res.note : ''}`);
   }
@@ -203,9 +352,11 @@ test('authed routes', async ({ browser }, testInfo) => {
   const page = await ctx.newPage();
   const authed = routes.filter((r) => r.auth);
   const results: Array<{ path: string; status: string; note?: string }> = [];
+  const capturedSlugs: string[] = [];
   for (const r of authed) {
-    const res = await visitAndShoot(page, viewport, r);
+    const res = await visitAndShoot(page, viewport, r, { expectAuthed: true });
     results.push({ path: r.path, ...res });
+    if (res.status === 'captured') capturedSlugs.push(r.slug);
     console.log(`  [authed/${viewport}] ${r.path.padEnd(40)} ${res.status}${res.note ? ' — ' + res.note : ''}`);
   }
   await ctx.close();
@@ -213,4 +364,20 @@ test('authed routes', async ({ browser }, testInfo) => {
     body: Buffer.from(JSON.stringify(results, null, 2)),
     contentType: 'application/json',
   });
+
+  // Refuse to sign off if a captured cluster is byte-identical.
+  assertNoByteClusters(viewport, capturedSlugs);
+
+  // Fail the run if ANY authed route came back as a login page —
+  // that's the "silent bad export" pattern. skipped-login means the
+  // per-route detector caught it (we didn't write a fake capture),
+  // but the auth SHOULD have stuck for every authed route.
+  const skippedLogin = results.filter((r) => r.status === 'skipped-login');
+  if (skippedLogin.length > 0) {
+    const list = skippedLogin.map((r) => `  · ${r.path} — ${r.note}`).join('\n');
+    throw new Error(
+      `${skippedLogin.length} authed route(s) rendered login markup — ` +
+      `auth session dropped mid-run:\n${list}`,
+    );
+  }
 });

@@ -1,0 +1,497 @@
+[
+  {
+    "path": "/admin/ads",
+    "category": "Admin",
+    "dynamic": false,
+    "auth": true,
+    "register": false,
+    "source": "services/frontend/src/app/admin/ads/page.tsx",
+    "slug": "admin__ads"
+  },
+  {
+    "path": "/admin/approvals",
+    "category": "Admin",
+    "dynamic": false,
+    "auth": true,
+    "register": false,
+    "source": "services/frontend/src/app/admin/approvals/page.tsx",
+    "slug": "admin__approvals"
+  },
+  {
+    "path": "/admin/dashboard",
+    "category": "Admin",
+    "dynamic": false,
+    "auth": true,
+    "register": false,
+    "source": "services/frontend/src/app/admin/dashboard/page.tsx",
+    "slug": "admin__dashboard"
+  },
+  {
+    "path": "/admin/gov-corps-registry",
+    "category": "Admin",
+    "dynamic": false,
+    "auth": true,
+    "register": false,
+    "source": "services/frontend/src/app/admin/gov-corps-registry/page.tsx",
+    "slug": "admin__gov-corps-registry"
+  },
+  {
+    "path": "/admin/leads",
+    "category": "Admin",
+    "dynamic": false,
+    "auth": true,
+    "register": false,
+    "source": "services/frontend/src/app/admin/leads/page.tsx",
+    "slug": "admin__leads"
+  },
+  {
+    "path": "/admin/marketplace",
+    "category": "Admin",
+    "dynamic": false,
+    "auth": true,
+    "register": false,
+    "source": "services/frontend/src/app/admin/marketplace/page.tsx",
+    "slug": "admin__marketplace"
+  },
+  {
+    "path": "/admin/notifications-test",
+    "category": "Admin",
+    "dynamic": false,
+    "auth": true,
+    "register": false,
+    "source": "services/frontend/src/app/admin/notifications-test/page.tsx",
+    "slug": "admin__notifications-test"
+  },
+  {
+    "path": "/admin/orgs/[id]",
+    "category": "Admin",
+    "dynamic": true,
+    "auth": true,
+    "register": false,
+    "source": "services/frontend/src/app/admin/orgs/[id]/page.tsx",
+    "slug": "admin__orgs___id_"
+  },
+  {
+    "path": "/admin/orgs",
+    "category": "Admin",
+    "dynamic": false,
+    "auth": true,
+    "register": false,
+    "source": "services/frontend/src/app/admin/orgs/page.tsx",
+    "slug": "admin__orgs"
+  },
+  {
+    "path": "/admin/origins",
+    "category": "Admin",
+    "dynamic": false,
+    "auth": true,
+    "register": false,
+    "source": "services/frontend/src/app/admin/origins/page.tsx",
+    "slug": "admin__origins"
+  },
+  {
+    "path": "/admin",
+    "category": "Admin",
+    "dynamic": false,
+    "auth": true,
+    "register": false,
+    "source": "services/frontend/src/app/admin/page.tsx",
+    "slug": "admin"
+  },
+  {
+    "path": "/admin/registration-log",
+    "category": "Admin",
+    "dynamic": false,
+    "auth": true,
+    "register": false,
+    "source": "services/frontend/src/app/admin/registration-log/page.tsx",
+    "slug": "admin__registration-log"
+  },
+  {
+    "path": "/admin/subscription-plans",
+    "category": "Admin",
+    "dynamic": false,
+    "auth": true,
+    "register": false,
+    "source": "services/frontend/src/app/admin/subscription-plans/page.tsx",
+    "slug": "admin__subscription-plans"
+  },
+  {
+    "path": "/admin/subscriptions",
+    "category": "Admin",
+    "dynamic": false,
+    "auth": true,
+    "register": false,
+    "source": "services/frontend/src/app/admin/subscriptions/page.tsx",
+    "slug": "admin__subscriptions"
+  },
+  {
+    "path": "/admin/support",
+    "category": "Admin",
+    "dynamic": false,
+    "auth": true,
+    "register": false,
+    "source": "services/frontend/src/app/admin/support/page.tsx",
+    "slug": "admin__support"
+  },
+  {
+    "path": "/admin/tenders",
+    "category": "Admin",
+    "dynamic": false,
+    "auth": true,
+    "register": false,
+    "source": "services/frontend/src/app/admin/tenders/page.tsx",
+    "slug": "admin__tenders"
+  },
+  {
+    "path": "/admin/users",
+    "category": "Admin",
+    "dynamic": false,
+    "auth": true,
+    "register": false,
+    "source": "services/frontend/src/app/admin/users/page.tsx",
+    "slug": "admin__users"
+  },
+  {
+    "path": "/billing",
+    "category": "Public",
+    "dynamic": false,
+    "auth": true,
+    "register": false,
+    "source": "services/frontend/src/app/billing/page.tsx",
+    "slug": "billing"
+  },
+  {
+    "path": "/coming-soon",
+    "category": "Public",
+    "dynamic": false,
+    "auth": false,
+    "register": false,
+    "source": "services/frontend/src/app/coming-soon/page.tsx",
+    "slug": "coming-soon"
+  },
+  {
+    "path": "/contractor/dashboard",
+    "category": "Contractor",
+    "dynamic": false,
+    "auth": true,
+    "register": false,
+    "source": "services/frontend/src/app/contractor/dashboard/page.tsx",
+    "slug": "contractor__dashboard"
+  },
+  {
+    "path": "/contractor/documents",
+    "category": "Contractor",
+    "dynamic": false,
+    "auth": true,
+    "register": false,
+    "source": "services/frontend/src/app/contractor/documents/page.tsx",
+    "slug": "contractor__documents"
+  },
+  {
+    "path": "/contractor/tenders/[id]/edit",
+    "category": "Contractor",
+    "dynamic": true,
+    "auth": true,
+    "register": false,
+    "source": "services/frontend/src/app/contractor/tenders/[id]/edit/page.tsx",
+    "slug": "contractor__tenders___id___edit"
+  },
+  {
+    "path": "/contractor/tenders/[id]",
+    "category": "Contractor",
+    "dynamic": true,
+    "auth": true,
+    "register": false,
+    "source": "services/frontend/src/app/contractor/tenders/[id]/page.tsx",
+    "slug": "contractor__tenders___id_"
+  },
+  {
+    "path": "/contractor/tenders/new",
+    "category": "Contractor",
+    "dynamic": false,
+    "auth": true,
+    "register": false,
+    "source": "services/frontend/src/app/contractor/tenders/new/page.tsx",
+    "slug": "contractor__tenders__new"
+  },
+  {
+    "path": "/contractor/tenders",
+    "category": "Contractor",
+    "dynamic": false,
+    "auth": true,
+    "register": false,
+    "source": "services/frontend/src/app/contractor/tenders/page.tsx",
+    "slug": "contractor__tenders"
+  },
+  {
+    "path": "/contractor/users",
+    "category": "Contractor",
+    "dynamic": false,
+    "auth": true,
+    "register": false,
+    "source": "services/frontend/src/app/contractor/users/page.tsx",
+    "slug": "contractor__users"
+  },
+  {
+    "path": "/contractor/verify-kablan",
+    "category": "Contractor",
+    "dynamic": false,
+    "auth": true,
+    "register": false,
+    "source": "services/frontend/src/app/contractor/verify-kablan/page.tsx",
+    "slug": "contractor__verify-kablan"
+  },
+  {
+    "path": "/corporation/ads/[id]/edit",
+    "category": "Corporation",
+    "dynamic": true,
+    "auth": true,
+    "register": false,
+    "source": "services/frontend/src/app/corporation/ads/[id]/edit/page.tsx",
+    "slug": "corporation__ads___id___edit"
+  },
+  {
+    "path": "/corporation/ads/new/housing",
+    "category": "Corporation",
+    "dynamic": false,
+    "auth": true,
+    "register": false,
+    "source": "services/frontend/src/app/corporation/ads/new/housing/page.tsx",
+    "slug": "corporation__ads__new__housing"
+  },
+  {
+    "path": "/corporation/ads/new",
+    "category": "Corporation",
+    "dynamic": false,
+    "auth": true,
+    "register": false,
+    "source": "services/frontend/src/app/corporation/ads/new/page.tsx",
+    "slug": "corporation__ads__new"
+  },
+  {
+    "path": "/corporation/ads/new/worker",
+    "category": "Corporation",
+    "dynamic": false,
+    "auth": true,
+    "register": false,
+    "source": "services/frontend/src/app/corporation/ads/new/worker/page.tsx",
+    "slug": "corporation__ads__new__worker"
+  },
+  {
+    "path": "/corporation/ads",
+    "category": "Corporation",
+    "dynamic": false,
+    "auth": true,
+    "register": false,
+    "source": "services/frontend/src/app/corporation/ads/page.tsx",
+    "slug": "corporation__ads"
+  },
+  {
+    "path": "/corporation/dashboard",
+    "category": "Corporation",
+    "dynamic": false,
+    "auth": true,
+    "register": false,
+    "source": "services/frontend/src/app/corporation/dashboard/page.tsx",
+    "slug": "corporation__dashboard"
+  },
+  {
+    "path": "/corporation/documents",
+    "category": "Corporation",
+    "dynamic": false,
+    "auth": true,
+    "register": false,
+    "source": "services/frontend/src/app/corporation/documents/page.tsx",
+    "slug": "corporation__documents"
+  },
+  {
+    "path": "/corporation/marketplace/[id]/edit",
+    "category": "Corporation",
+    "dynamic": true,
+    "auth": true,
+    "register": false,
+    "source": "services/frontend/src/app/corporation/marketplace/[id]/edit/page.tsx",
+    "slug": "corporation__marketplace___id___edit"
+  },
+  {
+    "path": "/corporation/marketplace/new",
+    "category": "Corporation",
+    "dynamic": false,
+    "auth": true,
+    "register": false,
+    "source": "services/frontend/src/app/corporation/marketplace/new/page.tsx",
+    "slug": "corporation__marketplace__new"
+  },
+  {
+    "path": "/corporation/marketplace",
+    "category": "Corporation",
+    "dynamic": false,
+    "auth": true,
+    "register": false,
+    "source": "services/frontend/src/app/corporation/marketplace/page.tsx",
+    "slug": "corporation__marketplace"
+  },
+  {
+    "path": "/corporation/marketplace/subscribe",
+    "category": "Corporation",
+    "dynamic": false,
+    "auth": true,
+    "register": false,
+    "source": "services/frontend/src/app/corporation/marketplace/subscribe/page.tsx",
+    "slug": "corporation__marketplace__subscribe"
+  },
+  {
+    "path": "/corporation",
+    "category": "Corporation",
+    "dynamic": false,
+    "auth": true,
+    "register": false,
+    "source": "services/frontend/src/app/corporation/page.tsx",
+    "slug": "corporation"
+  },
+  {
+    "path": "/corporation/tenders/[id]",
+    "category": "Corporation",
+    "dynamic": true,
+    "auth": true,
+    "register": false,
+    "source": "services/frontend/src/app/corporation/tenders/[id]/page.tsx",
+    "slug": "corporation__tenders___id_"
+  },
+  {
+    "path": "/corporation/tenders",
+    "category": "Corporation",
+    "dynamic": false,
+    "auth": true,
+    "register": false,
+    "source": "services/frontend/src/app/corporation/tenders/page.tsx",
+    "slug": "corporation__tenders"
+  },
+  {
+    "path": "/corporation/users",
+    "category": "Corporation",
+    "dynamic": false,
+    "auth": true,
+    "register": false,
+    "source": "services/frontend/src/app/corporation/users/page.tsx",
+    "slug": "corporation__users"
+  },
+  {
+    "path": "/corporation/workers/new",
+    "category": "Corporation",
+    "dynamic": false,
+    "auth": true,
+    "register": false,
+    "source": "services/frontend/src/app/corporation/workers/new/page.tsx",
+    "slug": "corporation__workers__new"
+  },
+  {
+    "path": "/corporation/workers",
+    "category": "Corporation",
+    "dynamic": false,
+    "auth": true,
+    "register": false,
+    "source": "services/frontend/src/app/corporation/workers/page.tsx",
+    "slug": "corporation__workers"
+  },
+  {
+    "path": "/invite/accept/[token]",
+    "category": "Public",
+    "dynamic": true,
+    "auth": false,
+    "register": false,
+    "source": "services/frontend/src/app/invite/accept/[token]/page.tsx",
+    "slug": "invite__accept___token_"
+  },
+  {
+    "path": "/login",
+    "category": "Public",
+    "dynamic": false,
+    "auth": false,
+    "register": false,
+    "source": "services/frontend/src/app/login/page.tsx",
+    "slug": "login"
+  },
+  {
+    "path": "/marketplace/[id]",
+    "category": "Public",
+    "dynamic": true,
+    "auth": false,
+    "register": false,
+    "source": "services/frontend/src/app/marketplace/[id]/page.tsx",
+    "slug": "marketplace___id_"
+  },
+  {
+    "path": "/marketplace",
+    "category": "Public",
+    "dynamic": false,
+    "auth": false,
+    "register": false,
+    "source": "services/frontend/src/app/marketplace/page.tsx",
+    "slug": "marketplace"
+  },
+  {
+    "path": "/membership-request/accept/[token]",
+    "category": "Public",
+    "dynamic": true,
+    "auth": false,
+    "register": false,
+    "source": "services/frontend/src/app/membership-request/accept/[token]/page.tsx",
+    "slug": "membership-request__accept___token_"
+  },
+  {
+    "path": "/",
+    "category": "Public",
+    "dynamic": false,
+    "auth": false,
+    "register": false,
+    "source": "services/frontend/src/app/page.tsx",
+    "slug": "root"
+  },
+  {
+    "path": "/register/contractor",
+    "category": "Public",
+    "dynamic": false,
+    "auth": false,
+    "register": true,
+    "source": "services/frontend/src/app/register/contractor/page.tsx",
+    "slug": "register__contractor"
+  },
+  {
+    "path": "/register/contractor/verify",
+    "category": "Public",
+    "dynamic": false,
+    "auth": false,
+    "register": true,
+    "source": "services/frontend/src/app/register/contractor/verify/page.tsx",
+    "slug": "register__contractor__verify"
+  },
+  {
+    "path": "/register/corporation",
+    "category": "Public",
+    "dynamic": false,
+    "auth": false,
+    "register": true,
+    "source": "services/frontend/src/app/register/corporation/page.tsx",
+    "slug": "register__corporation"
+  },
+  {
+    "path": "/select-entity",
+    "category": "Public",
+    "dynamic": false,
+    "auth": true,
+    "register": false,
+    "source": "services/frontend/src/app/select-entity/page.tsx",
+    "slug": "select-entity"
+  },
+  {
+    "path": "/support",
+    "category": "Public",
+    "dynamic": false,
+    "auth": false,
+    "register": false,
+    "source": "services/frontend/src/app/support/page.tsx",
+    "slug": "support"
+  }
+]

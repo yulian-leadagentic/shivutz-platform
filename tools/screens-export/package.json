@@ -1,0 +1,17 @@
+{
+  "name": "screens-export",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Playwright-driven screenshot gallery + user-messages/errors catalog for the TagidAI frontend. Output goes to <repo>/screens-export/ (gitignored).",
+  "type": "module",
+  "scripts": {
+    "enumerate": "node enumerate-routes.mjs",
+    "scan":      "node scan-messages.mjs",
+    "capture":   "playwright test",
+    "gallery":   "node gallery.mjs",
+    "all":       "npm run enumerate && npm run scan && npm run capture && npm run gallery"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.0"
+  }
+}
