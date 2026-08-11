@@ -33,6 +33,17 @@ app.get('/health', (_, res) => res.json({ status: 'ok', service: 'gateway' }));
 // as 502s on the proxied routes, so readyz tracks only the listener.
 app.get('/readyz', (_, res) => res.json({ status: 'ready', service: 'gateway' }));
 
+// ─── Version probe ─────────────────────────────────────────
+// Hard-coded build marker. Bumped by hand — an outside caller
+// can grep the response to confirm which build is running when
+// Railway's dashboard shows a "success" but the deployed image
+// is actually stale. Read via `curl /api/__version`.
+app.get('/api/__version', (_, res) => res.json({
+  service: 'gateway',
+  build:   'stg-2026-08-11-b',    // bump when you push a new gateway change
+  routes:  Object.keys(services), // deployed prefix list — proves which routes shipped
+}));
+
 // ─── Route table ───────────────────────────────────────────
 const services = {
   '/api/auth':          process.env.AUTH_SERVICE_URL          || 'http://auth:3001',
