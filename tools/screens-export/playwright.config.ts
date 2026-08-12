@@ -8,7 +8,17 @@ const BASE_URL = process.env.BASE_URL ?? 'https://frontend-pivot-staging.up.rail
 // user experience.
 export default defineConfig({
   testDir: '.',
-  timeout: 60_000,
+  // Per-test timeout. Bumped from 60s so the authed test can absorb up
+  // to 3 send-otp retries × ~60s each when staging's 10 OTPs/IP/10min
+  // cap has been recently exhausted. The retry backoff itself is
+  // capped to 90s per retry in postWithRateLimitRetry.
+  timeout: 300_000,
+  // Serial run. Two workers would each hit send-otp before either
+  // writes the token cache, so both burn an OTP against the same IP
+  // cap and both 429. Sequential lets the second run reuse the
+  // cached tokens from the first with zero contention.
+  workers: 1,
+  fullyParallel: false,
   reporter: [['list']],
   outputDir: '../../screens-export/.playwright-artifacts',
   use: {
