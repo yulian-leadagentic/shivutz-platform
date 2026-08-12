@@ -40,6 +40,15 @@ PROFESSION_KEYWORDS: dict[str, str] = {
     "ברזל":  "skeleton",   "ברזלן": "skeleton",   "ברזלנים":"skeleton",
     "בנאי":  "mason",      "בניה":  "mason",      "בלוקים":"mason",      "בלוקאי":"mason",
     "פיגומ": "scaffolding",
+    # Migration 034 renamed the Hebrew display of code `scaffolding`
+    # from "פיגומים" to "רתכים" (welders) — keeping the English code
+    # stable. Rewriter needs the welder keywords too so search "רתך"
+    # reaches the same code and doesn't fall through to a null filter.
+    # Two entries because Hebrew's final ך (as in "רתך") is a distinct
+    # code-point from regular כ (as in "רתכים"), so one substring key
+    # can't cover both singular + plural.
+    "רתך":   "scaffolding",  # singular (final-ך)
+    "רתכ":   "scaffolding",  # matches "רתכים" (regular-כ, plural)
     "פועל":  "general",    "פועלים":"general",
 }
 
