@@ -39,7 +39,7 @@ import { RoleRegisterPicker } from '@/features/advertising/RoleRegisterPicker';
 import { FeaturedAdsCarousel } from '@/features/advertising/FeaturedAdsCarousel';
 import { LandingTrustBar } from '@/features/advertising/LandingTrustBar';
 import { searchApi, type SearchResponse, type AdSearchResult, type ContactReveal } from '@/lib/api/search';
-import { apiFetch } from '@/lib/api/client';
+import { apiFetch, ApiError } from '@/lib/api/client';
 import { enumApi } from '@/lib/api/enums';
 import { isLoggedIn } from '@/lib/auth';
 import { readPendingReveal, clearPendingReveal } from '@/features/prospect/state';
@@ -52,6 +52,22 @@ const EXAMPLES = [
   'רתך מיומן באזור הצפון',
 ];
 const INLINE_AD_EVERY = 5;
+
+// Tier code → Hebrew display, mirrors the /billing plans map so the
+// reveal-quota / expired-subscription modal reads naturally instead of
+// showing raw enum strings.
+const TIER_HE: Record<string, string> = {
+  free:      'ניסיון חינם',
+  basic:     'בסיסי',
+  advanced:  'מתקדם',
+  pro:       'פרו',
+  premium:   'פרימיום',
+  trial:     'ניסיון חינם',
+};
+function tierLabelHe(tier?: string | null): string {
+  if (!tier) return 'הנוכחי';
+  return TIER_HE[tier.toLowerCase()] ?? tier;
+}
 
 const CATEGORIES = [
   { key: 'workers',  icon: Users,   label: 'עובדים לזמינות מיידית', desc: 'ריצוף · חשמל · ריתוך · ועוד',    scrollTo: 'search' as const },
@@ -230,11 +246,30 @@ function LandingPageInner() {
       // O1 — the intent that survived login/renew is now spent.
       clearPendingReveal();
     } catch (e) {
-      const msg = (e as Error).message ?? '';
-      if (/401|Unauthorized/i.test(msg))                      setBlock({ kind: 'unauth', adId });
-      else if (/tier_reveal_limit/i.test(msg))                setBlock({ kind: 'quota', tier: 'הנוכחי', used: 0, limit: 0, adId });
-      else if (/subscription_required|402|expired/i.test(msg)) setBlock({ kind: 'expired', tier: 'הנוכחי', adId });
-      else                                                    setBlock({ kind: 'error', message: msg || 'שגיאה בחשיפה' });
+      // apiFetch now carries the structured server payload on .cause —
+      // pull tier/used/limit from there so the quota modal surfaces real
+      // numbers instead of "0 מתוך 0".
+      const cause = e instanceof ApiError ? e.cause : null;
+      const status = cause?.status;
+      const code   = cause?.error || cause?.code;
+      const tierHe = tierLabelHe(cause?.tier as string | undefined);
+      const msg    = (e as Error).message ?? '';
+
+      if (status === 401 || /401|Unauthorized|unauthorized/i.test(msg)) {
+        setBlock({ kind: 'unauth', adId });
+      } else if (code === 'tier_reveal_limit' || /tier_reveal_limit/i.test(msg)) {
+        setBlock({
+          kind: 'quota',
+          tier:  tierHe,
+          used:  (cause?.used  as number) ?? 0,
+          limit: (cause?.limit as number) ?? 0,
+          adId,
+        });
+      } else if (code === 'subscription_required' || status === 402 || /subscription_required|expired/i.test(msg)) {
+        setBlock({ kind: 'expired', tier: tierHe, adId });
+      } else {
+        setBlock({ kind: 'error', message: msg || 'שגיאה בחשיפה' });
+      }
     } finally { setRevealing(null); }
   }, [revealing]);
 

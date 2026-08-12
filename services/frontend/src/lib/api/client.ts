@@ -175,13 +175,16 @@ async function extractErrorPayload(res: Response): Promise<ApiErrorPayload & { _
     // Node legacy: { error: { message, code } }
     if (b.error && typeof b.error === 'object') {
       const e = b.error as Record<string, unknown>;
-      return { error: e.code as string, message: e.message as string, _raw: (e.message as string) || (e.code as string) || res.statusText };
+      return { ...e, error: e.code as string, message: e.message as string, _raw: (e.message as string) || (e.code as string) || res.statusText };
     }
     // FastAPI: { detail: "..." } OR { detail: {message, code} } OR { detail: [{msg, loc, ...}] }
+    // For dict detail (e.g. reveal-paywall's {code, tier, used, limit}),
+    // spread the whole payload so downstream can read the extra fields
+    // via err.cause — otherwise tier/used/limit would be lost.
     if (typeof b.detail === 'string') return { error: b.detail as string, _raw: b.detail as string };
     if (b.detail && typeof b.detail === 'object' && !Array.isArray(b.detail)) {
       const d = b.detail as Record<string, unknown>;
-      return { error: d.code as string, message: d.message as string, _raw: (d.message as string) || (d.code as string) || res.statusText };
+      return { ...d, error: d.code as string, message: d.message as string, _raw: (d.message as string) || (d.code as string) || res.statusText };
     }
     if (Array.isArray(b.detail) && b.detail.length > 0) {
       const first = b.detail[0] as Record<string, unknown>;
@@ -249,13 +252,26 @@ function friendlyError(raw: string): string {
 // mapApiError code lookup → generic default. mapApiError itself
 // prefers a server-supplied `message` when present, so P0-1 responses
 // display verbatim without touching the frontend map.
-async function toHebrew(res: Response): Promise<string> {
+async function toHebrewAndPayload(res: Response): Promise<{ hebrew: string; payload: ApiErrorPayload & { status: number } }> {
   const payload = await extractErrorPayload(res);
   const friendly = friendlyError(payload._raw);
-  // If the SQL/network layer matched something specific (i.e. returned
-  // Hebrew, not the raw code back), prefer that — it's contextual.
-  if (friendly !== payload._raw && /[֐-׿]/.test(friendly)) return friendly;
-  return mapApiError(payload);
+  const hebrew = (friendly !== payload._raw && /[֐-׿]/.test(friendly))
+    ? friendly
+    : mapApiError(payload);
+  return { hebrew, payload: { ...payload, status: res.status } };
+}
+
+// Custom Error whose `.cause` carries the structured server payload
+// (status, code, and any extra fields like tier/used/limit). Callers
+// that just read `.message` continue to work; callers that need
+// structured detail (paywall gating, quota surfacing) read `.cause`.
+export class ApiError extends Error {
+  cause: ApiErrorPayload & { status: number };
+  constructor(hebrew: string, payload: ApiErrorPayload & { status: number }) {
+    super(hebrew);
+    this.name = 'ApiError';
+    this.cause = payload;
+  }
 }
 
 export async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -276,15 +292,21 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
       };
       const retry = await fetch(`${BASE}${path}`, { ...options, headers: retryHeaders });
       if (retry.status !== 401) {
-        if (!retry.ok) throw new Error(await toHebrew(retry));
+        if (!retry.ok) {
+          const { hebrew, payload } = await toHebrewAndPayload(retry);
+          throw new ApiError(hebrew, payload);
+        }
         if (retry.status === 204) return undefined as T;
         return retry.json() as Promise<T>;
       }
     }
     window.location.href = '/login';
-    throw new Error('Unauthorized');
+    throw new ApiError('Unauthorized', { error: 'unauthorized', status: 401 });
   }
-  if (!res.ok) throw new Error(await toHebrew(res));
+  if (!res.ok) {
+    const { hebrew, payload } = await toHebrewAndPayload(res);
+    throw new ApiError(hebrew, payload);
+  }
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
 }

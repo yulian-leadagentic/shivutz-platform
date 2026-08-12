@@ -1,5 +1,5 @@
 import { test, Page, BrowserContext, APIRequestContext } from '@playwright/test';
-import { readFileSync, statSync, existsSync, mkdirSync, readdirSync } from 'node:fs';
+import { readFileSync, statSync, existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -143,29 +143,98 @@ async function assertDeployFresh(request: APIRequestContext): Promise<void> {
 // Direct API path (bypass UI login). Plants access_token + refresh_token
 // cookies on BASE_URL so the app boots authenticated on next page.goto.
 // Matches the js-cookie names the frontend reads (see auth.ts:3-4).
+//
+// Rate-limit resilience: staging enforces 10 OTPs / IP / 10-min. In a
+// harness run the desktop + mobile projects hit send-otp back-to-back
+// from the same runner IP, so a naive first-shot approach 429s the
+// second worker. Retry with the server-supplied retry_after so the
+// harness can complete a full capture pass instead of half-failing.
+async function postWithRateLimitRetry(
+  request: BrowserContext['request'],
+  path: string,
+  data: Record<string, unknown>,
+  { maxAttempts = 3 }: { maxAttempts?: number } = {},
+) {
+  let resp = await request.post(path, {
+    data,
+    headers: { 'content-type': 'application/json' },
+    failOnStatusCode: false,
+  });
+  for (let attempt = 1; attempt < maxAttempts && resp.status() === 429; attempt++) {
+    let waitS = 60;
+    try {
+      const body = await resp.json();
+      if (typeof body?.retry_after === 'number') waitS = Math.min(body.retry_after, 90);
+    } catch { /* stay with default 60s */ }
+    // eslint-disable-next-line no-console
+    console.log(`  ⏳ ${path} → 429; waiting ${waitS}s before retry ${attempt + 1}/${maxAttempts}`);
+    // eslint-disable-next-line no-promise-executor-return
+    await new Promise((r) => setTimeout(r, waitS * 1000));
+    resp = await request.post(path, {
+      data,
+      headers: { 'content-type': 'application/json' },
+      failOnStatusCode: false,
+    });
+  }
+  return resp;
+}
+
+// Shared token cache. Playwright runs desktop + mobile authed tests as
+// separate workers; each would burn its own OTP against the 10/IP/10min
+// staging cap. First worker persists the tokens; second worker skips
+// the OTP dance entirely.
+const TOKEN_CACHE_PATH = join(STATE_DIR, '.session-cache.json');
+const TOKEN_CACHE_TTL_MS = 5 * 60 * 1000;
+
+interface CachedTokens { access_token?: string; refresh_token?: string; savedAt: number }
+
+function readCachedTokens(): CachedTokens | null {
+  try {
+    if (!existsSync(TOKEN_CACHE_PATH)) return null;
+    const raw = readFileSync(TOKEN_CACHE_PATH, 'utf8');
+    const data = JSON.parse(raw) as CachedTokens;
+    if (!data.savedAt || Date.now() - data.savedAt > TOKEN_CACHE_TTL_MS) return null;
+    if (!data.access_token) return null;
+    return data;
+  } catch { return null; }
+}
+
+function writeCachedTokens(tok: { access_token?: string; refresh_token?: string }): void {
+  try {
+    mkdirSync(dirname(TOKEN_CACHE_PATH), { recursive: true });
+    writeFileSync(TOKEN_CACHE_PATH, JSON.stringify({ ...tok, savedAt: Date.now() }), 'utf8');
+  } catch { /* best-effort — a cache miss is not a failure */ }
+}
+
 async function loginViaOtp(context: BrowserContext): Promise<void> {
   const api = context.request;
 
-  const sendResp = await api.post('/api/auth/send-otp', {
-    data: { phone: LOGIN_PHONE, purpose: 'login' },
-    headers: { 'content-type': 'application/json' },
-    failOnStatusCode: false,
-  });
-  if (!sendResp.ok()) {
-    throw new Error(`send-otp failed: HTTP ${sendResp.status()} — ${await sendResp.text()}`);
-  }
-  const sendBody = await sendResp.json();
-  const normPhone: string = sendBody.phone ?? LOGIN_PHONE;
+  // Fast path: reuse cached tokens from a sibling worker's login.
+  const cached = readCachedTokens();
+  let tok: { access_token?: string; refresh_token?: string };
+  if (cached) {
+    tok = { access_token: cached.access_token, refresh_token: cached.refresh_token };
+    // eslint-disable-next-line no-console
+    console.log('  ♻ reusing cached auth tokens (sibling worker or recent run)');
+  } else {
+    const sendResp = await postWithRateLimitRetry(api, '/api/auth/send-otp', {
+      phone: LOGIN_PHONE, purpose: 'login',
+    });
+    if (!sendResp.ok()) {
+      throw new Error(`send-otp failed: HTTP ${sendResp.status()} — ${await sendResp.text()}`);
+    }
+    const sendBody = await sendResp.json();
+    const normPhone: string = sendBody.phone ?? LOGIN_PHONE;
 
-  const loginResp = await api.post('/api/auth/login/otp', {
-    data: { phone: normPhone, code: MASTER_OTP },
-    headers: { 'content-type': 'application/json' },
-    failOnStatusCode: false,
-  });
-  if (!loginResp.ok()) {
-    throw new Error(`login/otp failed: HTTP ${loginResp.status()} — ${await loginResp.text()}`);
+    const loginResp = await postWithRateLimitRetry(api, '/api/auth/login/otp', {
+      phone: normPhone, code: MASTER_OTP,
+    });
+    if (!loginResp.ok()) {
+      throw new Error(`login/otp failed: HTTP ${loginResp.status()} — ${await loginResp.text()}`);
+    }
+    tok = await loginResp.json();
+    writeCachedTokens(tok);
   }
-  const tok = await loginResp.json();
 
   const base = new URL(BASE_URL);
   const cookieBase = { domain: base.hostname, path: '/', sameSite: 'Lax' as const };
