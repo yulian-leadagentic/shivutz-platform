@@ -70,12 +70,32 @@ function parseToken(token: string | undefined): AuthState {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<AuthState>(EMPTY);
+  // Lazy initializer parses the JWT on the FIRST render, not in a
+  // useEffect. Previously the first render always saw EMPTY and any
+  // child's useEffect (RoleGuard's !isLoggedIn → /login bounce) fired
+  // with a stale false BEFORE this Provider's own useEffect could
+  // hydrate state. Real users mostly avoided this because their
+  // navigation started at /login (already-empty state was correct);
+  // deep-linking to /contractor/dashboard from a warm session, or
+  // Playwright's cookie-injection flow, hit it every time.
+  //
+  // Lazy init runs on the server as EMPTY (no document.cookie) and on
+  // the client with the real token, so the first client render already
+  // has the correct isLoggedIn. React will hydrate over a brief
+  // mismatch on gated pages — an acceptable trade for eliminating the
+  // race.
+  const [state, setState] = useState<AuthState>(() =>
+    typeof document === 'undefined' ? EMPTY : parseToken(getAccessToken())
+  );
 
   const refreshAuth = useCallback(() => {
     setState(parseToken(getAccessToken()));
   }, []);
 
+  // Still run the effect: covers the SSR → client hydration transition
+  // where the server-rendered EMPTY state needs to be updated with the
+  // real token on the client. On the fast client-only path (lazy init
+  // above already parsed), this is a no-op setState with the same value.
   useEffect(() => {
     refreshAuth();
   }, [refreshAuth]);

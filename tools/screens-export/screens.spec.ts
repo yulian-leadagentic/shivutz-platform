@@ -251,28 +251,26 @@ async function loginViaOtp(context: BrowserContext): Promise<void> {
     writeCachedTokens(tok);
   }
 
-  const base = new URL(BASE_URL);
-  // `secure: true` is REQUIRED for the js-cookie SameSite=Lax cookies
-  // the frontend sets — Chromium refuses to send a cookie with
-  // SameSite=Lax on an HTTPS origin unless it's Secure, so without
-  // this flag Playwright's cookie went into the jar but never
-  // accompanied any request. The dashboard's client-side fetch got a
-  // 401 and bounced to /login — even though the tokens themselves
-  // were valid (verified via curl end-to-end).
-  const isHttps = base.protocol === 'https:';
-  const cookieBase = {
-    domain:   base.hostname,
-    path:     '/',
-    sameSite: 'Lax' as const,
-    secure:   isHttps,
-  };
+  // Use Playwright's url-based shape rather than (domain, path, secure)
+  // triple: the previous version populated the cookies but Chromium
+  // never sent them on RoleGuard's first-paint read (js-cookie returned
+  // undefined). Passing `url` lets Playwright derive the correct
+  // domain/path/secure attributes directly from BASE_URL — this is the
+  // shape their docs recommend for storageState-equivalent flows.
   const cookies = [];
-  if (tok.access_token)  cookies.push({ ...cookieBase, name: 'access_token',  value: tok.access_token });
-  if (tok.refresh_token) cookies.push({ ...cookieBase, name: 'refresh_token', value: tok.refresh_token });
+  if (tok.access_token)  cookies.push({ url: BASE_URL, name: 'access_token',  value: tok.access_token,  sameSite: 'Lax' as const });
+  if (tok.refresh_token) cookies.push({ url: BASE_URL, name: 'refresh_token', value: tok.refresh_token, sameSite: 'Lax' as const });
   if (cookies.length === 0) {
     throw new Error(`login/otp returned no tokens: ${JSON.stringify(tok).slice(0, 200)}`);
   }
   await context.addCookies(cookies);
+
+  // Diagnostic — dump what's actually in the jar and what document.cookie
+  // reports on the target origin. Was invisible before; now every failure
+  // surfaces whether the cookie made it in.
+  const jar = await context.cookies(BASE_URL);
+  // eslint-disable-next-line no-console
+  console.log(`  🍪 jar for ${BASE_URL}: ${jar.map(c => `${c.name}(len=${c.value.length}${c.secure ? ',Secure' : ''}${c.httpOnly ? ',HttpOnly' : ''})`).join(', ') || '(empty)'}`);
 }
 
 // ─── shot helper ────────────────────────────────────────────────
@@ -367,9 +365,21 @@ async function ensureLoggedInContext(browser: any, viewport: string): Promise<Br
   const ctx = await browser.newContext({ locale: 'he-IL' });
   await loginViaOtp(ctx);
 
+  const page = await ctx.newPage();
+
+  // Deep diagnostic — go to the origin's landing first and see what
+  // document.cookie actually reports from the browser JS side. If
+  // Playwright's jar has the cookies but document.cookie is empty,
+  // the cookies exist in the profile but the browser isn't
+  // presenting them to the origin (Secure/SameSite/domain scope
+  // mismatch). Was invisible before this line.
+  await page.goto('/', { waitUntil: 'domcontentloaded' }).catch(() => {});
+  const docCookie = await page.evaluate(() => document.cookie).catch(() => '');
+  // eslint-disable-next-line no-console
+  console.log(`  🌐 document.cookie on /: ${docCookie || '(empty)'}`);
+
   // If /select-entity is required, visit it once so the app resolves
   // the entity claim into the JWT.
-  const page = await ctx.newPage();
   await page.goto('/select-entity', { waitUntil: 'domcontentloaded' }).catch(() => {});
   await page.locator('button, a').filter({ hasText: /המשך|בחר|Continue/ }).first().click({ timeout: 3000 }).catch(() => {});
   await page.waitForLoadState('networkidle').catch(() => {});
