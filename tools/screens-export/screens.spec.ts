@@ -252,7 +252,20 @@ async function loginViaOtp(context: BrowserContext): Promise<void> {
   }
 
   const base = new URL(BASE_URL);
-  const cookieBase = { domain: base.hostname, path: '/', sameSite: 'Lax' as const };
+  // `secure: true` is REQUIRED for the js-cookie SameSite=Lax cookies
+  // the frontend sets — Chromium refuses to send a cookie with
+  // SameSite=Lax on an HTTPS origin unless it's Secure, so without
+  // this flag Playwright's cookie went into the jar but never
+  // accompanied any request. The dashboard's client-side fetch got a
+  // 401 and bounced to /login — even though the tokens themselves
+  // were valid (verified via curl end-to-end).
+  const isHttps = base.protocol === 'https:';
+  const cookieBase = {
+    domain:   base.hostname,
+    path:     '/',
+    sameSite: 'Lax' as const,
+    secure:   isHttps,
+  };
   const cookies = [];
   if (tok.access_token)  cookies.push({ ...cookieBase, name: 'access_token',  value: tok.access_token });
   if (tok.refresh_token) cookies.push({ ...cookieBase, name: 'refresh_token', value: tok.refresh_token });

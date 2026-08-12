@@ -221,6 +221,11 @@ const CODE_TO_HE: Record<string, string> = {
 export const DEFAULT_MESSAGE = 'קרתה תקלה, נסה שוב';
 
 // ── server error shape (P0-1) ─────────────────────────────────
+// Extra endpoint-specific fields (tier / used / limit for the
+// reveal-paywall, retryAfter / remaining for rate limits, etc.) are
+// spread onto the payload by extractErrorPayload — the [key] index
+// keeps them typeable at call sites without adding one line per
+// endpoint here.
 export interface ApiErrorPayload {
   error?:   string;                 // machine code
   message?: string;                 // Hebrew display
@@ -229,6 +234,10 @@ export interface ApiErrorPayload {
   status?:  number;
   retryAfter?: number;
   remaining?:  number;
+  tier?:    string;                 // reveal-paywall: current subscription tier
+  used?:    number;                 // reveal-paywall: reveals already used this month
+  limit?:   number;                 // reveal-paywall: monthly reveal quota for tier
+  [key: string]: unknown;
 }
 
 // Turn any thrown/caught error from `apiFetch` into a Hebrew string.
