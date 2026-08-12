@@ -477,15 +477,6 @@
     "slug": "register__corporation"
   },
   {
-    "path": "/select-entity",
-    "category": "Public",
-    "dynamic": false,
-    "auth": true,
-    "register": false,
-    "source": "services/frontend/src/app/select-entity/page.tsx",
-    "slug": "select-entity"
-  },
-  {
     "path": "/support",
     "category": "Public",
     "dynamic": false,
