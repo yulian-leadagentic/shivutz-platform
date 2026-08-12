@@ -223,7 +223,26 @@ function writeCachedTokens(tok: { access_token?: string; refresh_token?: string 
   } catch { /* best-effort — a cache miss is not a failure */ }
 }
 
-async function loginViaOtp(context: BrowserContext): Promise<void> {
+// Parse the `role` claim from a raw JWT — no signature check, just
+// base64-decode the middle segment. Used by assertNoByteClusters to
+// distinguish "auth dropped" (dangerous) from "user isn't in this
+// section" (expected). Handles Hebrew names via UTF-8 round-trip
+// (see decodeJwtPayload in services/frontend/src/lib/auth.ts).
+function roleFromJwt(token: string | undefined): string | null {
+  if (!token) return null;
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const padded = parts[1] + '='.repeat((4 - (parts[1].length % 4)) % 4);
+    const bin = Buffer.from(padded.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
+    const payload = JSON.parse(bin) as Record<string, unknown>;
+    return (payload.role as string) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function loginViaOtp(context: BrowserContext): Promise<{ role: string | null }> {
   // Fast path: reuse cached tokens from a sibling worker's login.
   const cached = readCachedTokens();
   let tok: { access_token?: string; refresh_token?: string };
@@ -265,12 +284,15 @@ async function loginViaOtp(context: BrowserContext): Promise<void> {
   }
   await context.addCookies(cookies);
 
-  // Diagnostic — dump what's actually in the jar and what document.cookie
-  // reports on the target origin. Was invisible before; now every failure
-  // surfaces whether the cookie made it in.
+  // Diagnostic — dump what's in the jar (keeps future auth breakage
+  // debuggable at a glance) and return the login user's role so the
+  // byte-cluster check knows which sections legitimately render
+  // NoAccessCard.
   const jar = await context.cookies(BASE_URL);
   // eslint-disable-next-line no-console
   console.log(`  🍪 jar for ${BASE_URL}: ${jar.map(c => `${c.name}(len=${c.value.length}${c.secure ? ',Secure' : ''}${c.httpOnly ? ',HttpOnly' : ''})`).join(', ') || '(empty)'}`);
+
+  return { role: roleFromJwt(tok.access_token) };
 }
 
 // ─── shot helper ────────────────────────────────────────────────
@@ -358,25 +380,14 @@ async function assertAuthStuck(page: Page): Promise<void> {
 }
 
 // ─── one-time login fixture (per project) ────────────────────────
-async function ensureLoggedInContext(browser: any, viewport: string): Promise<BrowserContext> {
+async function ensureLoggedInContext(browser: any, viewport: string): Promise<{ ctx: BrowserContext; role: string | null }> {
   const statePath = join(STATE_DIR, `storageState.${viewport}.json`);
 
   // Always re-auth on each run (see M3 step 0 note in prior version).
   const ctx = await browser.newContext({ locale: 'he-IL' });
-  await loginViaOtp(ctx);
+  const { role } = await loginViaOtp(ctx);
 
   const page = await ctx.newPage();
-
-  // Deep diagnostic — go to the origin's landing first and see what
-  // document.cookie actually reports from the browser JS side. If
-  // Playwright's jar has the cookies but document.cookie is empty,
-  // the cookies exist in the profile but the browser isn't
-  // presenting them to the origin (Secure/SameSite/domain scope
-  // mismatch). Was invisible before this line.
-  await page.goto('/', { waitUntil: 'domcontentloaded' }).catch(() => {});
-  const docCookie = await page.evaluate(() => document.cookie).catch(() => '');
-  // eslint-disable-next-line no-console
-  console.log(`  🌐 document.cookie on /: ${docCookie || '(empty)'}`);
 
   // If /select-entity is required, visit it once so the app resolves
   // the entity claim into the JWT.
@@ -389,7 +400,7 @@ async function ensureLoggedInContext(browser: any, viewport: string): Promise<Br
 
   await ctx.storageState({ path: statePath });
   await page.close();
-  return ctx;
+  return { ctx, role };
 }
 
 // ─── identical-bytes clustering (post-run) ──────────────────────
@@ -398,35 +409,59 @@ async function ensureLoggedInContext(browser: any, viewport: string): Promise<Br
 // page screenshot. Any batch of 3+ PNGs sharing an exact byte size
 // (or SHA256) means the export captured the same content repeatedly —
 // almost always because auth silently dropped mid-run.
-function assertNoByteClusters(viewport: string, captured: string[]): void {
+//
+// Legitimate exception: when the login user isn't in a given section
+// (e.g. a contractor visiting /admin/*), RoleGuard renders the same
+// NoAccessCard on every route in that section. That's *correct*
+// behavior — the cluster represents a real user-visible truth, not a
+// broken export. Skip the tripwire when every slug in the cluster is
+// prefixed with the same known-role section AND the login user's
+// tokens don't grant that role.
+function slugSection(slug: string): 'admin' | 'contractor' | 'corporation' | null {
+  // Slugs land as "admin__ads", "contractor__dashboard", etc.
+  if (slug.startsWith('admin__') || slug === 'admin')             return 'admin';
+  if (slug.startsWith('contractor__') || slug === 'contractor')   return 'contractor';
+  if (slug.startsWith('corporation__') || slug === 'corporation') return 'corporation';
+  return null;
+}
+
+function assertNoByteClusters(viewport: string, captured: string[], loginRole?: string): void {
   if (captured.length < 3) return;
 
   const sizeGroups: Record<number, string[]> = {};
-  const hashGroups: Record<string, string[]> = {};
 
   for (const slug of captured) {
     const file = join(OUT_ROOT, viewport, `${slug}.png`);
     if (!existsSync(file)) continue;
     const size = statSync(file).size;
     (sizeGroups[size] ||= []).push(slug);
-    // Only hash the ones that share a size — cheaper than hashing
-    // every file.
   }
 
   const suspiciousSizes = Object.entries(sizeGroups).filter(([, slugs]) => slugs.length >= 3);
   for (const [size, slugs] of suspiciousSizes) {
-    // Confirm with a real hash — same byte size CAN be a coincidence
-    // (e.g. cached empty-state cards).
+    const hashGroups: Record<string, string[]> = {};
     for (const slug of slugs) {
       const file = join(OUT_ROOT, viewport, `${slug}.png`);
       const h = createHash('sha256').update(readFileSync(file)).digest('hex');
       (hashGroups[h] ||= []).push(slug);
     }
     const identical = Object.entries(hashGroups).filter(([, s]) => s.length >= 3);
-    if (identical.length > 0) {
-      const list = identical
-        .map(([h, s]) => `  · ${s.length}× identical (sha=${h.slice(0, 8)}): ${s.slice(0, 6).join(', ')}${s.length > 6 ? '…' : ''}`)
-        .join('\n');
+    for (const [hash, cluster] of identical) {
+      // Whitelist: every slug in this cluster belongs to a single
+      // section AND that section doesn't match the login user's
+      // role. NoAccessCard is expected here.
+      const sections = new Set(cluster.map(slugSection));
+      const singleSection = sections.size === 1 ? [...sections][0] : null;
+      const isForbiddenSection = singleSection && loginRole && singleSection !== loginRole && loginRole !== 'admin';
+      if (isForbiddenSection) {
+        // eslint-disable-next-line no-console
+        console.log(
+          `  ⓘ cluster of ${cluster.length}× identical /${singleSection}/* captures — ` +
+          `expected NoAccessCard renders for role=${loginRole} (not a broken export)`,
+        );
+        continue;
+      }
+      const list = `  · ${cluster.length}× identical (sha=${hash.slice(0, 8)}): ${cluster.slice(0, 6).join(', ')}${cluster.length > 6 ? '…' : ''}`;
       throw new Error(
         `identical-bytes cluster detected in ${viewport} captures ` +
         `(size=${size}) — this is the "auth dropped, everything is a login page" ` +
@@ -462,7 +497,7 @@ test('public routes', async ({ browser, request }, testInfo) => {
 
 test('authed routes', async ({ browser }, testInfo) => {
   const viewport = testInfo.project.name;
-  const ctx = await ensureLoggedInContext(browser, viewport);
+  const { ctx, role } = await ensureLoggedInContext(browser, viewport);
   const page = await ctx.newPage();
   const authed = routes.filter((r) => r.auth);
   const results: Array<{ path: string; status: string; note?: string }> = [];
@@ -480,7 +515,10 @@ test('authed routes', async ({ browser }, testInfo) => {
   });
 
   // Refuse to sign off if a captured cluster is byte-identical.
-  assertNoByteClusters(viewport, capturedSlugs);
+  // Pass loginRole so a legit NoAccessCard cluster for a section the
+  // user isn't in (contractor → /admin/*) doesn't false-positive as
+  // "auth dropped".
+  assertNoByteClusters(viewport, capturedSlugs, role ?? undefined);
 
   // Fail the run if ANY authed route came back as a login page —
   // that's the "silent bad export" pattern. skipped-login means the
