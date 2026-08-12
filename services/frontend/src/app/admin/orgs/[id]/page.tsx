@@ -57,7 +57,11 @@ const ACTION_LABEL_HE: Record<string, string> = {
   suspended:              'הושעה',
   reactivated:            'הופעל מחדש',
   edited:                 'נערך',
-  commission_edited:      'עמלה עודכנה',
+  // `commission_edited` removed post-pivot (D3 / migration 067). The
+  // audit-log writer that emitted this action is gone, so the label
+  // was dead code — kept only to translate legacy rows. Any residual
+  // rows will now surface their raw action code, which is the desired
+  // "make it visible" fallback per the map's own comment above.
   document_uploaded:      'מסמך הועלה',
   document_deleted:       'מסמך נמחק',
   decided:                'אושר',

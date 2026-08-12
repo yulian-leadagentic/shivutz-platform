@@ -627,7 +627,7 @@ function ApprovalsContent() {
             <div className="px-5 py-4 space-y-3">
               <p id="bulk-confirm-desc" className="text-sm text-slate-700">
                 {pendingBulk === 'approve'
-                  ? `לאשר ${selectedOrgs.length} ארגונים? כל ארגון יקבל את העמלה שכבר הוגדרה לו בכרטיס.`
+                  ? `לאשר ${selectedOrgs.length} ארגונים? כל ארגון יאושר ויוכל להתחיל לפרסם/לחפש לפי המנוי שלו.`
                   : `לדחות ${selectedOrgs.length} ארגונים? אם תזין סיבה, היא תופיע באותו טקסט בכל ההתראות.`}
               </p>
               {pendingBulk === 'reject' && (
