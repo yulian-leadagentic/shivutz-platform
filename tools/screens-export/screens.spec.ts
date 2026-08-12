@@ -149,32 +149,49 @@ async function assertDeployFresh(request: APIRequestContext): Promise<void> {
 // from the same runner IP, so a naive first-shot approach 429s the
 // second worker. Retry with the server-supplied retry_after so the
 // harness can complete a full capture pass instead of half-failing.
+//
+// Uses plain Node fetch instead of Playwright's context.request — the
+// latter shares an HTTP connection pool with the browser context, and
+// a 60s idle wait between attempts can cause that connection to be
+// dropped by an intermediary (Railway edge, Node HTTP2 idle timeout).
+// Node fetch spins up a fresh connection per call so a long backoff
+// doesn't kill the retry with a "socket hang up".
 async function postWithRateLimitRetry(
-  request: BrowserContext['request'],
   path: string,
   data: Record<string, unknown>,
-  { maxAttempts = 3 }: { maxAttempts?: number } = {},
-) {
-  let resp = await request.post(path, {
-    data,
-    headers: { 'content-type': 'application/json' },
-    failOnStatusCode: false,
-  });
-  for (let attempt = 1; attempt < maxAttempts && resp.status() === 429; attempt++) {
+  { maxAttempts = 4 }: { maxAttempts?: number } = {},
+): Promise<{ ok: boolean; status: number; text: () => Promise<string>; json: () => Promise<any> }> {
+  const doPost = async () => {
+    const res = await fetch(`${BASE_URL}${path}`, {
+      method:  'POST',
+      headers: { 'content-type': 'application/json' },
+      body:    JSON.stringify(data),
+    });
+    // Buffer the body once so caller can re-read after status check.
+    const bodyText = await res.text();
+    return {
+      ok:     res.ok,
+      status: res.status,
+      text:   async () => bodyText,
+      json:   async () => JSON.parse(bodyText),
+    };
+  };
+
+  let resp = await doPost();
+  for (let attempt = 1; attempt < maxAttempts && resp.status === 429; attempt++) {
+    // Ceiling of 240s: keeps a single retry safely under the 300s
+    // per-test timeout (playwright.config.ts:timeout) while still
+    // respecting a genuinely long server-supplied cool-off.
     let waitS = 60;
     try {
       const body = await resp.json();
-      if (typeof body?.retry_after === 'number') waitS = Math.min(body.retry_after, 90);
+      if (typeof body?.retry_after === 'number') waitS = Math.min(body.retry_after, 240);
     } catch { /* stay with default 60s */ }
     // eslint-disable-next-line no-console
     console.log(`  ⏳ ${path} → 429; waiting ${waitS}s before retry ${attempt + 1}/${maxAttempts}`);
     // eslint-disable-next-line no-promise-executor-return
     await new Promise((r) => setTimeout(r, waitS * 1000));
-    resp = await request.post(path, {
-      data,
-      headers: { 'content-type': 'application/json' },
-      failOnStatusCode: false,
-    });
+    resp = await doPost();
   }
   return resp;
 }
@@ -207,8 +224,6 @@ function writeCachedTokens(tok: { access_token?: string; refresh_token?: string 
 }
 
 async function loginViaOtp(context: BrowserContext): Promise<void> {
-  const api = context.request;
-
   // Fast path: reuse cached tokens from a sibling worker's login.
   const cached = readCachedTokens();
   let tok: { access_token?: string; refresh_token?: string };
@@ -217,20 +232,20 @@ async function loginViaOtp(context: BrowserContext): Promise<void> {
     // eslint-disable-next-line no-console
     console.log('  ♻ reusing cached auth tokens (sibling worker or recent run)');
   } else {
-    const sendResp = await postWithRateLimitRetry(api, '/api/auth/send-otp', {
+    const sendResp = await postWithRateLimitRetry('/api/auth/send-otp', {
       phone: LOGIN_PHONE, purpose: 'login',
     });
-    if (!sendResp.ok()) {
-      throw new Error(`send-otp failed: HTTP ${sendResp.status()} — ${await sendResp.text()}`);
+    if (!sendResp.ok) {
+      throw new Error(`send-otp failed: HTTP ${sendResp.status} — ${await sendResp.text()}`);
     }
     const sendBody = await sendResp.json();
     const normPhone: string = sendBody.phone ?? LOGIN_PHONE;
 
-    const loginResp = await postWithRateLimitRetry(api, '/api/auth/login/otp', {
+    const loginResp = await postWithRateLimitRetry('/api/auth/login/otp', {
       phone: normPhone, code: MASTER_OTP,
     });
-    if (!loginResp.ok()) {
-      throw new Error(`login/otp failed: HTTP ${loginResp.status()} — ${await loginResp.text()}`);
+    if (!loginResp.ok) {
+      throw new Error(`login/otp failed: HTTP ${loginResp.status} — ${await loginResp.text()}`);
     }
     tok = await loginResp.json();
     writeCachedTokens(tok);
