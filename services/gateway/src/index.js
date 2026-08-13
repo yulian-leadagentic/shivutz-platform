@@ -44,6 +44,86 @@ app.get('/api/__version', (_, res) => res.json({
   routes:  Object.keys(services), // deployed prefix list — proves which routes shipped
 }));
 
+// ─── Voice STT proxy (Track V) ─────────────────────────────
+// POST /api/voice/transcribe — audio blob → ElevenLabs Scribe → {transcript,lang}.
+// Kept inline (not in `services{}`) because we need to hold the audio
+// bytes in memory and re-frame them as multipart to the upstream — no
+// downstream service owns this, it's a pure external-API proxy.
+//
+// Key hygiene: ELEVENLABS_API_KEY is read from process.env server-side
+// only; never leaks to the client. The env placeholder in .env is `-`
+// (a deliberately-broken value) so a dev machine without the real key
+// gets a clean 503 instead of a mystery 401 from upstream.
+//
+// Public route — voice search is the mic equivalent of the text
+// /api/search, which is already public. Rate limit applies (see below).
+const ELEVENLABS_STT_URL = 'https://api.elevenlabs.io/v1/speech-to-text';
+const VOICE_MAX_BYTES    = 10 * 1024 * 1024;   // 10 MB — ~5 min of opus
+const VOICE_TIMEOUT_MS   = 30_000;
+app.post(
+  '/api/voice/transcribe',
+  express.raw({ type: () => true, limit: VOICE_MAX_BYTES }),
+  async (req, res) => {
+    const apiKey = process.env.ELEVENLABS_API_KEY;
+    // Treat missing OR the intentional `-` placeholder as unconfigured
+    // so local dev without the secret returns a translatable Hebrew
+    // error instead of proxying garbage upstream.
+    if (!apiKey || apiKey === '-' || apiKey.startsWith('-')) {
+      return res.status(503).json({
+        error:   'voice_service_not_configured',
+        message: 'שירות התמלול אינו זמין. פנה לתמיכה.',
+      });
+    }
+    // Rate limit — same limiter the proxy routes use. Voice is more
+    // expensive per call than text search, but the shared IP window is
+    // fine at pre-launch traffic.
+    const limited = await rateLimiter(req, res);
+    if (limited) return;
+
+    const body = req.body;
+    if (!body || body.length === 0) {
+      return res.status(400).json({ error: 'empty_audio', message: 'לא נשלח קובץ קול' });
+    }
+
+    try {
+      const contentType = req.headers['content-type'] || 'audio/webm';
+      const form = new FormData();
+      form.append('file', new Blob([body], { type: contentType }), 'audio.webm');
+      form.append('model_id', 'scribe_v1');
+      // Hint Hebrew — Scribe still auto-detects, but a hint cuts
+      // false-positive routing to English on borderline audio.
+      form.append('language_code', 'heb');
+
+      const upstream = await fetch(ELEVENLABS_STT_URL, {
+        method:  'POST',
+        headers: { 'xi-api-key': apiKey },
+        body:    form,
+        signal:  AbortSignal.timeout(VOICE_TIMEOUT_MS),
+      });
+
+      if (!upstream.ok) {
+        const errText = await upstream.text().catch(() => '');
+        // NEVER log the key — only the upstream status + a truncated body.
+        console.error(`[voice] scribe ${upstream.status}: ${errText.slice(0, 200)}`);
+        return res.status(502).json({ error: 'stt_failed', message: 'תקלה בתמלול. נסה שוב.' });
+      }
+
+      const data = await upstream.json();
+      return res.json({
+        transcript: (data.text ?? '').trim(),
+        lang:       data.language_code ?? 'heb',
+      });
+    } catch (err) {
+      const kind = err.name === 'AbortError' || err.name === 'TimeoutError' ? 'timeout' : 'other';
+      console.error(`[voice] transcribe error (${kind}): ${err.message}`);
+      const message = kind === 'timeout'
+        ? 'התמלול ארך יותר מדי. נסה שוב עם הקלטה קצרה יותר.'
+        : 'תקלה בתמלול. נסה שוב.';
+      return res.status(502).json({ error: 'stt_failed', message });
+    }
+  },
+);
+
 // ─── Route table ───────────────────────────────────────────
 const services = {
   '/api/auth':          process.env.AUTH_SERVICE_URL          || 'http://auth:3001',

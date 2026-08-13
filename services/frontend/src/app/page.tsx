@@ -36,6 +36,7 @@ import { AdSidebar } from '@/features/advertising/AdSidebar';
 import { InlineSponsoredAd } from '@/features/advertising/InlineSponsoredAd';
 import { RevealModal, type RevealBlock } from '@/features/advertising/RevealModal';
 import { RoleRegisterPicker } from '@/features/advertising/RoleRegisterPicker';
+import { VoiceInputButton } from '@/features/voice/VoiceInputButton';
 import { FeaturedAdsCarousel } from '@/features/advertising/FeaturedAdsCarousel';
 import { LandingTrustBar } from '@/features/advertising/LandingTrustBar';
 import { searchApi, type SearchResponse, type AdSearchResult, type ContactReveal } from '@/lib/api/search';
@@ -402,6 +403,16 @@ function LandingPageInner() {
                       placeholder="לדוגמה: מחפש 4 פועלים סינים לריצוף"
                       aria-label="חיפוש חכם — תיאור חופשי בעברית"
                       className="flex-1 min-w-0 text-base sm:text-lg outline-none placeholder:text-slate-400 py-2 bg-transparent"
+                    />
+                    {/* Track V — mic button. Populates the input on
+                        transcript so the user can proofread before
+                        pressing חפש (STT errors on Hebrew trade jargon
+                        are frequent; auto-search would surface wrong
+                        results). */}
+                    <VoiceInputButton
+                      onTranscript={(text) => { setQ(text); searchInputRef.current?.focus(); }}
+                      onError={(msg) => setError(msg)}
+                      disabled={loading}
                     />
                   </div>
                   <button
