@@ -41,11 +41,20 @@ That runs, in order:
    `routes.json` with `{ path, category, dynamic, auth, register }`.
 2. `scan` — catalogues messages into
    `../../screens-export/messages-map.md` + `.csv`.
-3. `capture` — Playwright test spec logs in once (per contractor +
-   corporation + admin, if the phone has multiple memberships), saves
-   `storageState.<role>.json`, then screenshots every route in `routes.json`
-   at both viewports. Register-wizard pages capture each step BUT never
-   click the final create button — no junk data lands on staging.
+3. `capture` — Playwright test spec logs in **once** as a **single
+   entity** (the account that owns `LOGIN_PHONE`), saves a shared
+   `.session-cache.json` so desktop + mobile workers reuse the same
+   tokens, then screenshots every route in `routes.json` at both
+   viewports. **Not dual-entity:** the spec does NOT re-login as a
+   corporation or admin. Routes under `/corporation/*` and `/admin/*`
+   that the LOGIN_PHONE account isn't a member of will render as
+   NoAccessCard and pass through the "wrong-section cluster"
+   whitelist in `assertNoByteClusters` — that's expected, not a bug.
+   Real dual-entity capture (contractor + corp side of the same flow,
+   needed for e.g. reveal-paywall corp-side verification) is a
+   separate task, not implemented here. Register-wizard pages capture
+   each step BUT never click the final create button — no junk data
+   lands on staging.
 4. `gallery` — writes `../../screens-export/index.html` — thumbnails
    grouped Public / Contractor / Corporation / Admin, desktop and mobile
    side-by-side.
