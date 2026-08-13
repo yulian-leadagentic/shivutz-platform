@@ -109,8 +109,26 @@ ALLOWED_OUTPUT_KEYS: frozenset[str] = frozenset((
 
 
 def _quantity(text: str) -> Optional[int]:
-    m = re.search(r"\d+", text)
-    return int(m.group(0)) if m else None
+    """S3 — extract quantity only when the number modifies a count noun,
+    OR when it sits at the very start of the query.
+
+    Previously any digit ran anywhere in the string became the filter
+    (`"פועלים ל-3 חודשים"` → quantity=3, `"רתך עם 10 שנות ניסיון"`
+    → quantity=10), silently narrowing search results on natural queries.
+    """
+    text = text.strip()
+    # Leading-integer form: "20 פועלים" / "15 עובדים למרכז".
+    m = re.match(r"^\s*(\d{1,4})\b", text)
+    if m:
+        return int(m.group(1))
+    # Number immediately followed by a count noun. The nouns cover both
+    # people (עובדים/פועלים/…) and housing units (מיטות/חדרים) since
+    # both search paths use `quantity` for capacity gating.
+    count_noun = r"(?:עובדים|פועלים|איש|אנשים|מיטות|חדרים)"
+    m = re.search(rf"(\d{{1,4}})[\s -]*{count_noun}\b", text)
+    if m:
+        return int(m.group(1))
+    return None
 
 
 def _first_match(text: str, table: dict[str, str]) -> Optional[str]:

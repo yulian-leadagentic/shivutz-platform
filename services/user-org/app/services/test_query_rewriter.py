@@ -91,6 +91,28 @@ class ValidateEnumsTest(unittest.TestCase):
         self.assertEqual(out["ad_type"], "worker")
 
 
+class QuantityExtractionTest(unittest.TestCase):
+    """S3 — quantity must anchor on a count noun (or be leading)."""
+
+    def test_bare_number_mid_sentence_ignored(self):
+        # Duration / experience — not a headcount.
+        self.assertIsNone(qr._quantity("פועלים סינים ל-3 חודשים"))
+        self.assertIsNone(qr._quantity("רתך עם 10 שנות ניסיון"))
+        self.assertIsNone(qr._quantity("פרויקט של 5 קומות"))
+
+    def test_leading_integer_taken(self):
+        self.assertEqual(qr._quantity("20 פועלים"), 20)
+        self.assertEqual(qr._quantity("4 פועלים סינים לריצוף"), 4)
+
+    def test_number_before_count_noun_taken(self):
+        self.assertEqual(qr._quantity("צריך 15 עובדים למרכז"), 15)
+        self.assertEqual(qr._quantity("מקום ל-6 מיטות"), 6)
+        self.assertEqual(qr._quantity("דירה עם 3 חדרים"), 3)
+
+    def test_no_digits_returns_none(self):
+        self.assertIsNone(qr._quantity("חשמלאים במרכז"))
+
+
 class RewriteRealEndToEndTest(unittest.TestCase):
     """Prove the pipeline: fake Anthropic returns garbage → merge → validate
     → final dict has no invented codes reaching SQL."""
