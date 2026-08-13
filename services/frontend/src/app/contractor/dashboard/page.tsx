@@ -11,6 +11,7 @@ import { Loader2, Search as SearchIcon, CreditCard, Clock, Globe2, ArrowLeft } f
 import { adApi, type UsageResponse } from '@/lib/api/ads';
 import { subscriptionApi, type SubscriptionRow } from '@/lib/api/payments';
 import { orgApi } from '@/lib/api';
+import { ApiError } from '@/lib/api/client';
 import { getAccessToken, decodeJwtPayload } from '@/lib/auth';
 import { mapApiError } from '@/lib/api/errors';
 
@@ -50,12 +51,15 @@ export default function ContractorDashboardPage() {
       }).catch(() => {});
     }
     // Primary: subscription row. 404 → no sub yet (empty state);
-    // other errors → shown Hebrew message.
+    // other errors → shown Hebrew message. Prefers the structured
+    // ApiError.cause.status (from apiFetch) over regexing the Hebrew
+    // message — the old regex would break the moment mapApiError's
+    // "not_found" copy changed.
     subscriptionApi.me()
       .then((s) => { setSub(s); setSubError(null); })
       .catch((err) => {
-        const msg = (err as Error).message ?? '';
-        if (/404|not.?found|no.?subscription/i.test(msg)) {
+        const status = err instanceof ApiError ? err.cause?.status : undefined;
+        if (status === 404) {
           setSub(null); setSubError(null);           // empty state
         } else {
           setSubError(mapApiError(err));             // real error
