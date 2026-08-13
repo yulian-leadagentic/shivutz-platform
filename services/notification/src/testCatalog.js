@@ -198,7 +198,6 @@ const TEST_CATALOG = [
       corp_name:                'מעלות גיוס',
       worker_count:             4,
       profession_he:            'טייחים',
-      commission_amount:        2500,
       scheduled_capture_at:     new Date(Date.now() + 48 * 3600 * 1000).toISOString(),
     },
     override_keys: ['contractor_contact_phone', 'contractor_contact_email', 'corp_contact_email'],
@@ -447,20 +446,6 @@ const TEST_CATALOG = [
     },
     override_keys: ['recipient_phone', 'recipient_email'],
     notes: 'In production the deal-service attaches contractor_id/corporation_id and the recipient is picked from the org’s configured recipients. With those omitted, falls back to recipient_email/recipient_phone — overrides land there.',
-  },
-  {
-    event_type: 'commission.invoiced',
-    group:      'Other',
-    channels:   ['email'],
-    description: 'Commission invoice issued — emails the contractor.',
-    payload: {
-      contact_email:    'test@example.com',
-      contact_name:     'יוסי כהן',
-      invoice_number:   '2026-001',
-      invoice_url:      'https://cardcom.example.com/invoice/abc',
-      amount:           2500,
-    },
-    override_keys: ['contact_email'],
   },
 ];
 
