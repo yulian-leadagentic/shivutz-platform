@@ -130,13 +130,12 @@ export default function BillingPage() {
       const next = await memberApi.list('contractors', entityId);
       setMembers(next);
     } catch (e) {
-      // QA-3: previously fell back to `(e.message || 'שגיאה בהוספה')`
-      // which surfaced raw English codes like "error" straight into
-      // the red banner. mapApiError translates known machine codes,
-      // preserves server-supplied Hebrew, and falls back to a Hebrew
-      // default — no more English leaks.
-      const msg = (e as Error).message ?? '';
-      if (/seat_limit/i.test(msg)) {
+      // Detect the seat-limit case off the structured server code
+      // (`cause.error === 'seat_limit'`), not the Hebrew message —
+      // otherwise a mapApiError copy tweak silently breaks the
+      // specialised upgrade nudge. mapApiError is still the default.
+      const code = e instanceof ApiError ? (e.cause?.error || e.cause?.code) : undefined;
+      if (code === 'seat_limit') {
         setError('הגעת לתקרת המשתמשים במסלול הנוכחי — שדרג כדי להוסיף עוד.');
       } else {
         setError(mapApiError(e));
@@ -163,7 +162,12 @@ export default function BillingPage() {
       await subscriptionApi.start(tier);
       await refresh();
     } catch (e) {
-      setError((e as Error).message ?? 'שגיאה בשדרוג');
+      // R3 — QA-3 follow-up. Sibling calls (`refresh`, `addMember`,
+      // `removeMember`) already go through mapApiError, so an upgrade
+      // failure was the only path still leaking English machine codes
+      // ("no_active_subscription", "plan_not_found") into the red
+      // banner.
+      setError(mapApiError(e));
     } finally {
       setBusy(null);
     }
