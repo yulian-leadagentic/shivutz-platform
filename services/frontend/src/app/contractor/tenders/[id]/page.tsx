@@ -14,6 +14,7 @@ import {
   Building2, Phone, Mail, XCircle, Send, Pencil, Snowflake, Play, Trash2, ArrowRight, Home,
 } from 'lucide-react';
 import { tenderApi, orgApi, type Tender } from '@/lib/api';
+import { mapApiError } from '@/lib/api/errors';
 import type { Corporation } from '@/types';
 import { useEnums } from '@/features/enums/EnumsContext';
 import { Button } from '@/components/ui/button';
@@ -115,7 +116,7 @@ export default function ContractorTenderDetailPage() {
         (t.bids ?? []).forEach((b) => b.items.forEach((it) => { if (it.selected) pre.add(it.id); }));
         setSelected(pre);
       })
-      .catch((e) => setError(e instanceof Error ? e.message : 'שגיאה'))
+      .catch((e) => setError(mapApiError(e)))
       .finally(() => setLoading(false));
   }, [id]);
 
@@ -148,33 +149,33 @@ export default function ContractorTenderDetailPage() {
       await tenderApi.selectLines(id, [...selected]);
       load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'שגיאה בשליחת הבקשה');
+      setError(mapApiError(e));
     } finally { setSubmitting(false); }
   }
 
   async function doCancel() {
     setConfirmCancel(false);
     try { await tenderApi.cancel(id); router.push('/contractor/tenders'); }
-    catch (e) { setError(e instanceof Error ? e.message : 'שגיאה'); }
+    catch (e) { setError(mapApiError(e)); }
   }
 
   async function doDelete() {
     setConfirmDelete(false);
     try { await tenderApi.remove(id); router.push('/contractor/tenders'); }
-    catch (e) { setError(e instanceof Error ? e.message : 'שגיאה'); }
+    catch (e) { setError(mapApiError(e)); }
   }
 
   async function doFreeze() {
     setActing(true); setError('');
     try { await tenderApi.freeze(id); load(); }
-    catch (e) { setError(e instanceof Error ? e.message : 'שגיאה'); }
+    catch (e) { setError(mapApiError(e)); }
     finally { setActing(false); }
   }
 
   async function doUnfreeze() {
     setActing(true); setError('');
     try { await tenderApi.unfreeze(id); load(); }
-    catch (e) { setError(e instanceof Error ? e.message : 'שגיאה'); }
+    catch (e) { setError(mapApiError(e)); }
     finally { setActing(false); }
   }
 

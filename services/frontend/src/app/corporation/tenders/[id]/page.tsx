@@ -12,6 +12,7 @@ import {
   Phone, Mail, Building2, XCircle, Home,
 } from 'lucide-react';
 import { tenderApi, orgApi, type Tender, type Bid } from '@/lib/api';
+import { mapApiError } from '@/lib/api/errors';
 import type { Corporation } from '@/types';
 import { useEnums } from '@/features/enums/EnumsContext';
 import { Button } from '@/components/ui/button';
@@ -61,7 +62,7 @@ export default function CorpTenderDetailPage() {
           if (mine.housing_notes) setHousingNotes(mine.housing_notes);
         }
       })
-      .catch((e) => setError(e instanceof Error ? e.message : 'שגיאה'))
+      .catch((e) => setError(mapApiError(e)))
       .finally(() => setLoading(false));
   }, [id]);
 
@@ -144,7 +145,7 @@ export default function CorpTenderDetailPage() {
       // now shows under "ההצעות שלי".
       router.push('/corporation/tenders');
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'שגיאה בהגשת ההצעה');
+      setError(mapApiError(e));
       setSubmitting(false);
     }
   }
