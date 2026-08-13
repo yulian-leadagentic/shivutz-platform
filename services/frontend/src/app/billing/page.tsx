@@ -19,6 +19,7 @@ import {
 } from '@/lib/api/payments';
 import { adApi, type UsageResponse } from '@/lib/api/ads';
 import { memberApi, type TeamMember } from '@/lib/api/members';
+import { ApiError } from '@/lib/api/client';
 import { mapApiError } from '@/lib/api/errors';
 import { useAuth } from '@/lib/AuthContext';
 
@@ -67,6 +68,13 @@ export default function BillingPage() {
   const [loading, setLoading] = useState(true);
   const [busyTier, setBusy]   = useState<SubscriptionTier | null>(null);
   const [error, setError]     = useState<string>('');
+  // R2 — distinct empty-state from real error. `noSub` is set when the
+  // payment service returns 404 (no subscription row); the hero switches
+  // to "אין מנוי פעיל · רכשו מנוי" instead of the red banner. Today the
+  // payment service lazy-inits a trialing row so this is rarely hit,
+  // but the whole point is that IF the lazy-init breaks, the user sees
+  // a CTA rather than assuming the app is broken.
+  const [noSub, setNoSub]     = useState<boolean>(false);
 
   // Team-members merge (contractor-only). Corp still has /corporation/users.
   const [members, setMembers]   = useState<TeamMember[]>([]);
@@ -76,6 +84,7 @@ export default function BillingPage() {
   async function refresh() {
     setLoading(true);
     setError('');
+    setNoSub(false);
     try {
       const [row, u] = await Promise.all([
         subscriptionApi.me(),
@@ -89,9 +98,19 @@ export default function BillingPage() {
           .catch(() => setMembers([]));
       }
     } catch (e) {
-      // QA-3 fallout: raw `.message` was surfacing English codes into
-      // the red banner. Route through mapApiError instead.
-      setError(mapApiError(e));
+      // R2 — 404 means "no subscription yet", not "something broke".
+      // Show the empty-state (CTA to buy) instead of a red 5xx banner.
+      // status is bound to the transport, so a copy tweak in
+      // mapApiError won't silently break this branch. See b3c6620.
+      const status = e instanceof ApiError ? e.cause?.status : undefined;
+      if (status === 404) {
+        setSub(null);
+        setNoSub(true);
+      } else {
+        // QA-3 fallout: raw `.message` was surfacing English codes into
+        // the red banner. Route through mapApiError instead.
+        setError(mapApiError(e));
+      }
     } finally {
       setLoading(false);
     }
@@ -187,8 +206,25 @@ export default function BillingPage() {
         <p className="text-sm text-slate-500">ניהול המנוי החודשי שלך</p>
       </header>
 
+      {/* R2 — no-subscription empty state. Shown ONLY when the payment
+          service explicitly returns 404 (not on any other error).
+          Matches the "אין מנוי פעיל · רכשו מנוי" pattern on the
+          dashboard subscription widget so both surfaces speak the same
+          language when a lazy-init miss finally happens. */}
+      {noSub && !loading && (
+        <section className="rounded-2xl border border-slate-200 bg-white p-8 text-center">
+          <div className="w-14 h-14 rounded-2xl bg-brand-50 text-brand-700 mx-auto mb-3 flex items-center justify-center">
+            <Crown className="w-6 h-6" />
+          </div>
+          <h2 className="text-lg font-bold text-slate-900">אין מנוי פעיל</h2>
+          <p className="text-sm text-slate-500 mt-1 max-w-md mx-auto leading-relaxed">
+            בחרו מסלול למטה כדי להתחיל — פרסום מודעות וחשיפת פרטי תאגידים דורשים מנוי פעיל.
+          </p>
+        </section>
+      )}
+
       {/* Current subscription hero — bold summary + clear status */}
-      {(() => {
+      {!noSub && (() => {
         const currentTier = sub ? TIERS.find(t => t.code === sub.tier) : null;
         const isTrialing  = sub?.status === 'trialing';
         const isActive    = sub?.status === 'active';
