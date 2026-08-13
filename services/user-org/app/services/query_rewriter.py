@@ -5,9 +5,12 @@ Modes:
   real — Claude Haiku via Anthropic API. Requires ANTHROPIC_API_KEY.
 
 Auto-selection: real mode fires when ANTHROPIC_API_KEY is set AND
-LLM_REWRITER_FAKE_MODE is not '1'. Falls back to fake if the API call
-raises or returns unparseable JSON — search is never blocked by an LLM
-outage.
+LLM_REWRITER_FAKE_MODE is not '1'. Fake mode is the fallback ONLY
+when there's no key OR when LLM_REWRITER_FAKE_MODE=1 is explicit.
+Falls back to fake if the API call raises or returns unparseable
+JSON — search is never blocked by an LLM outage. (Pre-S2 the default
+was fake regardless of key presence; the old docstring described the
+current behaviour, not the previous one.)
 
 Real-mode results are cached in Redis for 5 minutes (key = sha256 of
 the raw query) so repeated searches don't re-bill.
@@ -19,7 +22,13 @@ import re
 import time
 from typing import Optional
 
-FAKE_MODE = os.getenv("LLM_REWRITER_FAKE_MODE", "1") == "1"
+# S2 — mode by API-key presence, not by env-var default. `_startup_log`
+# below prints the effective mode on module import so an ops person can
+# grep the container logs to confirm which path the service is running.
+_FAKE_MODE_EXPLICIT = os.getenv("LLM_REWRITER_FAKE_MODE")   # None if unset
+_HAS_API_KEY        = bool(os.getenv("ANTHROPIC_API_KEY"))
+# Fake only when: (a) explicit LLM_REWRITER_FAKE_MODE=1, OR (b) no API key.
+FAKE_MODE = (_FAKE_MODE_EXPLICIT == "1") or (not _HAS_API_KEY)
 CACHE_TTL_S = int(os.getenv("LLM_REWRITER_CACHE_TTL", "300"))
 # L3 — hard timeout on the Anthropic call. Above this we drop the LLM
 # result and fall back to fake-mode so search response time is bounded.
@@ -335,3 +344,12 @@ def rewrite(query: str) -> dict:
     if FAKE_MODE:
         return rewrite_fake(query)
     return rewrite_real(query)
+
+
+# S2 — one-line startup banner. Grep the user-org container logs for
+# "[qrewrite] mode=" to see which path the service actually took.
+if FAKE_MODE:
+    _reason = "explicit_env" if _FAKE_MODE_EXPLICIT == "1" else "no_api_key"
+    print(f"[qrewrite] mode=fake reason={_reason}")
+else:
+    print(f"[qrewrite] mode=real model={ANTHROPIC_MODEL} timeout={LLM_TIMEOUT_S}s")

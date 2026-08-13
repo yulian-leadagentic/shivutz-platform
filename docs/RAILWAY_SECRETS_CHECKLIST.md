@@ -180,6 +180,27 @@ created and the script logs a reminder to delete the vars.
 
 ---
 
+## LLM + STT services (server-side keys — NEVER expose to client)
+
+Set on the **user-org** service (query rewriter + reranker) and on the
+**gateway** service (voice STT proxy). Names + placeholder values only —
+paste the real secrets in Railway UI.
+
+| Variable | Set on | Value |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | user-org | ⚠️ Anthropic dashboard |
+| `ANTHROPIC_MODEL` | user-org | `claude-haiku-4-5-20251001` |
+| `LLM_REWRITER_FAKE_MODE` | user-org | unset (empty = real if key exists) |
+| `LLM_REWRITER_TIMEOUT_S` | user-org | `3.0` |
+| `LLM_RERANK_ENABLED` | user-org | `1` |
+| `LLM_RERANK_MIN` | user-org | `3` |
+| `LLM_RERANK_TOP_N` | user-org | `20` |
+| `ELEVENLABS_API_KEY` | gateway | ⚠️ ElevenLabs dashboard |
+
+**Verify at deploy:** `docker logs user-org | grep '\[qrewrite\]'` should
+print `mode=real model=...` on boot. `mode=fake reason=no_api_key`
+means the secret didn't reach the container.
+
 ## Frontend (Next.js)
 
 Built with `NEXT_PUBLIC_*` vars baked at build time. Each environment has
