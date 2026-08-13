@@ -11,6 +11,7 @@ import { Loader2, Megaphone, Home, Eye, CreditCard, Clock, Plus } from 'lucide-r
 import { adApi, type UsageResponse } from '@/lib/api/ads';
 import { subscriptionApi, type SubscriptionRow } from '@/lib/api/payments';
 import { orgApi } from '@/lib/api';
+import { ApiError } from '@/lib/api/client';
 import { getAccessToken, decodeJwtPayload } from '@/lib/auth';
 import { mapApiError } from '@/lib/api/errors';
 import { PublishFirstAdBanner } from '@/features/corporation/PublishFirstAdBanner';
@@ -78,11 +79,16 @@ export default function CorporationDashboardPage() {
         setCompanyName(c.company_name_he || c.company_name || '');
       }).catch(() => {});
     }
+    // R1 — same fix landed in b3c6620 for the contractor dashboard:
+    // prefer the structured ApiError.cause.status over a message regex.
+    // A copy tweak in mapApiError's 'not_found' would silently break
+    // the old /404|not.?found/i detector and flip the empty-state into
+    // a red banner. status is bound to the transport, so it's stable.
     subscriptionApi.me()
       .then((s) => { setSub(s); setSubError(null); })
       .catch((err) => {
-        const msg = (err as Error).message ?? '';
-        if (/404|not.?found|no.?subscription/i.test(msg)) {
+        const status = err instanceof ApiError ? err.cause?.status : undefined;
+        if (status === 404) {
           setSub(null); setSubError(null);
         } else {
           setSubError(mapApiError(err));
