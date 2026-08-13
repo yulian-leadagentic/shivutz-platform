@@ -2,7 +2,13 @@
 // Staging guard, HTTP wrapper, auth flow.
 
 const KNOWN_STAGING_HOSTS = [
-  'gateway-staging-3a12.up.railway.app',   // per docs/ENVIRONMENTS.md
+  'gateway-staging-3a12.up.railway.app',   // canonical staging (docs/ENVIRONMENTS.md)
+  // pivot-staging (docs/PIVOT_STAGING_SETUP.md). Different Railway env
+  // + separate DB from canonical staging. The frontend acts as a
+  // functional gateway proxy (Next rewrites /api/* to the pivot
+  // gateway internally), so pointing GATEWAY_URL at the frontend host
+  // works — the seed doesn't need the raw gateway URL of that env.
+  'frontend-pivot-staging.up.railway.app',
 ];
 
 /** Return the gateway base URL after enforcing the staging guard.
