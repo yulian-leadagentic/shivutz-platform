@@ -124,6 +124,11 @@ function LandingPageInner() {
   // them clearing releases the suspend on its own tempo.
   const [inputFocused, setInputFocused] = useState(false);
   const [voiceActive,  setVoiceActive]  = useState(false);
+  // SR — brief visual nudge on the חפש button right after a voice
+  // transcript lands. Confirms the transcript needs review + submit
+  // (design decision: no auto-search on transcript — Hebrew trade
+  // jargon misfires often). Cleared after 2.5s.
+  const [awaitingSubmit, setAwaitingSubmit] = useState(false);
 
   const [recent, setRecent] = useState<PublicAd[]>([]);
 
@@ -225,6 +230,7 @@ function LandingPageInner() {
     }
     if (query.length < 2) return;
     setQ(query);
+    setAwaitingSubmit(false);   // SR — clear the post-transcript ring
     syncFiltersToUrl(fProf, fRegion, fOrigin);
     setLoading(true);
     setError('');
@@ -448,7 +454,14 @@ function LandingPageInner() {
                         are frequent; auto-search would surface wrong
                         results). */}
                     <VoiceInputButton
-                      onTranscript={(text) => { setQ(text); searchInputRef.current?.focus(); }}
+                      onTranscript={(text) => {
+                        setQ(text);
+                        searchInputRef.current?.focus();
+                        // Flash the חפש button so the user knows the
+                        // next step is theirs — auto-clears after 2.5s.
+                        setAwaitingSubmit(true);
+                        setTimeout(() => setAwaitingSubmit(false), 2500);
+                      }}
                       onError={(msg) => setError(msg)}
                       onActiveChange={setVoiceActive}
                       disabled={loading}
@@ -457,7 +470,15 @@ function LandingPageInner() {
                   <button
                     type="submit"
                     disabled={loading || (q.trim().length < 2 && !anyFilter)}
-                    className="w-full sm:w-auto min-h-11 bg-brand-600 hover:bg-brand-800 text-slate-900 text-base font-bold px-5 sm:px-6 py-3 rounded-xl disabled:bg-slate-200 disabled:text-slate-500 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2 shrink-0"
+                    className={
+                      // SR — post-transcript ring pulse. Draws the
+                      // eye to the submit button after voice input
+                      // populated the field. Kept ring-only (no
+                      // colour swap) so the DS orange stays the
+                      // primary signal.
+                      `w-full sm:w-auto min-h-11 bg-brand-600 hover:bg-brand-800 text-slate-900 text-base font-bold px-5 sm:px-6 py-3 rounded-xl disabled:bg-slate-200 disabled:text-slate-500 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2 shrink-0 transition-shadow ` +
+                      (awaitingSubmit ? 'ring-4 ring-brand-300 animate-pulse' : '')
+                    }
                   >
                     {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <SearchIcon className="w-5 h-5" />}
                     חפש
