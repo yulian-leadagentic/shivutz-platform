@@ -233,24 +233,26 @@ function LandingPageInner() {
     finally { setLoading(false); }
   }
 
-  // SR — scroll the results section into view once resp arrives.
-  // Runs on transitions from null→object AND on subsequent searches
-  // (dep on resp), so a second search re-anchors even if the user
-  // scrolled away. Waits one frame so the layout that just switched
-  // (ads out, results in) has painted before measuring. Honours
-  // prefers-reduced-motion — instant jump rather than smooth.
+  // SR — scroll to the results section on TWO edges:
+  //   • loading became true → user just pressed חפש; anchor to the
+  //     skeleton so they see immediate feedback instead of the ads
+  //     that just unmounted.
+  //   • resp landed → re-anchors in case they scrolled during the
+  //     ~3s LLM round-trip.
+  // rAF defers a frame so the DOM (ads out, results/skeleton in)
+  // has painted before we measure. Honours prefers-reduced-motion —
+  // instant jump rather than smooth.
   useEffect(() => {
-    if (!resp) return;
+    if (!loading && !resp) return;
     const el = searchResultsRef.current;
     if (!el) return;
     const reduce = typeof window !== 'undefined'
       && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-    // rAF lets the ad sections unmount + results mount before we measure.
     const raf = requestAnimationFrame(() => {
       el.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
     });
     return () => cancelAnimationFrame(raf);
-  }, [resp]);
+  }, [loading, resp]);
 
   function clearFilters() {
     setFProf(''); setFRegion(''); setFOrigin('');
@@ -605,7 +607,7 @@ function LandingPageInner() {
           </div>
 
           {/* Search results (when query is active) */}
-          {(resp || error) && (
+          {(resp || error || loading) && (
             <section
               id="search-results"
               ref={searchResultsRef}
@@ -616,14 +618,40 @@ function LandingPageInner() {
                   {error && (
                     <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>
                   )}
+
+                  {/* SR — card-shaped skeleton while the LLM + rerank
+                      round-trip runs (real mode can take ~3s). Shows
+                      the shape of what's coming so the user doesn't
+                      feel abandoned. Only when there's no prior resp
+                      to show — a re-search over existing results
+                      keeps the old cards visible until the new set
+                      lands, less jarring than blanking then flashing
+                      new content. */}
+                  {loading && !resp && (
+                    <ul className="space-y-3" aria-hidden="true">
+                      {[0, 1, 2].map((i) => (
+                        <li key={i} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm animate-pulse">
+                          <div className="h-4 w-3/5 bg-slate-100 rounded-md mb-2" />
+                          <div className="h-3 w-2/5 bg-slate-100 rounded-md" />
+                          <div className="mt-4 h-9 w-40 bg-slate-100 rounded-lg" />
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                   {resp && (
                     <div className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 flex items-start gap-2">
                       <Sparkles className="w-3.5 h-3.5 mt-0.5 text-brand-600 shrink-0" />
                       <span>
+                        {/* SR — map profession/origin/region codes to
+                            Hebrew via the enum arrays already loaded
+                            above. `labelFor` falls back to the raw
+                            code if enum load is racing, so we never
+                            end up rendering nothing. This is the
+                            "why did I get these results" trust cue. */}
                         המנוע הבין: <b>{resp.filters.ad_type === 'housing' ? 'דיור' : 'עובדים'}</b>
-                        {resp.filters.profession_code && <> · מקצוע: <b>{resp.filters.profession_code}</b></>}
-                        {resp.filters.origin_country  && <> · מוצא: <b>{resp.filters.origin_country}</b></>}
-                        {resp.filters.region          && <> · אזור: <b>{resp.filters.region}</b></>}
+                        {resp.filters.profession_code && <> · מקצוע: <b>{labelFor(professions, resp.filters.profession_code)}</b></>}
+                        {resp.filters.origin_country  && <> · מוצא: <b>{labelFor(origins,     resp.filters.origin_country)}</b></>}
+                        {resp.filters.region          && <> · אזור: <b>{labelFor(regions,     resp.filters.region)}</b></>}
                         {resp.filters.quantity        && <> · כמות: <b>{resp.filters.quantity}</b></>}
                         <span className="text-slate-400"> ({resp.total} תוצאות)</span>
                       </span>
@@ -672,7 +700,7 @@ function LandingPageInner() {
                         const revealed = reveals[ad.id];
                         const boosted  = ad.featured_until && new Date(ad.featured_until) > new Date();
                         const items: JSX.Element[] = [];
-                        items.push(<AdCard key={ad.id} ad={ad} revealed={revealed} revealing={revealing === ad.id} boosted={!!boosted} onReveal={() => revealFor(ad.id)} />);
+                        items.push(<AdCard key={ad.id} ad={ad} revealed={revealed} revealing={revealing === ad.id} boosted={!!boosted} onReveal={() => revealFor(ad.id)} professions={professions} origins={origins} regions={regions} />);
                         if ((i + 1) % INLINE_AD_EVERY === 0 && i < resp.results.length - 1) {
                           items.push(<InlineSponsoredAd key={`sponsored-${i}`} />);
                         }
@@ -756,14 +784,24 @@ function LandingPageInner() {
 }
 
 function AdCard({
-  ad, revealed, revealing, boosted, onReveal,
+  ad, revealed, revealing, boosted, onReveal, professions, origins, regions,
 }: {
   ad: AdSearchResult;
   revealed?: ContactReveal;
   revealing: boolean;
   boosted: boolean;
   onReveal: () => void;
+  // SR — enum arrays for code→Hebrew mapping. Passed from the parent
+  // (which already fetches them on mount) so the card doesn't fire
+  // duplicate enum requests. Falls through to the raw code if a
+  // lookup misses.
+  professions: Profession[];
+  origins:     { code: string; name_he: string }[];
+  regions:     { code: string; name_he: string }[];
 }) {
+  const profLabel   = ad.profession_code ? (professions.find((p) => p.code === ad.profession_code)?.name_he ?? ad.profession_code) : null;
+  const originLabel = ad.origin_country  ? (origins.find((o)     => o.code === ad.origin_country)?.name_he  ?? ad.origin_country)  : null;
+  const regionLabel = ad.region          ? (regions.find((r)     => r.code === ad.region)?.name_he          ?? ad.region)          : null;
   return (
     <li
       className={`rounded-2xl border p-4 shadow-sm bg-white ${boosted ? 'border-amber-300' : 'border-slate-200'}`}
@@ -774,15 +812,15 @@ function AdCard({
           <p className="text-xs text-slate-500 mt-0.5 flex flex-wrap gap-x-2">
             {ad.ad_type === 'worker' ? (
               <>
-                {ad.profession_code && <span>{ad.profession_code}</span>}
-                {ad.origin_country  && <span>· מוצא: {ad.origin_country}</span>}
-                {ad.region          && <span>· אזור: {ad.region}</span>}
-                {ad.quantity        && <span>· {ad.quantity} עובדים</span>}
+                {profLabel   && <span>{profLabel}</span>}
+                {originLabel && <span>· מוצא: {originLabel}</span>}
+                {regionLabel && <span>· אזור: {regionLabel}</span>}
+                {ad.quantity && <span>· {ad.quantity} עובדים</span>}
               </>
             ) : (
               <>
                 {ad.city              && <span>{ad.city}</span>}
-                {ad.region            && <span>· אזור: {ad.region}</span>}
+                {regionLabel          && <span>· אזור: {regionLabel}</span>}
                 {ad.available_beds    && <span>· {ad.available_beds} מיטות פנויות</span>}
                 {ad.price_per_bed_nis && <span>· ₪{ad.price_per_bed_nis}/מיטה</span>}
               </>
