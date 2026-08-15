@@ -104,6 +104,11 @@ function LandingPageInner() {
   // manifest as *something visible* — focus the input + scroll to
   // the hero.
   const searchInputRef = useRef<HTMLInputElement>(null);
+  // SR — scroll target for the results section. After a successful
+  // search the results were sitting below the featured carousel, trust
+  // bar, and leaderboard ad — 2–3 screen-heights on mobile 390. The
+  // effect below smooth-scrolls to it on `resp` becoming truthy.
+  const searchResultsRef = useRef<HTMLElement>(null);
 
   const [q, setQ]           = useState('');
   const [resp, setResp]     = useState<SearchResponse | null>(null);
@@ -220,6 +225,25 @@ function LandingPageInner() {
     catch (e) { setError((e as Error).message ?? 'שגיאה בחיפוש'); }
     finally { setLoading(false); }
   }
+
+  // SR — scroll the results section into view once resp arrives.
+  // Runs on transitions from null→object AND on subsequent searches
+  // (dep on resp), so a second search re-anchors even if the user
+  // scrolled away. Waits one frame so the layout that just switched
+  // (ads out, results in) has painted before measuring. Honours
+  // prefers-reduced-motion — instant jump rather than smooth.
+  useEffect(() => {
+    if (!resp) return;
+    const el = searchResultsRef.current;
+    if (!el) return;
+    const reduce = typeof window !== 'undefined'
+      && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    // rAF lets the ad sections unmount + results mount before we measure.
+    const raf = requestAnimationFrame(() => {
+      el.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [resp]);
 
   function clearFilters() {
     setFProf(''); setFRegion(''); setFOrigin('');
@@ -526,20 +550,31 @@ function LandingPageInner() {
             </div>
           </section>
 
-          {/* Featured (boosted) ads carousel — yad2 top commercial slot */}
-          <section className="pb-6">
-            <FeaturedAdsCarousel />
-          </section>
+          {/* SR — commercial slots hide during an active search / while
+              loading, so the results section sits directly beneath the
+              hero. The mosaic below (line ~660) already uses the same
+              `!resp && !loading` gate, so the whole page stays
+              consistent: search inactive → ads + mosaic; search active
+              → results first. Ads reappear intact once the user clears
+              the query. */}
+          {!resp && !error && !loading && (
+            <>
+              {/* Featured (boosted) ads carousel — yad2 top commercial slot */}
+              <section className="pb-6">
+                <FeaturedAdsCarousel />
+              </section>
 
-          {/* Trust bar */}
-          <section className="pb-6">
-            <LandingTrustBar />
-          </section>
+              {/* Trust bar */}
+              <section className="pb-6">
+                <LandingTrustBar />
+              </section>
 
-          {/* Leaderboard ad slot (existing sponsor banner) */}
-          <section className="px-4 pb-6">
-            <AdCarousel />
-          </section>
+              {/* Leaderboard ad slot (existing sponsor banner) */}
+              <section className="px-4 pb-6">
+                <AdCarousel />
+              </section>
+            </>
+          )}
 
           {/* verify(L2) — screen-reader status region. Always in the DOM so
               aria-live triggers when text changes. Announces search
@@ -558,7 +593,11 @@ function LandingPageInner() {
 
           {/* Search results (when query is active) */}
           {(resp || error) && (
-            <section className="max-w-6xl mx-auto px-4 py-2">
+            <section
+              id="search-results"
+              ref={searchResultsRef}
+              className="max-w-6xl mx-auto px-4 py-2 scroll-mt-16"
+            >
               <div className="flex flex-col lg:flex-row gap-6">
                 <div className="flex-1 space-y-4 min-w-0">
                   {error && (
