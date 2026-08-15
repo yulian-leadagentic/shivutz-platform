@@ -92,7 +92,24 @@ const INITIAL_DELAY_MS = 4000;   // hold off longer on first paint so
 
 type Phase = 'idle' | 'entering' | 'shown' | 'exiting';
 
-export default function LiveActivityFeed() {
+// SR — resume delay after a suspend releases. Prevents the bubble from
+// snapping back onto the screen the instant the user blurs the input
+// or clears the search — feels less like the bubble was "waiting to
+// pounce" than an immediate advance would.
+const RESUME_GRACE_MS = 3000;
+
+interface Props {
+  /**
+   * SR — external "search is active" signal. Extends the existing
+   * `paused` mechanism (hover + tab-hidden) rather than adding a
+   * parallel one. When true: an on-screen bubble slides straight to
+   * `exiting`, no new bubbles are scheduled, and after the flag
+   * releases we wait RESUME_GRACE_MS before the next one.
+   */
+  suspended?: boolean;
+}
+
+export default function LiveActivityFeed({ suspended = false }: Props) {
   const auth = useAuth();
   const role = audienceFor(auth.entityType);
 
@@ -141,7 +158,7 @@ export default function LiveActivityFeed() {
   // (hover or tab hidden) the timer doesn't run, so the bubble stays on
   // screen as long as the visitor's mouse is over it.
   useEffect(() => {
-    if (!mounted || paused) return;
+    if (!mounted || paused || suspended) return;
     let timer: ReturnType<typeof setTimeout>;
     if (phase === 'entering') {
       timer = setTimeout(() => setPhase('shown'), ENTER_MS);
@@ -154,7 +171,34 @@ export default function LiveActivityFeed() {
       timer = setTimeout(advance, IDLE_MS);
     }
     return () => clearTimeout(timer);
-  }, [advance, mounted, paused, phase]);
+  }, [advance, mounted, paused, phase, suspended]);
+
+  // SR — react to `suspended` changes. Rising edge: yank any visible
+  // bubble off-screen so it doesn't compete with search results for
+  // the user's attention. Falling edge: hold RESUME_GRACE_MS so the
+  // bubble doesn't pop back in the same tick the user clears their
+  // search. Rolled into the same phase machine — no parallel timers.
+  const prevSuspended = useRef(suspended);
+  useEffect(() => {
+    const wasSuspended = prevSuspended.current;
+    prevSuspended.current = suspended;
+    if (suspended && !wasSuspended) {
+      // Rising edge: send any visible bubble to exit immediately.
+      setPhase((p) => (p === 'entering' || p === 'shown' ? 'exiting' : p));
+      return;
+    }
+    if (!suspended && wasSuspended && mounted) {
+      // Falling edge: schedule a delayed re-advance from idle. If the
+      // machine is already in another phase (rare — user unsuspended
+      // during our exit), let the normal machine take over.
+      const t = setTimeout(() => {
+        setPhase((p) => (p === 'idle' ? p : p));
+        // Explicit next-bubble kick after grace, to bypass IDLE_MS.
+        if (!prevSuspended.current) advance();
+      }, RESUME_GRACE_MS);
+      return () => clearTimeout(t);
+    }
+  }, [suspended, mounted, advance]);
 
   // Pause the rotation while the tab is in the background so we don't
   // burn the visitor's first impression on a bubble they never saw.
@@ -221,17 +265,26 @@ export default function LiveActivityFeed() {
         </button>
 
         <div className="px-4 pt-3 pb-4 sm:px-5 sm:pt-3.5 sm:pb-4">
-          {/* Header strip — Live dot + label */}
-          <div className="flex items-center gap-1.5 mb-2.5">
-            <span className="relative inline-flex h-2 w-2 items-center justify-center">
-              <span className="absolute inline-flex h-full w-full rounded-full bg-rose-500 animate-live-dot" />
-              <span className="absolute inline-flex h-full w-full rounded-full animate-live-dot-halo" />
-            </span>
-            <span className="text-[10px] font-extrabold uppercase tracking-[0.15em] text-slate-500">
-              Live
-            </span>
-            <span className="text-[10px] text-slate-300">·</span>
-            <span className="text-[10px] text-slate-400">{formatTimeAgo(current.occurred_at)}</span>
+          {/* SR — reframed header. Was a bare "LIVE" chip + timeago,
+              which read as a result-card badge alongside the bold
+              icon/text below. Now a section-context label ("מה קורה
+              בפורטל") so the bubble reads as an activity ticker, not
+              a search result the user should click. The LIVE dot +
+              timeago moved into a smaller trailing footer row.
+              Step-3 STOP: this preserves the LIVE dot pending
+              Yulian's decision on whether the mock feed keeps the
+              LIVE claim at all. */}
+          <div className="flex items-center justify-between gap-2 mb-2.5">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              מה קורה בפורטל
+            </p>
+            <div className="flex items-center gap-1 shrink-0">
+              <span className="relative inline-flex h-1.5 w-1.5 items-center justify-center">
+                <span className="absolute inline-flex h-full w-full rounded-full bg-rose-500 animate-live-dot" />
+                <span className="absolute inline-flex h-full w-full rounded-full animate-live-dot-halo" />
+              </span>
+              <span className="text-[10px] text-slate-400">{formatTimeAgo(current.occurred_at)}</span>
+            </div>
           </div>
 
           {/* Content row — icon + body */}

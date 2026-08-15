@@ -117,6 +117,13 @@ function LandingPageInner() {
   const [reveals, setReveals]     = useState<Record<string, ContactReveal>>({});
   const [revealing, setRevealing] = useState<string | null>(null);
   const [block, setBlock]         = useState<RevealBlock | null>(null);
+  // SR — suspend the LiveActivityFeed bubble when the visitor is
+  // actively engaged with the search: input has focus, voice is
+  // recording/transcribing, a search is in flight, or results are on
+  // screen. Any one is enough. The four are separate states so any of
+  // them clearing releases the suspend on its own tempo.
+  const [inputFocused, setInputFocused] = useState(false);
+  const [voiceActive,  setVoiceActive]  = useState(false);
 
   const [recent, setRecent] = useState<PublicAd[]>([]);
 
@@ -424,6 +431,11 @@ function LandingPageInner() {
                       type="text"
                       value={q}
                       onChange={(e) => setQ(e.target.value)}
+                      // SR — focus signals to the LiveActivityFeed
+                      // suspend gate. Bubble slides out on focus,
+                      // waits 3s after blur before reappearing.
+                      onFocus={() => setInputFocused(true)}
+                      onBlur={() => setInputFocused(false)}
                       placeholder="לדוגמה: מחפש 4 פועלים סינים לריצוף"
                       aria-label="חיפוש חכם — תיאור חופשי בעברית"
                       className="flex-1 min-w-0 text-base sm:text-lg outline-none placeholder:text-slate-400 py-2 bg-transparent"
@@ -436,6 +448,7 @@ function LandingPageInner() {
                     <VoiceInputButton
                       onTranscript={(text) => { setQ(text); searchInputRef.current?.focus(); }}
                       onError={(msg) => setError(msg)}
+                      onActiveChange={setVoiceActive}
                       disabled={loading}
                     />
                   </div>
@@ -733,8 +746,11 @@ function LandingPageInner() {
           activity-feed swap point when the backend is ready). Its
           own positioning is bottom-corner + max-w so it doesn't
           overlap the search or nav; it respects prefers-reduced-
-          motion and provides an accessible close. */}
-      <LiveActivityFeed />
+          motion and provides an accessible close.
+          SR — suspended while the visitor is engaged with search:
+          input focused, voice recording/transcribing, search in
+          flight, or results on screen. */}
+      <LiveActivityFeed suspended={inputFocused || voiceActive || loading || !!resp} />
     </>
   );
 }

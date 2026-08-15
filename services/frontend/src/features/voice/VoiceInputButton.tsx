@@ -23,6 +23,14 @@ import { BASE } from '@/lib/api/client';
 interface Props {
   onTranscript: (text: string) => void;
   onError?:     (message: string) => void;
+  /**
+   * SR — fires whenever the button enters or leaves the recording
+   * state. The landing page uses this to suspend the LiveActivityFeed
+   * bubble so it doesn't compete for the user's eye while they're
+   * actively speaking. Also true while transcribing so the bubble
+   * doesn't jump in during the ~2s round-trip.
+   */
+  onActiveChange?: (active: boolean) => void;
   className?:   string;
   disabled?:    boolean;
 }
@@ -36,8 +44,16 @@ const MAX_RECORDING_MS     = 15_000;
 
 type State = 'idle' | 'recording' | 'transcribing';
 
-export function VoiceInputButton({ onTranscript, onError, className, disabled }: Props) {
+export function VoiceInputButton({ onTranscript, onError, onActiveChange, className, disabled }: Props) {
   const [state, setState] = useState<State>('idle');
+
+  // Fire onActiveChange on every state edge — 'idle' → false, both
+  // 'recording' and 'transcribing' → true. Wrapping the setter is
+  // easier to reason about than sprinkling the callback at every
+  // setState site.
+  useEffect(() => {
+    onActiveChange?.(state !== 'idle');
+  }, [state, onActiveChange]);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef        = useRef<MediaStream | null>(null);
