@@ -41,6 +41,7 @@ import { FeaturedAdsCarousel } from '@/features/advertising/FeaturedAdsCarousel'
 import { LandingTrustBar } from '@/features/advertising/LandingTrustBar';
 import { searchApi, type SearchResponse, type AdSearchResult, type ContactReveal } from '@/lib/api/search';
 import { apiFetch, ApiError } from '@/lib/api/client';
+import { mapApiError } from '@/lib/api/errors';
 import { enumApi } from '@/lib/api/enums';
 import { isLoggedIn } from '@/lib/auth';
 import { readPendingReveal, clearPendingReveal } from '@/features/prospect/state';
@@ -68,6 +69,29 @@ const TIER_HE: Record<string, string> = {
 function tierLabelHe(tier?: string | null): string {
   if (!tier) return 'הנוכחי';
   return TIER_HE[tier.toLowerCase()] ?? tier;
+}
+
+// 1ב׳ — classify a search failure into one of four Hebrew messages
+// that tell the user WHAT happened + WHAT to try. Falls back to the
+// central mapApiError for anything unusual so no English machine code
+// leaks. `ApiError.cause.status` is the transport-bound classifier;
+// message-text sniffing is only the fallback path for pre-ApiError
+// throws (e.g. a raw TypeError from a network abort).
+function mapSearchError(e: unknown): string {
+  if (e instanceof ApiError) {
+    const status = e.cause?.status;
+    if (status === 429)                     return 'יותר מדי חיפושים כרגע. נסה שוב בעוד רגע.';
+    if (typeof status === 'number' && status >= 500) return 'החיפוש אינו זמין כרגע. נסה שוב בעוד רגע.';
+  }
+  // Network-level: TypeError from fetch on failed connections, or
+  // Error whose message names a timeout / abort. Do NOT gate on
+  // ApiError here — network failures throw before apiFetch wraps.
+  const msg = e instanceof Error ? e.message.toLowerCase() : '';
+  if (/networkerror|failed to fetch|load failed|abort/.test(msg)) return 'בעיית תקשורת — בדוק את החיבור ונסה שוב.';
+  if (/timeout|timed out/.test(msg))                              return 'החיפוש לוקח יותר מדי זמן. נסה שוב.';
+  // Everything else through the central mapper so a server-supplied
+  // Hebrew message wins, and known codes get their translation.
+  return mapApiError(e);
 }
 
 const CATEGORIES = [
@@ -113,7 +137,15 @@ function LandingPageInner() {
   const [q, setQ]           = useState('');
   const [resp, setResp]     = useState<SearchResponse | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError]   = useState('');
+  // Two error slots so a voice-transcribe failure doesn't paint red
+  // inside the search-results section (and vice versa). The banner
+  // inside the results section reads `searchError`; the voice failure
+  // surfaces its own toast-shaped banner near the search input.
+  // Pre-1ב׳ the single `error` covered both, and a 401 from a
+  // subscription page could leak into the results area on other
+  // routes — separating the sources also stops that class of bug.
+  const [searchError, setSearchError] = useState('');
+  const [voiceError,  setVoiceError]  = useState('');
   const [reveals, setReveals]     = useState<Record<string, ContactReveal>>({});
   const [revealing, setRevealing] = useState<string | null>(null);
   const [block, setBlock]         = useState<RevealBlock | null>(null);
@@ -233,9 +265,9 @@ function LandingPageInner() {
     setAwaitingSubmit(false);   // SR — clear the post-transcript ring
     syncFiltersToUrl(fProf, fRegion, fOrigin);
     setLoading(true);
-    setError('');
+    setSearchError('');
     try { setResp(await searchApi.query(query)); }
-    catch (e) { setError((e as Error).message ?? 'שגיאה בחיפוש'); }
+    catch (e) { setSearchError(mapSearchError(e)); }
     finally { setLoading(false); }
   }
 
@@ -289,15 +321,21 @@ function LandingPageInner() {
       // apiFetch now carries the structured server payload on .cause —
       // pull tier/used/limit from there so the quota modal surfaces real
       // numbers instead of "0 מתוך 0".
-      const cause = e instanceof ApiError ? e.cause : null;
+      // apiFetch now carries the structured server payload on .cause —
+      // pull status/code/tier from there. The old code kept a regex
+      // fallback on `.message` for pre-ApiError throws, but everything
+      // that reaches this catch after 111fb62 is an ApiError; the
+      // regex was dead code that also tripped the "no raw .message"
+      // grep. Strip it — status/code cover all real cases, and the
+      // final else uses mapApiError so the modal shows Hebrew.
+      const cause  = e instanceof ApiError ? e.cause : null;
       const status = cause?.status;
       const code   = cause?.error || cause?.code;
       const tierHe = tierLabelHe(cause?.tier as string | undefined);
-      const msg    = (e as Error).message ?? '';
 
-      if (status === 401 || /401|Unauthorized|unauthorized/i.test(msg)) {
+      if (status === 401) {
         setBlock({ kind: 'unauth', adId });
-      } else if (code === 'tier_reveal_limit' || /tier_reveal_limit/i.test(msg)) {
+      } else if (code === 'tier_reveal_limit') {
         setBlock({
           kind: 'quota',
           tier:  tierHe,
@@ -305,10 +343,10 @@ function LandingPageInner() {
           limit: (cause?.limit as number) ?? 0,
           adId,
         });
-      } else if (code === 'subscription_required' || status === 402 || /subscription_required|expired/i.test(msg)) {
+      } else if (code === 'subscription_required' || status === 402) {
         setBlock({ kind: 'expired', tier: tierHe, adId });
       } else {
-        setBlock({ kind: 'error', message: msg || 'שגיאה בחשיפה' });
+        setBlock({ kind: 'error', message: mapApiError(e) });
       }
     } finally { setRevealing(null); }
   }, [revealing]);
@@ -457,12 +495,13 @@ function LandingPageInner() {
                       onTranscript={(text) => {
                         setQ(text);
                         searchInputRef.current?.focus();
+                        setVoiceError('');  // clear a previous mic error on success
                         // Flash the חפש button so the user knows the
                         // next step is theirs — auto-clears after 2.5s.
                         setAwaitingSubmit(true);
                         setTimeout(() => setAwaitingSubmit(false), 2500);
                       }}
-                      onError={(msg) => setError(msg)}
+                      onError={(msg) => setVoiceError(msg)}
                       onActiveChange={setVoiceActive}
                       disabled={loading}
                     />
@@ -489,6 +528,24 @@ function LandingPageInner() {
               {/* Suggestion chips — directly below the input, still the
                   quickest way for a first-time visitor to learn the smart
                   syntax by clicking an example. */}
+              {/* 1ב׳ — voice-transcribe error surfaces its OWN toast
+                  right under the search form, NOT inside the results
+                  section. That keeps mic failures visually adjacent
+                  to the button that produced them, and prevents the
+                  results-area red banner from being triggered by a
+                  totally unrelated code path. Dismissable. */}
+              {voiceError && (
+                <div className="order-2 sm:order-3 text-sm text-red-800 bg-red-50 border border-red-200 rounded-lg px-3 py-2 flex items-start gap-2">
+                  <span className="flex-1">{voiceError}</span>
+                  <button
+                    type="button"
+                    onClick={() => setVoiceError('')}
+                    aria-label="סגור"
+                    className="text-red-800 hover:bg-red-100 rounded px-1 shrink-0"
+                  >×</button>
+                </div>
+              )}
+
               {!resp && !loading && (
                 <div className="order-3 sm:order-4 flex flex-wrap gap-2 justify-center">
                   {EXAMPLES.map((ex) => (
@@ -593,7 +650,7 @@ function LandingPageInner() {
               consistent: search inactive → ads + mosaic; search active
               → results first. Ads reappear intact once the user clears
               the query. */}
-          {!resp && !error && !loading && (
+          {!resp && !searchError && !loading && (
             <>
               {/* Featured (boosted) ads carousel — yad2 top commercial slot */}
               <section className="pb-6">
@@ -618,8 +675,8 @@ function LandingPageInner() {
           <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
             {loading
               ? 'מחפש מודעות…'
-              : error
-                ? `שגיאה בחיפוש: ${error}`
+              : searchError
+                ? `שגיאה בחיפוש: ${searchError}`
                 : resp
                   ? (resp.total === 0
                       ? 'לא נמצאו מודעות התואמות לחיפוש'
@@ -628,7 +685,7 @@ function LandingPageInner() {
           </div>
 
           {/* Search results (when query is active) */}
-          {(resp || error || loading) && (
+          {(resp || searchError || loading) && (
             <section
               id="search-results"
               ref={searchResultsRef}
@@ -636,8 +693,8 @@ function LandingPageInner() {
             >
               <div className="flex flex-col lg:flex-row gap-6">
                 <div className="flex-1 space-y-4 min-w-0">
-                  {error && (
-                    <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>
+                  {searchError && (
+                    <div className="text-sm text-red-800 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{searchError}</div>
                   )}
 
                   {/* SR — card-shaped skeleton while the LLM + rerank

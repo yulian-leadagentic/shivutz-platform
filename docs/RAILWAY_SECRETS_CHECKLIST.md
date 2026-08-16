@@ -70,7 +70,7 @@ node -e "console.log(require('crypto').randomBytes(48).toString('base64'))"
 
 | Variable | Set on | Notes |
 |---|---|---|
-| `JWT_SECRET`           | auth, gateway, admin, user-org | 48-byte base64 |
+| `JWT_SECRET`           | auth, gateway | 48-byte base64. Only these two read it (`grep 'process.env.JWT_SECRET' services`). MUST match — auth signs, gateway verifies. A mismatch surfaces as blanket 401s on every authenticated request while public routes (`/api/search`, `/api/ads/public/*`) continue to work — grep the gateway log for `[gateway/auth] token_reject reason=bad_signature`. |
 | `SERVICE_JWT_SECRET`   | All services | Internal cross-service auth (currently unused but reserved) |
 | `JWT_ACCESS_EXPIRES_IN` | auth | `15m` (same per env) |
 | `JWT_REFRESH_EXPIRES_IN` | auth | `7d` (same per env) |
