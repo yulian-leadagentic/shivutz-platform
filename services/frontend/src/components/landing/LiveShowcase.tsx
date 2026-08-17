@@ -1,11 +1,11 @@
 'use client';
 
-// LiveShowcase — Live mini-strip fused INTO each role tile so each role
-// has a single combined card (Live message on top, role CTA below). The
-// whole card is one click target.
+// LiveShowcase — Activity mini-strip fused INTO each role tile so each
+// role has a single combined card (activity message on top, role CTA
+// below). The whole card is one click target.
 //
 //   ┌───────────────────────────────┐  ┌───────────────────────────────┐
-//   │ ●LIVE לקבלן · עובדים זמינים  │  │ ●LIVE לתאגיד · דרישה חדשה    │
+//   │ לקבלן · עובדים זמינים        │  │ לתאגיד · דרישה חדשה          │
 //   │ 250 מומחי בנייה ב-3 אזורים    │  │ 50 שלדים לאזור המרכז          │
 //   │ ─────────────────────────────  │  │ ─────────────────────────────  │
 //   │           קבלן                 │  │          תאגיד                │
@@ -187,16 +187,17 @@ export default function LiveShowcase() {
 
   return (
     <section
-      aria-label="פעילות חיה — בחירת תפקיד"
+      aria-label="הפעילות בפורטל — בחירת תפקיד"
       className="relative bg-rose-50/40"
     >
       <div className="max-w-6xl mx-auto px-6 w-full py-3 sm:py-4">
         <div className="max-w-5xl mx-auto">
-          {/* No section header — the LIVE pill inside each card carries
-              the liveness signal per-role, and a duplicate header band
-              just adds visual noise. Cards go straight under the hero
+          {/* No section header — each card carries its own role chip
+              (לקבלן / לתאגיד) inline; a duplicate section header would
+              just add visual noise. Cards go straight under the hero
               copy with the rose-tinted section background as the only
-              visual divider. */}
+              visual divider. Step-3: LIVE pill removed from the inner
+              strip since the mock feed is not a real activity stream. */}
 
           {/* Two combined cards. STACKED VERTICALLY ON MOBILE because
               the merged card carries more vertical content than the

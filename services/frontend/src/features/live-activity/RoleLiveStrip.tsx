@@ -184,13 +184,14 @@ export function LiveStripContent({
         </div>
 
         <div className="flex-1 min-w-0">
-          {/* Header row — LIVE pill + side label so it's obvious WHICH
-              role this strip belongs to. */}
+          {/* Step-3 option ב׳: LIVE pill + pulsing dot removed. The
+              mocks feed the same content to both the bubble and this
+              in-hero showcase, so any LIVE claim here misrepresents
+              a static demo as a real activity stream. Side label
+              stays — it's still useful as "this row is for kablanim
+              vs tagidim". TODO(feed): when GET /api/marketplace/
+              activity-feed lands, restore the LIVE affordance. */}
           <div className="flex items-center gap-1.5 mb-1 flex-wrap">
-            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-rose-500 text-white text-[10px] font-bold tracking-wide shadow-sm">
-              <span aria-hidden="true" className="h-1 w-1 rounded-full bg-white animate-live-dot" />
-              LIVE
-            </span>
             <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${chipClass}`}>
               {sideLabel}
             </span>

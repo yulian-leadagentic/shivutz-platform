@@ -66,16 +66,6 @@ const CATEGORY_ACCENT: Record<keyof typeof CATEGORY_ICON, {
   platform_pulse:    { iconBg: 'bg-slate-100', iconText: 'text-slate-700',  cta: 'text-slate-700  hover:text-slate-900',  rail: 'bg-slate-400'  },
 };
 
-function formatTimeAgo(iso: string): string {
-  const ms = Date.now() - new Date(iso).getTime();
-  const mins = Math.floor(ms / 60_000);
-  if (mins < 1)  return 'הרגע';
-  if (mins < 60) return `לפני ${mins} דק׳`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `לפני ${hours} שע׳`;
-  return 'לפני יום';
-}
-
 // Phase durations (ms). Tuned so the bubble feels alive but doesn't
 // pressure the visitor. Total cycle ≈ 20s — bubble visible for 6s,
 // then ~13s of idle silence before the next one. The longer idle is a
@@ -274,17 +264,16 @@ export default function LiveActivityFeed({ suspended = false }: Props) {
               Step-3 STOP: this preserves the LIVE dot pending
               Yulian's decision on whether the mock feed keeps the
               LIVE claim at all. */}
-          <div className="flex items-center justify-between gap-2 mb-2.5">
+          {/* Step-3 option ב׳: the pre-launch feed is mock data; the
+              LIVE label + pulsing dot + timeago below made this read as
+              a claim about real events. Until GET /api/marketplace/
+              activity-feed exists (TODO), the surface is a "demo of
+              the platform's activity" — reframe as present-tense
+              inventory, no timeago, no LIVE affordance. */}
+          <div className="mb-2.5">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-              מה קורה בפורטל
+              כך נראית הפעילות בפורטל
             </p>
-            <div className="flex items-center gap-1 shrink-0">
-              <span className="relative inline-flex h-1.5 w-1.5 items-center justify-center">
-                <span className="absolute inline-flex h-full w-full rounded-full bg-rose-500 animate-live-dot" />
-                <span className="absolute inline-flex h-full w-full rounded-full animate-live-dot-halo" />
-              </span>
-              <span className="text-[10px] text-slate-400">{formatTimeAgo(current.occurred_at)}</span>
-            </div>
           </div>
 
           {/* Content row — icon + body */}
