@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useState, FormEvent } from 'react';
 import { Loader2, UserPlus, Clock, CheckCircle2, Trash2, AlertCircle, Pencil } from 'lucide-react';
 import { memberApi, type TeamMember } from '@/lib/api';
+import { ApiError } from '@/lib/api/client';
+import { mapApiError } from '@/lib/api/errors';
 import { useAuth } from '@/lib/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -123,11 +125,13 @@ export default function CorporationUsersPage() {
       setSuccess('ההזמנה נשלחה ב-SMS / WhatsApp');
       setTimeout(() => setSuccess(''), 4000);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : '';
-      if (/seat_limit/i.test(msg)) {
+      // L2 — read cause.error, not a regex over the message. Preserves
+      // the R1 fix on the contractor-side after ca91693 renamed the
+      // code to seat_limit.
+      if (err instanceof ApiError && err.cause?.error === 'seat_limit') {
         setError('הגעת לתקרת המשתמשים במסלול הנוכחי — שדרג כדי להוסיף עוד.');
       } else {
-        setError(msg || 'שגיאה');
+        setError(mapApiError(err));
       }
     } finally { setSaving(false); }
   }

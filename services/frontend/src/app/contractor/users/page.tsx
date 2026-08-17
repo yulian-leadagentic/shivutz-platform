@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useState, FormEvent } from 'react';
 import { Loader2, UserPlus, Clock, CheckCircle2, Trash2, AlertCircle, Pencil } from 'lucide-react';
 import { memberApi, type TeamMember } from '@/lib/api';
+import { ApiError } from '@/lib/api/client';
+import { mapApiError } from '@/lib/api/errors';
 import { useAuth } from '@/lib/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -122,8 +124,14 @@ export default function ContractorUsersPage() {
       setSuccess('ההזמנה נשלחה ב-SMS / WhatsApp');
       setTimeout(() => setSuccess(''), 4000);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'שגיאה';
-      setError(msg === 'Contractor not found' ? 'ארגון לא נמצא' : msg);
+      // L1 — compare on structured status/code, not a server message
+      // string. R1 fixed this exact anti-pattern on /billing; the same
+      // shape survived here.
+      if (err instanceof ApiError && err.cause?.status === 404) {
+        setError('ארגון לא נמצא');
+      } else {
+        setError(mapApiError(err));
+      }
     } finally { setSaving(false); }
   }
 
