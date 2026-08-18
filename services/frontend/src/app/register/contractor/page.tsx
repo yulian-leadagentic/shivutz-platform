@@ -14,7 +14,7 @@ import { HomeLink } from '@/components/HomeLink';
 import Logo from '@/components/Logo';
 import { readProspect, clearProspect } from '@/features/prospect/state';
 import {
-  writeReturnTo, clearReturnTo, resolveReturnTo, sanitizeReturnTo,
+  writeReturnTo, clearReturnTo, resolveDestination, sanitizeReturnTo,
 } from '@/features/prospect/returnTo';
 import type { RegistryChannel, RegistryLookupResult } from '@/types';
 
@@ -121,11 +121,19 @@ function RegisterContractorInner() {
     const safe = sanitizeReturnTo(returnToParam);
     if (safe) writeReturnTo(safe);
   }, [returnToParam]);
-  // Redirect on success. URL param wins when present; sessionStorage
-  // is the fallback (survived a lost URL param). Clears the store
-  // after read so the next tab visit doesn't inherit a stale intent.
+  // Redirect on success. Uses the shared 4-tier chain so a fresh
+  // registrant returning via ?returnTo=/?reveal=X — or with only the
+  // localStorage pendingReveal intact after an OTP restart wiped the
+  // param + sessionStorage — still lands back on the ad instead of a
+  // bare dashboard. clearReturnTo drops the sessionStorage mirror so
+  // the next tab visit doesn't inherit a stale intent; pendingReveal
+  // is cleared later by revealFor on successful contact reveal.
   const gotoAfterRegister = () => {
-    const target = resolveReturnTo(returnToParam, '/contractor/dashboard');
+    const target = resolveDestination(
+      searchParams?.get('next'),
+      returnToParam,
+      '/contractor/dashboard',
+    );
     clearReturnTo();
     router.push(target);
   };
@@ -341,7 +349,10 @@ function RegisterContractorInner() {
         const t = await otpApi.selectEntity(result.id, 'contractor');
         saveTokens(t.access_token, t.refresh_token);
         clearProspect();
-        router.push('/contractor/dashboard');
+        // RT — add-role success also has to honour reveal intent; a
+        // corp user who came in via RevealModal → login → "add
+        // contractor" → wizard shouldn't lose the ad they came for.
+        gotoAfterRegister();
         return;
       }
 
@@ -373,7 +384,9 @@ function RegisterContractorInner() {
           try {
             const t = await otpApi.selectEntity(existingId, 'contractor');
             saveTokens(t.access_token, t.refresh_token);
-            router.push('/contractor/dashboard');
+            // RT — same reveal-intent honour as the primary add-role
+            // success branch above.
+            gotoAfterRegister();
             return;
           } catch { /* fall through to setError */ }
         }

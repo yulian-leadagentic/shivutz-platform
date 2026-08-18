@@ -163,6 +163,13 @@ function LandingPageInner() {
   const [awaitingSubmit, setAwaitingSubmit] = useState(false);
 
   const [recent, setRecent] = useState<PublicAd[]>([]);
+  // RT — track whether the initial recent-ads fetch has completed
+  // (success OR failure). Without this, `recent === []` from a
+  // pre-fetch state is indistinguishable from `recent === []` from a
+  // completed-but-empty fetch, and the reveal effect can't tell if
+  // it's still waiting for data or if the target ad genuinely isn't
+  // in the recent list.
+  const [recentLoaded, setRecentLoaded] = useState(false);
 
   // L2 — structured filter chips alongside free-text. Selected values
   // get prepended to the LLM query on submit; the rewriter already
@@ -209,7 +216,8 @@ function LandingPageInner() {
   useEffect(() => {
     apiFetch<{ results: PublicAd[] }>('/ads/public/recent?limit=12')
       .then((r) => setRecent(r.results))
-      .catch(() => setRecent([]));
+      .catch(() => setRecent([]))
+      .finally(() => setRecentLoaded(true));
     // Best-effort: filters degrade to empty selects if the endpoints
     // 500 or the anon rate limit is hit.
     enumApi.professions().then(setProfessions).catch(() => setProfessions([]));
@@ -375,12 +383,29 @@ function LandingPageInner() {
     // exists yet.
     const ad = resp?.results.find((a) => a.id === target)
             ?? recent.find((a) => a.id === target);
-    if (!ad) return;  // ad not currently rendered; wait for search / recent to load
-    revealFor(ad.id);
-    const url = new URL(window.location.href);
-    url.searchParams.delete('reveal');
-    router.replace(url.pathname + url.search + url.hash);
-  }, [params, resp, recent, reveals, block, revealFor, router]);
+    if (ad) {
+      revealFor(ad.id);
+      const url = new URL(window.location.href);
+      url.searchParams.delete('reveal');
+      router.replace(url.pathname + url.search + url.hash);
+      return;
+    }
+    // RT — hard stop the silent wait once both surfaces have finished
+    // loading and neither carries the target. Previously the effect
+    // returned early forever, leaving the user staring at a bare
+    // landing without any explanation for the missed reveal. Also
+    // clear the stashed intent so the next login doesn't try to
+    // re-route to the same missing ad. `loading` guards against
+    // firing mid-search — we still want the in-flight results to
+    // have a chance to include the target before we give up.
+    if (recentLoaded && !loading) {
+      setBlock({ kind: 'error', message: 'המודעה כבר לא זמינה' });
+      clearPendingReveal();
+      const url = new URL(window.location.href);
+      url.searchParams.delete('reveal');
+      router.replace(url.pathname + url.search + url.hash);
+    }
+  }, [params, resp, recent, recentLoaded, loading, reveals, block, revealFor, router]);
 
   return (
     <>

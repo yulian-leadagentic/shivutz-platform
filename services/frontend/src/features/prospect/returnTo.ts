@@ -19,6 +19,13 @@
 // TTL guards against a stale intent hijacking a later, unrelated
 // session in the same tab.
 
+// RT — pendingReveal is the second-tier fallback (URL param lost AND
+// sessionStorage cleared, e.g. OTP restart in a different tab). It's
+// written by RevealModal:41 to LOCAL storage (not session), so it
+// survives tab close/reopen for 30 min. Imported lazily inside
+// resolveDestination so the top-level module stays server-safe.
+import { readPendingReveal } from './state';
+
 const RETURN_TO_KEY = 'return_to';
 const RETURN_TO_TTL_MS = 30 * 60_000; // 30 min, matches PENDING_REVEAL
 
@@ -112,5 +119,42 @@ export function resolveReturnTo(fromQuery: string | null, fallback: string): str
   if (fromUrl) return fromUrl;
   const fromStore = readReturnTo();
   if (fromStore) return fromStore;
+  return fallback;
+}
+
+/**
+ * RT — full post-auth destination resolver, shared by /login,
+ * /select-entity, /register/contractor, /register/corporation. One
+ * priority chain across every surface that decides "where does the
+ * user land after auth?" so the reveal-intent contract can't drift
+ * per page.
+ *
+ * Priority (docs/cc-prompts/cc_prompt_return_to_reveal.md §2):
+ *   1. `?next=`      — RT-prompt contract param
+ *   2. `?returnTo=`  — legacy param used by RevealModal + register
+ *                      wizards already in the wild
+ *   3. readReturnTo() — sessionStorage mirror (URL param that has
+ *                      survived an OTP restart within the tab)
+ *   4. readPendingReveal() — localStorage reveal intent (survives
+ *                      tab close for 30 min; last-resort recovery)
+ *   5. `fallback`    — role-appropriate dashboard
+ *
+ * Every stored/queried string is re-validated by sanitizeReturnTo,
+ * so an attacker who pokes sessionStorage still can't smuggle in an
+ * `http://…` for open-redirect.
+ */
+export function resolveDestination(
+  nextParam: string | null | undefined,
+  returnToParam: string | null | undefined,
+  fallback: string,
+): string {
+  const fromNext = sanitizeReturnTo(nextParam);
+  if (fromNext) return fromNext;
+  const fromReturn = sanitizeReturnTo(returnToParam);
+  if (fromReturn) return fromReturn;
+  const fromStore = readReturnTo();
+  if (fromStore) return fromStore;
+  const pending = readPendingReveal();
+  if (pending) return `/?reveal=${encodeURIComponent(pending.adId)}`;
   return fallback;
 }

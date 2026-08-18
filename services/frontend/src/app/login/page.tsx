@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, Suspense } from 'react';
+import { useEffect, useState, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 // Link / UserPlus / ArrowLeft were removed along with the inline
@@ -14,6 +14,14 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { HomeLink } from '@/components/HomeLink';
 import Logo from '@/components/Logo';
+// RT — return-to-reveal chain. Saved reveal intent (RevealModal wrote
+// it before bouncing here) must beat the default dashboard push;
+// otherwise the visitor who was one click from paying gets dumped on
+// their own portal and the intent is lost. resolveDestination owns
+// the full 4-tier priority (?next → ?returnTo → sessionStorage
+// mirror → pendingReveal → fallback) so login/select-entity/
+// register/* stay in sync.
+import { sanitizeReturnTo, writeReturnTo, resolveDestination } from '@/features/prospect/returnTo';
 
 type Mode = 'sms' | 'email';
 type OtpPhase = 'phone' | 'code';
@@ -55,10 +63,13 @@ function ErrorBlock({ error }: { error: string }) {
   );
 }
 
-function redirectByRole(router: ReturnType<typeof useRouter>, role: string | null) {
-  if (role === 'admin')       { router.push('/admin/dashboard'); return; }
-  if (role === 'corporation') { router.push('/corporation/dashboard'); return; }
-  router.push('/contractor/dashboard');
+// Default dashboard per role. Pulled out of the old redirectByRole so
+// resolveDestination() has a fallback string to hand back, instead of
+// redirectByRole owning the router.push call. Kept as a pure fn.
+function defaultForRole(role: string | null): string {
+  if (role === 'admin')       return '/admin/dashboard';
+  if (role === 'corporation') return '/corporation/dashboard';
+  return '/contractor/dashboard';
 }
 
 // Role-aware copy keyed by intent (the role the user clicked into).
@@ -148,6 +159,30 @@ function LoginPageInner() {
   const [email, setEmail]       = useState('');
   const [password, setPassword] = useState('');
 
+  // RT — mirror ?next or ?returnTo into sessionStorage on mount so the
+  // intent survives an OTP-restart, tab refresh, or the wizard's back
+  // button. Prefer `?next=` per the RT-prompt contract; fall back to
+  // `?returnTo=` because RevealModal already links here with returnTo.
+  // Both go through sanitizeReturnTo (rejects absolute URLs, //, /\,
+  // /%2F, control chars) — no open-redirect risk.
+  useEffect(() => {
+    const raw = searchParams?.get('next') ?? searchParams?.get('returnTo');
+    const safe = sanitizeReturnTo(raw);
+    if (safe) writeReturnTo(safe);
+  }, [searchParams]);
+
+  // RT — thin wrapper so call sites don't have to plumb searchParams
+  // + both param names on every push. resolveDestination lives in
+  // features/prospect/returnTo so login, /select-entity, and both
+  // /register/* wizards all share one priority chain.
+  function whereTo(fallback: string): string {
+    return resolveDestination(
+      searchParams?.get('next'),
+      searchParams?.get('returnTo'),
+      fallback,
+    );
+  }
+
   /**
    * Resolve which entity the freshly-authed user should land in.
    *
@@ -172,9 +207,11 @@ function LoginPageInner() {
     refreshAuth();
 
     // No entity selection needed (single membership embedded in the
-    // initial JWT, or admin role) — straight to the role's dashboard.
+    // initial JWT, or admin role) — RT: saved reveal intent beats the
+    // default dashboard so a paywall bounce lands back on the ad, not
+    // the portal home.
     if (!needsEntitySelection || !memberships) {
-      redirectByRole(router, role);
+      router.push(whereTo(defaultForRole(role)));
       return;
     }
 
@@ -202,7 +239,11 @@ function LoginPageInner() {
           const tokens = await otpApi.selectEntity(matching[0].entity_id, matching[0].entity_type);
           saveTokens(tokens.access_token, tokens.refresh_token);
           refreshAuth();
-          router.push(intent === 'corporation' ? '/corporation/dashboard' : '/contractor/dashboard');
+          // RT — same rule as the no-selection-needed branch above:
+          // saved reveal intent beats the role's dashboard.
+          router.push(whereTo(
+            intent === 'corporation' ? '/corporation/dashboard' : '/contractor/dashboard',
+          ));
           return;
         } catch {
           // Fall through to the picker on any failure — safer than
@@ -281,7 +322,10 @@ function LoginPageInner() {
       const tokens = await authApi.login(email, password);
       saveTokens(tokens.access_token, tokens.refresh_token);
       refreshAuth();
-      redirectByRole(router, getRoleFromToken(tokens.access_token));
+      // RT — email-login path also has to honour saved reveal intent,
+      // else a user who dropped into /login via the RevealModal but
+      // clicked "email login" would still lose the intent.
+      router.push(whereTo(defaultForRole(getRoleFromToken(tokens.access_token))));
     } catch (err) {
       const msg = err instanceof Error ? err.message : '';
       setError(msg === 'use_phone_login' ? 'חשבון זה מחייב כניסה עם SMS / WhatsApp' : 'אימייל או סיסמה שגויים');

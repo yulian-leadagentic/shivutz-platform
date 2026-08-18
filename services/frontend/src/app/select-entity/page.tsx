@@ -10,6 +10,12 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { HomeLink } from '@/components/HomeLink';
 import Logo from '@/components/Logo';
+// RT — after the user picks an entity we honour the same reveal-intent
+// chain the login page uses. Without this the picker becomes the last
+// step that silently drops the intent (login sends here, we redirect
+// to the dashboard, intent lost). resolveDestination is the same
+// helper login/register/* use so priority stays consistent.
+import { resolveDestination } from '@/features/prospect/returnTo';
 
 const ENTITY_LABELS: Record<string, string> = {
   contractor:  'קבלן',
@@ -151,11 +157,19 @@ function SelectEntityInner() {
       sessionStorage.removeItem('pending_memberships');
       sessionStorage.removeItem('pending_intent');
 
-      if (m.entity_type === 'corporation') {
-        router.push('/corporation/dashboard');
-      } else {
-        router.push('/contractor/dashboard');
-      }
+      // RT — same 4-tier chain as /login: ?next → ?returnTo →
+      // stored returnTo → stashed reveal intent → dashboard. Without
+      // this, a multi-entity user who came in from a RevealModal
+      // click would end up on the dashboard because the picker step
+      // was the last hop and it hardcoded the dashboard push.
+      const dashboard = m.entity_type === 'corporation'
+        ? '/corporation/dashboard'
+        : '/contractor/dashboard';
+      router.push(resolveDestination(
+        searchParams?.get('next'),
+        searchParams?.get('returnTo'),
+        dashboard,
+      ));
     } catch {
       setError('שגיאה בבחירת הישות. נסה שוב');
       setLoading(null);

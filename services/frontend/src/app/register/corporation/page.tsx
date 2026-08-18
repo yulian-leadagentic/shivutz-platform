@@ -13,6 +13,15 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { HomeLink } from '@/components/HomeLink';
 import Logo from '@/components/Logo';
 import { readProspect, clearProspect } from '@/features/prospect/state';
+// RT — reveal→register funnel resilience. See docs/cc-prompts/
+// cc_prompt_return_to_reveal.md §4. Mirrors register/contractor's
+// gotoAfterRegister so the corp side stops silently dropping the
+// intent (RevealModal only links to the contractor register, but a
+// corp-intent visitor from LandingCTAs → /register/corporation with
+// ?returnTo=... hit this bug too).
+import {
+  writeReturnTo, clearReturnTo, resolveDestination, sanitizeReturnTo,
+} from '@/features/prospect/returnTo';
 import type { CorporationLookupResult } from '@/types';
 
 const TOTAL_STEPS = 3;
@@ -105,6 +114,26 @@ function RegisterCorporationInner() {
   // of a red error. The string here is the existing corp's company
   // name (used in the copy); null means "no duplicate detected".
   const [duplicateExistingName, setDuplicateExistingName] = useState<string | null>(null);
+
+  // RT — mirror ?returnTo (or ?next) into sessionStorage on mount so
+  // the intent survives OTP restart / mid-wizard refresh. Same helper
+  // as register/contractor + /login.
+  const returnToParam = searchParams?.get('returnTo') ?? null;
+  useEffect(() => {
+    const safe = sanitizeReturnTo(returnToParam);
+    if (safe) writeReturnTo(safe);
+  }, [returnToParam]);
+  // Redirect on success. 4-tier chain: ?next → ?returnTo → stored
+  // returnTo → stashed pendingReveal → /corporation/dashboard.
+  const gotoAfterRegister = () => {
+    const target = resolveDestination(
+      searchParams?.get('next'),
+      returnToParam,
+      '/corporation/dashboard',
+    );
+    clearReturnTo();
+    router.push(target);
+  };
 
   const [step1, setStep1] = useState<Step1>({
     phone: '', normPhone: '', full_name: '',
@@ -273,7 +302,8 @@ function RegisterCorporationInner() {
         const t = await otpApi.selectEntity(result.id, 'corporation');
         saveTokens(t.access_token, t.refresh_token);
         clearProspect();
-        router.push('/corporation/dashboard');
+        // RT — honour reveal intent even in add-role branch.
+        gotoAfterRegister();
         return;
       }
       if (result.access_token && result.refresh_token) {
@@ -284,7 +314,7 @@ function RegisterCorporationInner() {
       // (No pending_search to replay on the corp side; corps don't
       // submit searches, they respond to them.)
       clearProspect();
-      router.push('/corporation/dashboard');
+      gotoAfterRegister();
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'שגיאה בהרשמה';
       // P0-3 add-role — already have a corp: hop into it via
@@ -296,7 +326,9 @@ function RegisterCorporationInner() {
           try {
             const t = await otpApi.selectEntity(existingId, 'corporation');
             saveTokens(t.access_token, t.refresh_token);
-            router.push('/corporation/dashboard');
+            // RT — same reveal-intent honour as the add-role success
+            // branch above.
+            gotoAfterRegister();
             return;
           } catch { /* fall through */ }
         }
