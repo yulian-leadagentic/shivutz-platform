@@ -241,7 +241,7 @@ def usage(
         cur.execute(
             """SELECT COUNT(*) AS n FROM contact_reveals
                 WHERE viewer_entity_id=%s AND viewer_entity_type=%s
-                  AND revealed_at >= DATE_FORMAT(NOW(), '%%Y-%%m-01 00:00:00')""",
+                  AND revealed_at >= DATE_SUB(CURDATE(), INTERVAL DAYOFMONTH(CURDATE())-1 DAY)""",
             (x_entity_id, x_entity_type),
         )
         reveals_used = int(cur.fetchone()["n"])
@@ -809,7 +809,7 @@ async def contact_reveal(
             _cur.execute(
                 """SELECT COUNT(*) AS n FROM contact_reveals
                     WHERE viewer_entity_id=%s AND viewer_entity_type=%s
-                      AND revealed_at >= DATE_FORMAT(NOW(), '%%Y-%%m-01 00:00:00')""",
+                      AND revealed_at >= DATE_SUB(CURDATE(), INTERVAL DAYOFMONTH(CURDATE())-1 DAY)""",
                 (x_entity_id, x_entity_type),
             )
             row = _cur.fetchone()
