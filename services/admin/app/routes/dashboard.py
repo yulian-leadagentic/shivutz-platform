@@ -49,8 +49,15 @@ def get_pivot_stats():
                               AND trial_ends_at BETWEEN NOW() AND DATE_ADD(NOW(), INTERVAL 7 DAY)""")
         trials_expiring_7d = int(pay_cur.fetchone()["n"])
 
+        # NOTE: %% doubled even though this call passes no args. pymysql's
+        # cursor.execute(query, args) only runs `query % args` when args is
+        # truthy — so single-% survives today. If a future edit adds args
+        # (a WHERE bind, an ORDER-BY placeholder), a single %Y turns into
+        # a silent positional and the query 500s at runtime. Doubling now
+        # matches the pattern in services/user-org/app/routes/ads.py:244
+        # + :812 and removes the trap.
         org_cur.execute("""SELECT COUNT(*) AS n FROM contact_reveals
-                            WHERE revealed_at >= DATE_FORMAT(NOW(), '%Y-%m-01 00:00:00')""")
+                            WHERE revealed_at >= DATE_FORMAT(NOW(), '%%Y-%%m-01 00:00:00')""")
         reveals_this_month = int(org_cur.fetchone()["n"])
 
         org_cur.execute("""SELECT SUM(pending) AS total FROM (
