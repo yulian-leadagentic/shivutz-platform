@@ -20,10 +20,22 @@ export type AdSearchResult = Omit<AdRow,
   | 'active' | 'view_count' | 'created_at' | 'updated_at' | 'deleted_at'
 >;
 
+// NM — the backend's second pass runs when the exact match is thin
+// (< 3 rows) AND the rewriter extracted a relax-eligible filter. It
+// re-queries with ONE filter dropped and returns those rows as
+// `near_matches` alongside the exact `results`. `relaxed` names which
+// filter was dropped so the frontend can render an honest Hebrew
+// message ("no floorers from China — here are floorers from Romania
+// / Ukraine"). Older backends without NM omit both fields; treat as
+// empty near set.
+export type RelaxedFilter = 'quantity' | 'origin_country' | 'region';
+
 export interface SearchResponse {
-  filters: SearchFilters;
-  results: AdSearchResult[];
-  total:   number;
+  filters:       SearchFilters;
+  results:       AdSearchResult[];
+  total:         number;
+  near_matches?: AdSearchResult[];
+  relaxed?:      RelaxedFilter | null;
 }
 
 export interface ContactReveal {

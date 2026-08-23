@@ -377,11 +377,14 @@ function LandingPageInner() {
     const target = params.get('reveal');
     if (!target) return;
     if (reveals[target] || block) return;
-    // Look in search results OR the recent-ads grid — after a
-    // post-register redirect the user typically lands here without a
-    // query, so recent is the only surface where the target card
-    // exists yet.
+    // Look in search results OR near_matches OR the recent-ads grid.
+    // After a post-register redirect the user typically lands here
+    // without a query, so recent is the only surface where the target
+    // card exists yet. NM: a reveal-return-target might have been a
+    // near-match card the visitor clicked before bouncing to login —
+    // that ad still needs to be findable when they return.
     const ad = resp?.results.find((a) => a.id === target)
+            ?? resp?.near_matches?.find((a) => a.id === target)
             ?? recent.find((a) => a.id === target);
     if (ad) {
       revealFor(ad.id);
@@ -761,7 +764,12 @@ function LandingPageInner() {
                     </div>
                   )}
 
-                  {resp && resp.results.length === 0 && (() => {
+                  {resp && resp.results.length === 0 && (!resp.near_matches || resp.near_matches.length === 0) && (() => {
+                    // NM — when near_matches is populated the amber
+                    // "no results" empty-state is suppressed; the
+                    // near-match heading below IS the message. Only
+                    // reach this fallback when the second pass also
+                    // came up empty (or the backend didn't run one).
                     // Public-ads-empty follow-up: only suggest "remove
                     // filter" when the LLM actually extracted one. On
                     // an unfiltered no-match the previous copy said
@@ -811,6 +819,87 @@ function LandingPageInner() {
                       })}
                     </ul>
                   )}
+
+                  {/* NM — near-matches. Rendered ONLY when the backend
+                      returned a second-pass set with a named relaxed
+                      dimension. Copy is derived from BOTH the relaxed
+                      field AND the actual alternates observed (so
+                      "לא נמצאו רצפים מסין. יש מרומניה, אוקראינה" —
+                      not a fixed template). The tag-per-card makes the
+                      per-row difference legible without relying on
+                      color alone. Never runs when exact is empty
+                      without near_matches — the amber empty-state
+                      above stays as-is for that case. */}
+                  {resp && resp.near_matches && resp.near_matches.length > 0 && resp.relaxed && (() => {
+                    const relaxed = resp.relaxed;
+                    const near    = resp.near_matches;
+                    const profHe  = resp.filters.profession_code
+                      ? labelFor(professions, resp.filters.profession_code)
+                      : (resp.filters.ad_type === 'housing' ? 'דיור' : 'מודעות');
+                    // Alternates observed in the near set for the dimension we relaxed.
+                    // Distinct + Hebrew-labelled so the heading names REALITY, not a fixed list.
+                    let heading: string;
+                    let tagFor: (ad: AdSearchResult) => string | undefined;
+                    if (relaxed === 'quantity') {
+                      const qtyRequested = resp.filters.quantity ?? '';
+                      heading = `אין כרגע מודעה עם ${qtyRequested} עובדים. אלה ההיצעים הגדולים ביותר — אפשר לשלב בין כמה תאגידים.`;
+                      tagFor  = (ad) => ad.quantity ? `כמות: ${ad.quantity}` : undefined;
+                    } else if (relaxed === 'origin_country') {
+                      const originsSeen = Array.from(new Set(near.map((a) => a.origin_country).filter(Boolean) as string[]))
+                        .map((code) => labelFor(origins, code));
+                      const requestedOrigin = resp.filters.origin_country
+                        ? labelFor(origins, resp.filters.origin_country)
+                        : '';
+                      heading = originsSeen.length
+                        ? `לא נמצאו ${profHe} מ${requestedOrigin}. יש ${profHe} מ${originsSeen.join(', מ')}:`
+                        : `לא נמצאו ${profHe} מ${requestedOrigin}. הנה תוצאות קרובות:`;
+                      tagFor  = (ad) => ad.origin_country ? `מוצא: ${labelFor(origins, ad.origin_country)}` : undefined;
+                    } else {
+                      // region
+                      const regionsSeen = Array.from(new Set(near.map((a) => a.region).filter(Boolean) as string[]))
+                        .map((code) => labelFor(regions, code));
+                      const requestedRegion = resp.filters.region
+                        ? labelFor(regions, resp.filters.region)
+                        : '';
+                      heading = regionsSeen.length
+                        ? `אין ${profHe} ב${requestedRegion}. יש ב${regionsSeen.join(', ב')}:`
+                        : `אין ${profHe} ב${requestedRegion}. הנה תוצאות קרובות:`;
+                      tagFor  = (ad) => ad.region ? `אזור: ${labelFor(regions, ad.region)}` : undefined;
+                    }
+                    return (
+                      <div className="mt-4">
+                        <div
+                          role="status"
+                          aria-live="polite"
+                          className="mb-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+                        >
+                          {resp.results.length === 0
+                            ? `לא נמצאו התאמות מדויקות. מוצגות ${near.length} תוצאות קרובות. ${heading}`
+                            : heading}
+                        </div>
+                        <ul className="space-y-3">
+                          {near.map((ad) => {
+                            const revealed = reveals[ad.id];
+                            const boosted  = ad.featured_until && new Date(ad.featured_until) > new Date();
+                            return (
+                              <AdCard
+                                key={ad.id}
+                                ad={ad}
+                                revealed={revealed}
+                                revealing={revealing === ad.id}
+                                boosted={!!boosted}
+                                onReveal={() => revealFor(ad.id)}
+                                professions={professions}
+                                origins={origins}
+                                regions={regions}
+                                nearMatchTag={tagFor(ad)}
+                              />
+                            );
+                          })}
+                        </ul>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 <div className="hidden lg:block w-[300px] shrink-0">
@@ -887,7 +976,7 @@ function LandingPageInner() {
 }
 
 function AdCard({
-  ad, revealed, revealing, boosted, onReveal, professions, origins, regions,
+  ad, revealed, revealing, boosted, onReveal, professions, origins, regions, nearMatchTag,
 }: {
   ad: AdSearchResult;
   revealed?: ContactReveal;
@@ -901,6 +990,13 @@ function AdCard({
   professions: Profession[];
   origins:     { code: string; name_he: string }[];
   regions:     { code: string; name_he: string }[];
+  // NM — when this card came from the second-pass near-match set, the
+  // parent passes the specific dimension that differs from the
+  // contractor's request ("מוצא: רומניה" / "כמות: 12"). Rendered as a
+  // small amber chip inside the card so the difference is legible
+  // beyond just the section separator up-page. Not color-only —
+  // includes the field name in text.
+  nearMatchTag?: string;
 }) {
   const profLabel   = ad.profession_code ? (professions.find((p) => p.code === ad.profession_code)?.name_he ?? ad.profession_code) : null;
   const originLabel = ad.origin_country  ? (origins.find((o)     => o.code === ad.origin_country)?.name_he  ?? ad.origin_country)  : null;
@@ -930,7 +1026,14 @@ function AdCard({
             )}
           </p>
         </div>
-        {boosted && <PromotedBadge />}
+        <div className="flex flex-col items-end gap-1 shrink-0">
+          {nearMatchTag && (
+            <span className="text-[10px] font-semibold text-amber-900 bg-amber-100 border border-amber-300 rounded-full px-2 py-0.5 whitespace-nowrap">
+              {nearMatchTag}
+            </span>
+          )}
+          {boosted && <PromotedBadge />}
+        </div>
       </div>
 
       {ad.ad_type === 'housing' && Array.isArray(ad.amenities) && ad.amenities.length > 0 && (
