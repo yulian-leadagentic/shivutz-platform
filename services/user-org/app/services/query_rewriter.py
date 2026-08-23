@@ -212,19 +212,47 @@ def _extract_json(text: str) -> Optional[dict]:
         return None
 
 
-def _validate_enums(d: dict, query: str) -> dict:
-    """S1 — enforce that every enum-typed field the LLM returned is a
-    real code the DB knows about. Anything else → None + log line, so
-    the filter is dropped (not fabricated) and the search shows the
-    full set instead of silently going to zero rows.
-    Follows the pattern already used in query_reranker.py::_extract_id_list.
+def _validate_enums(d: dict, query: str, fake: Optional[dict] = None) -> dict:
+    """RW — LLM guard that can ONLY improve, never worsen.
+
+    Rule: an invalid LLM value falls back to fake's guess (if that's
+    itself valid), not to None. The pre-RW behavior nulled invalid LLM
+    values, but because the merge in rewrite_real already overwrites
+    fake's guesses with LLM's (non-null) returns, that meant a Hebrew-
+    display-name from the LLM (e.g. 'רתכים' for scaffolding, 'סין' for
+    CN) wiped out fake's correct extraction and left the field null.
+    Net effect pre-RW: real mode gave WORSE results than fake mode.
+
+    Now: llm_value if valid, else fake[field] if valid, else None.
+    `ad_type` gets a final 'worker' pin only if both llm + fake produced
+    invalid values (defensive — every real query should have SOMETHING
+    resolving).
+
+    `fake` is recomputed from `query` when not provided so direct-call
+    tests still work without threading fake through every call site.
+    Cheap enough to run twice per request.
     """
+    if fake is None:
+        fake = rewrite_fake(query)
+
     def _check(field: str, valid: frozenset[str]) -> None:
         val = d.get(field)
         if val is None:
+            # LLM said nothing — fake's guess is already in `merged`
+            # via the ** spread, so nothing to do.
             return
-        if val not in valid:
-            print(f"[qrewrite] enum_reject field={field} value={val!r} query={query[:60]!r}")
+        if val in valid:
+            return
+        # LLM said something the DB doesn't know. Try fake's guess.
+        # ASCII arrow "->" (not unicode →) because Windows local test
+        # runners use cp1252 stdout; Railway containers run UTF-8 fine
+        # either way. Keep the log line grep-friendly.
+        fake_val = fake.get(field)
+        if fake_val is not None and fake_val in valid:
+            print(f"[qrewrite] enum_fallback field={field} llm={val!r} -> fake={fake_val!r} query={query[:60]!r}")
+            d[field] = fake_val
+        else:
+            print(f"[qrewrite] enum_reject field={field} llm={val!r} fake={fake_val!r} query={query[:60]!r}")
             d[field] = None
 
     _check("ad_type",         VALID_AD_TYPES)
@@ -232,25 +260,17 @@ def _validate_enums(d: dict, query: str) -> dict:
     _check("origin_country",  VALID_ORIGIN_COUNTRIES)
     _check("region",          VALID_REGIONS)
 
-    # If ad_type got rejected there's no sensible fallback — pin to
-    # 'worker' (the dominant path) so downstream doesn't NPE.
+    # Last-resort pin — both LLM + fake produced an unusable ad_type.
+    # 'worker' is the dominant path so downstream doesn't NPE.
     if d.get("ad_type") is None:
         d["ad_type"] = "worker"
 
-    # quantity — coerce and range-check.
-    q = d.get("quantity")
-    if q is not None:
-        try:
-            q_int = int(q)
-        except (TypeError, ValueError):
-            print(f"[qrewrite] enum_reject field=quantity value={q!r} query={query[:60]!r}")
-            d["quantity"] = None
-        else:
-            if q_int <= 0 or q_int > 9999:
-                print(f"[qrewrite] enum_reject field=quantity value={q_int!r} query={query[:60]!r}")
-                d["quantity"] = None
-            else:
-                d["quantity"] = q_int
+    # quantity — RW: LLM's quantity is ignored entirely. `_quantity`
+    # already enforces the S3 rule ("only count when adjacent to a count
+    # noun OR leading") — Haiku ignored that rule and extracted `3`
+    # from "פועלים ל-3 חודשים" (duration, not headcount). Rather than
+    # duplicate the guard, call the extractor. Deterministic + free.
+    d["quantity"] = _quantity(query)
 
     # Strip any keys the LLM invented that aren't in the contract —
     # keeps hallucinated fields from ever becoming an implicit filter.
@@ -289,6 +309,15 @@ def rewrite_real(query: str) -> dict:
     # enough to freeze the search under a degraded upstream; 3s keeps
     # the /search endpoint responsive during outages.
     client = Anthropic(api_key=api_key, timeout=LLM_TIMEOUT_S)
+    # RW — the earlier prompt just LISTED the valid codes and Haiku
+    # echoed the input language back ('רתכים' instead of 'scaffolding',
+    # 'סין' instead of 'CN', 'מגורים' instead of 'housing'). The guard
+    # then nulled every field. Explicit Hebrew→code examples + a
+    # "codes only, never display names" rule move Haiku onto the right
+    # vocabulary. The fallback chain in _validate_enums is still the
+    # real safety net if the LLM regresses on a phrasing we didn't
+    # anticipate — this prompt tightening is a quality improvement, not
+    # a correctness dependency.
     system = (
         "You translate a Hebrew construction-marketplace query into a structured filter. "
         "Return ONLY a JSON object with keys: "
@@ -298,7 +327,31 @@ def rewrite_real(query: str) -> dict:
         "origin_country (ISO-2 from: CN, IN, LK, MD, PH, RO, TH, UA, UZ — or null), "
         "region (one of center, north, south, jerusalem, national — or null), "
         "quantity (integer or null), "
-        "canonical_query (the user's request, lightly normalised). "
+        "canonical_query (the user's request, lightly normalised).\n\n"
+        "CRITICAL: Return ONLY the English codes listed above. "
+        "Never return Hebrew display names. Examples of correct mapping:\n"
+        "  input 'רתך' / 'רתכים'   → profession_code: 'scaffolding'\n"
+        "  input 'חשמלאי'          → profession_code: 'electrician'\n"
+        "  input 'טייחים'          → profession_code: 'plastering'\n"
+        "  input 'תפסן' / 'טפסן'   → profession_code: 'formwork'\n"
+        "  input 'ברזלן'           → profession_code: 'skeleton'\n"
+        "  input 'בנאי'            → profession_code: 'mason'\n"
+        "  input 'ריצוף' / 'רצף'   → profession_code: 'flooring'\n"
+        "  input 'צבע' / 'צבעים'   → profession_code: 'painting'\n"
+        "  input 'אינסטלטור'       → profession_code: 'plumbing'\n"
+        "  input 'פועלים'          → profession_code: 'general'\n"
+        "  input 'סינים' / 'סין'   → origin_country: 'CN'\n"
+        "  input 'הודי' / 'הודו'   → origin_country: 'IN'\n"
+        "  input 'אוקראינה'        → origin_country: 'UA'\n"
+        "  input 'מרכז'            → region: 'center'\n"
+        "  input 'צפון'            → region: 'north'\n"
+        "  input 'דרום'            → region: 'south'\n"
+        "  input 'ירושלים'         → region: 'jerusalem'\n"
+        "  input 'דיור' / 'לינה' / 'מגורים' / 'דירה' → ad_type: 'housing'\n\n"
+        "Quantity: extract ONLY when the number is a count of workers or beds "
+        "(e.g. '20 פועלים' → 20). NEVER extract from a duration "
+        "('פועלים ל-3 חודשים' → quantity: null) or from years of experience "
+        "('רתך עם 10 שנות ניסיון' → quantity: null).\n\n"
         "Output ONLY the JSON object — no prose, no markdown fences, no code blocks."
     )
     t0 = time.perf_counter()
@@ -316,18 +369,15 @@ def rewrite_real(query: str) -> dict:
             print(f"[qrewrite] llm_unparseable ({elapsed:.2f}s) → fallback")
             return rewrite_fake(query)
 
-        # Normalise shape — the LLM might miss a field or two.
+        # Normalise shape — the LLM might miss a field or two. The
+        # merge lets a non-null LLM value win over fake's guess (the
+        # LLM has more context than a keyword table). RW: an INVALID
+        # LLM value is not a "win" — the merge would have wiped fake's
+        # correct answer, so _validate_enums explicitly rewinds to
+        # fake's value when the LLM's value fails the enum check.
         fake = rewrite_fake(query)
         merged = {**fake, **{k: v for k, v in parsed.items() if v is not None}}
-        # S1 — validate every enum-typed field against the real code
-        # sets. Invented values ('laborer', 'CHN', 'merkaz') would
-        # otherwise slip past the string prompt guard and reach the
-        # SQL WHERE, silently filtering the whole search to zero rows.
-        # Rejected values fall to None (not to fake's guess — merge
-        # already carried fake's value in, so an LLM-produced garbage
-        # value should mean "no filter", not "use the extractor's
-        # guess") so an unrecognised code disables the filter cleanly.
-        merged = _validate_enums(merged, query)
+        merged = _validate_enums(merged, query, fake)
 
         if elapsed > LLM_SLOW_THRESHOLD_S:
             print(f"[qrewrite] slow ({elapsed:.2f}s) query='{query[:60]}'")

@@ -1,12 +1,18 @@
-"""S1 unit test — LLM enum guard.
+"""Unit tests for query_rewriter.
 
 Runs standalone with `python -m unittest app.services.test_query_rewriter`
 from the user-org service root. No pytest dependency.
 
-Focus: an Anthropic response that returns invented codes (`laborer`,
-`CHN`, `merkaz`) must not reach the SQL WHERE. After `_validate_enums`
-runs, all three enum fields must be None, so the search picks up the
-full inventory instead of silently going to zero rows.
+Post-RW contract:
+  * `_validate_enums` MUST NOT return None when fake has a valid guess.
+    LLM garbage falls back to fake's extraction ("LLM can only improve,
+    never worsen"). Pre-RW the guard nulled every invalid LLM value —
+    that was wrong because the merge already overwrote fake's guess,
+    so a Hebrew-display-name from the LLM wiped a correct extraction.
+  * Quantity is ALWAYS computed from `_quantity(query)`. The LLM's
+    quantity is ignored — the LLM ignored the S3 "adjacent to a count
+    noun" rule and extracted counts from durations. Extractor is
+    deterministic + free.
 """
 import json
 import os
@@ -30,69 +36,103 @@ def _fake_anthropic_response(payload: dict) -> MagicMock:
     return resp
 
 
-class ValidateEnumsTest(unittest.TestCase):
-    def test_invented_codes_all_drop_to_none(self):
-        d = {
-            "ad_type": "worker",
-            "profession_code": "laborer",       # not in worker_db.profession_types
-            "origin_country": "CHN",            # should be CN
-            "region": "merkaz",                 # should be center
-            "quantity": 4,
-            "canonical_query": "פועלים סינים",
-        }
-        out = qr._validate_enums(d, "פועלים סינים")
-        self.assertIsNone(out["profession_code"])
-        self.assertIsNone(out["origin_country"])
-        self.assertIsNone(out["region"])
-        # quantity is a plain int — untouched.
-        self.assertEqual(out["quantity"], 4)
-        # ad_type valid → unchanged.
-        self.assertEqual(out["ad_type"], "worker")
+class ValidateEnumsFallbackTest(unittest.TestCase):
+    """RW — invalid LLM value falls back to fake's value, not None."""
 
-    def test_valid_codes_pass_through(self):
+    def test_llm_hebrew_display_falls_back_to_fake_scaffolding(self):
+        """'רתך' → LLM returns 'רתכים' (Hebrew display) → post-guard
+        must still be 'scaffolding' because fake extracts it from the
+        PROFESSION_KEYWORDS table."""
+        query = "רתך"
+        fake = qr.rewrite_fake(query)                # {profession_code: 'scaffolding', ...}
+        d = {**fake, "profession_code": "רתכים"}     # LLM overwrite
+        out = qr._validate_enums(d, query, fake)
+        self.assertEqual(out["profession_code"], "scaffolding")
+
+    def test_llm_hebrew_origin_falls_back_to_fake_cn(self):
+        """'פועלים סינים' → LLM returns origin 'סין' → post-guard must
+        still be 'CN' via fake's ORIGIN_KEYWORDS extraction."""
+        query = "פועלים סינים"
+        fake = qr.rewrite_fake(query)                # {origin_country: 'CN', profession_code: 'general', ...}
+        d = {**fake, "origin_country": "סין", "profession_code": "פועלים כלליים"}
+        out = qr._validate_enums(d, query, fake)
+        self.assertEqual(out["origin_country"], "CN")
+        self.assertEqual(out["profession_code"], "general")
+
+    def test_llm_hebrew_ad_type_falls_back_to_housing(self):
+        """'דיור למרכז' → LLM returns 'מגורים' → post-guard must be
+        'housing' via fake's HOUSING_KEYWORDS extraction, NOT the
+        default 'worker' pin. This was the 'דיור למרכז' → 20 worker
+        results bug pre-RW."""
+        query = "דיור למרכז"
+        fake = qr.rewrite_fake(query)                # {ad_type: 'housing', region: 'center', ...}
+        d = {**fake, "ad_type": "מגורים"}            # LLM's garbage overwrite
+        out = qr._validate_enums(d, query, fake)
+        self.assertEqual(out["ad_type"], "housing")
+
+    def test_llm_quantity_from_duration_dropped(self):
+        """'פועלים ל-3 חודשים' → LLM returns quantity=3 → post-guard
+        must be None because _quantity finds no count-noun anchor."""
+        query = "פועלים ל-3 חודשים"
+        fake = qr.rewrite_fake(query)
+        d = {**fake, "quantity": 3}
+        out = qr._validate_enums(d, query, fake)
+        self.assertIsNone(out["quantity"])
+
+    def test_llm_valid_codes_pass_through(self):
+        query = "רתכים סינים במרכז"
+        fake = qr.rewrite_fake(query)
         d = {
             "ad_type": "worker",
-            "profession_code": "scaffolding",  # valid
+            "profession_code": "scaffolding",  # already valid — no fallback needed
             "origin_country": "CN",             # valid
             "region": "center",                 # valid
             "quantity": 4,
-            "canonical_query": "רתכים סינים במרכז",
+            "canonical_query": query,
         }
-        out = qr._validate_enums(d, "רתכים סינים במרכז")
+        out = qr._validate_enums(d, query, fake)
         self.assertEqual(out["profession_code"], "scaffolding")
         self.assertEqual(out["origin_country"], "CN")
         self.assertEqual(out["region"], "center")
 
-    def test_quantity_bounds_and_coercion(self):
-        d = {"ad_type": "worker", "quantity": "12"}
-        self.assertEqual(qr._validate_enums(d, "")["quantity"], 12)
-        d = {"ad_type": "worker", "quantity": 0}
-        self.assertIsNone(qr._validate_enums(d, "")["quantity"])
-        d = {"ad_type": "worker", "quantity": 10000}
-        self.assertIsNone(qr._validate_enums(d, "")["quantity"])
-        d = {"ad_type": "worker", "quantity": "abc"}
-        self.assertIsNone(qr._validate_enums(d, "")["quantity"])
+    def test_ad_type_pins_to_worker_only_when_fake_also_useless(self):
+        """Empty query → fake yields ad_type='worker' (the _ad_type
+        default when no HOUSING_KEYWORDS match). Invalid LLM value
+        falls back to fake's 'worker' — the final pin never fires."""
+        query = ""
+        fake = qr.rewrite_fake(query)
+        d = {"ad_type": "commercial", "profession_code": "scaffolding"}
+        out = qr._validate_enums(d, query, fake)
+        self.assertEqual(out["ad_type"], "worker")
+
+    def test_llm_null_field_keeps_fake_guess(self):
+        """LLM returned None for a field — fake's guess stays via the
+        merge; _validate_enums doesn't touch it."""
+        query = "רתך"
+        fake = qr.rewrite_fake(query)  # profession_code=scaffolding
+        d = {**fake, "profession_code": None}
+        # In practice the merge in rewrite_real drops None values before
+        # they land in d — but _validate_enums must not crash either way.
+        out = qr._validate_enums(d, query, fake)
+        self.assertIsNone(out["profession_code"])  # LLM said null → we honour it
 
     def test_hallucinated_extra_keys_stripped(self):
+        query = "רתכים"
+        fake = qr.rewrite_fake(query)
         d = {
-            "ad_type": "worker",
+            **fake,
             "profession_code": "scaffolding",
             "experience_years": 5,       # invented — not in our schema
             "budget_nis": 12000,          # invented
         }
-        out = qr._validate_enums(d, "")
+        out = qr._validate_enums(d, query, fake)
         self.assertNotIn("experience_years", out)
         self.assertNotIn("budget_nis", out)
         self.assertEqual(out["profession_code"], "scaffolding")
 
-    def test_ad_type_falls_back_to_worker(self):
-        d = {"ad_type": "commercial", "profession_code": "scaffolding"}
-        out = qr._validate_enums(d, "")
-        self.assertEqual(out["ad_type"], "worker")
-
 
 class QuantityExtractionTest(unittest.TestCase):
-    """S3 — quantity must anchor on a count noun (or be leading)."""
+    """S3 — quantity anchors on a count noun (or leads the query)."""
 
     def test_bare_number_mid_sentence_ignored(self):
         # Duration / experience — not a headcount.
@@ -114,31 +154,50 @@ class QuantityExtractionTest(unittest.TestCase):
 
 
 class RewriteRealEndToEndTest(unittest.TestCase):
-    """Prove the pipeline: fake Anthropic returns garbage → merge → validate
-    → final dict has no invented codes reaching SQL."""
+    """Pipeline test — fake Anthropic returns Hebrew display names,
+    validate falls back to fake's extracted codes, final dict carries
+    real English codes for the SQL layer."""
 
-    def test_llm_garbage_scrubbed_before_return(self):
+    def test_hebrew_display_names_replaced_by_fake_extraction(self):
         payload = {
             "ad_type": "worker",
-            "profession_code": "laborer",
-            "origin_country": "CHN",
-            "region": "merkaz",
-            "quantity": 4,
-            "canonical_query": "פועלים סינים",
+            "profession_code": "רתכים",   # Hebrew display — invalid enum
+            "origin_country": "סין",       # Hebrew display — invalid enum
+            "region": "מרכז",              # Hebrew display — invalid enum
+            "quantity": 4,                # LLM ignores S3 rule
+            "canonical_query": "רתך סיני במרכז",
         }
-        # `Anthropic` is imported INSIDE rewrite_real, so patch the source
-        # module (`anthropic.Anthropic`) — patching the qr namespace would
-        # miss because the symbol only exists post-import at call time.
         with patch("anthropic.Anthropic") as MockClient:
             instance = MockClient.return_value
             instance.messages.create.return_value = _fake_anthropic_response(payload)
-            # Bypass the Redis cache read for a deterministic run.
             with patch("app.services.query_rewriter._redis_client", return_value=None):
-                out = qr.rewrite_real("פועלים סינים")
-        self.assertIsNone(out["profession_code"])
-        self.assertIsNone(out["origin_country"])
-        self.assertIsNone(out["region"])
+                out = qr.rewrite_real("רתך סיני במרכז")
+        # Fake extracts scaffolding+CN+center from the query — those
+        # survive despite the LLM overwrite because _validate_enums
+        # rewinds invalid LLM values to fake's guess.
+        self.assertEqual(out["profession_code"], "scaffolding")
+        self.assertEqual(out["origin_country"], "CN")
+        self.assertEqual(out["region"], "center")
         self.assertEqual(out["ad_type"], "worker")
+        # _quantity finds "4" but only anchored to a count noun. Here
+        # "רתך סיני במרכז" has no digit → None.
+        self.assertIsNone(out["quantity"])
+
+    def test_housing_query_survives_llm_worker_default(self):
+        """'דיור למרכז' — fake produces ad_type=housing. Even if the
+        LLM confuses ad_type, the fallback restores housing."""
+        payload = {
+            "ad_type": "מגורים",        # invalid — Hebrew display
+            "region": "center",
+            "canonical_query": "דיור למרכז",
+        }
+        with patch("anthropic.Anthropic") as MockClient:
+            instance = MockClient.return_value
+            instance.messages.create.return_value = _fake_anthropic_response(payload)
+            with patch("app.services.query_rewriter._redis_client", return_value=None):
+                out = qr.rewrite_real("דיור למרכז")
+        self.assertEqual(out["ad_type"], "housing")
+        self.assertEqual(out["region"], "center")
 
 
 if __name__ == "__main__":
