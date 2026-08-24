@@ -528,7 +528,7 @@ function LandingPageInner() {
             <div className="max-w-5xl mx-auto px-4 flex flex-col gap-6">
               <div className="order-1 text-center space-y-2">
                 <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900">
-                  פלטפורמת השיבוץ הראשונה בישראל
+                  הפלטפורמה לקבלנים ולתאגידי כוח אדם
                 </h1>
                 <p className="text-base sm:text-lg font-semibold text-slate-700">
                   לעובדים זרים בענף הבנייה

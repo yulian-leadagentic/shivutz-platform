@@ -39,11 +39,18 @@ async function capture(vp) {
   // 2. Type a query that triggers a near-match + submit.
   await page.fill('form[role="search"] input', NEAR_MATCH_QUERY);
   await page.locator('form[role="search"] button[type="submit"]').click();
-  // Wait for the results section to render — the amber near-match heading
-  // uses role="status".
-  await page.waitForSelector('[role="status"]', { timeout: 20_000 });
+  // Wait for the AMBER near-match banner specifically. Previous version
+  // waited for any [role="status"], which matches the sr-only status
+  // region that is ALWAYS in the DOM — the wait resolved instantly and
+  // the screenshot caught the loading skeleton. The amber banner only
+  // renders after resp.near_matches is populated, so it proves results
+  // are on screen.
+  await page.waitForSelector('div[role="status"].bg-amber-50', { timeout: 20_000 });
+  // Also wait until the loading skeleton is gone — belt-and-suspenders
+  // so we never catch a mid-swap frame.
+  await page.waitForSelector('ul[aria-hidden="true"]', { state: 'detached', timeout: 5_000 }).catch(() => {});
   // Slight settle so any layout shift completes before we shoot.
-  await page.waitForTimeout(800);
+  await page.waitForTimeout(500);
   await page.screenshot({ path: join(OUT_ROOT, vp.name, 'nm-02-near-matches.png'), fullPage: false });
 
   // 3. Scroll far enough that the sticky bar is docked, and Tab into
