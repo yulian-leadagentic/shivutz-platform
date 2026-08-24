@@ -417,8 +417,85 @@ function LandingPageInner() {
 
       <div className="min-h-screen flex flex-col">
         <main className="flex-1 pb-8">
+          {/* SP — sticky search bar. Hoisted to be a direct child of
+              <main> so its containing block spans the whole scrollable
+              page and `position: sticky` survives past the hero into
+              the results section. `top-16` = LandingNav's h-16, so the
+              bar docks flush against the bottom of the nav; z-40 sits
+              under the nav (z-50) and under RevealModal (z-50) but
+              above content. bg-white/95 + backdrop-blur separates it
+              from scrolled content without the aggressive full opaque
+              band that would fight the hero gradient underneath.
+              Same DOM element in every scroll state — no swap. */}
+          <div className="sticky top-16 z-40 bg-white/95 backdrop-blur-sm border-b border-slate-200 shadow-sm">
+            {/* Height budget (WCAG-tight): 44px row + 8px wrapper py-1
+                + 8px form py-1 + 4px border = 64px on 390. Desktop
+                gets 4px more wrapper padding → 68px, under the 72px
+                ceiling. */}
+            <div className="max-w-5xl mx-auto px-3 sm:px-4 py-1 sm:py-1.5">
+              <form
+                onSubmit={(e) => { e.preventDefault(); runSearch(); }}
+                className="flex items-center gap-2 sm:gap-3 rounded-xl border-2 border-slate-200 bg-white px-2 sm:px-3 py-1 focus-within:border-brand-600 focus-within:ring-2 focus-within:ring-brand-200 transition-colors motion-reduce:transition-none"
+                role="search"
+                aria-label="חיפוש בפורטל"
+              >
+                <SearchIcon className="w-5 h-5 text-slate-400 shrink-0" aria-hidden="true" />
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                  // SR — focus signals to the LiveActivityFeed suspend
+                  // gate; bubble slides out on focus, waits 3s after
+                  // blur before reappearing.
+                  onFocus={() => setInputFocused(true)}
+                  onBlur={() => setInputFocused(false)}
+                  // SP — placeholder-as-example: teaches the smart-query
+                  // syntax in-context (better than "חפש").
+                  placeholder="נסה: 20 פועלים סינים במרכז"
+                  aria-label="חיפוש חכם — תיאור חופשי בעברית"
+                  className="flex-1 min-w-0 h-11 text-base sm:text-lg outline-none placeholder:text-slate-400 bg-transparent"
+                />
+                {/* Track V — mic button. Auto-focus on transcript
+                    lets the user proofread before submitting. */}
+                <VoiceInputButton
+                  onTranscript={(text) => {
+                    setQ(text);
+                    searchInputRef.current?.focus();
+                    setVoiceError('');
+                    setAwaitingSubmit(true);
+                    setTimeout(() => setAwaitingSubmit(false), 2500);
+                  }}
+                  onError={(msg) => setVoiceError(msg)}
+                  onActiveChange={setVoiceActive}
+                  disabled={loading}
+                />
+                <button
+                  type="submit"
+                  disabled={loading || (q.trim().length < 2 && !anyFilter)}
+                  className={
+                    // SP — brand-600 (#f78203) + slate-900 text is the
+                    // AA-passing pairing (~6.9:1). White text on
+                    // brand-600 fails at 2.6:1. Do not "invert" for
+                    // "more punch".
+                    // Focus ring uses slate-900 for max contrast on
+                    // ANY background including brand-600.
+                    // min-h-11 = 44px minimum tap target.
+                    // motion-reduce:transition-none respects the user
+                    // preference for the shadow transition.
+                    `min-h-11 min-w-11 bg-brand-600 hover:bg-brand-800 text-slate-900 text-sm sm:text-base font-bold px-4 sm:px-5 rounded-lg disabled:bg-slate-200 disabled:text-slate-500 disabled:cursor-not-allowed inline-flex items-center justify-center gap-1.5 shrink-0 transition-shadow motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-slate-900 focus-visible:ring-offset-2 ` +
+                    (awaitingSubmit ? 'ring-4 ring-brand-300 animate-pulse motion-reduce:animate-none' : '')
+                  }
+                >
+                  {loading ? <Loader2 className="w-5 h-5 animate-spin motion-reduce:animate-none" /> : <SearchIcon className="w-4 h-4 sm:w-5 sm:h-5" />}
+                  <span>חפש</span>
+                </button>
+              </form>
+            </div>
+          </div>
+
           {/* Category tiles + search — the commercial hero */}
-          <section id="search-hero" className="bg-gradient-to-b from-slate-50 to-white pt-24 pb-6">
+          <section id="search-hero" className="bg-gradient-to-b from-slate-50 to-white pt-6 pb-6">
             {/* Landing IA — search-first on mobile.
                 Was `space-y-6` (block layout, DOM order = display order:
                 heading → tiles → search → chips → advanced). At 390px
@@ -478,80 +555,10 @@ function LandingPageInner() {
                 })}
               </div>
 
-              {/* Hero search — smart free-text is the single primary entry.
-                  The three enum selects that used to sit above and compete
-                  with this input are now hidden behind the "סינון מתקדם"
-                  disclosure below.
-                  M1 mobile — at ≤sm the input row and the button STACK
-                  vertically full-width so the field doesn't get chopped by
-                  the button on a 390px viewport. sm+ reverts to the
-                  desktop single-row layout the earlier search rework
-                  established. Button height is min-h-11 (44px) both
-                  layouts so it stays a real tap target.
-                  G1 button — bright brand-600 (#f78203, the logo orange,
-                  closest DS token to the spec's #F5821F) with slate-900
-                  text (matches #111827, AA ~6:1). hover→brand-800 the
-                  spec's darkening step. disabled = opacity-60 fade, never
-                  swapped to grey. */}
-              <form
-                onSubmit={(e) => { e.preventDefault(); runSearch(); }}
-                className="order-2 sm:order-3 bg-white border border-slate-200 rounded-2xl p-3 sm:p-4 shadow-md"
-              >
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
-                  <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
-                    <SearchIcon className="w-6 h-6 text-slate-400 shrink-0" aria-hidden="true" />
-                    <input
-                      ref={searchInputRef}
-                      type="text"
-                      value={q}
-                      onChange={(e) => setQ(e.target.value)}
-                      // SR — focus signals to the LiveActivityFeed
-                      // suspend gate. Bubble slides out on focus,
-                      // waits 3s after blur before reappearing.
-                      onFocus={() => setInputFocused(true)}
-                      onBlur={() => setInputFocused(false)}
-                      placeholder="לדוגמה: מחפש 4 פועלים סינים לריצוף"
-                      aria-label="חיפוש חכם — תיאור חופשי בעברית"
-                      className="flex-1 min-w-0 text-base sm:text-lg outline-none placeholder:text-slate-400 py-2 bg-transparent"
-                    />
-                    {/* Track V — mic button. Populates the input on
-                        transcript so the user can proofread before
-                        pressing חפש (STT errors on Hebrew trade jargon
-                        are frequent; auto-search would surface wrong
-                        results). */}
-                    <VoiceInputButton
-                      onTranscript={(text) => {
-                        setQ(text);
-                        searchInputRef.current?.focus();
-                        setVoiceError('');  // clear a previous mic error on success
-                        // Flash the חפש button so the user knows the
-                        // next step is theirs — auto-clears after 2.5s.
-                        setAwaitingSubmit(true);
-                        setTimeout(() => setAwaitingSubmit(false), 2500);
-                      }}
-                      onError={(msg) => setVoiceError(msg)}
-                      onActiveChange={setVoiceActive}
-                      disabled={loading}
-                    />
-                  </div>
-                  <button
-                    type="submit"
-                    disabled={loading || (q.trim().length < 2 && !anyFilter)}
-                    className={
-                      // SR — post-transcript ring pulse. Draws the
-                      // eye to the submit button after voice input
-                      // populated the field. Kept ring-only (no
-                      // colour swap) so the DS orange stays the
-                      // primary signal.
-                      `w-full sm:w-auto min-h-11 bg-brand-600 hover:bg-brand-800 text-slate-900 text-base font-bold px-5 sm:px-6 py-3 rounded-xl disabled:bg-slate-200 disabled:text-slate-500 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2 shrink-0 transition-shadow ` +
-                      (awaitingSubmit ? 'ring-4 ring-brand-300 animate-pulse' : '')
-                    }
-                  >
-                    {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <SearchIcon className="w-5 h-5" />}
-                    חפש
-                  </button>
-                </div>
-              </form>
+              {/* SP — the hero's inline search form was hoisted above
+                  into a page-wide sticky bar (see main's direct child
+                  at line ~420). No duplicate form here — same DOM
+                  element in every scroll state. */}
 
               {/* Suggestion chips — directly below the input, still the
                   quickest way for a first-time visitor to learn the smart
@@ -1003,7 +1010,13 @@ function AdCard({
   const regionLabel = ad.region          ? (regions.find((r)     => r.code === ad.region)?.name_he          ?? ad.region)          : null;
   return (
     <li
-      className={`rounded-2xl border p-4 shadow-sm bg-white ${boosted ? 'border-amber-300' : 'border-slate-200'}`}
+      // SP — WCAG 2.4.11 Focus Not Obscured. The page has both the
+      // LandingNav (fixed, h-16 = 64px) and the sticky search bar
+      // (~72px on desktop, ~64px on 390) at the top. scroll-mt-36
+      // (=9rem = 144px) is the sum + a small buffer, so when the
+      // browser scrolls this card into view on Tab focus, the card
+      // lands BELOW both bars instead of being clipped by them.
+      className={`scroll-mt-36 rounded-2xl border p-4 shadow-sm bg-white ${boosted ? 'border-amber-300' : 'border-slate-200'}`}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
