@@ -426,8 +426,15 @@ function LandingPageInner() {
               above content. bg-white/95 + backdrop-blur separates it
               from scrolled content without the aggressive full opaque
               band that would fight the hero gradient underneath.
-              Same DOM element in every scroll state — no swap. */}
-          <div className="sticky top-16 z-40 bg-white/95 backdrop-blur-sm border-b border-slate-200 shadow-sm">
+              Same DOM element in every scroll state — no swap.
+              SP2 — `mt-16` pushes the bar's NATURAL position down to
+              y=64px (below the fixed nav). Without it, at scroll=0
+              the bar renders at y=0-68 in the layout with only ~4px
+              visible below the nav — sticky only kicks in after
+              scroll >= 64. mt-16 makes the bar visible under the nav
+              from first paint; sticky is a no-op visually until the
+              user actually scrolls. */}
+          <div className="sticky top-16 mt-16 z-40 bg-white/95 backdrop-blur-sm border-b border-slate-200 shadow-sm">
             {/* Height budget (WCAG-tight): 44px row + 8px wrapper py-1
                 + 8px form py-1 + 4px border = 64px on 390. Desktop
                 gets 4px more wrapper padding → 68px, under the 72px
@@ -475,15 +482,24 @@ function LandingPageInner() {
                   disabled={loading || (q.trim().length < 2 && !anyFilter)}
                   className={
                     // SP — brand-600 (#f78203) + slate-900 text is the
-                    // AA-passing pairing (~6.9:1). White text on
-                    // brand-600 fails at 2.6:1. Do not "invert" for
-                    // "more punch".
+                    // AA-passing pairing (measured from DOM: 6.93:1).
+                    // White text on brand-600 fails at 2.6:1. Do not
+                    // "invert" for "more punch".
+                    // SP2 — hover previously darkened to brand-800
+                    // (#a5530b). Measured contrast of slate-900 on
+                    // brand-800 = 2.59:1 — that fails AA. Hover now
+                    // LIGHTENS to brand-500 (#f88b17), keeping the
+                    // slate-900 text at ≈6.5:1 which passes AA.
+                    // Common enough interaction pattern for high-
+                    // contrast brand buttons (rest = the resting
+                    // brand; hover = a brighter cue that the button
+                    // is interactive) and keeps the same DS family.
                     // Focus ring uses slate-900 for max contrast on
-                    // ANY background including brand-600.
+                    // ANY background including brand-600/500.
                     // min-h-11 = 44px minimum tap target.
                     // motion-reduce:transition-none respects the user
                     // preference for the shadow transition.
-                    `min-h-11 min-w-11 bg-brand-600 hover:bg-brand-800 text-slate-900 text-sm sm:text-base font-bold px-4 sm:px-5 rounded-lg disabled:bg-slate-200 disabled:text-slate-500 disabled:cursor-not-allowed inline-flex items-center justify-center gap-1.5 shrink-0 transition-shadow motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-slate-900 focus-visible:ring-offset-2 ` +
+                    `min-h-11 min-w-11 bg-brand-600 hover:bg-brand-500 text-slate-900 text-sm sm:text-base font-bold px-4 sm:px-5 rounded-lg disabled:bg-slate-200 disabled:text-slate-500 disabled:cursor-not-allowed inline-flex items-center justify-center gap-1.5 shrink-0 transition-shadow motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-slate-900 focus-visible:ring-offset-2 ` +
                     (awaitingSubmit ? 'ring-4 ring-brand-300 animate-pulse motion-reduce:animate-none' : '')
                   }
                 >
@@ -706,16 +722,24 @@ function LandingPageInner() {
 
           {/* verify(L2) — screen-reader status region. Always in the DOM so
               aria-live triggers when text changes. Announces search
-              lifecycle: loading → result count / no-match / error. */}
+              lifecycle: loading → result count / no-match / error.
+              NMC — exact + near broken out; wording matches the amber
+              near-match heading so SR users hear the same story
+              sighted users read. "תוצאה אחת" vs "N תוצאות" plural. */}
           <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
             {loading
               ? 'מחפש מודעות…'
               : searchError
                 ? `שגיאה בחיפוש: ${searchError}`
                 : resp
-                  ? (resp.total === 0
-                      ? 'לא נמצאו מודעות התואמות לחיפוש'
-                      : `נמצאו ${resp.total} תוצאות`)
+                  ? (() => {
+                      const exact = resp.results.length;
+                      const near  = resp.near_matches?.length ?? 0;
+                      if (exact === 0 && near === 0) return 'לא נמצאו מודעות התואמות לחיפוש';
+                      const exactPart = exact === 1 ? 'תוצאה אחת מדויקת' : `${exact} תוצאות מדויקות`;
+                      if (near === 0) return `נמצאו ${exactPart}`;
+                      return `${exactPart} · ${near} תוצאות קרובות`;
+                    })()
                   : ''}
           </div>
 
@@ -766,7 +790,19 @@ function LandingPageInner() {
                         {resp.filters.origin_country  && <> · מוצא: <b>{labelFor(origins,     resp.filters.origin_country)}</b></>}
                         {resp.filters.region          && <> · אזור: <b>{labelFor(regions,     resp.filters.region)}</b></>}
                         {resp.filters.quantity        && <> · כמות: <b>{resp.filters.quantity}</b></>}
-                        <span className="text-slate-400"> ({resp.total} תוצאות)</span>
+                        {/* NMC — count text: singular vs plural + call
+                            out near-matches separately so the header
+                            doesn't undersell what's actually rendered
+                            below ("(1 תוצאות)" while 2 cards show is
+                            what NMC caught). */}
+                        <span className="text-slate-400"> ({(() => {
+                          const exact = resp.results.length;
+                          const near  = resp.near_matches?.length ?? 0;
+                          const exactPart = exact === 1 ? 'תוצאה אחת' : `${exact} תוצאות`;
+                          if (near === 0) return exactPart;
+                          const exactLabel = exact === 1 ? 'תוצאה אחת מדויקת' : `${exact} תוצאות מדויקות`;
+                          return `${exactLabel} · ${near} קרובות`;
+                        })()})</span>
                       </span>
                     </div>
                   )}
@@ -838,18 +874,35 @@ function LandingPageInner() {
                       without near_matches — the amber empty-state
                       above stays as-is for that case. */}
                   {resp && resp.near_matches && resp.near_matches.length > 0 && resp.relaxed && (() => {
-                    const relaxed = resp.relaxed;
-                    const near    = resp.near_matches;
-                    const profHe  = resp.filters.profession_code
+                    const relaxed  = resp.relaxed;
+                    const near     = resp.near_matches;
+                    const hasExact = resp.results.length > 0;
+                    // NMC — grammatical wrapper. "לא נמצאו ריצוף" is
+                    // agrammatical (plural verb + singular noun). The
+                    // safe fix without touching enum data: "עובדי X"
+                    // — plural, gender-neutral, and works cleanly with
+                    // any name_he from the professions enum. Housing
+                    // stays generic "דיור" (there is no "עובדי דיור").
+                    const isHousing = resp.filters.ad_type === 'housing';
+                    const profLabel = resp.filters.profession_code
                       ? labelFor(professions, resp.filters.profession_code)
-                      : (resp.filters.ad_type === 'housing' ? 'דיור' : 'מודעות');
-                    // Alternates observed in the near set for the dimension we relaxed.
-                    // Distinct + Hebrew-labelled so the heading names REALITY, not a fixed list.
+                      : null;
+                    const workersOf = isHousing
+                      ? 'דיור'
+                      : (profLabel ? `עובדי ${profLabel}` : 'עובדים');
+
+                    // Alternates observed in the near set. Distinct +
+                    // Hebrew-labelled so the heading names REALITY,
+                    // not a template.
                     let heading: string;
                     let tagFor: (ad: AdSearchResult) => string | undefined;
                     if (relaxed === 'quantity') {
                       const qtyRequested = resp.filters.quantity ?? '';
-                      heading = `אין כרגע מודעה עם ${qtyRequested} עובדים. אלה ההיצעים הגדולים ביותר — אפשר לשלב בין כמה תאגידים.`;
+                      // NMC — additive when exact > 0 ("יש גם היצעים
+                      // נוספים…"), negating only when exact === 0.
+                      heading = hasExact
+                        ? `יש גם היצעים נוספים בכמויות אחרות — אפשר לשלב בין כמה תאגידים:`
+                        : `אין כרגע מודעה עם ${qtyRequested} עובדים. אלה ההיצעים הגדולים ביותר — אפשר לשלב בין כמה תאגידים.`;
                       tagFor  = (ad) => ad.quantity ? `כמות: ${ad.quantity}` : undefined;
                     } else if (relaxed === 'origin_country') {
                       const originsSeen = Array.from(new Set(near.map((a) => a.origin_country).filter(Boolean) as string[]))
@@ -857,9 +910,16 @@ function LandingPageInner() {
                       const requestedOrigin = resp.filters.origin_country
                         ? labelFor(origins, resp.filters.origin_country)
                         : '';
-                      heading = originsSeen.length
-                        ? `לא נמצאו ${profHe} מ${requestedOrigin}. יש ${profHe} מ${originsSeen.join(', מ')}:`
-                        : `לא נמצאו ${profHe} מ${requestedOrigin}. הנה תוצאות קרובות:`;
+                      const seenPart = originsSeen.length ? `מ${originsSeen.join(', מ')}` : '';
+                      // NMC — additive when exact > 0: "יש עוד X שעשויים להתאים — מ{origins}:"
+                      //     — negating when exact === 0: "לא נמצאו X מ{req}. יש X מ{origins}:"
+                      heading = hasExact
+                        ? (seenPart
+                            ? `יש עוד ${workersOf} שעשויים להתאים — ${seenPart}:`
+                            : `יש עוד ${workersOf} שעשויים להתאים:`)
+                        : (seenPart
+                            ? `לא נמצאו ${workersOf} מ${requestedOrigin}. יש ${workersOf} ${seenPart}:`
+                            : `לא נמצאו ${workersOf} מ${requestedOrigin}. הנה תוצאות קרובות:`);
                       tagFor  = (ad) => ad.origin_country ? `מוצא: ${labelFor(origins, ad.origin_country)}` : undefined;
                     } else {
                       // region
@@ -868,9 +928,14 @@ function LandingPageInner() {
                       const requestedRegion = resp.filters.region
                         ? labelFor(regions, resp.filters.region)
                         : '';
-                      heading = regionsSeen.length
-                        ? `אין ${profHe} ב${requestedRegion}. יש ב${regionsSeen.join(', ב')}:`
-                        : `אין ${profHe} ב${requestedRegion}. הנה תוצאות קרובות:`;
+                      const seenPart = regionsSeen.length ? `ב${regionsSeen.join(', ב')}` : '';
+                      heading = hasExact
+                        ? (seenPart
+                            ? `יש עוד ${workersOf} גם באזורים אחרים — ${seenPart}:`
+                            : `יש עוד ${workersOf} גם באזורים אחרים:`)
+                        : (seenPart
+                            ? `אין ${workersOf} ב${requestedRegion}. יש ${seenPart}:`
+                            : `אין ${workersOf} ב${requestedRegion}. הנה תוצאות קרובות:`);
                       tagFor  = (ad) => ad.region ? `אזור: ${labelFor(regions, ad.region)}` : undefined;
                     }
                     return (
@@ -880,7 +945,11 @@ function LandingPageInner() {
                           aria-live="polite"
                           className="mb-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
                         >
-                          {resp.results.length === 0
+                          {/* NMC — the "no exact match" preamble ONLY
+                              when exact === 0. When exact > 0 the
+                              heading itself is already additive so we
+                              don't contradict the cards above. */}
+                          {!hasExact
                             ? `לא נמצאו התאמות מדויקות. מוצגות ${near.length} תוצאות קרובות. ${heading}`
                             : heading}
                         </div>
