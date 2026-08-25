@@ -354,7 +354,17 @@ function LandingPageInner() {
       } else if (code === 'subscription_required' || status === 402) {
         setBlock({ kind: 'expired', tier: tierHe, adId });
       } else {
-        setBlock({ kind: 'error', message: mapApiError(e) });
+        // Carry adId + status so the modal can offer "try again" and
+        // pick friendlier copy for transient 5xx/503 failures. The
+        // modal preserves pendingReveal on error blocks so a retry
+        // (immediate or after a refresh) still knows which ad the
+        // visitor came here to see.
+        setBlock({
+          kind:    'error',
+          message: mapApiError(e),
+          adId,
+          status:  status,
+        });
       }
     } finally { setRevealing(null); }
   }, [revealing]);
@@ -413,7 +423,11 @@ function LandingPageInner() {
   return (
     <>
       <LandingNav onLeadCapture={() => setLeadModalOpen(true)} />
-      <RevealModal block={block} onClose={() => setBlock(null)} />
+      <RevealModal
+        block={block}
+        onClose={() => setBlock(null)}
+        onRetry={(adId) => { void revealFor(adId); }}
+      />
 
       <div className="min-h-screen flex flex-col">
         <main className="flex-1 pb-8">

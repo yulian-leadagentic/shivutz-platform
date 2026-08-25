@@ -7,14 +7,17 @@
 
 import { useCallback, useEffect, useRef } from 'react';
 import Link from 'next/link';
-import { X, UserPlus, LogIn, CreditCard, Sparkles } from 'lucide-react';
+import { X, UserPlus, LogIn, CreditCard, Sparkles, RotateCw } from 'lucide-react';
 import { writePendingReveal, clearPendingReveal } from '@/features/prospect/state';
 
 export type RevealBlock =
   | { kind: 'unauth';  adId: string }
   | { kind: 'expired'; tier: string; adId: string }
   | { kind: 'quota';   tier: string; used: number; limit: number; adId: string }
-  | { kind: 'error';   message: string };
+  // 'error' carries adId + status so the modal can offer "retry" without
+  // losing the intent the user has already registered+logged in for.
+  // Legacy call-sites without adId still work (retry button hidden).
+  | { kind: 'error';   message: string; adId?: string; status?: number };
 
 function returnHref(adId: string): string {
   return `/?reveal=${encodeURIComponent(adId)}`;
@@ -25,26 +28,42 @@ const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), selec
 export function RevealModal({
   block,
   onClose,
+  onRetry,
 }: {
   block: RevealBlock | null;
   onClose: () => void;
+  /** Optional — when provided, the error modal renders a "try again"
+   *  button that calls this with the ad id the caller was trying to
+   *  reveal. Caller decides how to re-run revealFor. */
+  onRetry?: (adId: string) => void;
 }) {
   const dialogRef  = useRef<HTMLDivElement>(null);
   const returnFocusTo = useRef<HTMLElement | null>(null);
 
   // O1 — stash reveal intent so /login /register /billing round-trips
   // survive OTP restart, tab refresh, or a lost returnTo URL param.
-  // 'error' has no adId so nothing to stash. Cleared on explicit close
-  // and on successful reveal (caller-side).
+  // For 'error' blocks we now KEEP the stash — a 5xx/503/network glitch
+  // AFTER the user has already registered+logged in must not wipe the
+  // intent they earned. Only stash if we have an adId (some legacy
+  // error blocks were emitted without one).
   useEffect(() => {
-    if (!block || block.kind === 'error') return;
+    if (!block) return;
+    if (block.kind === 'error') {
+      if (block.adId) writePendingReveal({ adId: block.adId, kind: 'unauth' });
+      return;
+    }
     writePendingReveal({ adId: block.adId, kind: block.kind });
   }, [block]);
 
   const handleClose = useCallback(() => {
-    clearPendingReveal();
+    // Preserve intent on transient failures — the user may retry after a
+    // page refresh or moment later, and we don't want to drop the
+    // reveal target on their way out of an error dialog they didn't
+    // ask for. Only the auth/paywall/quota kinds represent
+    // user-actionable close (they went to /login, /billing, etc.).
+    if (block?.kind !== 'error') clearPendingReveal();
     onClose();
-  }, [onClose]);
+  }, [onClose, block]);
 
   // R1 — a11y: focus-trap, Esc-to-close, return-focus-on-close.
   // pre-verify-r1 audit added: body-scroll-lock while open.
@@ -191,24 +210,53 @@ export function RevealModal({
           </>
         )}
 
-        {block.kind === 'error' && (
-          <>
-            <div className="w-10 h-10 rounded-lg bg-red-50 text-red-700 flex items-center justify-center">
-              <X className="w-5 h-5" />
-            </div>
-            <div>
-              <h2 id="reveal-modal-title" className="text-lg font-bold text-slate-900">שגיאה</h2>
-              <p id="reveal-modal-desc" className="text-sm text-slate-600 mt-1 leading-relaxed">{block.message}</p>
-            </div>
-            <button
-              type="button"
-              onClick={onClose}
-              className="w-full bg-slate-800 hover:bg-slate-700 text-white text-sm font-semibold px-4 py-2.5 rounded-lg"
-            >
-              סגור
-            </button>
-          </>
-        )}
+        {block.kind === 'error' && (() => {
+          // 5xx / 503 / network failures aren't the user's fault — the
+          // request they wanted is still saved (see handleClose above).
+          // Map to language that says exactly that so they don't think
+          // their reveal is gone.
+          const isTransient = block.status !== undefined
+            && (block.status === 503 || block.status >= 500);
+          const title   = isTransient ? 'תקלה זמנית' : 'שגיאה';
+          const message = isTransient
+            ? 'אירעה תקלה זמנית בשירות. הבקשה שלך נשמרה — אפשר לנסות שוב בעוד רגע.'
+            : block.message;
+          const canRetry = !!block.adId && !!onRetry;
+          return (
+            <>
+              <div className="w-10 h-10 rounded-lg bg-red-50 text-red-700 flex items-center justify-center">
+                <X className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 id="reveal-modal-title" className="text-lg font-bold text-slate-900">{title}</h2>
+                <p id="reveal-modal-desc" className="text-sm text-slate-600 mt-1 leading-relaxed">{message}</p>
+              </div>
+              <div className="space-y-2">
+                {canRetry && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const id = block.adId!;
+                      onClose();
+                      onRetry!(id);
+                    }}
+                    className="w-full bg-brand-600 hover:bg-brand-500 text-slate-900 text-sm font-semibold px-4 py-2.5 rounded-lg inline-flex items-center justify-center gap-2"
+                  >
+                    <RotateCw className="w-4 h-4" />
+                    נסה שוב
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={handleClose}
+                  className="w-full bg-white hover:bg-slate-50 border border-slate-300 text-slate-800 text-sm font-semibold px-4 py-2.5 rounded-lg"
+                >
+                  סגור
+                </button>
+              </div>
+            </>
+          );
+        })()}
       </div>
     </div>
   );
