@@ -825,6 +825,13 @@ async def contact_reveal(
             })
 
     # 2. Fetch ad + owning corp
+    #
+    # ads.owner_entity_id and corporations.id were created under different
+    # server-default collations (utf8mb4_0900_ai_ci on the newer ads table,
+    # utf8mb4_unicode_ci on the corps table). MySQL 8 refuses `=` across
+    # them with "Illegal mix of collations". Same pattern already applied
+    # to lines 585 / 636 / 703 in this file — mirror it here so the
+    # contact-reveal endpoint doesn't 500 on the JOIN.
     conn = get_db()
     try:
         cur = conn.cursor()
@@ -833,7 +840,7 @@ async def contact_reveal(
                       c.company_name_he, c.company_name,
                       c.contact_phone, c.contact_email
                  FROM ads a
-                 JOIN corporations c ON c.id = a.owner_entity_id
+                 JOIN corporations c ON c.id COLLATE utf8mb4_0900_ai_ci = a.owner_entity_id
                 WHERE a.id = %s AND a.deleted_at IS NULL""",
             (ad_id,),
         )
