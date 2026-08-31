@@ -531,29 +531,52 @@ function LandingPageInner() {
                 aria-label="חיפוש בפורטל"
               >
                 <SearchIcon className="w-5 h-5 text-slate-400 shrink-0" aria-hidden="true" />
-                <input
-                  ref={searchInputRef}
-                  type="text"
-                  value={q}
-                  // F1 §2 — skip-to-end. Any keyboard input during a
-                  // chip-typing animation cancels it so the visitor
-                  // types their own text into the input immediately
-                  // (no half-typed chip leftover, no race between
-                  // their keystrokes and the typing timer's next
-                  // tick). Enter is handled by onSubmit above, which
-                  // also calls cancelTyping().
-                  onChange={(e) => { cancelTyping(); setQ(e.target.value); }}
-                  // SR — focus signals to the LiveActivityFeed suspend
-                  // gate; bubble slides out on focus, waits 3s after
-                  // blur before reappearing.
-                  onFocus={() => setInputFocused(true)}
-                  onBlur={() => setInputFocused(false)}
-                  // SP — placeholder-as-example: teaches the smart-query
-                  // syntax in-context (better than "חפש").
-                  placeholder="נסה: 20 פועלים סינים במרכז"
-                  aria-label="חיפוש חכם — תיאור חופשי בעברית"
-                  className="flex-1 min-w-0 h-11 text-base sm:text-lg outline-none placeholder:text-slate-400 bg-transparent"
-                />
+                {/* F2 §1 — the AI mark. Rendered inside a
+                    position:relative .ai-field wrapper alongside a
+                    read-only .ai-ghost overlay (aria-hidden,
+                    pointer-events:none). The mark itself never
+                    unmounts — the same DOM node persists across
+                    the whole page lifetime; only its class changes
+                    between .is-rest and .is-caret. F2 §2 will
+                    later inject demo characters BEFORE the mark
+                    via insertAdjacentText so the ghost text pushes
+                    the mark leftward as it grows — same DOM node,
+                    no FLIP, no absolute positioning of the mark.
+                    The user's real input stays a plain controlled
+                    React <input> — the demo/ghost is one-way
+                    read-only (no IME/paste/binding to sync). */}
+                <div className="ai-field">
+                  <input
+                    ref={searchInputRef}
+                    type="text"
+                    value={q}
+                    // F1 §2 — skip-to-end. Any keyboard input during a
+                    // chip-typing animation cancels it so the visitor
+                    // types their own text into the input immediately
+                    // (no half-typed chip leftover, no race between
+                    // their keystrokes and the typing timer's next
+                    // tick). Enter is handled by onSubmit above, which
+                    // also calls cancelTyping().
+                    onChange={(e) => { cancelTyping(); setQ(e.target.value); }}
+                    // SR — focus signals to the LiveActivityFeed suspend
+                    // gate; bubble slides out on focus, waits 3s after
+                    // blur before reappearing.
+                    onFocus={() => setInputFocused(true)}
+                    onBlur={() => setInputFocused(false)}
+                    // SP — placeholder-as-example: teaches the smart-query
+                    // syntax in-context (better than "חפש").
+                    placeholder="נסה: 20 פועלים סינים במרכז"
+                    aria-label="חיפוש חכם — תיאור חופשי בעברית"
+                    className="ai-field-input flex-1 min-w-0 h-11 text-base sm:text-lg outline-none placeholder:text-slate-400 bg-transparent"
+                  />
+                  <div className="ai-ghost" aria-hidden="true">
+                    {/* Ghost text node — currently empty. F2 §2 will
+                        insertAdjacentText(char, 'beforebegin') on
+                        the mark, growing the text node beside it. */}
+                    <span className="ai-ghost-text" />
+                    <span dir="ltr" className="ai-mark is-rest">AI</span>
+                  </div>
+                </div>
                 {/* Track V — mic button. Auto-focus on transcript
                     lets the user proofread before submitting. */}
                 <VoiceInputButton

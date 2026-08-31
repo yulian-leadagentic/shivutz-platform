@@ -349,3 +349,111 @@ body {
 @media (prefers-reduced-motion: reduce) {
   [style*="attentionPulse"] { animation: none !important; }
 }
+
+/* ─── F2 §1 · AI mark ────────────────────────────────────────────────
+   The AI mark is the one element that is ALWAYS present in the search
+   input's visual layer. It sits inside a read-only ghost overlay
+   (aria-hidden, pointer-events:none) so the real <input> handles all
+   IME, paste, focus and form semantics unchanged.
+
+   Colours: brand-800 (#a5530b) for both the border and the "AI"
+   glyphs. Measured 5.47:1 on white — passes WCAG 1.4.11 (3:1 border)
+   AND 1.4.3 (4.5:1 text), which is why 800 was chosen over 600 for
+   this specific surface. The "חפש" submit button stays brand-600 —
+   its context (large solid fill) is B8-restricted.
+   Rest fill uses brand-50 (#fff8ed) as a soft wash.
+
+   Font: no monospace token in the DS today. Reusing the sans stack
+   (Heebo → system-ui) with weight 600 + letter-spacing .06em gives
+   the mark the tight, technical cadence a mono would, without adding
+   a stack that renders differently per OS (Consolas / Menlo / DejaVu).
+   Two-letter mark isn't worth introducing a new font token for.
+
+   Node identity: this file only styles. The React JSX in page.tsx
+   renders the .ai-mark once inside .ai-ghost. As long as the class
+   list is toggled (not the node replaced), React's reconciler
+   preserves the same DOM node — that's what F2 §1 requires for the
+   "no cycle recreation" rule.
+
+   F2 §1 stub only: is-rest is the only state currently exercised.
+   .is-caret + @keyframes ai-blink are declared here so the §2
+   demo loop can toggle to them without a second CSS pass. */
+
+.ai-field {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+.ai-field-input {
+  /* Reserve room on the LEADING (RTL: right) edge for the rest
+     state's larger padded mark. The is-rest mark measures ~14px
+     tall + 9px inline padding * 2 = ~32px wide, plus 4px breathing.
+     `padding-inline-start` puts it on the visual RIGHT of the input
+     under `dir="rtl"` so the user's Hebrew text doesn't collide
+     with the mark. */
+  padding-inline-start: 40px;
+}
+.ai-ghost {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding-inline-start: 6px;   /* mirror input's own indent */
+  pointer-events: none;
+  overflow: hidden;
+  color: transparent;          /* ghost text is currently empty; will render brand-800 once demo turns on */
+  font-size: 16px;
+  line-height: 1;
+}
+.ai-ghost-text {
+  /* F2 §2 target — insertAdjacentText will grow this node before
+     the .ai-mark sibling. Empty in the §1 stub. Colour is inherited
+     from .ai-ghost (transparent) here; §2 will flip it to visible. */
+  white-space: pre;
+}
+.ai-mark {
+  direction: ltr;
+  unicode-bidi: isolate;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  font-family: var(--font-heebo), system-ui, sans-serif;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  color: #a5530b;              /* brand-800 — 5.47:1 on white */
+  border: 1.5px solid #a5530b; /* brand-800 — 5.47:1 on white */
+  border-radius: 6px;
+  background: transparent;
+  font-size: 13px;
+  padding: 3px 6px;
+  margin-inline-start: 3px;
+  transition:
+    font-size .3s ease,
+    padding .3s ease,
+    background-color .3s ease,
+    margin .3s ease;
+}
+/* Rest — the "always present" state visible while the input is
+   empty and the demo is idle. Larger, filled wash, no blink. */
+.ai-mark.is-rest {
+  font-size: 14px;
+  padding: 6px 9px;
+  background: #fff8ed;         /* brand-50 wash */
+  margin-inline-start: 0;
+  margin-inline-end: 2px;
+  animation: none;
+}
+/* Caret — the "typing" state that F2 §2 will toggle to. Small,
+   border-only, slow blink. Declared here so §2 needs only JS. */
+.ai-mark.is-caret {
+  animation: ai-blink 1.05s steps(1, end) infinite;
+}
+@keyframes ai-blink { 50% { opacity: 0.25; } }
+@media (prefers-reduced-motion: reduce) {
+  .ai-mark.is-caret { animation: none; opacity: 1; }
+}
