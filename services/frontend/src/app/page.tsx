@@ -535,21 +535,27 @@ function LandingPageInner() {
       }
     })().catch(() => { /* loop is best-effort */ });
 
-    // §3 — permanent stop on any of these on the field OR real input.
+    // §3 — permanent stop when the visitor focuses the input.
+    // Previously we also stopped on pointerdown / keydown / wheel;
+    // that killed the demo the moment a visitor scrolled the page
+    // to read below the fold or tapped any adjacent chip, which
+    // is exactly the wrong signal. Now: loop keeps running until
+    // the visitor actually intends to type — i.e., focus lands on
+    // the input. pointerdown on the input itself still fires
+    // focus, so tapping the input naturally stops the loop.
     const stop = () => {
       if (demoStoppedRef.current) return;
       demoStoppedRef.current = true;
       demoCleanupRef.current();
     };
-    const events: (keyof WindowEventMap)[] = ['pointerdown', 'keydown', 'focusin', 'wheel'];
-    const field = searchInputRef.current?.closest('.ai-field') ?? searchInputRef.current;
-    events.forEach((ev) => field?.addEventListener(ev, stop, { passive: true, once: false }));
+    const inp = searchInputRef.current;
+    inp?.addEventListener('focus', stop);
 
     return () => {
       cancelled = true;
       timers.forEach((id) => window.clearTimeout(id));
       timers.clear();
-      events.forEach((ev) => field?.removeEventListener(ev, stop));
+      inp?.removeEventListener('focus', stop);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

@@ -477,6 +477,17 @@ body {
   font-weight: 600;
 }
 
+/* While the ghost is actively showing demo text, hide the input's
+   own placeholder so the two don't overlap. Restored the moment
+   the loop stops (demo-visible class removed) or the visitor
+   focuses the input (§3 permanent stop). :has() is used because
+   .ai-field wraps the input and the ghost as siblings; broadly
+   supported in evergreen browsers (Chrome 105+ / Safari 15.4+ /
+   Firefox 121+). */
+.ai-field:has(.ai-ghost.demo-visible) .ai-field-input::placeholder {
+  color: transparent;
+}
+
 /* Preview shell. Fixed floor height on 390 so the layout doesn't
    pop between phases; desktop lets it grow naturally. aria-hidden
    is on the JSX. */
