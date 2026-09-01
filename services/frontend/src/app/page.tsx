@@ -869,13 +869,31 @@ function LandingPageInner() {
                 sm+ overrides restore the desktop order (tiles above
                 the search) so the desktop layout doesn't regress. */}
             <div className="max-w-5xl mx-auto px-4 flex flex-col gap-6">
-              <div className="order-1 text-center space-y-2">
+              {/* F2 v2 §1 + §5.1 (partial) — the h1 sentence is a
+                  single continuous string so screen readers and
+                  search engines see one heading, not three spans.
+                  Only the two glyphs 'AI' are wrapped in
+                  .ai-mark--hl to render the brand mark in-line.
+                  aria-hidden is NOT set on the .ai-mark--hl span —
+                  this instance is content (the letters 'AI' ARE
+                  the promise being made). The search-box instance
+                  keeps aria-hidden because it is a repeating
+                  decorative caret that would otherwise clutter
+                  the SR reading with 'A I' on every cycle.
+                  Subtitle deleted per §5.1 — the new h1 already
+                  names the audience (contractors + staffing
+                  corps), so 'לעובדים זרים בענף הבנייה' became
+                  redundant.
+                  §5.1's full hero → header-block move is deferred
+                  to the §5 batch. This edit lands the copy + AI
+                  wrap only, keeping the h1 in its current
+                  container. */}
+              <div className="order-1 text-center">
                 <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900">
-                  הפלטפורמה לקבלנים ולתאגידי כוח אדם
+                  פלטפורמת ה
+                  <span className="ai-mark ai-mark--hl" dir="ltr">AI</span>
+                  {' '}לקבלנים ותאגידי כוח אדם
                 </h1>
-                <p className="text-base sm:text-lg font-semibold text-slate-700">
-                  לעובדים זרים בענף הבנייה
-                </p>
               </div>
 
               {/* F1 §1 — the four category tiles were removed. See the

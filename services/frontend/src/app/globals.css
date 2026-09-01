@@ -388,12 +388,12 @@ body {
 }
 .ai-field-input {
   /* Reserve room on the LEADING (RTL: right) edge for the rest
-     state's larger padded mark. The is-rest mark measures ~14px
-     tall + 9px inline padding * 2 = ~32px wide, plus 4px breathing.
-     `padding-inline-start` puts it on the visual RIGHT of the input
-     under `dir="rtl"` so the user's Hebrew text doesn't collide
-     with the mark. */
-  padding-inline-start: 40px;
+     state's larger padded mark. is-rest measures ~17px glyph +
+     11px inline padding × 2 = ~40px wide + 3px border + 4px
+     breathing → 48px reservation. `padding-inline-start` puts it
+     on the visual RIGHT of the input under `dir="rtl"` so the
+     user's Hebrew text doesn't collide with the mark. */
+  padding-inline-start: 48px;
 }
 .ai-ghost {
   position: absolute;
@@ -439,14 +439,30 @@ body {
     margin .3s ease;
 }
 /* Rest — the "always present" state visible while the input is
-   empty and the demo is idle. Larger, filled wash, no blink. */
+   empty and the demo is idle. Larger, filled wash, no blink.
+   Sizes bumped in v2 (was 14px / 6px 9px) so the mark reads as a
+   real UI element and not a footnote at glance distance. */
 .ai-mark.is-rest {
-  font-size: 14px;
-  padding: 6px 9px;
+  font-size: 17px;
+  padding: 8px 11px;
   background: #fff8ed;         /* brand-50 wash */
   margin-inline-start: 0;
   margin-inline-end: 2px;
   animation: none;
+}
+
+/* Header instance — same mark, tuned to sit inline with h1 text
+   at any h1 font-size. em-based sizing means it auto-scales
+   between 390 (h1 ≈ 30px) and desktop (h1 ≈ 36px) without a
+   media query. NOT aria-hidden in the header — this instance is
+   part of the readable content, and the h1 must stay legible to
+   screen readers as one continuous sentence. */
+.ai-mark--hl {
+  font-size: 0.72em;
+  padding: 0.14em 0.26em;
+  border-radius: 5px;
+  margin-inline: 0.1em;
+  vertical-align: 0.06em;
 }
 /* Caret — the "typing" state that F2 §2 will toggle to. Small,
    border-only, slow blink. Declared here so §2 needs only JS. */
