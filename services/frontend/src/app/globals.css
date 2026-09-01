@@ -457,3 +457,91 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .ai-mark.is-caret { animation: none; opacity: 1; }
 }
+
+/* ─── F2 §2 · demo loop visuals ───────────────────────────────────
+   The demo runs the REAL /api/search endpoint (never a mock — §2b)
+   and mirrors its result set into a compact preview area that
+   renders below the sticky bar. On any interaction (§3) the loop
+   permanently stops, the ghost text clears via JS, and this whole
+   block unmounts. */
+
+/* Ghost text only becomes visible while a demo cycle is actively
+   typing. Class `demo-visible` is added imperatively by the loop
+   during typing, removed on cycle-clear and permanent-stop. Colour
+   matches the mark (brand-800, 5.47:1 on white) for consistency. */
+.ai-ghost.demo-visible .ai-ghost-text {
+  color: #a5530b;
+}
+.ai-ghost .ai-ghost-text {
+  font-family: var(--font-heebo), system-ui, sans-serif;
+  font-weight: 600;
+}
+
+/* Preview shell. Fixed floor height on 390 so the layout doesn't
+   pop between phases; desktop lets it grow naturally. aria-hidden
+   is on the JSX. */
+.demo-preview {
+  position: relative;
+  overflow: hidden;
+  min-height: 168px;
+  pointer-events: none;
+  transition: opacity .32s ease;
+}
+.demo-preview.demo-phase-fading { opacity: 0; }
+
+/* Scan line — 3px, gradient shaft, cubic-bezier .35 0 .3 1 over
+   1.9s. It travels from top to bottom of the preview shell so the
+   viewer reads it as "the engine looking at the results". */
+.demo-scan-wrap {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.demo-scan {
+  position: absolute;
+  inset-inline: 0;
+  top: -3px;
+  height: 3px;
+  background: linear-gradient(90deg, transparent 0%, #f78203 50%, transparent 100%);
+  opacity: 0;
+}
+.demo-phase-scanning .demo-scan {
+  animation: demo-scan 1.9s cubic-bezier(.35, 0, .3, 1) forwards;
+}
+@keyframes demo-scan {
+  0%   { transform: translateY(0);    opacity: 0; }
+  10%  { opacity: .9; }
+  90%  { opacity: .9; }
+  100% { transform: translateY(160px); opacity: 0; }
+}
+
+/* Tags — appear during 'showing'. Stagger via inline animation-delay. */
+.demo-preview.demo-phase-scanning .demo-tags { opacity: 0; }
+.demo-preview.demo-phase-showing .demo-tag,
+.demo-preview.demo-phase-fading  .demo-tag {
+  animation: demo-tag-in .28s ease-out both;
+}
+@keyframes demo-tag-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Cards — appear during 'showing'. Stagger via inline delay
+   (§2 = 120ms) plus a fixed offset so cards start after tags. */
+.demo-preview.demo-phase-scanning .demo-cards { opacity: 0; }
+.demo-preview.demo-phase-showing .demo-card,
+.demo-preview.demo-phase-fading  .demo-card {
+  animation: demo-card-in .32s ease-out both;
+}
+@keyframes demo-card-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .demo-preview,
+  .demo-scan,
+  .demo-tag,
+  .demo-card { animation: none !important; transition: none !important; opacity: 1 !important; transform: none !important; }
+}

@@ -149,6 +149,14 @@ function LandingPageInner() {
   // bar, and leaderboard ad — 2–3 screen-heights on mobile 390. The
   // effect below smooth-scrolls to it on `resp` becoming truthy.
   const searchResultsRef = useRef<HTMLElement>(null);
+  // F2 §2 — refs into the ghost overlay so the demo loop can grow the
+  // ghost text via insertAdjacentText (imperatively) and toggle the
+  // mark's class between is-rest / is-caret without ever re-mounting
+  // the mark node (F2 §1 rule ב׳). The two spans are rendered in JSX
+  // above; refs give the loop stable DOM handles without needing to
+  // querySelector every tick.
+  const ghostTextRef = useRef<HTMLSpanElement>(null);
+  const markRef      = useRef<HTMLSpanElement>(null);
 
   const [q, setQ]           = useState('');
   const [resp, setResp]     = useState<SearchResponse | null>(null);
@@ -386,6 +394,175 @@ function LandingPageInner() {
     typeTimerRef.current = window.setTimeout(tick, perChar);
   }
 
+  // ─── F2 §2 · demo loop ─────────────────────────────────────────
+  // The demo queries below run through THE REAL search API — same
+  // endpoint the visitor uses, same rewriter, same rerank. §2b
+  // forbids mocks. Redis's 5-min server cache absorbs the cost so
+  // the loop doesn't hammer Haiku for every tick.
+  //
+  // Queries were measured live on staging.buildupai.net (F1 §1
+  // report) — both return 2 real hits and both extract the intended
+  // filters (flooring+CN, plastering+center). A query that returns
+  // 0 gets dropped from the rotation on the priming pass; if ALL
+  // return 0, the loop never starts and the mark stays in is-rest
+  // (§2b explicitly).
+  //
+  // WCAG 2.2.2: the loop starts automatically, so an accessible
+  // stop mechanism is required. The stop mechanism is: any
+  // pointerdown / keydown / focusin / wheel on the field permanently
+  // kills the loop (see attachStopHandlers below). The loop never
+  // resumes for the rest of the page's lifetime.
+  //
+  // prefers-reduced-motion: the loop doesn't run at all — not slower,
+  // not fewer cycles, NONE. Mark stays is-rest, placeholder shows.
+  const DEMO_QUERIES = ['רצפים סינים', 'אני צריך טייחים במרכז'];
+  const [demoView, setDemoView] = useState<{
+    phase:   'scanning' | 'showing' | 'fading';
+    results: AdSearchResult[];
+    filters: SearchResponse['filters'];
+    q:       string;
+  } | null>(null);
+  const demoStoppedRef = useRef(false);
+  const demoCleanupRef = useRef<() => void>(() => {});
+
+  useEffect(() => {
+    // prefers-reduced-motion: full stop. Not a slower loop — none.
+    const reduce = typeof window !== 'undefined'
+      && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (reduce) return;
+
+    let cancelled = false;
+    const timers = new Set<number>();
+    const sleep = (ms: number) => new Promise<void>((resolve) => {
+      const id = window.setTimeout(() => { timers.delete(id); resolve(); }, ms);
+      timers.add(id);
+    });
+
+    const clearGhost = () => {
+      const gt = ghostTextRef.current;
+      if (gt) gt.textContent = '';
+      const g = gt?.parentElement;
+      if (g) g.classList.remove('demo-visible');
+    };
+    const setMark = (state: 'rest' | 'caret') => {
+      const m = markRef.current;
+      if (!m) return;
+      m.className = state === 'rest' ? 'ai-mark is-rest' : 'ai-mark is-caret';
+    };
+    const appendChar = (ch: string) => {
+      const gt = ghostTextRef.current;
+      if (!gt) return;
+      gt.parentElement?.classList.add('demo-visible');
+      gt.textContent = (gt.textContent ?? '') + ch;
+    };
+    const popChar = () => {
+      const gt = ghostTextRef.current;
+      if (!gt) return;
+      const t = gt.textContent ?? '';
+      if (t.length > 0) gt.textContent = t.slice(0, -1);
+    };
+
+    demoCleanupRef.current = () => {
+      cancelled = true;
+      timers.forEach((id) => window.clearTimeout(id));
+      timers.clear();
+      clearGhost();
+      setMark('rest');
+      setDemoView(null);
+    };
+
+    (async () => {
+      // Prime — one API round per query. Drop anything that returns
+      // zero right now; that's the §2b "empty query exits the loop"
+      // rule enforced before any typing happens.
+      const primed: Array<{ q: string; data: SearchResponse }> = [];
+      for (const q of DEMO_QUERIES) {
+        if (cancelled) return;
+        try {
+          const data = await searchApi.query(q);
+          if (data && data.total > 0 && data.results.length > 0) {
+            primed.push({ q, data });
+          }
+        } catch { /* network hiccup — drop this query from rotation */ }
+      }
+      if (cancelled || primed.length === 0) return;
+
+      let idx = 0;
+      while (!cancelled) {
+        const { q, data } = primed[idx];
+        const shown = data.results.slice(0, 2);   // §4 mobile cap = 2; desktop tolerates too
+
+        // Phase 1 — mark rest 500ms
+        setMark('rest');
+        clearGhost();
+        await sleep(500);
+        if (cancelled) return;
+
+        // Phase 2 — type char-by-char. 44ms/char + light noise for
+        // human cadence, but bounded so the total stays ~1s regardless
+        // of query length.
+        setMark('caret');
+        for (const ch of q) {
+          appendChar(ch);
+          const noise = Math.round((Math.sin(gt_seed(q, ch)) * 12));
+          await sleep(44 + noise);
+          if (cancelled) return;
+        }
+
+        // Phase 3+4+5 — scan line, then tags+cards staggered in
+        setDemoView({ phase: 'scanning', results: shown, filters: data.filters, q });
+        await sleep(1900);
+        if (cancelled) return;
+
+        setDemoView({ phase: 'showing', results: shown, filters: data.filters, q });
+        // Phase 6 — hold 3.6s
+        await sleep(3600);
+        if (cancelled) return;
+
+        // Phase 7 — fade + unfade the ghost text char-by-char
+        setDemoView({ phase: 'fading', results: shown, filters: data.filters, q });
+        await sleep(320);   // CSS fade-out duration on demo preview
+        if (cancelled) return;
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        for (const _ of q) {
+          popChar();
+          await sleep(18);
+          if (cancelled) return;
+        }
+        setDemoView(null);
+
+        idx = (idx + 1) % primed.length;
+      }
+    })().catch(() => { /* loop is best-effort */ });
+
+    // §3 — permanent stop on any of these on the field OR real input.
+    const stop = () => {
+      if (demoStoppedRef.current) return;
+      demoStoppedRef.current = true;
+      demoCleanupRef.current();
+    };
+    const events: (keyof WindowEventMap)[] = ['pointerdown', 'keydown', 'focusin', 'wheel'];
+    const field = searchInputRef.current?.closest('.ai-field') ?? searchInputRef.current;
+    events.forEach((ev) => field?.addEventListener(ev, stop, { passive: true, once: false }));
+
+    return () => {
+      cancelled = true;
+      timers.forEach((id) => window.clearTimeout(id));
+      timers.clear();
+      events.forEach((ev) => field?.removeEventListener(ev, stop));
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // Deterministic pseudo-random seed for typing noise so the cadence
+  // stays reproducible across cycles (avoids Date.now-flavoured jitter
+  // which reads as "network lag" rather than "human typing").
+  function gt_seed(q: string, ch: string): number {
+    let h = 0;
+    const s = q + ch + String(q.length);
+    for (let i = 0; i < s.length; i += 1) h = (h * 31 + s.charCodeAt(i)) | 0;
+    return h;
+  }
+
   const revealFor = useCallback(async (adId: string) => {
     if (!isLoggedIn()) { setBlock({ kind: 'unauth', adId }); return; }
     if (revealing) return;
@@ -570,11 +747,14 @@ function LandingPageInner() {
                     className="ai-field-input flex-1 min-w-0 h-11 text-base sm:text-lg outline-none placeholder:text-slate-400 bg-transparent"
                   />
                   <div className="ai-ghost" aria-hidden="true">
-                    {/* Ghost text node — currently empty. F2 §2 will
-                        insertAdjacentText(char, 'beforebegin') on
-                        the mark, growing the text node beside it. */}
-                    <span className="ai-ghost-text" />
-                    <span dir="ltr" className="ai-mark is-rest">AI</span>
+                    {/* Ghost text — F2 §2 mutates this node's
+                        textContent imperatively (append per typed
+                        char, pop per unfade char). Its inner text
+                        colour flips to visible only while the demo
+                        is active; when idle/stopped it inherits the
+                        transparent parent so nothing shows. */}
+                    <span ref={ghostTextRef} className="ai-ghost-text" />
+                    <span ref={markRef} dir="ltr" className="ai-mark is-rest">AI</span>
                   </div>
                 </div>
                 {/* Track V — mic button. Auto-focus on transcript
@@ -811,6 +991,71 @@ function LandingPageInner() {
               consistent: search inactive → ads + mosaic; search active
               → results first. Ads reappear intact once the user clears
               the query. */}
+          {/* F2 §2 — the live demo preview. Only renders when the
+              loop is active AND there's no user search on screen.
+              A user-initiated search (resp/loading/searchError) OR
+              a permanent-stop (§3) both hide this — no chance of
+              collision with the visitor's own results.
+              aria-hidden + pointer-events:none per §2 accessibility
+              rule (no announcement, no click surface). Fixed height
+              on 390 so the surrounding layout doesn't jump between
+              scanning/showing/fading states. */}
+          {demoView && !resp && !searchError && !loading && (
+            <section
+              aria-hidden="true"
+              className={`demo-preview demo-phase-${demoView.phase} px-4 pt-3`}
+            >
+              <div className="max-w-6xl mx-auto">
+                <div className="demo-scan-wrap">
+                  <div className="demo-scan" />
+                </div>
+                {/* Tags row — mirrors the real 'הבנתי:' tags styling
+                    but is inert (no ✕). Each pill fades in with a
+                    105ms stagger via CSS animation-delay. */}
+                <div className="demo-tags flex items-center flex-wrap gap-2 mb-2">
+                  <span className="text-xs font-semibold text-slate-700 shrink-0">הבנתי:</span>
+                  {(() => {
+                    const f = demoView.filters;
+                    const items: string[] = [];
+                    items.push(f.ad_type === 'housing' ? 'דיור' : 'עובדים');
+                    if (f.profession_code) items.push(labelFor(professions, f.profession_code));
+                    if (f.origin_country)  items.push(labelFor(origins,     f.origin_country));
+                    if (f.region)          items.push(labelFor(regions,     f.region));
+                    if (f.quantity)        items.push(String(f.quantity));
+                    return items.map((t, i) => (
+                      <span key={i} className="demo-tag inline-flex items-center rounded-full border border-brand-200 bg-white text-brand-900 text-xs font-semibold px-2 py-0.5" style={{ animationDelay: `${i * 105}ms` }}>
+                        {t}
+                      </span>
+                    ));
+                  })()}
+                </div>
+                {/* Cards — max 2 (§4). Each staggers in via 120ms delay. */}
+                <ul className="demo-cards space-y-2">
+                  {demoView.results.map((ad, i) => (
+                    <li key={ad.id} className="demo-card rounded-2xl border border-slate-200 bg-white p-3 shadow-sm" style={{ animationDelay: `${i * 120 + 210}ms` }}>
+                      <div className="text-sm font-bold text-slate-900 truncate">{ad.title_he}</div>
+                      <div className="text-xs text-slate-500 mt-0.5 truncate">
+                        {ad.ad_type === 'worker' ? (
+                          <>
+                            {ad.profession_code && <span>{labelFor(professions, ad.profession_code)}</span>}
+                            {ad.origin_country  && <span> · {labelFor(origins, ad.origin_country)}</span>}
+                            {ad.region          && <span> · {labelFor(regions, ad.region)}</span>}
+                            {ad.quantity        && <span> · {ad.quantity} עובדים</span>}
+                          </>
+                        ) : (
+                          <>
+                            {ad.city && <span>{ad.city}</span>}
+                            {ad.available_beds && <span> · {ad.available_beds} מיטות</span>}
+                          </>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </section>
+          )}
+
           {!resp && !searchError && !loading && (
             <>
               {/* Featured (boosted) ads carousel — yad2 top commercial slot */}
