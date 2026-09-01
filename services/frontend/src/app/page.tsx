@@ -424,6 +424,8 @@ function LandingPageInner() {
   } | null>(null);
   const demoStoppedRef = useRef(false);
   const demoCleanupRef = useRef<() => void>(() => {});
+  // Callable from other effects (voice-active bridge below).
+  const demoStopFromOutsideRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     // prefers-reduced-motion: full stop. Not a slower loop — none.
@@ -551,6 +553,11 @@ function LandingPageInner() {
     const inp = searchInputRef.current;
     inp?.addEventListener('focus', stop);
 
+    // Expose the stopper so the voice-active effect below (which
+    // runs in its own render cycle) can also permanently kill the
+    // loop without waiting for focus.
+    demoStopFromOutsideRef.current = stop;
+
     return () => {
       cancelled = true;
       timers.forEach((id) => window.clearTimeout(id));
@@ -568,6 +575,24 @@ function LandingPageInner() {
     for (let i = 0; i < s.length; i += 1) h = (h * 31 + s.charCodeAt(i)) | 0;
     return h;
   }
+
+  // Feedback fix — mic recording also has to hide the mark AND
+  // stop the demo loop. Focus alone doesn't fire when the visitor
+  // taps the mic button, so we bridge from the existing voiceActive
+  // state that VoiceInputButton already reports. On mic-active:
+  //   * the demo loop is permanently stopped (same as focus)
+  //   * the field gets `user-active` class → CSS hides the mark
+  //     and removes the reserved padding-inline-start
+  useEffect(() => {
+    const field = searchInputRef.current?.closest('.ai-field');
+    if (!field) return;
+    if (voiceActive) {
+      field.classList.add('user-active');
+      demoStopFromOutsideRef.current();
+    } else {
+      field.classList.remove('user-active');
+    }
+  }, [voiceActive]);
 
   const revealFor = useCallback(async (adId: string) => {
     if (!isLoggedIn()) { setBlock({ kind: 'unauth', adId }); return; }

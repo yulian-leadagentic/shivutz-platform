@@ -488,6 +488,25 @@ body {
   color: transparent;
 }
 
+/* Feedback fix — the mark competes for typing space the moment
+   the visitor starts using the input. Hide the whole ghost
+   overlay AND remove the reserved padding when:
+     * the input has focus (typing intent), or
+     * the input has a non-empty value (they typed / voice pasted), or
+     * mic is actively recording (user-active class flipped by JS).
+   The mark returns to its rest position the moment all three are
+   false again — an empty, unfocused, non-recording field. */
+.ai-field:focus-within .ai-ghost,
+.ai-field.user-active .ai-ghost,
+.ai-field:has(.ai-field-input:not(:placeholder-shown)) .ai-ghost {
+  display: none;
+}
+.ai-field:focus-within .ai-field-input,
+.ai-field.user-active .ai-field-input,
+.ai-field:has(.ai-field-input:not(:placeholder-shown)) .ai-field-input {
+  padding-inline-start: 6px;
+}
+
 /* Preview shell. Fixed floor height on 390 so the layout doesn't
    pop between phases; desktop lets it grow naturally. aria-hidden
    is on the JSX. */
