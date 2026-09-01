@@ -464,6 +464,15 @@ function LandingPageInner() {
       if (t.length > 0) gt.textContent = t.slice(0, -1);
     };
 
+    // Add `demo-armed` immediately on mount so the placeholder is
+    // hidden BEFORE the priming pass completes. Otherwise the
+    // ~1s of API round-trip time (plus the 800ms dead-window
+    // between cycles) leaks the placeholder onto the screen and
+    // the visitor sees 'נסה: 20 פועלים סינים במרכז' flash in
+    // the box even though they typed nothing.
+    const armField = searchInputRef.current?.closest('.ai-field');
+    armField?.classList.add('demo-armed');
+
     demoCleanupRef.current = () => {
       cancelled = true;
       timers.forEach((id) => window.clearTimeout(id));
@@ -471,6 +480,7 @@ function LandingPageInner() {
       clearGhost();
       setMark('rest');
       setDemoView(null);
+      armField?.classList.remove('demo-armed');
     };
 
     (async () => {
@@ -487,7 +497,14 @@ function LandingPageInner() {
           }
         } catch { /* network hiccup — drop this query from rotation */ }
       }
-      if (cancelled || primed.length === 0) return;
+      // If every primed query returned 0 the loop never starts —
+      // per §2b. Also remove the armed class so the placeholder
+      // returns instead of staying suppressed forever behind an
+      // idle mark.
+      if (cancelled || primed.length === 0) {
+        armField?.classList.remove('demo-armed');
+        return;
+      }
 
       let idx = 0;
       while (!cancelled) {
@@ -563,6 +580,7 @@ function LandingPageInner() {
       timers.forEach((id) => window.clearTimeout(id));
       timers.clear();
       inp?.removeEventListener('focus', stop);
+      armField?.classList.remove('demo-armed');
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

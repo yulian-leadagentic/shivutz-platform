@@ -477,13 +477,16 @@ body {
   font-weight: 600;
 }
 
-/* While the ghost is actively showing demo text, hide the input's
-   own placeholder so the two don't overlap. Restored the moment
-   the loop stops (demo-visible class removed) or the visitor
-   focuses the input (§3 permanent stop). :has() is used because
-   .ai-field wraps the input and the ghost as siblings; broadly
-   supported in evergreen browsers (Chrome 105+ / Safari 15.4+ /
-   Firefox 121+). */
+/* Hide the input's own placeholder while the demo loop is armed —
+   from page mount through permanent-stop. Before this rule, the
+   placeholder flashed on for the ~1s of API priming AND for the
+   ~0.8s dead time between cycles (fade-out + rest gap), producing
+   the "yes I typed nothing but there's text in the box" moment the
+   user reported.
+   The armed class is toggled by the demo useEffect: added on
+   mount (unless prefers-reduced-motion), removed on permanent-stop
+   (focus / voice-active) or on component unmount. */
+.ai-field.demo-armed .ai-field-input::placeholder,
 .ai-field:has(.ai-ghost.demo-visible) .ai-field-input::placeholder {
   color: transparent;
 }
