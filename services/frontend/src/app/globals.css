@@ -565,14 +565,18 @@ body {
   100% { transform: translateY(160px); opacity: 0; }
 }
 
-/* Tags — appear during 'showing'. Stagger via inline animation-delay. */
+/* Tags — appear during 'showing'. Stagger via inline animation-delay.
+   v2 §3: tags fall from ABOVE (translateY -14px → 0) so they read
+   as "coming from the search bar" — the bar is where the visitor
+   just typed. -4px was subtle enough to read as jitter; -14px is
+   unambiguously a fall from the surface above. */
 .demo-preview.demo-phase-scanning .demo-tags { opacity: 0; }
 .demo-preview.demo-phase-showing .demo-tag,
 .demo-preview.demo-phase-fading  .demo-tag {
   animation: demo-tag-in .28s ease-out both;
 }
 @keyframes demo-tag-in {
-  from { opacity: 0; transform: translateY(-4px); }
+  from { opacity: 0; transform: translateY(-14px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 
@@ -593,4 +597,46 @@ body {
   .demo-scan,
   .demo-tag,
   .demo-card { animation: none !important; transition: none !important; opacity: 1 !important; transform: none !important; }
+}
+
+/* ─── F2 v2 §5.2 · joined search-bar ⇄ readout surface ───────────
+   When the visitor has results on screen the search form loses its
+   bottom-corner radius and bottom border, and the readout (the
+   'הבנתי:' tags row) picks up brand-600 side/bottom borders + a
+   brand-50 wash so the two elements read as a single surface with
+   the cards hanging below it. Applied via a class on the form
+   because the form's border colour is state-dependent
+   (focus-within: brand-600, otherwise slate-200). */
+.ai-search-form.is-joined {
+  border-bottom-left-radius:  0;
+  border-bottom-right-radius: 0;
+  border-bottom-width: 0;
+}
+.readout {
+  border: 2px solid #f78203;   /* brand-600 — spec-mandated for the join */
+  border-top: 0;
+  border-bottom-left-radius:  14px;
+  border-bottom-right-radius: 14px;
+  border-top-left-radius:  0;
+  border-top-right-radius: 0;
+  background: #fff8ed;         /* brand-50 wash */
+}
+
+/* ─── F2 v2 §5.4 · 'סינון מתקדם' opacity-gated on results ───────
+   Nothing to filter before there's anything to filter. The link
+   is present in the DOM at scroll=0 for layout stability, but is
+   invisible and non-interactive until `resp` exists (parent gets
+   `.is-post-search`). 700ms transition-delay per §3 step 7 so the
+   link fades in AFTER the cards land, not simultaneously. */
+.filters-toggle-wrap {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 320ms ease 700ms;
+}
+.filters-toggle-wrap.is-post-search {
+  opacity: 1;
+  pointer-events: auto;
+}
+@media (prefers-reduced-motion: reduce) {
+  .filters-toggle-wrap { transition: none; }
 }

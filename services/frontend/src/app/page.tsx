@@ -415,7 +415,11 @@ function LandingPageInner() {
   //
   // prefers-reduced-motion: the loop doesn't run at all — not slower,
   // not fewer cycles, NONE. Mark stays is-rest, placeholder shows.
-  const DEMO_QUERIES = ['רצפים סינים', 'אני צריך טייחים במרכז'];
+  // F2 v2 §3: third query added. Measured live 01-Sep on
+  // staging.buildupai.net — 1 result. Passes the "not-0" rule so
+  // it stays in rotation; if inventory later drops it to 0 the
+  // priming pass drops it automatically per §3b.
+  const DEMO_QUERIES = ['רצפים סינים', 'אני צריך טייחים במרכז', 'מיטות פנויות לעובדים הודים'];
   const [demoView, setDemoView] = useState<{
     phase:   'scanning' | 'showing' | 'fading';
     results: AdSearchResult[];
@@ -554,21 +558,22 @@ function LandingPageInner() {
       }
     })().catch(() => { /* loop is best-effort */ });
 
-    // §3 — permanent stop when the visitor focuses the input.
-    // Previously we also stopped on pointerdown / keydown / wheel;
-    // that killed the demo the moment a visitor scrolled the page
-    // to read below the fold or tapped any adjacent chip, which
-    // is exactly the wrong signal. Now: loop keeps running until
-    // the visitor actually intends to type — i.e., focus lands on
-    // the input. pointerdown on the input itself still fires
-    // focus, so tapping the input naturally stops the loop.
+    // F2 v2 §4 — permanent stop on ANY of the four intents:
+    //   pointerdown · keydown · focusin · wheel.
+    // The chips-tap-stops-demo concern that gated us to focus-only
+    // between 1b1ec15 and now is resolved by §5.3 (chips no longer
+    // render). All four events fire on the field wrapper so a
+    // click on the input, a key press, focus arrival, or a scroll
+    // gesture inside the field all count as "the visitor is
+    // taking over". The loop never resumes.
     const stop = () => {
       if (demoStoppedRef.current) return;
       demoStoppedRef.current = true;
       demoCleanupRef.current();
     };
-    const inp = searchInputRef.current;
-    inp?.addEventListener('focus', stop);
+    const field = searchInputRef.current?.closest('.ai-field') ?? searchInputRef.current;
+    const events: (keyof HTMLElementEventMap)[] = ['pointerdown', 'keydown', 'focusin', 'wheel'];
+    events.forEach((ev) => field?.addEventListener(ev, stop, { passive: true }));
 
     // Expose the stopper so the voice-active effect below (which
     // runs in its own render cycle) can also permanently kill the
@@ -579,7 +584,7 @@ function LandingPageInner() {
       cancelled = true;
       timers.forEach((id) => window.clearTimeout(id));
       timers.clear();
-      inp?.removeEventListener('focus', stop);
+      events.forEach((ev) => field?.removeEventListener(ev, stop));
       armField?.classList.remove('demo-armed');
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -727,24 +732,43 @@ function LandingPageInner() {
 
       <div className="min-h-screen flex flex-col">
         <main className="flex-1 pb-8">
+          {/* F2 v2 §5.1 — the header-block section that hosts the
+              h1. Lives BETWEEN the fixed nav and the sticky search
+              bar in DOM/flow, styled to feel like a continuation
+              of the nav (same bg, same border-bottom). At scroll=0
+              the visitor sees [nav][h1 block][sticky bar]; once
+              scrolled, the h1 block moves out of view and the
+              sticky bar docks against the nav.
+              `mt-16` shims the block down past the fixed nav (was
+              on the sticky bar before). aria-hidden is NOT set on
+              the wrapping section — the h1 inside is real content
+              and SR needs to read it. */}
+          <section
+            className="mt-16 bg-white border-b border-slate-200 px-4 pt-2 pb-3 sm:pt-3 sm:pb-4 text-center"
+          >
+            <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900 leading-tight">
+              פלטפורמת ה
+              <span className="ai-mark ai-mark--hl" dir="ltr">AI</span>
+              {' '}לקבלנים ותאגידי כוח אדם
+            </h1>
+          </section>
+
           {/* SP — sticky search bar. Hoisted to be a direct child of
               <main> so its containing block spans the whole scrollable
               page and `position: sticky` survives past the hero into
               the results section. `top-16` = LandingNav's h-16, so the
-              bar docks flush against the bottom of the nav; z-40 sits
-              under the nav (z-50) and under RevealModal (z-50) but
-              above content. bg-white/95 + backdrop-blur separates it
-              from scrolled content without the aggressive full opaque
-              band that would fight the hero gradient underneath.
-              Same DOM element in every scroll state — no swap.
-              SP2 — `mt-16` pushes the bar's NATURAL position down to
-              y=64px (below the fixed nav). Without it, at scroll=0
-              the bar renders at y=0-68 in the layout with only ~4px
-              visible below the nav — sticky only kicks in after
-              scroll >= 64. mt-16 makes the bar visible under the nav
-              from first paint; sticky is a no-op visually until the
-              user actually scrolls. */}
-          <div className="sticky top-16 mt-16 z-40 bg-white/95 backdrop-blur-sm border-b border-slate-200 shadow-sm">
+              bar docks flush against the bottom of the nav on scroll;
+              z-40 sits under the nav (z-50) and under RevealModal
+              (z-50) but above content. bg-white/95 + backdrop-blur
+              separates it from scrolled content without the aggressive
+              full opaque band that would fight the hero gradient
+              underneath. Same DOM element in every scroll state —
+              no swap.
+              F2 v2 §5.1: mt-16 removed — the sibling header-block
+              above now provides the vertical offset from the fixed
+              nav at scroll=0. Sticky-top-16 alone handles the
+              scrolled state. */}
+          <div className="sticky top-16 z-40 bg-white/95 backdrop-blur-sm border-b border-slate-200 shadow-sm">
             {/* Height budget (WCAG-tight): 44px row + 8px wrapper py-1
                 + 8px form py-1 + 4px border = 64px on 390. Desktop
                 gets 4px more wrapper padding → 68px, under the 72px
@@ -752,7 +776,7 @@ function LandingPageInner() {
             <div className="max-w-5xl mx-auto px-3 sm:px-4 py-1 sm:py-1.5">
               <form
                 onSubmit={(e) => { e.preventDefault(); cancelTyping(); runSearch(); }}
-                className="flex items-center gap-2 sm:gap-3 rounded-xl border-2 border-slate-200 bg-white px-2 sm:px-3 py-1 focus-within:border-brand-600 focus-within:ring-2 focus-within:ring-brand-200 transition-colors motion-reduce:transition-none"
+                className={`ai-search-form flex items-center gap-2 sm:gap-3 rounded-xl border-2 border-slate-200 bg-white px-2 sm:px-3 py-1 focus-within:border-brand-600 focus-within:ring-2 focus-within:ring-brand-200 transition-colors motion-reduce:transition-none ${resp ? 'is-joined' : ''}`}
                 role="search"
                 aria-label="חיפוש בפורטל"
               >
@@ -850,6 +874,69 @@ function LandingPageInner() {
                   <span>חפש</span>
                 </button>
               </form>
+
+              {/* F2 v2 §5.2 — readout ('הבנתי:' tags) sits directly
+                  under the form as one visual surface. Sticky-bar
+                  parent means the readout stays with the input as
+                  the visitor scrolls the results — 'what did I ask
+                  for' is always in view alongside 'the input I could
+                  type in'. Tag ✕ re-runs the search without that dim
+                  by reconstructing the query from remaining tags.
+                  Dims not extracted don't render (§3 rule 'היעדר
+                  תג הוא המידע'). NMC count text is preserved. */}
+              {resp && (() => {
+                const f = resp.filters;
+                const tags: Array<{ dim: string; label: string }> = [];
+                tags.push({ dim: 'ad_type', label: f.ad_type === 'housing' ? 'דיור' : 'עובדים' });
+                if (f.profession_code) tags.push({ dim: 'profession_code', label: labelFor(professions, f.profession_code) });
+                if (f.origin_country)  tags.push({ dim: 'origin_country',  label: labelFor(origins,     f.origin_country) });
+                if (f.region)          tags.push({ dim: 'region',          label: labelFor(regions,     f.region) });
+                if (f.quantity)        tags.push({ dim: 'quantity',        label: String(f.quantity) });
+
+                function rerunWithout(dim: string): void {
+                  const parts: string[] = [];
+                  const ad = dim === 'ad_type' ? 'worker' : f.ad_type;
+                  if (ad === 'housing')                                     parts.push('דיור');
+                  if (dim !== 'quantity'        && f.quantity)              parts.push(String(f.quantity));
+                  if (dim !== 'profession_code' && f.profession_code)       parts.push(labelFor(professions, f.profession_code));
+                  if (dim !== 'origin_country'  && f.origin_country)        parts.push(labelFor(origins,     f.origin_country));
+                  if (dim !== 'region'          && f.region)                parts.push(labelFor(regions,     f.region));
+                  const nextQ = parts.join(' ').trim() || 'עובדים';
+                  cancelTyping();
+                  setQ(nextQ);
+                  runSearch(nextQ);
+                }
+
+                const exact = resp.results.length;
+                const near  = resp.near_matches?.length ?? 0;
+                const countText = (() => {
+                  const exactPart = exact === 1 ? 'תוצאה אחת' : `${exact} תוצאות`;
+                  if (near === 0) return exactPart;
+                  const exactLabel = exact === 1 ? 'תוצאה אחת מדויקת' : `${exact} תוצאות מדויקות`;
+                  return `${exactLabel} · ${near} קרובות`;
+                })();
+                return (
+                  <div className="readout px-3 py-2 flex items-center flex-wrap gap-2 text-xs text-slate-800">
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <Sparkles className="w-3.5 h-3.5 text-brand-800 shrink-0" />
+                      <span className="font-semibold">הבנתי:</span>
+                    </div>
+                    {tags.map((t) => (
+                      <button
+                        key={t.dim}
+                        type="button"
+                        onClick={() => rerunWithout(t.dim)}
+                        aria-label={`הסר תג ${t.label}`}
+                        className="inline-flex items-center gap-1 rounded-full border border-brand-300 bg-white text-brand-900 hover:bg-brand-100 hover:border-brand-500 transition text-xs font-semibold px-2 py-0.5 min-h-[26px]"
+                      >
+                        <span>{t.label}</span>
+                        <X className="w-3 h-3 text-slate-500" aria-hidden="true" />
+                      </button>
+                    ))}
+                    <span className="text-slate-600 ms-auto shrink-0">{countText}</span>
+                  </div>
+                );
+              })()}
             </div>
           </div>
 
@@ -869,32 +956,11 @@ function LandingPageInner() {
                 sm+ overrides restore the desktop order (tiles above
                 the search) so the desktop layout doesn't regress. */}
             <div className="max-w-5xl mx-auto px-4 flex flex-col gap-6">
-              {/* F2 v2 §1 + §5.1 (partial) — the h1 sentence is a
-                  single continuous string so screen readers and
-                  search engines see one heading, not three spans.
-                  Only the two glyphs 'AI' are wrapped in
-                  .ai-mark--hl to render the brand mark in-line.
-                  aria-hidden is NOT set on the .ai-mark--hl span —
-                  this instance is content (the letters 'AI' ARE
-                  the promise being made). The search-box instance
-                  keeps aria-hidden because it is a repeating
-                  decorative caret that would otherwise clutter
-                  the SR reading with 'A I' on every cycle.
-                  Subtitle deleted per §5.1 — the new h1 already
-                  names the audience (contractors + staffing
-                  corps), so 'לעובדים זרים בענף הבנייה' became
-                  redundant.
-                  §5.1's full hero → header-block move is deferred
-                  to the §5 batch. This edit lands the copy + AI
-                  wrap only, keeping the h1 in its current
-                  container. */}
-              <div className="order-1 text-center">
-                <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900">
-                  פלטפורמת ה
-                  <span className="ai-mark ai-mark--hl" dir="ltr">AI</span>
-                  {' '}לקבלנים ותאגידי כוח אדם
-                </h1>
-              </div>
+              {/* F2 v2 §5.1 — h1 moved OUT of the hero to the
+                  header-block section right above the sticky bar
+                  (see `<section id="page-header">` below). The
+                  hero no longer opens with copy; the loop above
+                  the fold does the introductory work. */}
 
               {/* F1 §1 — the four category tiles were removed. See the
                   block comment at the CHIPS declaration for why.
@@ -930,44 +996,44 @@ function LandingPageInner() {
                 </div>
               )}
 
-              {/* F1 §1b — chips stay visible AFTER a search too.
-                  Previously wrapped in `!resp && !loading`, which
-                  meant a first-time visitor learned the shortcut
-                  exactly ONCE and then lost the pattern the moment
-                  they got results. Now: always present. On 390,
-                  single-row horizontal scroll (`overflow-x-auto`
-                  + `whitespace-nowrap`) so a second row can't push
-                  the results below the fold; on desktop, wrapping
-                  centred. The active chip during its typing
-                  animation gets `aria-pressed="true"` so a keyboard
-                  or SR user knows what's producing the input. */}
-              <div
-                role="group"
-                aria-label="דוגמאות לחיפוש"
-                className="order-3 sm:order-4 flex gap-2 overflow-x-auto sm:flex-wrap sm:justify-center px-1 -mx-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-              >
-                {CHIPS.map((chip) => {
-                  const isNav    = 'href' in chip && !!chip.href;
-                  const isActive = animChipKey === chip.key;
-                  return (
-                    <button
-                      key={chip.key}
-                      type="button"
-                      onClick={() => onChipClick(chip)}
-                      aria-pressed={isNav ? undefined : isActive}
-                      className={`shrink-0 whitespace-nowrap text-xs sm:text-sm px-3 py-1.5 rounded-full border transition inline-flex items-center gap-1.5 min-h-[32px] ${
-                        isActive
-                          ? 'border-brand-500 bg-brand-50 text-slate-900'
-                          : 'border-slate-300 bg-white hover:border-brand-400 hover:bg-brand-50 text-slate-700'
-                      }`}
-                    >
-                      {isNav && <Globe2 className="w-3.5 h-3.5 text-brand-700 shrink-0" aria-hidden="true" />}
-                      <span>{chip.label}</span>
-                      {isNav && <ArrowLeftCircle className="w-3.5 h-3.5 text-slate-400 shrink-0" aria-hidden="true" />}
-                    </button>
-                  );
-                })}
-              </div>
+              {/* F2 v2 §5.3 — chip row NOT rendered. The demo loop
+                  above the fold does the chip's job better: a chip
+                  merely SUGGESTS a query; the loop actually RUNS
+                  one and shows what came back. Kept the code
+                  block wrapped in `false` so re-enabling it later
+                  (if user testing shows people getting stuck) is
+                  a one-line change. Onchipclick handler stays
+                  alive in case we resurrect the chips below the
+                  results per §5.3's fallback note. */}
+              {false && (
+                <div
+                  role="group"
+                  aria-label="דוגמאות לחיפוש"
+                  className="order-3 sm:order-4 flex gap-2 overflow-x-auto sm:flex-wrap sm:justify-center px-1 -mx-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                >
+                  {CHIPS.map((chip) => {
+                    const isNav    = 'href' in chip && !!chip.href;
+                    const isActive = animChipKey === chip.key;
+                    return (
+                      <button
+                        key={chip.key}
+                        type="button"
+                        onClick={() => onChipClick(chip)}
+                        aria-pressed={isNav ? undefined : isActive}
+                        className={`shrink-0 whitespace-nowrap text-xs sm:text-sm px-3 py-1.5 rounded-full border transition inline-flex items-center gap-1.5 min-h-[32px] ${
+                          isActive
+                            ? 'border-brand-500 bg-brand-50 text-slate-900'
+                            : 'border-slate-300 bg-white hover:border-brand-400 hover:bg-brand-50 text-slate-700'
+                        }`}
+                      >
+                        {isNav && <Globe2 className="w-3.5 h-3.5 text-brand-700 shrink-0" aria-hidden="true" />}
+                        <span>{chip.label}</span>
+                        {isNav && <ArrowLeftCircle className="w-3.5 h-3.5 text-slate-400 shrink-0" aria-hidden="true" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
 
               {/* Advanced filters — collapsed by default so they don't
                   compete with the smart search. Auto-opens when the URL
@@ -975,7 +1041,14 @@ function LandingPageInner() {
                   enum selects as before; runSearch still folds them into
                   the LLM query and syncFiltersToUrl still mirrors to
                   ?prof=&region=&origin=. */}
-              <div className="order-4 sm:order-5 text-center">
+              {/* F2 v2 §5.4 — 'סינון מתקדם' link is present in the
+                  DOM at scroll=0 for layout stability but is
+                  invisible + non-interactive until the visitor has
+                  results to filter. Adds `.is-post-search` when
+                  `resp` exists — CSS handles the 700ms fade-in
+                  delay so it lands AFTER the cards. Text link
+                  only, not a button. */}
+              <div className={`filters-toggle-wrap order-4 sm:order-5 text-center ${resp ? 'is-post-search' : ''}`}>
                 <button
                   type="button"
                   onClick={() => setAdvancedOpen((o) => !o)}
@@ -1197,80 +1270,12 @@ function LandingPageInner() {
                       ))}
                     </ul>
                   )}
-                  {resp && (() => {
-                    // F1 §3 — the pre-F1 strip was a single flat
-                    // sentence ("המנוע הבין: עובדים · מקצוע: ריצוף
-                    // · מוצא: סין (3 תוצאות)"). Reads like a caption,
-                    // not like an interactive control. Now: each dim
-                    // is a pill; ✕ removes it and re-runs the search
-                    // without that dim.
-                    //
-                    // The re-run strategy (no backend change): drop
-                    // the ✕'d dim from filters, then reconstruct a
-                    // Hebrew query from the REMAINING dims via the
-                    // same labelFor mapping the strip uses. The
-                    // rewriter re-extracts and searches. That means
-                    // the results after removal are 100% consistent
-                    // with what the user sees in the remaining tags,
-                    // and we don't have to string-strip Hebrew from
-                    // the freeform query text (fragile).
-                    //
-                    // Dims not extracted DON'T render — no "כמות: —"
-                    // clutter (F1 §3 rule "היעדר תג הוא המידע").
-                    // Count text stays exactly as NMC left it — F1
-                    // §3 explicitly forbids touching it.
-                    const f = resp.filters;
-                    const tags: Array<{ dim: string; label: string }> = [];
-                    tags.push({ dim: 'ad_type', label: f.ad_type === 'housing' ? 'דיור' : 'עובדים' });
-                    if (f.profession_code) tags.push({ dim: 'profession_code', label: labelFor(professions, f.profession_code) });
-                    if (f.origin_country)  tags.push({ dim: 'origin_country',  label: labelFor(origins,     f.origin_country) });
-                    if (f.region)          tags.push({ dim: 'region',          label: labelFor(regions,     f.region) });
-                    if (f.quantity)        tags.push({ dim: 'quantity',        label: String(f.quantity) });
-
-                    function rerunWithout(dim: string): void {
-                      const parts: string[] = [];
-                      const ad = dim === 'ad_type' ? 'worker' : f.ad_type;
-                      if (ad === 'housing')                                     parts.push('דיור');
-                      if (dim !== 'quantity'        && f.quantity)              parts.push(String(f.quantity));
-                      if (dim !== 'profession_code' && f.profession_code)       parts.push(labelFor(professions, f.profession_code));
-                      if (dim !== 'origin_country'  && f.origin_country)        parts.push(labelFor(origins,     f.origin_country));
-                      if (dim !== 'region'          && f.region)                parts.push(labelFor(regions,     f.region));
-                      const nextQ = parts.join(' ').trim() || 'עובדים';
-                      cancelTyping();
-                      setQ(nextQ);
-                      runSearch(nextQ);
-                    }
-
-                    const exact = resp.results.length;
-                    const near  = resp.near_matches?.length ?? 0;
-                    const countText = (() => {
-                      const exactPart = exact === 1 ? 'תוצאה אחת' : `${exact} תוצאות`;
-                      if (near === 0) return exactPart;
-                      const exactLabel = exact === 1 ? 'תוצאה אחת מדויקת' : `${exact} תוצאות מדויקות`;
-                      return `${exactLabel} · ${near} קרובות`;
-                    })();
-                    return (
-                      <div className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 flex items-center flex-wrap gap-2">
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <Sparkles className="w-3.5 h-3.5 text-brand-600 shrink-0" />
-                          <span className="font-semibold text-slate-700">הבנתי:</span>
-                        </div>
-                        {tags.map((t) => (
-                          <button
-                            key={t.dim}
-                            type="button"
-                            onClick={() => rerunWithout(t.dim)}
-                            aria-label={`הסר תג ${t.label}`}
-                            className="inline-flex items-center gap-1 rounded-full border border-brand-200 bg-white text-brand-900 hover:bg-brand-50 hover:border-brand-400 transition text-xs font-semibold px-2 py-0.5 min-h-[26px]"
-                          >
-                            <span>{t.label}</span>
-                            <X className="w-3 h-3 text-slate-500" aria-hidden="true" />
-                          </button>
-                        ))}
-                        <span className="text-slate-400 ms-auto shrink-0">{countText}</span>
-                      </div>
-                    );
-                  })()}
+                  {/* F2 v2 §5.2 — the 'הבנתי:' readout that was
+                      here moved UP into the sticky bar so it
+                      unifies visually with the search form and
+                      stays with the input as the visitor scrolls
+                      results. See the readout block near the
+                      </form> above. */}
 
                   {/* F1 §3b — admission banner. When the rewriter
                       failed to pin down a profession BUT results
