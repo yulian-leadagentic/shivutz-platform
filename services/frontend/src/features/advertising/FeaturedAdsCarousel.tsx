@@ -3,8 +3,12 @@
 // Pivot/v2 — "מודעות מקודמות" carousel (yad2-style commercial slot).
 // Each card is a bold gradient hero tinted by profession or ad type,
 // so the strip reads as real creative even without corp-uploaded photos.
-// Boosted ads render first; falls back to recent so the slot is never
-// empty.
+// F3 §2.2 — previously fell back to /ads/public/recent when the
+// featured feed was empty. That fallback served organic ads under
+// the 'חם בפורטל · מודעות מקודמות של תאגידים' label — the same
+// tag-vs-reality problem the LIVE bubble had. Now: only boosted
+// ads. Empty featured → return null → the whole section unmounts
+// (page.tsx does not reserve space for it).
 
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -71,11 +75,13 @@ export function FeaturedAdsCarousel() {
   const scroller = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    // F3 §2.2 — no /recent fallback. Only render when there are
+    // actual boosted ads. Empty featured → ads stays [] → the
+    // `if (ads.length === 0) return null` below unmounts the
+    // whole section, so page.tsx does not reserve any pixels for
+    // an empty commercial slot.
     apiFetch<{ results: PublicAd[] }>('/ads/public/featured?limit=12')
-      .then((r) => {
-        if (r.results.length > 0) setAds(r.results);
-        else apiFetch<{ results: PublicAd[] }>('/ads/public/recent?limit=12').then((rr) => setAds(rr.results));
-      })
+      .then((r) => setAds(r.results))
       .catch(() => setAds([]));
   }, []);
 
@@ -88,7 +94,7 @@ export function FeaturedAdsCarousel() {
   }
 
   return (
-    <section className="max-w-6xl mx-auto px-4">
+    <section className="max-w-6xl mx-auto px-4 pb-6">
       <div className="flex items-baseline justify-between mb-3">
         <div>
           <h2 className="text-lg sm:text-xl font-bold text-slate-900 flex items-center gap-2">

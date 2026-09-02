@@ -1198,20 +1198,24 @@ function LandingPageInner() {
 
           {!resp && !searchError && !loading && (
             <>
-              {/* Featured (boosted) ads carousel — yad2 top commercial slot */}
-              <section className="pb-6">
-                <FeaturedAdsCarousel />
-              </section>
+              {/* F3 §2.2 — FeaturedAdsCarousel ('חם בפורטל') owns
+                  its own bottom padding now, so when it returns
+                  null (no boosted ads) zero pixels are reserved.
+                  Previous wrapper section reserved 24px even when
+                  empty; removed. */}
+              <FeaturedAdsCarousel />
 
               {/* Trust bar */}
               <section className="pb-6">
                 <LandingTrustBar />
               </section>
 
-              {/* Leaderboard ad slot (existing sponsor banner) */}
-              <section className="px-4 pb-6">
-                <AdCarousel />
-              </section>
+              {/* F3 §2.1 — AdCarousel leaderboard slot removed. Its
+                  PLACEHOLDER_SLIDES were hardcoded 'advertise here'
+                  content — pure shelf-space rental signage with no
+                  promotion source. AdCarousel.tsx + AdInquiryModal.tsx
+                  kept in the tree so the slot can return trivially
+                  once the promotions pipeline lands. */}
             </>
           )}
 
@@ -1348,9 +1352,15 @@ function LandingPageInner() {
                         const boosted  = ad.featured_until && new Date(ad.featured_until) > new Date();
                         const items: JSX.Element[] = [];
                         items.push(<AdCard key={ad.id} ad={ad} revealed={revealed} revealing={revealing === ad.id} boosted={!!boosted} onReveal={() => revealFor(ad.id)} professions={professions} origins={origins} regions={regions} />);
-                        if ((i + 1) % INLINE_AD_EVERY === 0 && i < resp.results.length - 1) {
-                          items.push(<InlineSponsoredAd key={`sponsored-${i}`} />);
-                        }
+                        // F3 §2.3 — inline sponsored slot injection
+                        // removed. The only prior gating was cadence
+                        // (every 5th card) — not 'is there a real
+                        // promotion?'. InlineSponsoredAd is a
+                        // hardcoded 'פרסום כאן' placeholder that
+                        // would interrupt reading of real results
+                        // with fake-ad signage. Component file kept
+                        // so a future data-backed injection can
+                        // return here in one line.
                         return items;
                       })}
                     </ul>
@@ -1471,11 +1481,15 @@ function LandingPageInner() {
                   })()}
                 </div>
 
-                <div className="hidden lg:block w-[300px] shrink-0">
-                  <div className="sticky top-24">
-                    <AdSidebar />
-                  </div>
-                </div>
+                {/* F3 §2.1 — right-column AdSidebar removed. It
+                    was pure 'מקום פרסום זמין' placeholder with a
+                    mailto CTA — a "space for lease" sign that
+                    read like abandonment on every desktop search
+                    view. The lg:block column wrapper is gone too
+                    so the results column takes the full width on
+                    desktop when no promotion exists. AdSidebar.tsx
+                    kept in the tree for the future promotion-
+                    driven return. */}
               </div>
             </section>
           )}
@@ -1545,7 +1559,14 @@ function LandingPageInner() {
           SR — suspended while the visitor is engaged with search:
           input focused, voice recording/transcribing, search in
           flight, or results on screen. */}
-      <LiveActivityFeed suspended={inputFocused || voiceActive || loading || !!resp} />
+      {/* F3 §3 — LiveActivityFeed removed from the landing. The
+          component reads from MOCK_ITEMS, not the real
+          /api/marketplace/activity-feed the docstring anticipates.
+          A 'live' floating bubble on top of mock data is exactly
+          the tag-vs-reality mistake the CC-2 decision (STATUS_0816)
+          resolved: 'הוכרע, לא מומש'. This lands the removal.
+          Component file + mocks kept intact for the day the real
+          feed endpoint exists. */}
     </>
   );
 }
