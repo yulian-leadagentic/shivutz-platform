@@ -917,10 +917,9 @@ function LandingPageInner() {
                 })();
                 return (
                   <div className="readout px-3 py-2 flex items-center flex-wrap gap-2 text-xs text-slate-800">
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <Sparkles className="w-3.5 h-3.5 text-brand-800 shrink-0" />
-                      <span className="font-semibold">הבנתי:</span>
-                    </div>
+                    {/* 'הבנתי:' label + Sparkles icon removed — the
+                        tags themselves say what was understood; the
+                        preamble was noise, not information. */}
                     {tags.map((t) => (
                       <button
                         key={t.dim}
@@ -1149,11 +1148,11 @@ function LandingPageInner() {
                 <div className="demo-scan-wrap">
                   <div className="demo-scan" />
                 </div>
-                {/* Tags row — mirrors the real 'הבנתי:' tags styling
-                    but is inert (no ✕). Each pill fades in with a
-                    105ms stagger via CSS animation-delay. */}
+                {/* Tags row — mirrors the readout above but inert
+                    (no ✕). Each pill fades in with a 105ms stagger
+                    via CSS animation-delay. 'הבנתי:' preamble
+                    removed to match the readout. */}
                 <div className="demo-tags flex items-center flex-wrap gap-2 mb-2">
-                  <span className="text-xs font-semibold text-slate-700 shrink-0">הבנתי:</span>
                   {(() => {
                     const f = demoView.filters;
                     const items: string[] = [];
