@@ -776,7 +776,7 @@ function LandingPageInner() {
             <div className="max-w-5xl mx-auto px-3 sm:px-4 py-1 sm:py-1.5">
               <form
                 onSubmit={(e) => { e.preventDefault(); cancelTyping(); runSearch(); }}
-                className={`ai-search-form flex items-center gap-2 sm:gap-3 rounded-xl border-2 border-slate-200 bg-white px-2 sm:px-3 py-1 focus-within:border-brand-600 focus-within:ring-2 focus-within:ring-brand-200 transition-colors motion-reduce:transition-none ${resp ? 'is-joined' : ''}`}
+                className={`ai-search-form flex items-center gap-2 sm:gap-3 rounded-xl border-2 border-slate-200 bg-white px-2 sm:px-3 py-1 focus-within:border-brand-600 focus-within:ring-2 focus-within:ring-brand-200 transition-colors motion-reduce:transition-none ${(resp || (demoView && !searchError && !loading)) ? 'is-joined' : ''}`}
                 role="search"
                 aria-label="חיפוש בפורטל"
               >
@@ -931,6 +931,50 @@ function LandingPageInner() {
                         <span>{t.label}</span>
                         <X className="w-3 h-3 text-slate-500" aria-hidden="true" />
                       </button>
+                    ))}
+                    <span className="text-slate-600 ms-auto shrink-0">{countText}</span>
+                  </div>
+                );
+              })()}
+
+              {/* Demo readout — mounted in the SAME sticky-bar slot as
+                  the real readout so the demo cycle looks visually
+                  identical to a completed user search (amber frame
+                  joined to the form above, same tag pills with ✕,
+                  same count text at the end). Rendered only while
+                  the demo loop is active AND the visitor has no
+                  real search in flight. Purely decorative:
+                  aria-hidden, pointer-events:none, ✕ is a display
+                  glyph only — clicking does nothing (a real ✕ would
+                  fire rerunWithout which needs a real resp).
+                  Keyed by demoView.q so each new cycle
+                  remounts and re-fires the tag stagger animation. */}
+              {demoView && !resp && !searchError && !loading && (() => {
+                const f = demoView.filters;
+                const tags: string[] = [];
+                tags.push(f.ad_type === 'housing' ? 'דיור' : 'עובדים');
+                if (f.profession_code) tags.push(labelFor(professions, f.profession_code));
+                if (f.origin_country)  tags.push(labelFor(origins,     f.origin_country));
+                if (f.region)          tags.push(labelFor(regions,     f.region));
+                if (f.quantity)        tags.push(String(f.quantity));
+                const n = demoView.results.length;
+                const countText = n === 1 ? 'תוצאה אחת' : `${n} תוצאות`;
+                return (
+                  <div
+                    key={demoView.q}
+                    className="readout demo-readout px-3 py-2 flex items-center flex-wrap gap-2 text-xs text-slate-800"
+                    aria-hidden="true"
+                    style={{ pointerEvents: 'none' }}
+                  >
+                    {tags.map((t, i) => (
+                      <span
+                        key={i}
+                        className="demo-tag inline-flex items-center gap-1 rounded-full border border-brand-300 bg-white text-brand-900 text-xs font-semibold px-2 py-0.5 min-h-[26px]"
+                        style={{ animationDelay: `${i * 105}ms` }}
+                      >
+                        <span>{t}</span>
+                        <X className="w-3 h-3 text-slate-500" aria-hidden="true" />
+                      </span>
                     ))}
                     <span className="text-slate-600 ms-auto shrink-0">{countText}</span>
                   </div>
@@ -1160,26 +1204,11 @@ function LandingPageInner() {
                 <div className="demo-scan-wrap">
                   <div className="demo-scan" />
                 </div>
-                {/* Tags row — mirrors the readout above but inert
-                    (no ✕). Each pill fades in with a 105ms stagger
-                    via CSS animation-delay. 'הבנתי:' preamble
-                    removed to match the readout. */}
-                <div className="demo-tags flex items-center flex-wrap gap-2 mb-2">
-                  {(() => {
-                    const f = demoView.filters;
-                    const items: string[] = [];
-                    items.push(f.ad_type === 'housing' ? 'דיור' : 'עובדים');
-                    if (f.profession_code) items.push(labelFor(professions, f.profession_code));
-                    if (f.origin_country)  items.push(labelFor(origins,     f.origin_country));
-                    if (f.region)          items.push(labelFor(regions,     f.region));
-                    if (f.quantity)        items.push(String(f.quantity));
-                    return items.map((t, i) => (
-                      <span key={i} className="demo-tag inline-flex items-center rounded-full border border-brand-200 bg-white text-brand-900 text-xs font-semibold px-2 py-0.5" style={{ animationDelay: `${i * 105}ms` }}>
-                        {t}
-                      </span>
-                    ));
-                  })()}
-                </div>
+                {/* Tags row moved OUT of demo-preview and into the
+                    sticky-bar's demo-readout so the demo cycle
+                    mirrors a real search's frame exactly. Cards
+                    below stay here since real results render below
+                    the readout too. */}
                 {/* Cards — max 2 (§4). Each staggers in via 120ms delay. */}
                 <ul className="demo-cards space-y-2">
                   {demoView.results.map((ad, i) => (
