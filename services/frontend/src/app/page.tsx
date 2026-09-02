@@ -939,8 +939,20 @@ function LandingPageInner() {
             </div>
           </div>
 
-          {/* Category tiles + search — the commercial hero */}
-          <section id="search-hero" className="bg-gradient-to-b from-slate-50 to-white pt-6 pb-6">
+          {/* Category tiles + search — the commercial hero.
+              Was `pt-6 pb-6` (48px total) plus a `gap-6` inner
+              (another 24px around the filters-toggle-wrap). After
+              F1 removed the tiles + F2 v2 hoisted the search into
+              the sticky bar, everything meaningful in this section
+              is gone; only the always-mounted 'סינון מתקדם'
+              link remains. The old padding reserved a visible
+              72-px empty band right between the sticky search bar
+              and the results — dead space that made the surfaces
+              look disconnected. Padding removed; the filters
+              toggle carries its own tight `pt-3` so there's a
+              small breathing gap from the sticky bar above and no
+              padding under it. */}
+          <section id="search-hero" className="bg-gradient-to-b from-slate-50 to-white">
             {/* Landing IA — search-first on mobile.
                 Was `space-y-6` (block layout, DOM order = display order:
                 heading → tiles → search → chips → advanced). At 390px
@@ -954,7 +966,7 @@ function LandingPageInner() {
                   order-5: category tiles on mobile (was 2nd)
                 sm+ overrides restore the desktop order (tiles above
                 the search) so the desktop layout doesn't regress. */}
-            <div className="max-w-5xl mx-auto px-4 flex flex-col gap-6">
+            <div className="max-w-5xl mx-auto px-4 flex flex-col gap-3">
               {/* F2 v2 §5.1 — h1 moved OUT of the hero to the
                   header-block section right above the sticky bar
                   (see `<section id="page-header">` below). The
@@ -1047,7 +1059,7 @@ function LandingPageInner() {
                   `resp` exists — CSS handles the 700ms fade-in
                   delay so it lands AFTER the cards. Text link
                   only, not a button. */}
-              <div className={`filters-toggle-wrap order-4 sm:order-5 text-center ${resp ? 'is-post-search' : ''}`}>
+              <div className={`filters-toggle-wrap order-4 sm:order-5 text-center pt-3 ${resp ? 'is-post-search' : ''}`}>
                 <button
                   type="button"
                   onClick={() => setAdvancedOpen((o) => !o)}
