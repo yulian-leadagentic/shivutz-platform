@@ -1,15 +1,22 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2, ArrowRight } from 'lucide-react';
 import { marketplaceApi } from '@/lib/api';
+import { marketplaceSubscriptionsApi } from '@/lib/api/marketplaceSubscriptions';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import ImageUploader from '@/components/marketplace/ImageUploader';
 
-const CATEGORIES = [
+// FALLBACK ONLY. The real category list is loaded at mount time from
+// GET /marketplace/admin/catalog (public endpoint, returns only
+// is_active categories ordered by sort_order). Kept here so an API
+// failure still shows the four historical categories instead of an
+// empty picker (empty reads as broken). Do NOT extend by editing this
+// list — add a category in /admin/marketplace and it will show up.
+const FALLBACK_CATEGORIES = [
   { value: 'housing',   label: 'דיור' },
   { value: 'equipment', label: 'ציוד' },
   { value: 'services',  label: 'שירותים' },
@@ -43,6 +50,46 @@ export default function NewListingPage() {
   const [images, setImages]  = useState<string[]>([]);
   const [saving, setSaving]  = useState(false);
   const [error, setError]    = useState('');
+
+  // H5 — categories loaded from the same public /catalog endpoint the
+  // subscribe page uses. On mount only (admin CRUD ops are rare and
+  // an ad-creation session is short — no need to re-poll).
+  const [categories, setCategories] = useState<{ value: string; label: string }[]>([]);
+  const [catsLoading, setCatsLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    marketplaceSubscriptionsApi
+      .catalog()
+      .then((rows) => {
+        if (cancelled) return;
+        const mapped = rows.map((c) => ({ value: c.code, label: c.name_he }));
+        // Empty catalog (all deactivated) still reads as broken to a
+        // corp user, so keep the fallback in that case too.
+        setCategories(mapped.length > 0 ? mapped : FALLBACK_CATEGORIES);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setCategories(FALLBACK_CATEGORIES);
+      })
+      .finally(() => {
+        if (!cancelled) setCatsLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  // If the initial 'housing' default isn't in the loaded list (e.g.
+  // admin renamed the codes), switch to the first available so the
+  // pill row always shows a selected item.
+  useEffect(() => {
+    if (categories.length === 0) return;
+    if (!categories.some((c) => c.value === form.category)) {
+      setForm((f) => ({ ...f, category: categories[0].value }));
+    }
+    // Intentional: only react to categories arriving, not to form
+    // edits (user's own category clicks must not be reverted here).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [categories]);
 
   function update(field: string, value: unknown) {
     setForm((f) => ({ ...f, [field]: value }));
@@ -100,20 +147,37 @@ export default function NewListingPage() {
             <div className="space-y-2">
               <label className="text-sm font-medium text-slate-700">קטגוריה *</label>
               <div className="flex flex-wrap gap-2">
-                {CATEGORIES.map((c) => (
-                  <button
-                    key={c.value}
-                    type="button"
-                    onClick={() => update('category', c.value)}
-                    className={`px-4 py-2 rounded-full text-sm font-medium border transition-all ${
-                      form.category === c.value
-                        ? 'bg-brand-600 text-slate-900 border-brand-600'
-                        : 'border-slate-200 text-slate-600 hover:border-brand-300'
-                    }`}
-                  >
-                    {c.label}
-                  </button>
-                ))}
+                {catsLoading ? (
+                  // Skeleton — 4 grey pill placeholders sized like a
+                  // real category button so the form doesn't jump when
+                  // the real list arrives. Empty <div> instead of a
+                  // "loading…" string per the H5 rule against
+                  // showing an empty list (empty reads as broken).
+                  Array.from({ length: 4 }).map((_, i) => (
+                    <span
+                      key={i}
+                      className="px-4 py-2 rounded-full text-sm border border-slate-200 bg-slate-100 text-transparent select-none"
+                      aria-hidden="true"
+                    >
+                      טוען
+                    </span>
+                  ))
+                ) : (
+                  categories.map((c) => (
+                    <button
+                      key={c.value}
+                      type="button"
+                      onClick={() => update('category', c.value)}
+                      className={`px-4 py-2 rounded-full text-sm font-medium border transition-all ${
+                        form.category === c.value
+                          ? 'bg-brand-600 text-slate-900 border-brand-600'
+                          : 'border-slate-200 text-slate-600 hover:border-brand-300'
+                      }`}
+                    >
+                      {c.label}
+                    </button>
+                  ))
+                )}
               </div>
             </div>
 
