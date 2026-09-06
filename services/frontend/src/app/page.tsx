@@ -1272,13 +1272,23 @@ function LandingPageInner() {
                   its own bottom padding now, so when it returns
                   null (no boosted ads) zero pixels are reserved.
                   Previous wrapper section reserved 24px even when
-                  empty; removed. */}
+                  empty; removed.
+                  H8 §2 — this IS the promoted-banner slot. The
+                  spec asked for a banner in the vacated space; F3
+                  already made this component promotion-gated with
+                  `return null` on empty, so per H8's "use the F3
+                  slot, don't add a second mechanism" rule, no
+                  new banner is added. When a promotion exists it
+                  fills the space; when not, no space at all. */}
               <FeaturedAdsCarousel />
 
-              {/* Trust bar */}
-              <section className="pb-6">
-                <LandingTrustBar />
-              </section>
+              {/* Trust bar — H8 §1 threshold-gated inside the
+                  component (worker_ads ≥ 20 AND active_corps ≥ 10);
+                  under that it returns null and reserves zero
+                  pixels. The wrapping section that used to add
+                  pb-6 unconditionally is gone — the bar carries
+                  its own bottom padding when it renders. */}
+              <LandingTrustBar />
 
               {/* F3 §2.1 — AdCarousel leaderboard slot removed. Its
                   PLACEHOLDER_SLIDES were hardcoded 'advertise here'

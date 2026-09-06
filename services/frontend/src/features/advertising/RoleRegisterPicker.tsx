@@ -15,6 +15,13 @@ interface RoleTile {
   soon?: boolean;
 }
 
+// H8 §3 — "מתווכים ובעלי מקצוע (בקרוב)" tile removed from the
+// visible ROLES array. The tile object is preserved just below so
+// re-enabling it is a one-line splice back into ROLES once the
+// service-provider onboarding flow is live. A "בקרוב" tile is a
+// PROMISE that takes real estate and teaches the visitor that the
+// platform is partial — the same rule F1 applied to the "ציוד
+// ושירותים (בקרוב)" hero tile.
 const ROLES: RoleTile[] = [
   {
     icon:  HardHat,
@@ -28,13 +35,20 @@ const ROLES: RoleTile[] = [
     desc:  'פרסמו את זמינות העובדים והדיור שלכם, קבלו פניות ישירות מקבלנים.',
     href:  '/register/corporation',
   },
-  {
-    icon:  Sparkles,
-    title: 'מתווכים ובעלי מקצוע',
-    desc:  'בקרוב — פרסום פניות לתחומים משיקים: ציוד, ביטוח, הובלה ועוד.',
-    soon:  true,
-  },
 ];
+
+// Kept out of ROLES so it doesn't render; keep the reference so
+// re-enabling later is a splice into ROLES, not a rewrite.
+// Also: docs/cc-prompts note — when the service-provider flow lands,
+// consider swapping "בקרוב" for a lead-capture ("ספק שירות?
+// השאירו פרטים ותהיו הראשונים") so the tile earns its space.
+const _SERVICE_PROVIDER_TILE_DISABLED: RoleTile = {
+  icon:  Sparkles,
+  title: 'מתווכים ובעלי מקצוע',
+  desc:  'בקרוב — פרסום פניות לתחומים משיקים: ציוד, ביטוח, הובלה ועוד.',
+  soon:  true,
+};
+void _SERVICE_PROVIDER_TILE_DISABLED;
 
 export function RoleRegisterPicker() {
   return (
@@ -44,7 +58,7 @@ export function RoleRegisterPicker() {
         <p className="text-sm text-slate-500">בחרו את הכובע שלכם והתחילו</p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {ROLES.map((r) => {
           const Icon    = r.icon;
           const content = (

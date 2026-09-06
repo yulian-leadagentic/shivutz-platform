@@ -25,6 +25,27 @@ export default function LandingNav(_: LandingNavProps) {
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  // H8 §4 — mirror of the `#how-it-works` disclosure state. Read from
+  // the URL hash (single source of truth shared with
+  // HowItWorksSection), synced via `hashchange`. Drives aria-expanded
+  // on the nav trigger AND the toggle direction on click.
+  const [howOpen, setHowOpen] = useState(false);
+  useEffect(() => {
+    const sync = () => setHowOpen(window.location.hash === '#how-it-works');
+    sync();
+    window.addEventListener('hashchange', sync);
+    return () => window.removeEventListener('hashchange', sync);
+  }, []);
+  function toggleHow(e: React.MouseEvent) {
+    e.preventDefault();
+    if (window.location.hash === '#how-it-works') {
+      // Strip hash without a Back-stack entry the user has to escape.
+      history.pushState(null, '', window.location.pathname + window.location.search);
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+    } else {
+      window.location.hash = 'how-it-works';
+    }
+  }
   const userMenuRef = useRef<HTMLDivElement>(null);
   const { isLoggedIn, displayName, entityType, role } = useAuth();
 
@@ -87,7 +108,18 @@ export default function LandingNav(_: LandingNavProps) {
             buttons in the RegistrationCTA section; having a third nav
             entry made the top bar feel cluttered with duplicate paths. */}
         <nav className="hidden md:flex items-center gap-6">
-          <a href="#how-it-works" className={`text-sm font-medium transition-colors ${linkCls}`}>
+          {/* H8 §4 — was an anchor scrolling to a permanently-open
+              section. Now a disclosure trigger — aria-expanded /
+              aria-controls wire it to HowItWorksSection which is
+              hidden by default. Kept href for progressive
+              enhancement (no-JS users still land at the anchor). */}
+          <a
+            href="#how-it-works"
+            onClick={toggleHow}
+            aria-expanded={howOpen}
+            aria-controls="how-it-works"
+            className={`text-sm font-medium transition-colors ${linkCls}`}
+          >
             איך זה עובד
           </a>
           <span
@@ -197,7 +229,18 @@ export default function LandingNav(_: LandingNavProps) {
       {/* Mobile drawer */}
       {menuOpen && (
         <div className="md:hidden bg-white border-t border-slate-100 px-6 py-4 space-y-1 shadow-xl">
-          <a href="#how-it-works" className="block text-sm font-medium text-slate-700 py-2.5 hover:text-brand-600" onClick={() => setMenuOpen(false)}>איך זה עובד</a>
+          {/* H8 §4 — mirrors the desktop trigger. Same aria-controls
+              value so the section's Esc handler can find EITHER
+              trigger via querySelector and restore focus to it. */}
+          <a
+            href="#how-it-works"
+            onClick={(e) => { toggleHow(e); setMenuOpen(false); }}
+            aria-expanded={howOpen}
+            aria-controls="how-it-works"
+            className="block text-sm font-medium text-slate-700 py-2.5 hover:text-brand-600"
+          >
+            איך זה עובד
+          </a>
           <span className="block text-sm font-medium text-slate-400 py-2.5 cursor-not-allowed" aria-disabled="true">
             שירותים נלווים
             <span className="ms-2 text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">בקרוב</span>

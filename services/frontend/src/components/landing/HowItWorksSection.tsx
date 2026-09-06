@@ -1,23 +1,30 @@
 'use client';
 
-import { useState } from 'react';
-import { MessageSquare, Sparkles, Handshake, ShieldCheck, type LucideIcon } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { MessageSquare, Sparkles, Handshake, ShieldCheck, X, type LucideIcon } from 'lucide-react';
 
-// "How it works" — responsive three-step infographic. Implemented per
-// the locked v2 spec (CLAUDE.md §HowItWorks v2). Single 560px
-// breakpoint:
-//   ≥560px (desktop) — 3 cards in a row, circles protruding above each
-//                      card, single horizontal dashed connector passes
-//                      through all three circle centres.
-//   <560px  (mobile) — 3 card-rows stacked vertically, each row is
-//                      [circle][icon][label] inline, short vertical
-//                      dashed connectors sit between cards.
+// "How it works" — H8 §4 disclosure.
 //
-// The previous version used `position:absolute` with hand-tuned
-// coordinates pinned to a 360px column — explicitly forbidden by §1 of
-// the v2 spec because it broke on desktop widths. This version uses
-// natural Grid/Flex layout that scales correctly from 360px through
-// 1920px, with all styling lifted to globals.css under `.bu-*` classes.
+// Was rendered open by default and permanently occupying real estate
+// on the landing (three big-circle step cards + connector). The
+// content is fine (fixed in F1 §4) but three sentences don't justify
+// hero-slot geometry.
+//
+// Now:
+//   • Collapsed by default. Renders NOTHING to the visitor at scroll=0.
+//   • The nav's "איך זה עובד" link is the trigger. State is shared via
+//     the URL hash `#how-it-works` — reading `location.hash` gives
+//     both components (nav + this section) the same source of truth
+//     without a Context. Clicking the nav toggles the hash; the
+//     section listens to `hashchange`.
+//   • Standard disclosure pattern: `hidden` attribute (not
+//     `height:0`), focus moves to the heading on open, Esc closes
+//     and returns focus to the trigger, `prefers-reduced-motion`
+//     honoured.
+//
+// Interior visuals kept from F1 §4 (single amber accent, no
+// three-colour cards). The infographic runs once the user opts in,
+// so its visual weight is no longer occupying the page uninvited.
 
 type StepNum = 1 | 2 | 3;
 
@@ -27,13 +34,6 @@ interface Step {
   icon: LucideIcon;
 }
 
-// F1 §4 — pre-F1 the three steps were "הרשמה ואימות → חיפוש
-// והתאמה → סגירת עסקה". Step 1 put registration BEFORE any value
-// delivered, which is false — the product lets a visitor search
-// anonymously. The rewritten flow puts registration where it
-// actually appears in the funnel (only at reveal), and it names
-// the actual mechanic on step 2 (a language-understanding
-// engine, not "search + match").
 const STEPS: Step[] = [
   { num: 1, label: 'שואלים בעברית',      icon: MessageSquare },
   { num: 2, label: 'המערכת מבינה ומציגה', icon: Sparkles      },
@@ -46,36 +46,97 @@ const EXPLANATIONS: Record<StepNum, string> = {
   3: 'ההרשמה נדרשת רק כדי לחשוף את פרטי הקשר של התאגיד. משם, הפנייה ישירה — בלי מתווכים.',
 };
 
-// F1 §4 — single accent for all three cards. The old three-colour
-// scheme (orange / navy / emerald) read as three unrelated blocks;
-// the number itself is enough hierarchy. Brand orange throughout
-// keeps the section identified with the product's primary accent.
-const STEP_ACCENT: Record<StepNum, 'orange' | 'navy' | 'emerald'> = {
-  1: 'orange',
-  2: 'orange',
-  3: 'orange',
-};
+const HASH = '#how-it-works';
+
+function closeHash() {
+  // Strip the hash without adding a history entry the user has to
+  // Back out of. pushState with ' ' (single space) collapses to no
+  // hash on modern Chromium/Firefox/Safari — needed because a bare
+  // '' is ignored. Then dispatch hashchange manually because
+  // pushState doesn't fire it.
+  history.pushState(null, '', window.location.pathname + window.location.search);
+  window.dispatchEvent(new HashChangeEvent('hashchange'));
+}
 
 export default function HowItWorksSection() {
-  // Accordion behaviour: clicking a step toggles its panel. Only one
-  // panel is open at a time; clicking the active card closes it.
+  const [open, setOpen] = useState(false);
   const [openStep, setOpenStep] = useState<StepNum | null>(null);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+
+  // Sync open state to the URL hash — nav writes the hash, this
+  // effect reads it. `hashchange` fires when either party updates it.
+  useEffect(() => {
+    const sync = () => setOpen(window.location.hash === HASH);
+    sync();
+    window.addEventListener('hashchange', sync);
+    return () => window.removeEventListener('hashchange', sync);
+  }, []);
+
+  // When the section opens: scroll to it and move focus to the
+  // heading (tabindex=-1 makes the h2 focusable but keeps it out of
+  // the normal tab order). Instant scroll on prefers-reduced-motion.
+  useEffect(() => {
+    if (!open) return;
+    const reduce = typeof window !== 'undefined'
+      && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    const raf = requestAnimationFrame(() => {
+      headingRef.current?.scrollIntoView({
+        behavior: reduce ? 'auto' : 'smooth',
+        block: 'start',
+      });
+      headingRef.current?.focus();
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [open]);
+
+  // Esc closes and returns focus to the nav trigger (found by its
+  // aria-controls attribute so we don't hard-code a selector on a
+  // specific instance — both desktop nav and mobile drawer buttons
+  // share the same aria-controls value).
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        closeHash();
+        const trigger = document.querySelector<HTMLElement>('[aria-controls="how-it-works"]');
+        trigger?.focus();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open]);
+
   return (
     <section
       id="how-it-works"
       dir="rtl"
       aria-label="איך זה עובד"
       className="bu-how"
+      hidden={!open}
     >
-      <p className="bu-eyebrow">פשוט, מהיר ובטוח</p>
-      <h2 className="bu-title">איך זה עובד?</h2>
-      <p className="bu-subtitle">שלושה שלבים פשוטים בדרך לעסקה</p>
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex-1">
+          <p className="bu-eyebrow">פשוט, מהיר ובטוח</p>
+          <h2
+            ref={headingRef}
+            tabIndex={-1}
+            className="bu-title outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 rounded"
+          >
+            איך זה עובד?
+          </h2>
+          <p className="bu-subtitle">שלושה שלבים פשוטים בדרך לעסקה</p>
+        </div>
+        <button
+          type="button"
+          onClick={closeHash}
+          aria-label="סגור"
+          className="shrink-0 mt-2 -me-2 p-2 rounded-full text-slate-500 hover:bg-slate-100 hover:text-slate-800 focus-visible:ring-2 focus-visible:ring-brand-500"
+        >
+          <X className="w-5 h-5" />
+        </button>
+      </div>
 
       <div className="bu-track">
-        {/* Horizontal dashed connector — visible on desktop only.
-            preserveAspectRatio="none" stretches the line across the
-            full track width regardless of the actual container size.
-            The bu-line class drives the dash-flow animation. */}
         <svg
           className="bu-connect-h"
           viewBox="0 0 880 2"
@@ -83,11 +144,6 @@ export default function HowItWorksSection() {
           aria-hidden="true"
         >
           <defs>
-            {/* F1 §4 — single-accent connector so the three circles
-                read as one journey, not three unrelated stages.
-                Kept as a gradient with brand-600 endpoints so a
-                subtle darkening at the ends still guides the eye
-                across the line, without introducing a second hue. */}
             <linearGradient id="buGradH" x1="0" y1="0" x2="1" y2="0">
               <stop offset="0%"   stopColor="#F7941D" />
               <stop offset="50%"  stopColor="#F7941D" />
@@ -111,9 +167,6 @@ export default function HowItWorksSection() {
             const isOpen = openStep === step.num;
             return (
               <div key={step.num} className="bu-step" data-step={step.num}>
-                {/* Card is now a button — clicking toggles the
-                    explanation panel below the grid. aria-expanded +
-                    aria-controls wire screen readers to the panel. */}
                 <button
                   type="button"
                   className="bu-card"
@@ -129,12 +182,6 @@ export default function HowItWorksSection() {
                   <span className="bu-label">{step.label}</span>
                 </button>
 
-                {/* Per-step inline explanation — MOBILE only. Renders
-                    directly below the tapped card so the user sees
-                    context next to what they touched, instead of
-                    having to look at the bottom of the section to
-                    find a single shared panel. Hidden on desktop via
-                    CSS (.bu-explain-mobile). */}
                 <div
                   className={`bu-explain bu-explain-mobile ${isOpen ? 'is-open' : ''}`}
                   aria-live="polite"
@@ -142,16 +189,13 @@ export default function HowItWorksSection() {
                   <div className="bu-explain-content">
                     <div
                       className="bu-explain-inner"
-                      data-accent={STEP_ACCENT[step.num]}
+                      data-accent="orange"
                     >
                       {isOpen ? EXPLANATIONS[step.num] : null}
                     </div>
                   </div>
                 </div>
 
-                {/* Vertical dashed connector — between cards on mobile.
-                    Hidden on desktop via CSS, and never rendered after
-                    the last step. */}
                 {!isLast && (
                   <svg
                     className="bu-connect-v"
@@ -172,10 +216,6 @@ export default function HowItWorksSection() {
           })}
         </div>
 
-        {/* Shared expansion panel — DESKTOP only. Sits below the grid
-            and slides down via grid-template-rows 0fr → 1fr. Hidden on
-            mobile via CSS (.bu-explain-desktop) — mobile uses the
-            per-step inline panel above instead. */}
         <div
           id="bu-explain-panel"
           className={`bu-explain bu-explain-desktop ${openStep ? 'is-open' : ''}`}
@@ -184,7 +224,7 @@ export default function HowItWorksSection() {
           <div className="bu-explain-content">
             <div
               className="bu-explain-inner"
-              data-accent={openStep ? STEP_ACCENT[openStep] : 'orange'}
+              data-accent="orange"
             >
               {openStep ? EXPLANATIONS[openStep] : null}
             </div>
@@ -192,7 +232,6 @@ export default function HowItWorksSection() {
         </div>
       </div>
 
-      {/* Summary strip */}
       <div className="bu-summary">
         <span className="bu-summary-icon"><ShieldCheck /></span>
         <span>הכל במקום אחד — דיגיטלי, מהיר ושקוף</span>
