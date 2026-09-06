@@ -98,8 +98,19 @@ export default function HowItWorksSection() {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         closeHash();
-        const trigger = document.querySelector<HTMLElement>('[aria-controls="how-it-works"]');
-        trigger?.focus();
+        // There are two triggers in the DOM (desktop nav + mobile
+        // drawer). Only one is visible at a time — the other is
+        // hidden by Tailwind's `md:` breakpoint or a closed drawer,
+        // and focusing an offsetParent-null element silently drops
+        // to <body>. Pick the visible one; if neither is (mobile
+        // drawer was auto-closed on click) fall back to the
+        // hamburger button which is always visible on mobile.
+        const triggers = Array.from(
+          document.querySelectorAll<HTMLElement>('[aria-controls="how-it-works"]'),
+        );
+        const visible = triggers.find((t) => t.offsetParent !== null);
+        const hamburger = document.querySelector<HTMLElement>('header button.md\\:hidden');
+        (visible ?? hamburger)?.focus();
       }
     };
     window.addEventListener('keydown', onKey);
