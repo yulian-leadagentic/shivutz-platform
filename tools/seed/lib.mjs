@@ -9,6 +9,13 @@ const KNOWN_STAGING_HOSTS = [
   // gateway internally), so pointing GATEWAY_URL at the frontend host
   // works — the seed doesn't need the raw gateway URL of that env.
   'frontend-pivot-staging.up.railway.app',
+  // Staging aliases exposed by CLAUDE.md — the same "Staging" Railway
+  // env served through the frontend container, which proxies /api/*
+  // to the internal gateway. Adding both custom domains so
+  // GATEWAY_URL=https://staging.buildupai.net (the URL a QA session
+  // is already logged into) works without a separate flag.
+  'staging.buildupai.net',
+  'staging.tagidai.co',
 ];
 
 /** Return the gateway base URL after enforcing the staging guard.
