@@ -50,7 +50,7 @@ def list_ads(
         SELECT a.*,
                COALESCE(c.company_name_he, c.company_name) AS owner_name
           FROM ads a
-          LEFT JOIN corporations c ON c.id = a.owner_entity_id
+          LEFT JOIN corporations c ON c.id COLLATE utf8mb4_0900_ai_ci = a.owner_entity_id
          {'WHERE ' + ' AND '.join(wheres) if wheres else ''}
          ORDER BY a.created_at DESC
          LIMIT {limit}
