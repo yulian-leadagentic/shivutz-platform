@@ -122,15 +122,54 @@ export async function loginAs(base, phone, entityId, entityType, retriesLeft = 2
   const login = await post(base, '/api/auth/login/otp', { phone: normPhone, code: MASTER_OTP });
   if (!login.ok) throw new Error(`login/otp failed ${login.status}: ${login.raw.slice(0, 200)}`);
   let token = login.body?.access_token;
-  if (login.body?.needs_entity_selection && entityId && entityType) {
-    // Re-issue JWT scoped to the requested entity.
+
+  // Auto-select the requested entity when the auth service demands
+  // it. Two callers hit this branch:
+  //  1. seedContractor pre-existing → corpRow.id is null on the
+  //     seed's second/third run. The old code required both
+  //     entityId AND entityType before calling select-entity, so
+  //     when id was null it silently skipped, `token` stayed the
+  //     bootstrap-only value (or undefined), and the throw below
+  //     killed the whole per-corp branch. That's the direct cause
+  //     of corps 5 + 13 producing zero ads on rerun.
+  //  2. Anyone calling loginAs with only entityType (no id) —
+  //     which is the natural API for "log in as a corporation
+  //     without knowing the row id upfront".
+  // Fix: when needs_entity_selection is true and we know
+  // entityType, look up memberships with the bootstrap token,
+  // find the first matching one, call select-entity with the
+  // discovered id.
+  if (login.body?.needs_entity_selection && entityType) {
+    if (!token) throw new Error(`login/otp needs_entity_selection but no bootstrap token for ${phone}`);
+    let resolvedId = entityId;
+    if (!resolvedId) {
+      const m = await get(base, '/api/auth/memberships',
+        { Authorization: `Bearer ${token}` });
+      const list = Array.isArray(m.body?.memberships) ? m.body.memberships : [];
+      const match = list.find((x) => x.entity_type === entityType);
+      resolvedId = match?.entity_id;
+      if (!resolvedId) {
+        throw new Error(`login/otp needs_entity_selection but no ${entityType} membership on ${phone}`);
+      }
+    }
     const pick = await post(base, '/api/auth/select-entity',
-      { entity_id: entityId, entity_type: entityType },
+      { entity_id: resolvedId, entity_type: entityType },
       { Authorization: `Bearer ${token}` });
     if (!pick.ok) throw new Error(`select-entity failed ${pick.status}: ${pick.raw.slice(0, 200)}`);
     token = pick.body?.access_token;
   }
-  if (!token) throw new Error(`no access_token after login for ${phone}`);
+  // {prospect:true} bodies are a real auth-service response: the
+  // phone hasn't completed registration as a user (may have been
+  // touched by a contractor-intent OTP send that never verified).
+  // login/otp returns 200 with a `prospect` marker instead of a
+  // token. Surface that shape so the caller can see WHY there was
+  // no token, not just that there wasn't one.
+  if (!token) {
+    if (login.body?.prospect) {
+      throw new Error(`login returned prospect state for ${phone} (intent=${login.body?.intent}); phone needs registration completion before login can issue a token`);
+    }
+    throw new Error(`no access_token after login for ${phone}; body=${JSON.stringify(login.body)?.slice(0, 200)}`);
+  }
   return token;
 }
 

@@ -26,10 +26,19 @@ import {
 // Base for contractor/corp business_number generation. Kept high
 // enough (5-something) that real Israeli company IDs won't collide.
 const BN_BASE_CONTRACTOR = 590000000;
-const BN_BASE_CORP       = 591000000;
-// Phones: contractors get 0525-900-000..014, corps get 0525-900-100..109
-// (seedPhone(n) yields +9725259-00-XXX; we offset corps by +100).
-const PH_OFFSET_CORP = 100;
+// H7 salvage: corps at 591M collide with 8-of-10 phones that ended up
+// in auth-service prospect state (intent=contractor). Their POST
+// returns 409 on BN and login returns {prospect:true} without a
+// token, so re-seeding produces zero new ads on those corps. Moving
+// to 592M + phone offset 200 opens up a clean slate — 10 net-new
+// corps get created with fresh phones that were never touched by
+// any prior flow. The old 591M corps stay in staging DB as orphans
+// (harmless in pre-launch; no admin DELETE endpoint exists for
+// corps yet).
+const BN_BASE_CORP       = 592000000;
+// Phones: contractors 0525-900-000..014, corps 0525-900-200..209
+// (was 100..109 pre-H7-salvage — see BN comment above).
+const PH_OFFSET_CORP = 200;
 
 const stats = { contractors: { created: 0, existed: 0, failed: 0 },
                 corps:       { created: 0, existed: 0, failed: 0 },
