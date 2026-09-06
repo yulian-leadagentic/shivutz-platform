@@ -157,6 +157,12 @@ function LandingPageInner() {
   // querySelector every tick.
   const ghostTextRef = useRef<HTMLSpanElement>(null);
   const markRef      = useRef<HTMLSpanElement>(null);
+  // H6 — the sticky bar's height is variable (form only vs form +
+  // readout vs form + demo-readout, plus line-wrap on narrow widths),
+  // so scroll-margin can't be hardcoded. ref + ResizeObserver publish
+  // the live height to a CSS custom property `--sticky-h` on <html>,
+  // which every scroll-margin / spacer below reads via calc().
+  const stickyBarRef = useRef<HTMLDivElement>(null);
 
   const [q, setQ]           = useState('');
   const [resp, setResp]     = useState<SearchResponse | null>(null);
@@ -236,6 +242,27 @@ function LandingPageInner() {
       return () => clearTimeout(t);
     }
   }, [params]);
+
+  // H6 — publish live sticky-bar height to --sticky-h so scroll-margin
+  // targets and the results-section spacer track the real element,
+  // whatever height it has right now. ResizeObserver (not useEffect on
+  // resp) catches every source of height change: viewport resize,
+  // readout mount, demo readout mount, line-wrap when the query is
+  // long, whatever else lands inside the sticky slot later. 72px
+  // fallback exists in the CSS calc() itself for the pre-observer tick.
+  useEffect(() => {
+    const el = stickyBarRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const write = (h: number) => {
+      document.documentElement.style.setProperty('--sticky-h', `${Math.round(h)}px`);
+    };
+    write(el.getBoundingClientRect().height);
+    const ro = new ResizeObserver((entries) => {
+      for (const e of entries) write(e.contentRect.height);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   useEffect(() => {
     apiFetch<{ results: PublicAd[] }>('/ads/public/recent?limit=12')
@@ -768,7 +795,10 @@ function LandingPageInner() {
               above now provides the vertical offset from the fixed
               nav at scroll=0. Sticky-top-16 alone handles the
               scrolled state. */}
-          <div className="sticky top-16 z-40 bg-white/95 backdrop-blur-sm border-b border-slate-200 shadow-sm">
+          <div
+            ref={stickyBarRef}
+            className="sticky top-16 z-40 bg-white/95 backdrop-blur-sm border-b border-slate-200 shadow-sm"
+          >
             {/* Height budget (WCAG-tight): 44px row + 8px wrapper py-1
                 + 8px form py-1 + 4px border = 64px on 390. Desktop
                 gets 4px more wrapper padding → 68px, under the 72px
@@ -1287,7 +1317,21 @@ function LandingPageInner() {
             <section
               id="search-results"
               ref={searchResultsRef}
-              className="max-w-6xl mx-auto px-4 py-2 scroll-mt-16"
+              // H6 — dynamic scroll-margin. The auto-scroll landing
+              // offset must clear BOTH the fixed nav (h-16 = 64px)
+              // and the sticky bar (--sticky-h, published live by the
+              // ResizeObserver above), plus 12px breathing so the
+              // card doesn't kiss the bar. 72px fallback for the
+              // pre-observer first tick.
+              // Note: H6 §3 also suggested a matching paddingTop.
+              // Skipped — the section renders BELOW the sticky bar
+              // in flow at scroll=0, so an intra-section padding
+              // creates a visible ~120px empty band before the first
+              // card. The scroll-margin alone lands the section in
+              // its settled state fully clear of both bars, which is
+              // what "static state" means for this page.
+              style={{ scrollMarginTop: 'calc(64px + var(--sticky-h, 72px) + 12px)' }}
+              className="max-w-6xl mx-auto px-4 py-2"
             >
               <div className="flex flex-col lg:flex-row gap-6">
                 <div className="flex-1 space-y-4 min-w-0">
@@ -1639,13 +1683,14 @@ function AdCard({
   const regionLabel = ad.region          ? (regions.find((r)     => r.code === ad.region)?.name_he          ?? ad.region)          : null;
   return (
     <li
-      // SP — WCAG 2.4.11 Focus Not Obscured. The page has both the
-      // LandingNav (fixed, h-16 = 64px) and the sticky search bar
-      // (~72px on desktop, ~64px on 390) at the top. scroll-mt-36
-      // (=9rem = 144px) is the sum + a small buffer, so when the
-      // browser scrolls this card into view on Tab focus, the card
-      // lands BELOW both bars instead of being clipped by them.
-      className={`scroll-mt-36 rounded-2xl border p-4 shadow-sm bg-white ${boosted ? 'border-amber-300' : 'border-slate-200'}`}
+      // H6 · WCAG 2.4.11 — dynamic scroll-margin. Was scroll-mt-36
+      // (144px), a hardcoded sum of the fixed nav (64) and an
+      // assumed sticky-bar height (~72). Now reads the live sticky
+      // height plus the fixed nav (64) via calc(). Keyboard Tab
+      // through the cards lands them below BOTH bars regardless of
+      // whether the readout row is currently rendered.
+      style={{ scrollMarginTop: 'calc(64px + var(--sticky-h, 72px) + 12px)' }}
+      className={`rounded-2xl border p-4 shadow-sm bg-white ${boosted ? 'border-amber-300' : 'border-slate-200'}`}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
