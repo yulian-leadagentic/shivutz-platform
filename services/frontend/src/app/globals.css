@@ -640,3 +640,131 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .filters-toggle-wrap { transition: none; }
 }
+
+/* ─── H9 · Search results as comparison rows ────────────────────
+   Was: <ul> of full-flex cards, each ~155px tall on desktop,
+   with the reveal button occupying its own border-t row. Reading
+   6 rows meant scanning 6 unrelated blocks; comparing quantity
+   between corps required reading 6 paragraphs.
+   Now: semantic table via ul[role=table] / li[role=row], a 5-col
+   CSS grid inside each row, tabular-nums on the number cells for
+   vertical scanability. The reveal action is IN the fifth cell
+   at rest; on reveal, a full-width block wraps below via
+   grid-column:1/-1 so the amount of information visible per
+   scroll grows without deforming the frame.
+   Below sm (640px) the grid collapses to one column and each
+   cell picks up a data-label pseudo-prefix so a phone reader
+   still sees "כמות: 12" without a stripped header row above it.
+*/
+.results-table  { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.results-header,
+.results-row {
+  display: grid;
+  grid-template-columns: 1fr 92px 108px 96px 132px;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 16px;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;      /* slate-200 */
+  background: #ffffff;
+  min-height: 56px;
+}
+.results-header {
+  min-height: 32px;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  border: 0;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;                 /* slate-500 */
+}
+.results-row--boosted {
+  border-color: #fcd34d;          /* amber-300 */
+}
+.results-cell {
+  min-width: 0;
+}
+.results-cell-num {
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+  color: #0f172a;                 /* slate-900 */
+}
+.results-title {
+  font-weight: 700;
+  color: #0f172a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.results-body {
+  font-size: 12px;
+  color: #64748b;                 /* slate-500 */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+}
+.results-title-row {
+  display: flex; align-items: center; gap: 8px; min-width: 0;
+}
+.results-thumb {
+  width: 40px; height: 40px; border-radius: 8px; object-fit: cover;
+  border: 1px solid #e2e8f0; flex-shrink: 0;
+}
+.results-near-tag {
+  display: inline-flex; align-items: center;
+  font-size: 10px; font-weight: 700; color: #78350f;
+  background: #fef3c7; border: 1px solid #fcd34d;
+  border-radius: 9999px; padding: 2px 8px;
+  white-space: nowrap; margin-inline-start: 4px;
+}
+.results-cta {
+  display: inline-flex; align-items: center; justify-content: center;
+  gap: 8px; min-height: 40px; padding: 0 12px;
+  background: #059669;            /* emerald-600 */
+  color: #ffffff;
+  font-size: 13px; font-weight: 600;
+  border-radius: 8px; width: 100%;
+}
+.results-cta:hover { background: #047857; }
+.results-cta:disabled { background: #cbd5e1; color: #64748b; }
+.results-cta-revealed {
+  display: inline-flex; align-items: center; justify-content: center;
+  gap: 4px; font-size: 13px; font-weight: 600; color: #059669;
+  min-height: 40px;
+}
+.results-reveal-block {
+  grid-column: 1 / -1;
+  margin-top: 8px;
+  padding-top: 12px;
+  border-top: 1px solid #e2e8f0;
+  animation: results-reveal-in 240ms ease-out;
+}
+@keyframes results-reveal-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .results-reveal-block { animation: none; }
+}
+
+/* Mobile — <640px collapses to card w/ data-label prefixes.
+   Header row is display:none; the field name lives on each
+   cell via a data-l attribute + CSS ::before. Reveal CTA
+   takes full-width per §4. */
+@media (max-width: 639px) {
+  .results-header { display: none; }
+  .results-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
+    padding: 14px 16px;
+  }
+  .results-cell-num { text-align: start; }
+  .results-cell[data-l]:not(:first-child)::before {
+    content: attr(data-l) ": ";
+    color: #64748b; font-weight: 500;
+  }
+  .results-cta { width: 100%; }
+}

@@ -1439,26 +1439,53 @@ function LandingPageInner() {
                     );
                   })()}
 
-                  {resp && resp.results.length > 0 && (
-                    <ul className="space-y-3">
-                      {resp.results.map((ad, i) => {
-                        const revealed = reveals[ad.id];
-                        const boosted  = ad.featured_until && new Date(ad.featured_until) > new Date();
-                        const items: JSX.Element[] = [];
-                        items.push(<AdCard key={ad.id} ad={ad} revealed={revealed} revealing={revealing === ad.id} boosted={!!boosted} onReveal={() => revealFor(ad.id)} professions={professions} origins={origins} regions={regions} />);
-                        // F3 §2.3 — inline sponsored slot injection
-                        // removed. The only prior gating was cadence
-                        // (every 5th card) — not 'is there a real
-                        // promotion?'. InlineSponsoredAd is a
-                        // hardcoded 'פרסום כאן' placeholder that
-                        // would interrupt reading of real results
-                        // with fake-ad signage. Component file kept
-                        // so a future data-backed injection can
-                        // return here in one line.
-                        return items;
-                      })}
-                    </ul>
-                  )}
+                  {resp && resp.results.length > 0 && (() => {
+                    // H9 §1.4 — group by ad_type so mixed sets don't
+                    // render housing rows under a "כמות" column
+                    // header. In practice `filters.ad_type` is a
+                    // single value so results are homogeneous, but
+                    // the grouping still handles edge cases + keeps
+                    // the header:body invariant honest.
+                    const byKind = {
+                      worker:  resp.results.filter((a) => a.ad_type === 'worker'),
+                      housing: resp.results.filter((a) => a.ad_type === 'housing'),
+                    } as const;
+                    const groups = (['worker', 'housing'] as const).filter((k) => byKind[k].length > 0);
+                    return (
+                      <>
+                        {groups.map((kind) => (
+                          <ul
+                            key={kind}
+                            role="table"
+                            aria-label={kind === 'worker' ? 'תוצאות חיפוש — עובדים' : 'תוצאות חיפוש — דיור'}
+                            className="results-table"
+                          >
+                            <ResultsHeader kind={kind} />
+                            {byKind[kind].map((ad) => {
+                              const revealed = reveals[ad.id];
+                              const boosted  = ad.featured_until && new Date(ad.featured_until) > new Date();
+                              // F3 §2.3 — inline sponsored slot
+                              // injection stays removed (no cadence
+                              // logic here either).
+                              return (
+                                <AdRow
+                                  key={ad.id}
+                                  ad={ad}
+                                  revealed={revealed}
+                                  revealing={revealing === ad.id}
+                                  boosted={!!boosted}
+                                  onReveal={() => revealFor(ad.id)}
+                                  professions={professions}
+                                  origins={origins}
+                                  regions={regions}
+                                />
+                              );
+                            })}
+                          </ul>
+                        ))}
+                      </>
+                    );
+                  })()}
 
                   {/* NM — near-matches. Rendered ONLY when the backend
                       returned a second-pass set with a named relaxed
@@ -1550,26 +1577,45 @@ function LandingPageInner() {
                             ? `לא נמצאו התאמות מדויקות. מוצגות ${near.length} תוצאות קרובות. ${heading}`
                             : heading}
                         </div>
-                        <ul className="space-y-3">
-                          {near.map((ad) => {
-                            const revealed = reveals[ad.id];
-                            const boosted  = ad.featured_until && new Date(ad.featured_until) > new Date();
-                            return (
-                              <AdCard
-                                key={ad.id}
-                                ad={ad}
-                                revealed={revealed}
-                                revealing={revealing === ad.id}
-                                boosted={!!boosted}
-                                onReveal={() => revealFor(ad.id)}
-                                professions={professions}
-                                origins={origins}
-                                regions={regions}
-                                nearMatchTag={tagFor(ad)}
-                              />
-                            );
-                          })}
-                        </ul>
+                        {(() => {
+                          // Same kind-grouping as the exact set.
+                          // Near-matches inherit the same filters so
+                          // ad_type is likewise homogeneous, but
+                          // grouping preserves the invariant.
+                          const byKind = {
+                            worker:  near.filter((a) => a.ad_type === 'worker'),
+                            housing: near.filter((a) => a.ad_type === 'housing'),
+                          } as const;
+                          const groups = (['worker', 'housing'] as const).filter((k) => byKind[k].length > 0);
+                          return groups.map((kind) => (
+                            <ul
+                              key={kind}
+                              role="table"
+                              aria-label={kind === 'worker' ? 'תוצאות קרובות — עובדים' : 'תוצאות קרובות — דיור'}
+                              className="results-table"
+                            >
+                              <ResultsHeader kind={kind} />
+                              {byKind[kind].map((ad) => {
+                                const revealed = reveals[ad.id];
+                                const boosted  = ad.featured_until && new Date(ad.featured_until) > new Date();
+                                return (
+                                  <AdRow
+                                    key={ad.id}
+                                    ad={ad}
+                                    revealed={revealed}
+                                    revealing={revealing === ad.id}
+                                    boosted={!!boosted}
+                                    onReveal={() => revealFor(ad.id)}
+                                    professions={professions}
+                                    origins={origins}
+                                    regions={regions}
+                                    nearMatchTag={tagFor(ad)}
+                                  />
+                                );
+                              })}
+                            </ul>
+                          ));
+                        })()}
                       </div>
                     );
                   })()}
@@ -1665,7 +1711,36 @@ function LandingPageInner() {
   );
 }
 
-function AdCard({
+// H9 — semantic table header. Rendered ONCE per group (worker / housing)
+// above the rows. `aria-hidden` because screen readers get the field
+// names via the per-cell `aria-label`s on the data rows — a header
+// LI without semantic column-header linkage would read as "empty
+// row" and just add noise. The visual header still helps sighted
+// users skim which column is which.
+function ResultsHeader({ kind }: { kind: 'worker' | 'housing' }) {
+  const labels = kind === 'worker'
+    ? ['מודעה', 'כמות', 'מוצא', 'אזור', '']
+    : ['מודעה', 'מיטות', 'עיר',  '₪/מיטה', ''];
+  return (
+    <li role="row" aria-hidden="true" className="results-header">
+      <div className="results-cell">{labels[0]}</div>
+      <div className="results-cell results-cell-num">{labels[1]}</div>
+      <div className="results-cell">{labels[2]}</div>
+      <div className="results-cell results-cell-num">{labels[3]}</div>
+      <div className="results-cell" />
+    </li>
+  );
+}
+
+// H9 — one result row. The horizontal card was ~155px tall for 3
+// lines of text; this compresses to ≤56px at rest via CSS grid, and
+// the reveal action stays IN the fifth cell (no more full-width
+// button row). On reveal, a `.results-reveal-block` opens below via
+// grid-column:1/-1 — same LI, no layout jump. Below sm the grid
+// collapses to one column and each cell picks up its own
+// `data-l="…"` label so the mobile card still reads correctly with
+// the ResultsHeader hidden.
+function AdRow({
   ad, revealed, revealing, boosted, onReveal, professions, origins, regions, nearMatchTag,
 }: {
   ad: AdSearchResult;
@@ -1673,89 +1748,112 @@ function AdCard({
   revealing: boolean;
   boosted: boolean;
   onReveal: () => void;
-  // SR — enum arrays for code→Hebrew mapping. Passed from the parent
-  // (which already fetches them on mount) so the card doesn't fire
-  // duplicate enum requests. Falls through to the raw code if a
-  // lookup misses.
   professions: Profession[];
   origins:     { code: string; name_he: string }[];
   regions:     { code: string; name_he: string }[];
-  // NM — when this card came from the second-pass near-match set, the
-  // parent passes the specific dimension that differs from the
-  // contractor's request ("מוצא: רומניה" / "כמות: 12"). Rendered as a
-  // small amber chip inside the card so the difference is legible
-  // beyond just the section separator up-page. Not color-only —
-  // includes the field name in text.
+  // NM — when this row came from the near-match second pass, the
+  // parent passes the field-labelled diff for the relaxed dimension
+  // ("מוצא: רומניה"). H9 places the chip INSIDE the value-column
+  // it names, so the eye finds the difference where it looks for
+  // the value.
   nearMatchTag?: string;
 }) {
   const profLabel   = ad.profession_code ? (professions.find((p) => p.code === ad.profession_code)?.name_he ?? ad.profession_code) : null;
   const originLabel = ad.origin_country  ? (origins.find((o)     => o.code === ad.origin_country)?.name_he  ?? ad.origin_country)  : null;
   const regionLabel = ad.region          ? (regions.find((r)     => r.code === ad.region)?.name_he          ?? ad.region)          : null;
+
+  // Near-match tag placement — H9 §5: chip goes in the value-column
+  // whose dimension was relaxed. The parent passes "מוצא: X" or
+  // "אזור: X" or "כמות: N"; we peek at the prefix to route.
+  const isNearQty    = nearMatchTag?.startsWith('כמות');
+  const isNearOrigin = nearMatchTag?.startsWith('מוצא');
+  const isNearRegion = nearMatchTag?.startsWith('אזור');
+
+  const isWorker = ad.ad_type === 'worker';
+  // Housing thumbnail: first photo only in the closed row. No
+  // placeholder if none — reserving 40px for a missing thumb makes
+  // the row lie about content.
+  const thumbUrl = ad.ad_type === 'housing' && Array.isArray(ad.photos) && ad.photos[0]
+    ? ad.photos[0] : null;
+
+  // Cells 2-4 differ between worker / housing but the widths stay
+  // identical so the column rhythm is consistent across a mixed
+  // list (H9 §1.4 grouping rule handles kind-switches).
+  const col2Val = isWorker ? ad.quantity                          : ad.available_beds;
+  const col2Lbl = isWorker ? 'כמות'                                : 'מיטות';
+  const col3Val = isWorker ? originLabel                          : ad.city;
+  const col3Lbl = isWorker ? 'מוצא'                                : 'עיר';
+  const col4Val = isWorker ? regionLabel                          : ad.price_per_bed_nis ? `₪${ad.price_per_bed_nis}` : null;
+  const col4Lbl = isWorker ? 'אזור'                                : '₪/מיטה';
+
   return (
     <li
-      // H6 · WCAG 2.4.11 — dynamic scroll-margin. Was scroll-mt-36
-      // (144px), a hardcoded sum of the fixed nav (64) and an
-      // assumed sticky-bar height (~72). Now reads the live sticky
-      // height plus the fixed nav (64) via calc(). Keyboard Tab
-      // through the cards lands them below BOTH bars regardless of
-      // whether the readout row is currently rendered.
+      role="row"
+      // H6 · WCAG 2.4.11 — dynamic scroll-margin, unchanged: the
+      // sticky-bar height + fixed-nav offset land the row below
+      // both bars whether the readout is rendered or not.
       style={{ scrollMarginTop: 'calc(64px + var(--sticky-h, 72px) + 12px)' }}
-      className={`rounded-2xl border p-4 shadow-sm bg-white ${boosted ? 'border-amber-300' : 'border-slate-200'}`}
+      className={`results-row ${boosted ? 'results-row--boosted' : ''}`}
     >
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <h3 className="text-base font-bold text-slate-900">{ad.title_he}</h3>
-          <p className="text-xs text-slate-500 mt-0.5 flex flex-wrap gap-x-2">
-            {ad.ad_type === 'worker' ? (
-              <>
-                {profLabel   && <span>{profLabel}</span>}
-                {originLabel && <span>· מוצא: {originLabel}</span>}
-                {regionLabel && <span>· אזור: {regionLabel}</span>}
-                {ad.quantity && <span>· {ad.quantity} עובדים</span>}
-              </>
-            ) : (
-              <>
-                {ad.city              && <span>{ad.city}</span>}
-                {regionLabel          && <span>· אזור: {regionLabel}</span>}
-                {ad.available_beds    && <span>· {ad.available_beds} מיטות פנויות</span>}
-                {ad.price_per_bed_nis && <span>· ₪{ad.price_per_bed_nis}/מיטה</span>}
-              </>
-            )}
-          </p>
-        </div>
-        <div className="flex flex-col items-end gap-1 shrink-0">
-          {nearMatchTag && (
-            <span className="text-[10px] font-semibold text-amber-900 bg-amber-100 border border-amber-300 rounded-full px-2 py-0.5 whitespace-nowrap">
-              {nearMatchTag}
-            </span>
+      {/* Cell 1 — title + one-line body + housing thumb */}
+      <div className="results-cell" data-l="מודעה">
+        <div className="results-title-row">
+          {thumbUrl && (
+            <img src={thumbUrl} alt="" className="results-thumb" />
           )}
-          {boosted && <PromotedBadge />}
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="results-title">{ad.title_he}</span>
+              {boosted && <PromotedBadge size="sm" />}
+            </div>
+            {ad.body_he && <div className="results-body">{ad.body_he}</div>}
+          </div>
         </div>
       </div>
 
-      {ad.ad_type === 'housing' && Array.isArray(ad.amenities) && ad.amenities.length > 0 && (
-        <div className="flex flex-wrap gap-1 mt-2">
-          {ad.amenities.map((a) => (
-            <span key={a} className="text-[10px] font-semibold text-slate-600 bg-slate-100 rounded-full px-2 py-0.5">{a}</span>
-          ))}
-        </div>
-      )}
-      {ad.ad_type === 'housing' && Array.isArray(ad.photos) && ad.photos.length > 0 && (
-        <div className="mt-2 flex gap-2 overflow-x-auto">
-          {ad.photos.slice(0, 4).map((url) => (
-            <img
-              key={url}
-              src={url}
-              alt={ad.title_he ?? ''}
-              className="w-24 h-24 rounded-lg object-cover shrink-0 border border-slate-200"
-            />
-          ))}
-        </div>
-      )}
-      {ad.body_he && <p className="text-sm text-slate-700 mt-2 whitespace-pre-line">{ad.body_he}</p>}
+      {/* Cell 2 — quantity / beds */}
+      <div className="results-cell results-cell-num" data-l={col2Lbl} aria-label={`${col2Lbl}: ${col2Val ?? '—'}`}>
+        {col2Val ?? '—'}
+        {isNearQty && <span className="results-near-tag">{nearMatchTag}</span>}
+      </div>
 
-      <div className="pt-3 mt-3 border-t border-slate-100">
+      {/* Cell 3 — origin / city */}
+      <div className="results-cell" data-l={col3Lbl} aria-label={`${col3Lbl}: ${col3Val ?? '—'}`}>
+        {col3Val ?? '—'}
+        {isNearOrigin && <span className="results-near-tag">{nearMatchTag}</span>}
+      </div>
+
+      {/* Cell 4 — region / ₪ per bed */}
+      <div className="results-cell results-cell-num" data-l={col4Lbl} aria-label={`${col4Lbl}: ${col4Val ?? '—'}`}>
+        {col4Val ?? '—'}
+        {isNearRegion && <span className="results-near-tag">{nearMatchTag}</span>}
+      </div>
+
+      {/* Cell 5 — reveal action (in-row when closed) */}
+      <div className="results-cell" data-l="">
         {revealed ? (
+          <span className="results-cta-revealed" aria-label="נחשף"><Phone className="w-4 h-4" />✓ נחשף</span>
+        ) : (
+          <button
+            type="button"
+            onClick={onReveal}
+            disabled={revealing}
+            className="results-cta"
+          >
+            {revealing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Phone className="w-4 h-4" />}
+            הצג פרטים
+          </button>
+        )}
+      </div>
+
+      {/* Reveal block — full-width row that opens after successful
+          reveal. Preserves R2 note + R4 cross-link (product
+          decisions from earlier waves) plus housing gallery +
+          amenities so opening a housing row shows everything the
+          old card showed. grid-column:1/-1 makes it span all five
+          columns; below sm it just stacks after the last cell. */}
+      {revealed && (
+        <div className="results-reveal-block">
           <div className="text-sm text-slate-800 space-y-1">
             <div className="font-semibold flex items-center gap-1.5">
               <Building2 className="w-4 h-4 text-slate-500" />
@@ -1771,39 +1869,47 @@ function AdCard({
                 <Mail className="w-4 h-4" /> <span dir="ltr">{revealed.email}</span>
               </a>
             )}
-            {/* R2 — reassure the user that a re-view of this ad won't
-                cost a second reveal. Meets the top churn interview
-                complaint on paywalled directories: 'did that click
-                just charge me?' */}
+            {/* R2 — reassure re-viewing this ad won't charge a
+                second reveal. Product decision, DO NOT remove. */}
             <p className="text-xs text-slate-500 pt-1">
               נשמר לך — לא ייגבו חשיפות נוספות על מודעה זו.
             </p>
-            {/* R4 — cross-flow discovery on the "warm" moment after a
-                successful reveal. Contractor who just got a corp's
-                phone number is a warm lead for related surfaces. */}
+            {/* R4 — cross-flow discovery link. Product decision, DO NOT remove. */}
             <Link
-              href={ad.ad_type === 'worker' ? '/marketplace?category=housing' : '/'}
+              href={isWorker ? '/marketplace?category=housing' : '/'}
               className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-brand-700 hover:text-brand-900"
             >
               <Sparkles className="w-3.5 h-3.5" />
-              {ad.ad_type === 'worker'
+              {isWorker
                 ? 'צריך גם דיור לפועלים? עיין בשירותים נלווים'
                 : 'מחפש גם עובדים? חפש כאן'}
               <ArrowLeft className="w-3.5 h-3.5" />
             </Link>
+            {/* Housing extras — full gallery + amenities in the
+                opened row. Kept out of the closed row per §3.3
+                (40px height budget). */}
+            {ad.ad_type === 'housing' && Array.isArray(ad.amenities) && ad.amenities.length > 0 && (
+              <div className="flex flex-wrap gap-1 mt-2">
+                {ad.amenities.map((a) => (
+                  <span key={a} className="text-[10px] font-semibold text-slate-600 bg-slate-100 rounded-full px-2 py-0.5">{a}</span>
+                ))}
+              </div>
+            )}
+            {ad.ad_type === 'housing' && Array.isArray(ad.photos) && ad.photos.length > 0 && (
+              <div className="mt-2 flex gap-2 overflow-x-auto">
+                {ad.photos.slice(0, 4).map((url) => (
+                  <img
+                    key={url}
+                    src={url}
+                    alt={ad.title_he ?? ''}
+                    className="w-24 h-24 rounded-lg object-cover shrink-0 border border-slate-200"
+                  />
+                ))}
+              </div>
+            )}
           </div>
-        ) : (
-          <button
-            type="button"
-            onClick={onReveal}
-            disabled={revealing}
-            className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold px-4 py-2 rounded-lg disabled:bg-slate-300"
-          >
-            {revealing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Phone className="w-4 h-4" />}
-            הצג פרטי קשר
-          </button>
-        )}
-      </div>
+        </div>
+      )}
     </li>
   );
 }
