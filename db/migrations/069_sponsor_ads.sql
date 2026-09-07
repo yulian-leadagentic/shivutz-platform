@@ -1,3 +1,11 @@
+-- The migration runner leaves the connection with no default DB
+-- (per the shared _migrations ledger convention in auth_db). Every
+-- prior migration that creates a table in org_db opens with
+-- `USE org_db;` — see 064_promotions_table.sql. Omit and MySQL
+-- fails with "(1046, 'No database selected')" — that's exactly
+-- what happened on the first deploy of this migration.
+USE org_db;
+
 -- H10 §1 — sponsor ads for inline injection into contractor
 -- search results. This is a STANDALONE table (not tied to
 -- corporations, marketplace_categories, or subscription tiers).

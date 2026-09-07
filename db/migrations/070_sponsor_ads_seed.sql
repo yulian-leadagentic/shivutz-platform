@@ -1,3 +1,5 @@
+USE org_db;
+
 -- DEMO ONLY · לא לפרודקשן · אין אישור מהמפרסמות
 --
 -- H10 §4 — two placeholder sponsor ads used to demo the injection
