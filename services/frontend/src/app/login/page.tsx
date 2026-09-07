@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { HomeLink } from '@/components/HomeLink';
+import { checkIsraeliPhone, PHONE_ERROR_INVALID } from '@/lib/phone';
 import Logo from '@/components/Logo';
 // RT — return-to-reveal chain. Saved reveal intent (RevealModal wrote
 // it before bouncing here) must beat the default dashboard push;
@@ -267,7 +268,13 @@ function LoginPageInner() {
   // race against native form submission).
   async function handleSendOtp(e?: { preventDefault?: () => void }) {
     e?.preventDefault?.(); setError('');
-    if (!phone.trim()) { setError('יש להזין מספר טלפון'); return; }
+    // H11 §3.2 — local validation before firing send-otp, matching
+    // the backend's own rule (services/auth/src/otp.js:20). Avoids a
+    // round-trip that would waste a rate-limit slot and, historically,
+    // surfaced as the generic "הבקשה לא תקינה" because err.code was
+    // undefined (fixed on the server side too in otp.js).
+    const check = checkIsraeliPhone(phone);
+    if (!check.valid) { setError(check.message ?? PHONE_ERROR_INVALID); return; }
     setLoading(true);
     try {
       const res = await otpApi.sendOtp(phone.trim(), 'login');
@@ -388,6 +395,10 @@ function LoginPageInner() {
                 className="flex flex-col gap-4"
                 noValidate
               >
+                {/* H11 §3.2 — aria-describedby links this input to
+                    the ErrorBlock below whenever an error is showing,
+                    so screen readers announce the phone-validation
+                    message as belonging to this field. */}
                 <Input
                   label="מספר טלפון נייד"
                   type="tel"
@@ -396,8 +407,12 @@ function LoginPageInner() {
                   onChange={(e) => setPhone(e.target.value)}
                   autoComplete="tel"
                   dir="ltr"
+                  aria-invalid={error ? true : undefined}
+                  aria-describedby={error ? 'login-phone-error' : undefined}
                 />
-                <ErrorBlock error={error} />
+                <div id="login-phone-error">
+                  <ErrorBlock error={error} />
+                </div>
                 <Button
                   type="button"
                   size="lg"

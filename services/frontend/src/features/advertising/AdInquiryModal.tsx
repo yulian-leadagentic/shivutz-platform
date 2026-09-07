@@ -10,6 +10,7 @@ import { useRef, useState } from 'react';
 import { X, Loader2, CheckCircle2, Send } from 'lucide-react';
 import { apiFetch } from '@/lib/api/client';
 import { useModalA11y } from '@/components/ui/useModalA11y';
+import { checkIsraeliPhone } from '@/lib/phone';
 
 export function AdInquiryModal({
   open,
@@ -48,7 +49,12 @@ export function AdInquiryModal({
     e.preventDefault();
     if (busy) return;
     if (name.trim().length < 2)  { setError('יש להזין שם'); return; }
-    if (phone.trim().length < 9) { setError('מספר טלפון לא תקין'); return; }
+    // H11 §3.2 — was `length < 9`, which both false-negatived (a
+    // reasonable Israeli number is exactly 10 digits) and false-
+    // positived (a random 9-char string would pass). Now the same
+    // rule the auth service uses in normalisePhone().
+    const check = checkIsraeliPhone(phone);
+    if (!check.valid) { setError(check.message ?? 'מספר טלפון לא תקין'); return; }
     setBusy(true);
     setError('');
     try {

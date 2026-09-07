@@ -86,6 +86,12 @@ export function clearPendingSearch() { clear(PENDING_SEARCH_KEY); }
 export interface PendingReveal {
   adId: string;
   kind: 'unauth' | 'expired' | 'quota';
+  /** H11 §2.1 — the active search string when reveal was clicked.
+   *  Empty/undefined when the reveal fired from a screen without an
+   *  input (a deep-linked ad, an ad in the recent mosaic). Included
+   *  in the reconstructed returnTo so login/register bounces land
+   *  the user back on their own search, not a bare landing. */
+  q?: string;
   /** ISO string — 30 min after intent captured. */
   expires_at: string;
 }
@@ -103,7 +109,7 @@ export function readPendingReveal(): PendingReveal | null {
   return r;
 }
 
-export function writePendingReveal(intent: { adId: string; kind: PendingReveal['kind'] }) {
+export function writePendingReveal(intent: { adId: string; kind: PendingReveal['kind']; q?: string }) {
   writeJson(PENDING_REVEAL_KEY, {
     ...intent,
     expires_at: new Date(Date.now() + PENDING_REVEAL_TTL_MS).toISOString(),

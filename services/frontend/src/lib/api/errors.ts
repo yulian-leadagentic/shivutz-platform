@@ -25,7 +25,10 @@
 // returned (snake_case code, "Human Sentence", or a mid-refactor mix
 // of both). Grouped by concern so a new code slots into the right
 // section instead of being appended at random.
-const CODE_TO_HE: Record<string, string> = {
+// H11 §3.2 — exported so lib/phone.ts can pull the Hebrew copy for
+// `invalid_phone` and `phone_required` without duplicating the
+// strings. If either row is renamed here every caller inherits it.
+export const CODE_TO_HE: Record<string, string> = {
   // ── generic ────────────────────────────────────────────────
   internal_error:        'קרתה תקלה, נסה שוב עוד רגע',
   bad_request:           'הבקשה לא תקינה. בדוק את השדות ונסה שוב',

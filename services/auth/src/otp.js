@@ -16,11 +16,18 @@ const redis = require('./redis');
 // ─── Phone normalisation ───────────────────────────────────────────────────
 // Accepts: 0521234567 | 052-123-4567 | +9725212345 | 972521234567
 function normalisePhone(raw) {
-  if (!raw) throw Object.assign(new Error('phone_required'), { status: 400 });
+  // H11 §3.1 — every 400-throw needs a `code` field. The route-level
+  // apiError helper (auth.js:199) does `err.code || 'bad_request'`;
+  // without .code, the specific reason gets erased and the frontend
+  // falls back to the generic "הבקשה לא תקינה" message even though
+  // the correct Hebrew copy for invalid_phone / phone_required
+  // already exists in lib/api/errors.ts. That's the actual "unclear
+  // error message" bug — the string was there, just never wired up.
+  if (!raw) throw Object.assign(new Error('phone_required'), { status: 400, code: 'phone_required' });
   const digits = String(raw).replace(/\D/g, '');
   if (digits.startsWith('972') && digits.length === 12) return '+' + digits;
   if (digits.startsWith('0')   && digits.length === 10) return '+972' + digits.slice(1);
-  throw Object.assign(new Error('invalid_phone'), { status: 400 });
+  throw Object.assign(new Error('invalid_phone'), { status: 400, code: 'invalid_phone' });
 }
 
 // ─── Rate limiting ─────────────────────────────────────────────────────────

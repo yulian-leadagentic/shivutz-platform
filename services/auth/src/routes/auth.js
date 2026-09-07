@@ -145,7 +145,14 @@ function apiError(res, status, code, message, extras) {
 }
 const M_INTERNAL       = 'קרתה תקלה, נסה שוב עוד רגע';
 const M_RATE_LIMITED   = 'יותר מדי בקשות, נסה שוב עוד רגע';
+// H11 §3.1 — was M_INVALID_PHONE used for BOTH "missing phone" and
+// "malformed phone". The two cases are different — for a blank field
+// "not valid" is technically wrong; the correct copy is
+// "please enter a phone". Keep MSG_INVALID_PHONE for the malformed
+// case (guaranteed by otp.js:normalisePhone's format check) and add
+// MSG_PHONE_REQUIRED for the empty case (auth.js:187's guard).
 const M_INVALID_PHONE  = 'מספר טלפון לא תקין';
+const M_PHONE_REQUIRED = 'יש להזין מספר טלפון';
 const M_INVALID_PURPOSE= 'בקשה לא תקינה';
 const M_MISSING_FIELDS = 'חסר מידע בבקשה';
 const M_WRONG_CODE     = 'קוד לא נכון. נסה שנית';
@@ -184,7 +191,7 @@ async function sendOtp(phone, code) {
 router.post('/auth/send-otp', async (req, res) => {
   try {
     const { phone, purpose } = req.body;
-    if (!phone) return apiError(res, 400, 'phone_required', M_INVALID_PHONE);
+    if (!phone) return apiError(res, 400, 'phone_required', M_PHONE_REQUIRED);
     if (!['login', 'register', 'invite_accept'].includes(purpose)) {
       return apiError(res, 400, 'invalid_purpose', M_INVALID_PURPOSE);
     }

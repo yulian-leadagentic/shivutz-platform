@@ -21,6 +21,7 @@ import { adApi, type UsageResponse } from '@/lib/api/ads';
 import { memberApi, type TeamMember } from '@/lib/api/members';
 import { ApiError } from '@/lib/api/client';
 import { mapApiError } from '@/lib/api/errors';
+import { checkIsraeliPhone } from '@/lib/phone';
 import { useAuth } from '@/lib/AuthContext';
 
 // Static tier taglines; the actual limits are pulled live from the
@@ -121,7 +122,11 @@ export default function BillingPage() {
   async function addMember() {
     if (!entityId || !isContractor) return;
     const phone = newPhone.trim();
-    if (phone.length < 9) { setError('מספר טלפון לא תקין'); return; }
+    // H11 §3.2 — unified with the auth-service phone rule (was
+    // `length < 9` which accepted junk 9-char strings and rejected
+    // reasonable partials).
+    const check = checkIsraeliPhone(phone);
+    if (!check.valid) { setError(check.message ?? 'מספר טלפון לא תקין'); return; }
     setBusyMem('add');
     setError('');
     try {

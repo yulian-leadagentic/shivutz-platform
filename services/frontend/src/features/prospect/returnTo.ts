@@ -155,6 +155,17 @@ export function resolveDestination(
   const fromStore = readReturnTo();
   if (fromStore) return fromStore;
   const pending = readPendingReveal();
-  if (pending) return `/?reveal=${encodeURIComponent(pending.adId)}`;
+  if (pending) {
+    // H11 §2.1 — carry the search string through the pendingReveal
+    // fallback path too (not just the URL/sessionStorage path). Without
+    // this, an OTP restart or a tab-swap wipes the URL param, we fall
+    // back to pendingReveal, and the user lands on `/?reveal=<id>` with
+    // no results — exactly the "empty search screen" bug H11 is
+    // fixing. `q` is re-validated below by sanitizeReturnTo since the
+    // whole path is passed through it once more.
+    const qPart = pending.q ? `&q=${encodeURIComponent(pending.q)}` : '';
+    const target = `/?reveal=${encodeURIComponent(pending.adId)}${qPart}`;
+    return sanitizeReturnTo(target) ?? fallback;
+  }
   return fallback;
 }

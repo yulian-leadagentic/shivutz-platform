@@ -19,8 +19,13 @@ export type RevealBlock =
   // Legacy call-sites without adId still work (retry button hidden).
   | { kind: 'error';   message: string; adId?: string; status?: number };
 
-function returnHref(adId: string): string {
-  return `/?reveal=${encodeURIComponent(adId)}`;
+function returnHref(adId: string, q?: string): string {
+  // H11 §2.1 — include the caller's active search string so the
+  // post-auth bounce lands the visitor back ON their search, not on
+  // a bare landing page with no context. Empty/undefined q collapses
+  // to the old form (`/?reveal=<id>`), so this is a pure superset.
+  const qPart = q ? `&q=${encodeURIComponent(q)}` : '';
+  return `/?reveal=${encodeURIComponent(adId)}${qPart}`;
 }
 
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -29,6 +34,7 @@ export function RevealModal({
   block,
   onClose,
   onRetry,
+  q,
 }: {
   block: RevealBlock | null;
   onClose: () => void;
@@ -36,6 +42,12 @@ export function RevealModal({
    *  button that calls this with the ad id the caller was trying to
    *  reveal. Caller decides how to re-run revealFor. */
   onRetry?: (adId: string) => void;
+  /** H11 §2.1 — the active search string, threaded through the
+   *  returnTo URL and the pendingReveal fallback so a post-auth
+   *  bounce restores the screen the visitor left. Passed as a prop
+   *  (not read from window.location here) so the source of truth
+   *  stays with the search page's state. */
+  q?: string;
 }) {
   const dialogRef  = useRef<HTMLDivElement>(null);
   const returnFocusTo = useRef<HTMLElement | null>(null);
@@ -49,11 +61,11 @@ export function RevealModal({
   useEffect(() => {
     if (!block) return;
     if (block.kind === 'error') {
-      if (block.adId) writePendingReveal({ adId: block.adId, kind: 'unauth' });
+      if (block.adId) writePendingReveal({ adId: block.adId, kind: 'unauth', q });
       return;
     }
-    writePendingReveal({ adId: block.adId, kind: block.kind });
-  }, [block]);
+    writePendingReveal({ adId: block.adId, kind: block.kind, q });
+  }, [block, q]);
 
   const handleClose = useCallback(() => {
     // Preserve intent on transient failures — the user may retry after a
@@ -153,14 +165,14 @@ export function RevealModal({
             </div>
             <div className="space-y-2">
               <Link
-                href={`/register/contractor?returnTo=${encodeURIComponent(returnHref(block.adId))}`}
+                href={`/register/contractor?returnTo=${encodeURIComponent(returnHref(block.adId, q))}`}
                 className="w-full bg-brand-600 hover:bg-brand-800 text-slate-900 text-sm font-semibold px-4 py-2.5 rounded-lg inline-flex items-center justify-center gap-2"
               >
                 <UserPlus className="w-4 h-4" />
                 הרשם כקבלן — 14 יום חינם
               </Link>
               <Link
-                href={`/login?returnTo=${encodeURIComponent(returnHref(block.adId))}`}
+                href={`/login?returnTo=${encodeURIComponent(returnHref(block.adId, q))}`}
                 className="w-full bg-white hover:bg-slate-50 border border-slate-300 text-slate-800 text-sm font-semibold px-4 py-2.5 rounded-lg inline-flex items-center justify-center gap-2"
               >
                 <LogIn className="w-4 h-4" />

@@ -400,6 +400,51 @@ def public_stats():
     }
 
 
+# ─── GET /ads/public/{ad_id} ────────────────────────────────────────────────
+#
+# H11 §1 — public single-ad fetch. Needed by the reveal-return flow:
+# an anonymous visitor clicks "reveal", is bounced through login, and
+# comes back with ?reveal=<id>. Before H11 the frontend was searching
+# for that ad in memory (results, near_matches, recent). After login
+# there's no `resp` and the ad is rarely in `recent`, so the flow
+# died on a lie: "the ad is no longer available" for an ad that IS
+# available.
+#
+# Contract:
+#   * PUBLIC — no auth headers required; same access level as
+#     /public/recent + /public/featured.
+#   * Response shape: exactly what _public_ad produces (i.e.
+#     AdSearchResult), so the frontend can reuse the same rendering
+#     and reveal path.
+#   * Only returns active, non-deleted ads. Everything else → 404.
+#   * MUST come BEFORE @router.get("/{ad_id}") below so the corp-
+#     scoped catch-all doesn't swallow this path with 403.
+#   * _public_ad already strips owner_entity_id / owner_entity_type
+#     and the endpoint carries no phone / email / company_name. The
+#     only path that surfaces those stays /{ad_id}/contact-reveal.
+@router.get("/public/{ad_id}")
+def get_public_ad(ad_id: str):
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            f"""SELECT {_PUBLIC_AD_COLS}
+                  FROM ads
+                 WHERE id = %s
+                   AND active = TRUE
+                   AND deleted_at IS NULL
+                   AND (expires_at IS NULL OR expires_at > NOW())
+                 LIMIT 1""",
+            (ad_id,),
+        )
+        row = cur.fetchone()
+    finally:
+        conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail={"error": "ad_not_found"})
+    return _public_ad(row)
+
+
 # ─── GET /ads/mine ──────────────────────────────────────────────────────────
 
 @router.get("/mine")

@@ -762,7 +762,13 @@ body {
     padding: 14px 16px;
   }
   .results-cell-num { text-align: start; }
-  .results-cell[data-l]:not(:first-child)::before {
+  /* H11 §4 — was `.results-cell[data-l]:not(:first-child)`. That
+     matched even when data-l was the empty string, and rendered a
+     bare "  :  " prefix on the reveal-action cell (which used
+     data-l=""). The empty attr is now gone at the source, and the
+     selector explicitly excludes empty values so a future author
+     passing an undefined label can't reintroduce the ghost colon. */
+  .results-cell[data-l]:not([data-l=""]):not(:first-child)::before {
     content: attr(data-l) ": ";
     color: #64748b; font-weight: 500;
   }

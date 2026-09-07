@@ -288,6 +288,19 @@ function LandingPageInner() {
     if (p) setFProf(p);
     if (r) setFRegion(r);
     if (o) setFOrigin(o);
+    // H11 §2.2 — restore the visitor's search from ?q= on mount so a
+    // post-login bounce (which pushes back to /?q=X&reveal=Y) lands
+    // on the same results screen they left, not an empty landing.
+    // The filter selects above are read on the SAME tick so
+    // runSearch's chip-prefix logic composes correctly. Single-shot
+    // by design — runSearch's own URL writes must not re-trigger.
+    const qParam = params?.get('q');
+    if (qParam && qParam.trim().length >= 2) {
+      setQ(qParam);
+      // Run on next tick so state updates settle first.
+      const t = setTimeout(() => { runSearch(qParam); }, 0);
+      return () => clearTimeout(t);
+    }
     // Intentional single-shot read: don't want a subsequent
     // router.replace to loop this back into state.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -731,20 +744,47 @@ function LandingPageInner() {
       router.replace(url.pathname + url.search + url.hash);
       return;
     }
-    // RT — hard stop the silent wait once both surfaces have finished
-    // loading and neither carries the target. Previously the effect
-    // returned early forever, leaving the user staring at a bare
-    // landing without any explanation for the missed reveal. Also
-    // clear the stashed intent so the next login doesn't try to
-    // re-route to the same missing ad. `loading` guards against
-    // firing mid-search — we still want the in-flight results to
-    // have a chance to include the target before we give up.
+    // H11 §2.3 — final fallback: fetch the ad directly by id. Before
+    // this hop, the effect would `setBlock({kind:'error', message:
+    // 'המודעה כבר לא זמינה'})` — even for ads that were 100% alive,
+    // just not in any local list. Now we ONLY show that message on a
+    // real 404 from the server. Network / 5xx get a transient error
+    // (RevealModal's 'error' branch already renders "תקלה זמנית +
+    // נסה שוב" when status is 5xx). Also guards against
+    // fire-during-search: only run when the search + recent load are
+    // both settled.
     if (recentLoaded && !loading) {
-      setBlock({ kind: 'error', message: 'המודעה כבר לא זמינה' });
-      clearPendingReveal();
-      const url = new URL(window.location.href);
-      url.searchParams.delete('reveal');
-      router.replace(url.pathname + url.search + url.hash);
+      let cancelled = false;
+      apiFetch<PublicAd>(`/ads/public/${encodeURIComponent(target)}`)
+        .then((fetched) => {
+          if (cancelled) return;
+          if (!fetched?.id) throw new Error('empty_response');
+          // The fetched ad is in AdSearchResult shape (same _public_ad
+          // serialization). Reveal by id — revealFor doesn't need the
+          // ad object, just the id + the reveals[id] state.
+          revealFor(fetched.id);
+          const url = new URL(window.location.href);
+          url.searchParams.delete('reveal');
+          router.replace(url.pathname + url.search + url.hash);
+        })
+        .catch((err: unknown) => {
+          if (cancelled) return;
+          // ApiError from apiFetch carries a .status on non-2xx.
+          const status = (err as { status?: number })?.status;
+          if (status === 404) {
+            setBlock({ kind: 'error', message: 'המודעה כבר לא זמינה', adId: target });
+            clearPendingReveal();
+          } else {
+            // Transient — 5xx / network / etc. Modal's error branch
+            // maps status >= 500 to "תקלה זמנית" + "נסה שוב"; adId
+            // wires the retry button.
+            setBlock({ kind: 'error', message: 'לא הצלחנו לטעון את המודעה. נסה שוב', adId: target, status });
+          }
+          const url = new URL(window.location.href);
+          url.searchParams.delete('reveal');
+          router.replace(url.pathname + url.search + url.hash);
+        });
+      return () => { cancelled = true; };
     }
   }, [params, resp, recent, recentLoaded, loading, reveals, block, revealFor, router]);
 
@@ -755,6 +795,7 @@ function LandingPageInner() {
         block={block}
         onClose={() => setBlock(null)}
         onRetry={(adId) => { void revealFor(adId); }}
+        q={q}
       />
 
       <div className="min-h-screen flex flex-col">
@@ -1830,7 +1871,14 @@ function AdRow({
       </div>
 
       {/* Cell 5 — reveal action (in-row when closed) */}
-      <div className="results-cell" data-l="">
+      {/* H11 §4 — no data-l here. The empty attr `data-l=""` still
+          matches the `[data-l]` selector, and the CSS ::before
+          rendered ": " (empty label + colon) before the phone
+          icon at 390. Removing the attr eliminates the match at
+          the source; the CSS selector was also hardened below to
+          exclude empty values so the bug can't come back if a
+          future author passes an undefined label. */}
+      <div className="results-cell">
         {revealed ? (
           <span className="results-cta-revealed" aria-label="נחשף"><Phone className="w-4 h-4" />✓ נחשף</span>
         ) : (
