@@ -774,3 +774,131 @@ body {
   }
   .results-cta { width: 100%; }
 }
+
+/* ─── H10 · Sponsor ad slot ─────────────────────────────────────
+   Inline sponsor ad injected between result rows. Sits inside
+   the same UL as the results (flex-column parent gives it full
+   width for free — no grid-column gymnastics needed). The OUTER
+   frame is neutral gray + a fixed 'מודעה' badge; brand colours
+   only paint the interior, so a new advertiser can't reshape
+   the page (H10 §3.3). Max 88px tall on desktop so it doesn't
+   dominate a scan; on mobile it stacks a bit taller.
+
+   Not part of the semantic table — role="presentation" on the
+   LI tells assistive tech to skip its row-of-results reading. */
+.sponsor-slot {
+  position: relative;
+  display: grid;
+  grid-template-columns: 92px 1fr 140px;
+  gap: 12px;
+  align-items: center;
+  min-height: 72px;
+  max-height: 88px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  border: 1px solid #cbd5e1;      /* slate-300 — neutral, not brand */
+  background: #f8fafc;             /* slate-50 */
+  overflow: hidden;
+}
+.sponsor-slot__badge {
+  position: absolute;
+  top: 6px;
+  inset-inline-start: 12px;
+  font-size: 9px;
+  font-weight: 700;
+  color: #64748b;                  /* slate-500 */
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  padding: 1px 6px;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+}
+.sponsor-slot__brand {
+  align-self: stretch;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 8px;
+  overflow: hidden;
+  min-height: 56px;
+  padding: 6px;
+}
+.sponsor-slot__logo {
+  max-height: 44px;
+  max-width: 100%;
+  object-fit: contain;
+}
+.sponsor-slot__wordmark {
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+  line-height: 1.15;
+}
+.sponsor-slot__copy {
+  min-width: 0;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.sponsor-slot__headline {
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;                  /* slate-900 */
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+}
+.sponsor-slot__body {
+  font-size: 12px;
+  color: #475569;                  /* slate-600 */
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+}
+.sponsor-slot__chips {
+  display: flex; flex-wrap: nowrap; gap: 4px; overflow: hidden;
+}
+.sponsor-slot__chip {
+  font-size: 10px; color: #475569;
+  background: #ffffff; border: 1px solid #e2e8f0;
+  border-radius: 9999px; padding: 1px 6px; white-space: nowrap;
+}
+.sponsor-slot__cta-wrap {
+  display: flex; align-items: center; justify-content: center;
+}
+.sponsor-slot__cta {
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 700;
+  min-height: 36px; padding: 0 14px;
+  border-radius: 8px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.sponsor-slot__cta:hover { opacity: 0.92; }
+.sponsor-slot__cta--inert { cursor: default; pointer-events: none; }
+
+/* Below sm the 3-col grid collapses. Logo + copy on the same
+   row (so the brand identity stays visible next to the pitch),
+   CTA drops full-width beneath. */
+@media (max-width: 639px) {
+  .sponsor-slot {
+    grid-template-columns: 72px 1fr;
+    grid-template-rows: auto auto;
+    max-height: none;
+    min-height: 96px;
+    padding: 10px 12px 10px 12px;
+  }
+  .sponsor-slot__badge {
+    top: 4px;
+    inset-inline-start: 8px;
+  }
+  .sponsor-slot__brand { min-height: 60px; }
+  .sponsor-slot__cta-wrap {
+    grid-column: 1 / -1;
+    margin-top: 4px;
+  }
+  .sponsor-slot__cta { width: 100%; min-height: 40px; }
+}

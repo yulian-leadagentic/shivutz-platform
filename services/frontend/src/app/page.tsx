@@ -166,6 +166,12 @@ function LandingPageInner() {
 
   const [q, setQ]           = useState('');
   const [resp, setResp]     = useState<SearchResponse | null>(null);
+  // H10 — sponsor ads to interleave into the results list. Fetched
+  // on every successful search, matched against the search's own
+  // profession / ad_type / region so a flooring query gets flooring-
+  // targeted ads first. Empty array = the section renders nothing
+  // (per the F3 rule inherited by H10: no promoter ⇒ no slot).
+  const [sponsoredAds, setSponsoredAds] = useState<SponsorAd[]>([]);
   const [loading, setLoading] = useState(false);
   // Two error slots so a voice-transcribe failure doesn't paint red
   // inside the search-results section (and vice versa). The banner
@@ -342,6 +348,29 @@ function LandingPageInner() {
     catch (e) { setSearchError(mapSearchError(e)); }
     finally { setLoading(false); }
   }
+
+  // H10 — refresh sponsor ads whenever the search response changes.
+  // Pulled off resp.filters (the LLM-normalized enums the backend
+  // ranks against) so a query like "רצפים סינים" fetches
+  // flooring-targeted ads, not just the raw string.
+  //
+  // Runs AFTER the primary search returns so a slow sponsor fetch
+  // never delays the results paint. Failure → empty array → the
+  // slot renders nothing (F3 rule).
+  useEffect(() => {
+    if (!resp || !resp.filters) { setSponsoredAds([]); return; }
+    const f = resp.filters;
+    const p = new URLSearchParams();
+    if (f.profession_code) p.set('profession', f.profession_code);
+    if (f.ad_type)         p.set('ad_type',    f.ad_type);
+    if (f.region)          p.set('region',     f.region);
+    p.set('limit', '2');
+    let cancelled = false;
+    apiFetch<{ results: SponsorAd[] }>(`/ads/public/sponsored?${p.toString()}`)
+      .then((r) => { if (!cancelled) setSponsoredAds(r.results ?? []); })
+      .catch(() => { if (!cancelled) setSponsoredAds([]); });
+    return () => { cancelled = true; };
+  }, [resp]);
 
   // SR — scroll to the results section on TWO edges:
   //   • loading became true → user just pressed חפש; anchor to the
@@ -1502,26 +1531,44 @@ function LandingPageInner() {
                             className="results-table"
                           >
                             <ResultsHeader kind={kind} />
-                            {byKind[kind].map((ad) => {
-                              const revealed = reveals[ad.id];
-                              const boosted  = ad.featured_until && new Date(ad.featured_until) > new Date();
-                              // F3 §2.3 — inline sponsored slot
-                              // injection stays removed (no cadence
-                              // logic here either).
-                              return (
-                                <AdRow
-                                  key={ad.id}
-                                  ad={ad}
-                                  revealed={revealed}
-                                  revealing={revealing === ad.id}
-                                  boosted={!!boosted}
-                                  onReveal={() => revealFor(ad.id)}
-                                  professions={professions}
-                                  origins={origins}
-                                  regions={regions}
-                                />
-                              );
-                            })}
+                            {(() => {
+                              // H10 §3.1 — inject sponsor slots
+                              // AFTER positions 3 and 8, only when
+                              // there are ≥ 4 results (below that
+                              // the ad has no context to sit in),
+                              // never before the first result (a
+                              // sponsor at position 0 turns the
+                              // results screen into an ad screen).
+                              // Sponsors NEVER counted in the total.
+                              const rows = byKind[kind];
+                              const canInject = rows.length >= 4 && sponsoredAds.length > 0;
+                              const AFTER_POSITIONS = [3, 8]; // 1-indexed slot boundaries
+                              const nodes: React.ReactNode[] = [];
+                              let sponsorIdx = 0;
+                              rows.forEach((ad, i) => {
+                                const revealed = reveals[ad.id];
+                                const boosted  = ad.featured_until && new Date(ad.featured_until) > new Date();
+                                nodes.push(
+                                  <AdRow
+                                    key={ad.id}
+                                    ad={ad}
+                                    revealed={revealed}
+                                    revealing={revealing === ad.id}
+                                    boosted={!!boosted}
+                                    onReveal={() => revealFor(ad.id)}
+                                    professions={professions}
+                                    origins={origins}
+                                    regions={regions}
+                                  />
+                                );
+                                const position = i + 1;
+                                if (canInject && AFTER_POSITIONS.includes(position) && sponsorIdx < sponsoredAds.length) {
+                                  const spAd = sponsoredAds[sponsorIdx++];
+                                  nodes.push(<SponsorSlot key={`sp-${spAd.id}`} ad={spAd} />);
+                                }
+                              });
+                              return nodes;
+                            })()}
                           </ul>
                         ))}
                       </>
@@ -1749,6 +1796,80 @@ function LandingPageInner() {
           Component file + mocks kept intact for the day the real
           feed endpoint exists. */}
     </>
+  );
+}
+
+// H10 — sponsor ad payload from GET /ads/public/sponsored. Kept
+// small; the endpoint drops the internal match_score before shipping.
+interface SponsorAd {
+  id: string;
+  advertiser_name: string;
+  headline_he: string;
+  body_he: string | null;
+  chips_he: string[] | null;
+  cta_label_he: string;
+  cta_url: string | null;
+  logo_url: string | null;
+  brand_bg: string | null;
+  brand_fg: string | null;
+  target_professions: string[] | null;
+  target_ad_types: string[] | null;
+  target_regions: string[] | null;
+}
+
+// H10 — inline sponsor slot. Rendered as an <li role="presentation">
+// so it lives inside the same UL as the result rows (flex-column
+// container gives it full width for free) without confusing screen
+// readers into treating it as a data row of the results table. The
+// SLOT itself is neutral grey — the brand colours only paint the
+// coloured panel + CTA INSIDE, so the outer frame stays consistent
+// no matter which advertiser fills it (H10 §3.3).
+function SponsorSlot({ ad }: { ad: SponsorAd }) {
+  const brandBg = ad.brand_bg ?? '#1e293b';   // slate-800 fallback
+  const brandFg = ad.brand_fg ?? '#ffffff';
+  const hasCta  = !!ad.cta_url;
+  return (
+    <li
+      role="presentation"
+      className="sponsor-slot"
+      aria-label={`מודעה מאת ${ad.advertiser_name}`}
+    >
+      <span className="sponsor-slot__badge">מודעה</span>
+      <div className="sponsor-slot__brand" style={{ background: brandBg, color: brandFg }}>
+        {ad.logo_url
+          ? <img src={ad.logo_url} alt={ad.advertiser_name} className="sponsor-slot__logo" />
+          : <span className="sponsor-slot__wordmark">{ad.advertiser_name}</span>}
+      </div>
+      <div className="sponsor-slot__copy">
+        <div className="sponsor-slot__headline">{ad.headline_he}</div>
+        {ad.body_he && <div className="sponsor-slot__body">{ad.body_he}</div>}
+        {Array.isArray(ad.chips_he) && ad.chips_he.length > 0 && (
+          <div className="sponsor-slot__chips">
+            {ad.chips_he.map((c) => (
+              <span key={c} className="sponsor-slot__chip">{c}</span>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="sponsor-slot__cta-wrap">
+        {hasCta ? (
+          <a href={ad.cta_url!} target="_blank" rel="noopener nofollow sponsored"
+             className="sponsor-slot__cta"
+             style={{ background: brandBg, color: brandFg }}>
+            {ad.cta_label_he}
+          </a>
+        ) : (
+          // Not a dead <a href="#">. When cta_url is NULL the CTA
+          // is a decorative label that reads as "not interactive"
+          // (cursor:default, pointer-events:none via CSS).
+          <span className="sponsor-slot__cta sponsor-slot__cta--inert"
+                style={{ background: brandBg, color: brandFg }}
+                aria-hidden="true">
+            {ad.cta_label_he}
+          </span>
+        )}
+      </div>
+    </li>
   );
 }
 

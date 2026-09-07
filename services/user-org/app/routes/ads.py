@@ -445,6 +445,110 @@ def get_public_ad(ad_id: str):
     return _public_ad(row)
 
 
+# ─── GET /ads/public/sponsored ──────────────────────────────────────────────
+#
+# H10 §2 — inline sponsor ads for contractor search results. The
+# results page injects up to 2 rows per result set (after row 3 and
+# after row 8, gated on >=4 total results — see AdRow inject rule
+# in page.tsx). This endpoint returns the ads that should fill
+# those slots for a specific search context.
+#
+# Public — same access level as /public/recent and /public/featured.
+# MUST be defined BEFORE @router.get("/{ad_id}") so the corp-scoped
+# catch-all doesn't swallow the path with a 403.
+#
+# Targeting is soft: NULL on a target column means "no restriction
+# on that axis". e.g. Ayalon has target_professions=NULL, target_ad_types=[worker,housing]
+# → matches any profession within worker/housing kinds.
+#
+# Ordering:
+#   1. targeted matches (any non-NULL target column that matched)
+#      before untargeted rows, so a flooring-specific ad ranks over
+#      a global one for a flooring query
+#   2. sort_order (admin can pin)
+#   3. RAND() so a two-ad pool alternates
+@router.get("/public/sponsored")
+def get_sponsored_ads(
+    profession: Optional[str] = None,
+    ad_type:    Optional[str] = None,
+    region:     Optional[str] = None,
+    limit:      int = 2,
+):
+    lim = max(1, min(limit, 5))
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        # MySQL 8 JSON_CONTAINS returns 1/0. Wrapping each in a
+        # coalesced boolean lets us both filter (WHERE) and rank
+        # (ORDER BY) with the same expressions.
+        cur.execute(
+            """
+            SELECT
+              id, advertiser_name,
+              headline_he, body_he, chips_he,
+              cta_label_he, cta_url,
+              logo_url, brand_bg, brand_fg,
+              target_professions, target_ad_types, target_regions,
+              /* targeting-score: how many axes matched a concrete
+                 value (not NULL). Higher = more specific. */
+              (
+                (CASE WHEN target_professions IS NOT NULL AND %s IS NOT NULL
+                       AND JSON_CONTAINS(target_professions, JSON_QUOTE(%s), '$') THEN 1 ELSE 0 END) +
+                (CASE WHEN target_ad_types    IS NOT NULL AND %s IS NOT NULL
+                       AND JSON_CONTAINS(target_ad_types,    JSON_QUOTE(%s), '$') THEN 1 ELSE 0 END) +
+                (CASE WHEN target_regions     IS NOT NULL AND %s IS NOT NULL
+                       AND JSON_CONTAINS(target_regions,     JSON_QUOTE(%s), '$') THEN 1 ELSE 0 END)
+              ) AS match_score
+            FROM sponsor_ads
+            WHERE active = TRUE
+              AND (starts_at IS NULL OR starts_at <= NOW())
+              AND (ends_at   IS NULL OR ends_at   >= NOW())
+              /* Soft-filter each axis independently — NULL target
+                 always passes, concrete target must contain the
+                 caller's value. */
+              AND (target_professions IS NULL OR %s IS NULL
+                   OR JSON_CONTAINS(target_professions, JSON_QUOTE(%s), '$'))
+              AND (target_ad_types    IS NULL OR %s IS NULL
+                   OR JSON_CONTAINS(target_ad_types,    JSON_QUOTE(%s), '$'))
+              AND (target_regions     IS NULL OR %s IS NULL
+                   OR JSON_CONTAINS(target_regions,     JSON_QUOTE(%s), '$'))
+            ORDER BY match_score DESC, sort_order ASC, RAND()
+            LIMIT %s
+            """,
+            (
+                profession, profession,
+                ad_type,    ad_type,
+                region,     region,
+                profession, profession,
+                ad_type,    ad_type,
+                region,     region,
+                lim,
+            ),
+        )
+        rows = cur.fetchall()
+    finally:
+        conn.close()
+    # Serialize — chips_he / target_* come back as strings (MySQL
+    # driver behaviour with JSON columns) so json.loads if str.
+    out = []
+    for r in rows:
+        item = dict(r)
+        for jkey in ("chips_he", "target_professions", "target_ad_types", "target_regions"):
+            v = item.get(jkey)
+            if isinstance(v, (bytes, bytearray)):
+                v = v.decode("utf-8")
+            if isinstance(v, str):
+                try:
+                    item[jkey] = json.loads(v)
+                except Exception:
+                    item[jkey] = None
+        # match_score is an internal ranking signal — no reason to
+        # ship it to the client.
+        item.pop("match_score", None)
+        out.append(item)
+    return {"results": out}
+
+
 # ─── GET /ads/mine ──────────────────────────────────────────────────────────
 
 @router.get("/mine")
