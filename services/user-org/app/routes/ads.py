@@ -400,51 +400,6 @@ def public_stats():
     }
 
 
-# ─── GET /ads/public/{ad_id} ────────────────────────────────────────────────
-#
-# H11 §1 — public single-ad fetch. Needed by the reveal-return flow:
-# an anonymous visitor clicks "reveal", is bounced through login, and
-# comes back with ?reveal=<id>. Before H11 the frontend was searching
-# for that ad in memory (results, near_matches, recent). After login
-# there's no `resp` and the ad is rarely in `recent`, so the flow
-# died on a lie: "the ad is no longer available" for an ad that IS
-# available.
-#
-# Contract:
-#   * PUBLIC — no auth headers required; same access level as
-#     /public/recent + /public/featured.
-#   * Response shape: exactly what _public_ad produces (i.e.
-#     AdSearchResult), so the frontend can reuse the same rendering
-#     and reveal path.
-#   * Only returns active, non-deleted ads. Everything else → 404.
-#   * MUST come BEFORE @router.get("/{ad_id}") below so the corp-
-#     scoped catch-all doesn't swallow this path with 403.
-#   * _public_ad already strips owner_entity_id / owner_entity_type
-#     and the endpoint carries no phone / email / company_name. The
-#     only path that surfaces those stays /{ad_id}/contact-reveal.
-@router.get("/public/{ad_id}")
-def get_public_ad(ad_id: str):
-    conn = get_db()
-    try:
-        cur = conn.cursor()
-        cur.execute(
-            f"""SELECT {_PUBLIC_AD_COLS}
-                  FROM ads
-                 WHERE id = %s
-                   AND active = TRUE
-                   AND deleted_at IS NULL
-                   AND (expires_at IS NULL OR expires_at > NOW())
-                 LIMIT 1""",
-            (ad_id,),
-        )
-        row = cur.fetchone()
-    finally:
-        conn.close()
-    if not row:
-        raise HTTPException(status_code=404, detail={"error": "ad_not_found"})
-    return _public_ad(row)
-
-
 # ─── GET /ads/public/sponsored ──────────────────────────────────────────────
 #
 # H10 §2 — inline sponsor ads for contractor search results. The
@@ -454,12 +409,15 @@ def get_public_ad(ad_id: str):
 # those slots for a specific search context.
 #
 # Public — same access level as /public/recent and /public/featured.
-# MUST be defined BEFORE @router.get("/{ad_id}") so the corp-scoped
-# catch-all doesn't swallow the path with a 403.
+# MUST be registered BEFORE @router.get("/public/{ad_id}") below,
+# because that decorator's path param is greedy — "sponsored" would
+# be swallowed as an ad_id and return 404 ad_not_found. The block
+# order in this file IS the routing order in FastAPI.
 #
 # Targeting is soft: NULL on a target column means "no restriction
-# on that axis". e.g. Ayalon has target_professions=NULL, target_ad_types=[worker,housing]
-# → matches any profession within worker/housing kinds.
+# on that axis". e.g. Ayalon has target_professions=NULL,
+# target_ad_types=[worker,housing] → matches any profession within
+# worker/housing kinds.
 #
 # Ordering:
 #   1. targeted matches (any non-NULL target column that matched)
@@ -547,6 +505,59 @@ def get_sponsored_ads(
         item.pop("match_score", None)
         out.append(item)
     return {"results": out}
+
+
+# ─── GET /ads/public/{ad_id} ────────────────────────────────────────────────
+#
+# H11 §1 — public single-ad fetch. Needed by the reveal-return flow:
+# an anonymous visitor clicks "reveal", is bounced through login, and
+# comes back with ?reveal=<id>. Before H11 the frontend was searching
+# for that ad in memory (results, near_matches, recent). After login
+# there's no `resp` and the ad is rarely in `recent`, so the flow
+# died on a lie: "the ad is no longer available" for an ad that IS
+# available.
+#
+# Contract:
+#   * PUBLIC — no auth headers required; same access level as
+#     /public/recent + /public/featured.
+#   * Response shape: exactly what _public_ad produces (i.e.
+#     AdSearchResult), so the frontend can reuse the same rendering
+#     and reveal path.
+#   * Only returns active, non-deleted ads. Everything else → 404.
+#   * MUST come BEFORE @router.get("/{ad_id}") below so the corp-
+#     scoped catch-all doesn't swallow this path with 403.
+#   * _public_ad already strips owner_entity_id / owner_entity_type
+#     and the endpoint carries no phone / email / company_name. The
+#     only path that surfaces those stays /{ad_id}/contact-reveal.
+#   *
+#   * H10 hotfix — the `/public/{ad_id}` decorator is ALSO greedy
+#     for anything under /public/ that isn't already registered
+#     above. Any sibling `/public/<literal>` MUST be declared
+#     BEFORE this decorator, or FastAPI matches `<literal>` as
+#     the ad_id and returns 404 ad_not_found. That is exactly
+#     what happened to `/public/sponsored` on its first deploy —
+#     see the block immediately below this comment.
+@router.get("/public/{ad_id}")
+def get_public_ad(ad_id: str):
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            f"""SELECT {_PUBLIC_AD_COLS}
+                  FROM ads
+                 WHERE id = %s
+                   AND active = TRUE
+                   AND deleted_at IS NULL
+                   AND (expires_at IS NULL OR expires_at > NOW())
+                 LIMIT 1""",
+            (ad_id,),
+        )
+        row = cur.fetchone()
+    finally:
+        conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail={"error": "ad_not_found"})
+    return _public_ad(row)
 
 
 # ─── GET /ads/mine ──────────────────────────────────────────────────────────
