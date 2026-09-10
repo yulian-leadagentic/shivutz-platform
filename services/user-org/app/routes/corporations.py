@@ -7,6 +7,7 @@ import uuid, httpx, os, json, secrets, shutil
 from app.db import get_db
 from app.publisher import publish_event
 from app.services import rate_limit
+from app.services.entity_access import require_entity_access
 from app.services import notification_recipients as notif_recipients
 from app.services import team_membership as team_mgmt
 from app.services import membership_requests as mreq
@@ -516,7 +517,15 @@ def list_corporations(
 
 
 @router.get("/{org_id}")
-def get_corporation(org_id: str):
+def get_corporation(
+    org_id: str,
+    x_entity_id:   Optional[str] = Header(default=None),
+    x_entity_type: Optional[str] = Header(default=None),
+    x_user_role:   Optional[str] = Header(default=None),
+):
+    # L1 §1 · SEC-1 — was returning full corp profile to any
+    # authenticated caller regardless of tenant.
+    require_entity_access(x_entity_id, x_entity_type, x_user_role, org_id, "corporation")
     conn = get_db()
     try:
         cur = conn.cursor()
@@ -556,8 +565,15 @@ def get_corporation(org_id: str):
 
 
 @router.get("/{org_id}/users")
-def list_corporation_users(org_id: str):
+def list_corporation_users(
+    org_id: str,
+    x_entity_id:   Optional[str] = Header(default=None),
+    x_entity_type: Optional[str] = Header(default=None),
+    x_user_role:   Optional[str] = Header(default=None),
+):
     """List team members from entity_memberships (phone-first, includes pending invitations)."""
+    # L1 §1 · SEC-1 — was leaking every corp member's phone.
+    require_entity_access(x_entity_id, x_entity_type, x_user_role, org_id, "corporation")
     conn = get_db()
     try:
         cur = conn.cursor()
@@ -831,7 +847,18 @@ def upsert_corporation_notification_recipient(
 
 
 @router.get("/{org_id}/documents")
-def list_corporation_documents(org_id: str):
+def list_corporation_documents(
+    org_id: str,
+    x_entity_id:   Optional[str] = Header(default=None),
+    x_entity_type: Optional[str] = Header(default=None),
+    x_user_role:   Optional[str] = Header(default=None),
+):
+    # L1 §1 · SEC-1 — the highest-risk row in the batch: was exposing
+    # signed-doc URLs (business licence, ID, tax certs). Even after
+    # SEC-2 seals the /api/uploads path, the URL list itself is
+    # sensitive — an attacker could log it and try the storage
+    # backend directly later.
+    require_entity_access(x_entity_id, x_entity_type, x_user_role, org_id, "corporation")
     conn = get_db()
     try:
         cur = conn.cursor()

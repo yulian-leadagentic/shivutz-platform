@@ -1,6 +1,5 @@
 import os
 from fastapi import FastAPI, HTTPException
-from fastapi.staticfiles import StaticFiles
 from app.routes import contractors, corporations, users, admin_approvals, marketplace, marketplace_admin, marketplace_subscriptions, marketplace_uploads, support, membership_requests, uploads, ads, search
 from app.db import get_db, init_db
 from app.errors import register_error_handlers
@@ -36,14 +35,16 @@ def readyz():
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"db_unreachable: {e}")
 
-# /uploads router must be registered BEFORE the StaticFiles mount —
-# mounts are last-resort in FastAPI, but the mount also swallows
-# unknown paths under its prefix as 404 files. Registering explicit
-# routes first lets /uploads/cloudinary-signature reach our handler.
+# L1 §2 · SEC-2 — the /uploads router now holds BOTH the Cloudinary
+# signature endpoint and the gated file-streaming handler (see
+# routes/uploads.py:get_uploaded_file). The unauthenticated
+# `StaticFiles(directory=UPLOAD_DIR)` mount that used to sit here is
+# gone — it served every file in the upload dir to anyone with the
+# URL, and the gateway had it on PUBLIC_PREFIXES to let anonymous
+# `<a href>` previews work. All files on that path are private tenant
+# documents (business licences, IDs) — Cloudinary hosts logos /
+# avatars / marketplace photos, so removing the mount is safe.
 app.include_router(uploads.router, prefix="/uploads", tags=["uploads"])
-
-# Serve uploaded files statically
-app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 app.include_router(contractors.router, prefix="/organizations/contractors", tags=["contractors"])
 app.include_router(corporations.router, prefix="/organizations/corporations", tags=["corporations"])

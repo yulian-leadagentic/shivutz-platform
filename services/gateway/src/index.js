@@ -159,13 +159,17 @@ const PUBLIC_PREFIXES = [
   '/api/search',                 // free-text search is public; contact reveal is paywalled
   '/api/ads/public',             // featured/recent/stats for the landing (no auth)
   '/api/webhooks/vonage',        // Vonage webhooks — secured by Signature Secret JWT, not user JWT
-  // Uploaded files are served as static assets via the user-org service.
-  // Filenames are server-generated UUIDs, so the URL is itself the
-  // capability — `<a href>` clicks from the docs page don't carry an
-  // Authorization header, so 401-gating them broke file preview entirely
-  // (QA-R3 #22). Acceptable pre-launch; swap to signed short-lived URLs
-  // before opening up to real tenant data.
-  '/api/uploads',
+  // L1 §2 · SEC-2 — `/api/uploads` is NO LONGER public. Every file on
+  // that path is a private tenant document (business licence, ID,
+  // etc.); logos / avatars / marketplace photos live on Cloudinary
+  // and are unaffected. The user-org handler at
+  // routes/uploads.py:@router.get("/{filename}") gates every read
+  // through entity_documents ownership + require_entity_access.
+  // Known follow-up: docs UIs that render <a href="/api/uploads/..">
+  // must swap to fetch+blob so the Bearer token attaches; the
+  // gateway is intentionally not extended to accept cookie JWT here
+  // (see L1 §2 guardrail — "אל תשנה את הגייטוויי מעבר להסרת
+  // `/api/uploads` מ-`PUBLIC_PREFIXES`").
 ];
 
 // Public only for specific HTTP methods (exact path → allowed methods)

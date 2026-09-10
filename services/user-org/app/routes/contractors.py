@@ -11,6 +11,7 @@ from app.services import notification_recipients as notif_recipients
 from app.services import team_membership as team_mgmt
 from app.services import membership_requests as mreq
 from app.services.subscription_limits import fetch_entitlement, tier_limits
+from app.services.entity_access import require_entity_access
 from app.integrations import data_gov_il
 from app.integrations.israeli_id import is_valid_israeli_id
 
@@ -653,7 +654,16 @@ async def verify_kablan(
 
 
 @router.get("/{org_id}")
-def get_contractor(org_id: str):
+def get_contractor(
+    org_id: str,
+    x_entity_id:   Optional[str] = Header(default=None),
+    x_entity_type: Optional[str] = Header(default=None),
+    x_user_role:   Optional[str] = Header(default=None),
+):
+    # L1 §1 · SEC-1 — was returning the full contractor profile to
+    # any authenticated caller regardless of tenant. Now gated by
+    # the shared entity-access helper (see services/entity_access.py).
+    require_entity_access(x_entity_id, x_entity_type, x_user_role, org_id, "contractor")
     conn = get_db()
     try:
         cur = conn.cursor()
@@ -691,8 +701,16 @@ def get_contractor(org_id: str):
 
 
 @router.get("/{org_id}/users")
-def list_contractor_users(org_id: str):
+def list_contractor_users(
+    org_id: str,
+    x_entity_id:   Optional[str] = Header(default=None),
+    x_entity_type: Optional[str] = Header(default=None),
+    x_user_role:   Optional[str] = Header(default=None),
+):
     """List team members from entity_memberships (phone-first, includes pending invitations)."""
+    # L1 §1 · SEC-1 — this was the highest-impact leak: phone numbers
+    # of every member of any org, to any authenticated caller.
+    require_entity_access(x_entity_id, x_entity_type, x_user_role, org_id, "contractor")
     conn = get_db()
     try:
         cur = conn.cursor()
