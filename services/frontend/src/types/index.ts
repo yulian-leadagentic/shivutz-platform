@@ -22,14 +22,21 @@ export interface Contractor {
   gov_branch?: string | null;
   gov_company_status?: string | null;
   verification_tier: 'tier_0' | 'tier_1' | 'tier_2';
-  verification_method?: 'email' | 'sms' | 'manual' | 'none' | 'kablan_match' | null;
+  // L2 §4c א׳ — 'registry_unreachable' distinguishes a data.gov.il
+  // outage during registration from an actual no-match, so the UI
+  // can render "temporary hiccup — retrying" instead of "we don't
+  // find you in the registry".
+  verification_method?: 'email' | 'sms' | 'manual' | 'none' | 'kablan_match' | 'registry_unreachable' | null;
   /** Set when the contractor typed their kablan_number and it matched
    *  פנקס הקבלנים. Distinct from `verified_at` (which records ANY
    *  path to tier_2) so we can banner contractors who got tier_2 via
    *  the older email/SMS flow but never proved kablan ownership. */
   kablan_verified_at?: string | null;
   operating_regions: string[];
-  approval_status: 'pending' | 'approved' | 'rejected';
+  // DB ENUM has four values (001_initial_schema.sql). The frontend
+  // used to omit 'suspended', which meant the L2 §4b entity_suspended
+  // error copy had no matching state to render against on Contractor.
+  approval_status: 'pending' | 'approved' | 'rejected' | 'suspended';
   contact_name: string;
   contact_email: string;
   contact_phone: string;

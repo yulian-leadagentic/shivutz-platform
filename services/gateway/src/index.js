@@ -156,8 +156,16 @@ const PUBLIC_PREFIXES = [
   '/api/auth/invite/validate',   // Invitation token check — Phase 4
   '/api/auth/invite/accept',     // Invitation acceptance — Phase 4
   '/api/enums',                  // profession/region enum lookups are public
-  '/api/search',                 // free-text search is public; contact reveal is paywalled
-  '/api/ads/public',             // featured/recent/stats for the landing (no auth)
+  // L2 §2 — `/api/search` was public; Yulian's 10.09 decision closed
+  // it. Anonymous visitors see the demo loop on hardcoded fixtures
+  // (see landing page.tsx), never on real inventory. Voice transcribe
+  // at /api/voice/transcribe stays public because it only does STT —
+  // the transcript is fed back into /api/search which now requires
+  // auth, so voice can't be used as a search bypass.
+  // L2 §2 — `/api/ads/public` prefix was public (featured/recent/
+  // stats/sponsored/{id}); every path except /stats returns real ad
+  // rows. `/stats` is numeric-only and safe. Explicit allow below.
+  '/api/ads/public/stats',
   '/api/webhooks/vonage',        // Vonage webhooks — secured by Signature Secret JWT, not user JWT
   // L1 §2 · SEC-2 — `/api/uploads` is NO LONGER public. Every file on
   // that path is a private tenant document (business licence, ID,

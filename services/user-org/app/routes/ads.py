@@ -950,6 +950,40 @@ async def contact_reveal(
     if not x_entity_id or not x_entity_type:
         raise HTTPException(status_code=401, detail="auth_required")
 
+    # L2 §4 · SEC-4 — contractor approval gate. This MUST run before
+    # the entitlement + quota checks below: a blocked pending caller
+    # must not consume a paid reveal count. `contractors.approval_status`
+    # is set by admin_approvals PATCH and by the auto-approve on
+    # kablan-registry match (contractors.py:259-287); an unapproved
+    # contractor gets a specific error per status so the UI can show
+    # the right copy (see lib/api/errors.ts entity_* entries).
+    if x_entity_type == "contractor":
+        _c = get_db()
+        try:
+            _cur = _c.cursor()
+            _cur.execute(
+                "SELECT approval_status FROM contractors WHERE id = %s AND deleted_at IS NULL",
+                (x_entity_id,),
+            )
+            _row = _cur.fetchone()
+        finally:
+            _c.close()
+        if not _row:
+            # Contractor was hard-deleted mid-session, or the header
+            # points at a non-existent id. Same 404-vs-403 rule as
+            # everywhere else: don't leak which one.
+            raise HTTPException(status_code=403, detail={"code": "entity_not_approved"})
+        _status = _row["approval_status"]
+        if _status != "approved":
+            code = {
+                "pending":    "entity_not_approved",
+                "rejected":   "entity_rejected",
+                "suspended":  "entity_suspended",
+            }.get(_status, "entity_not_approved")
+            raise HTTPException(status_code=403, detail={
+                "code": code, "status": _status,
+            })
+
     # 1. Entitlement + tier
     try:
         ent = fetch_entitlement(x_entity_id, x_entity_type)

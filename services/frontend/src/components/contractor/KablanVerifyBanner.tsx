@@ -47,14 +47,36 @@ export function KablanVerifyBanner() {
   if (!contractor) return null;
   if (contractor.kablan_verified_at) return null;     // already verified
   // approval_status='pending' is the mismatch case — show non-dismissible
-  // "waiting for review" message instead of the regular nudge.
+  // "waiting for review" message instead of the regular nudge. L2 §4c א׳
+  // splits this into two sub-states based on verification_method: a
+  // data.gov.il outage during registration got 'registry_unreachable',
+  // which is a temporary "try again" not a rejection.
   const isPendingMismatch = contractor.approval_status === 'pending';
+  const isRegistryUnreachable =
+    isPendingMismatch && contractor.verification_method === 'registry_unreachable';
   if (!isPendingMismatch && dismissed) return null;
 
   function dismiss() {
     if (!entityId) return;
     sessionStorage.setItem(`${SESSION_KEY}:${entityId}`, '1');
     setDismissed(true);
+  }
+
+  if (isRegistryUnreachable) {
+    return (
+      <div className="mb-4 flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-amber-900">
+        <AlertCircle className="h-5 w-5 mt-0.5 shrink-0 text-amber-600" />
+        <div className="flex-1 text-sm leading-relaxed">
+          <p className="font-semibold">לא הצלחנו לאמת מול פנקס הקבלנים כרגע</p>
+          <p>
+            שירות הפנקס אינו זמין ברגע ההרשמה שלך. אנחנו ננסה שוב אוטומטית, או שאפשר לנסות עכשיו.{' '}
+            <Link href="/contractor/verify-kablan" className="underline font-medium">
+              נסה שוב עכשיו
+            </Link>
+          </p>
+        </div>
+      </div>
+    );
   }
 
   if (isPendingMismatch) {

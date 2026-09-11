@@ -263,6 +263,16 @@ async def register_contractor(
         owner_email=data.contact_email,
     )
     kablan_matched = bool(kablan_check.get("match"))
+    # L2 §4c א׳ — distinguish "registry says no" from "registry was
+    # unreachable". The old flow lumped both into pending, so a
+    # legitimate contractor who happened to register during a
+    # data.gov.il outage got shoved into the admin queue with the
+    # same wording as an actual mismatch. Now the two paths still
+    # both land in pending (that's still the right default until we
+    # trust the registry), but verification_method carries a
+    # different tag so the frontend can render "temporary hiccup —
+    # try again" instead of "you're not in the registry".
+    kablan_registry_ok = bool(kablan_check.get("ok", True))
 
     # Snapshot the registry row + extracted fields for the contractors
     # insert. Either path A (lookup-by-ח.פ) or path B (lookup-by-kablan)
@@ -280,7 +290,18 @@ async def register_contractor(
     #   no     → keep the initial_tier from registry presence, stay
     #            pending for admin review (default approval_status).
     final_tier = "tier_2" if kablan_matched else initial_tier
-    verification_method = "kablan_match" if kablan_matched else "none"
+    # L2 §4c א׳ — verification_method now carries three states
+    # instead of two: 'kablan_match', 'registry_unreachable' (retry
+    # candidate), 'none' (no match — admin queue). The
+    # verify_kablan_match batch job will re-check the "unreachable"
+    # rows and flip them to 'kablan_match' when the registry comes
+    # back.
+    if kablan_matched:
+        verification_method = "kablan_match"
+    elif not kablan_registry_ok:
+        verification_method = "registry_unreachable"
+    else:
+        verification_method = "none"
     verified_at = now if kablan_matched else None
     kablan_verified_at = now if kablan_matched else None
     revalidate_at = (now + verification.REVALIDATE_PERIOD) if kablan_matched else None

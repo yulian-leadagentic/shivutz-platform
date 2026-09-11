@@ -339,6 +339,16 @@ function LandingPageInner() {
       query = prefix + query;
     }
     if (query.length < 2) return;
+    // L2 §3 — anonymous callers can't hit /api/search any more
+    // (Yulian's 10.09 decision). Push them straight to /login with
+    // the query in the returnTo so H11's post-auth restore lands
+    // them back on their own search — same mechanism the reveal-
+    // return flow uses, no new plumbing needed.
+    if (!isLoggedIn()) {
+      const returnTo = `/?q=${encodeURIComponent(query)}`;
+      router.push(`/login?returnTo=${encodeURIComponent(returnTo)}`);
+      return;
+    }
     setQ(query);
     setAwaitingSubmit(false);   // SR — clear the post-transcript ring
     syncFiltersToUrl(fProf, fRegion, fOrigin);
@@ -489,6 +499,57 @@ function LandingPageInner() {
   // it stays in rotation; if inventory later drops it to 0 the
   // priming pass drops it automatically per §3b.
   const DEMO_QUERIES = ['רצפים סינים', 'אני צריך טייחים במרכז', 'מיטות פנויות לעובדים הודים'];
+
+  // L2 §3 — the loop used to prime by hitting /api/search on mount.
+  // With SEC-3 the search endpoint is behind auth, so anonymous
+  // visitors get 401 and the priming array is empty — meaning the
+  // whole demo loop never starts, and the landing hero collapses
+  // into a static input. Yulian's rule: the loop keeps running,
+  // but on DEMO FIXTURES (frontend constant), never on real
+  // inventory. The response shape mirrors what searchApi.query
+  // returns so the existing demo-preview renderer keeps working.
+  const DEMO_FIXTURES: Record<string, SearchResponse> = {
+    'רצפים סינים': {
+      total: 3,
+      filters: { ad_type: 'worker', profession_code: 'flooring', origin_country: 'CN', region: null, quantity: null },
+      results: [
+        { id: 'demo-1', ad_type: 'worker', title_he: '4 רצפים סינים · תל אביב', body_he: 'ניסיון 6+ שנים, ויזה בתוקף.',
+          region: 'center', profession_code: 'flooring', origin_country: 'CN', quantity: 4,
+          city: null, available_beds: null, price_per_bed_nis: null, amenities: null, photos: null,
+          featured_until: null, published_at: new Date().toISOString(), owner_entity_id: 'demo-owner-1' },
+        { id: 'demo-2', ad_type: 'worker', title_he: '2 רצפים סינים · חיפה', body_he: 'זמינות מיידית, ידע בגרניט פורצלן.',
+          region: 'north', profession_code: 'flooring', origin_country: 'CN', quantity: 2,
+          city: null, available_beds: null, price_per_bed_nis: null, amenities: null, photos: null,
+          featured_until: null, published_at: new Date().toISOString(), owner_entity_id: 'demo-owner-2' },
+      ] as AdSearchResult[],
+      near_matches: null,
+      relaxed: null,
+    } as unknown as SearchResponse,
+    'אני צריך טייחים במרכז': {
+      total: 2,
+      filters: { ad_type: 'worker', profession_code: 'plastering', origin_country: null, region: 'center', quantity: null },
+      results: [
+        { id: 'demo-3', ad_type: 'worker', title_he: '3 טייחים · פתח תקווה', body_he: 'צוות מגובש, יכולת התחלה השבוע.',
+          region: 'center', profession_code: 'plastering', origin_country: 'UA', quantity: 3,
+          city: null, available_beds: null, price_per_bed_nis: null, amenities: null, photos: null,
+          featured_until: null, published_at: new Date().toISOString(), owner_entity_id: 'demo-owner-3' },
+      ] as AdSearchResult[],
+      near_matches: null,
+      relaxed: null,
+    } as unknown as SearchResponse,
+    'מיטות פנויות לעובדים הודים': {
+      total: 2,
+      filters: { ad_type: 'housing', profession_code: null, origin_country: 'IN', region: null, quantity: null },
+      results: [
+        { id: 'demo-4', ad_type: 'housing', title_he: '8 מיטות · ראשון לציון', body_he: 'דירה שלמה, מטבח וסלון, קרוב לתחנת רכבת.',
+          region: 'center', profession_code: null, origin_country: 'IN', quantity: null,
+          city: 'ראשון לציון', available_beds: 8, price_per_bed_nis: 950, amenities: ['מזגן','אינטרנט'], photos: null,
+          featured_until: null, published_at: new Date().toISOString(), owner_entity_id: 'demo-owner-4' },
+      ] as AdSearchResult[],
+      near_matches: null,
+      relaxed: null,
+    } as unknown as SearchResponse,
+  };
   const [demoView, setDemoView] = useState<{
     phase:   'scanning' | 'showing' | 'fading';
     results: AdSearchResult[];
@@ -557,23 +618,21 @@ function LandingPageInner() {
     };
 
     (async () => {
-      // Prime — one API round per query. Drop anything that returns
-      // zero right now; that's the §2b "empty query exits the loop"
-      // rule enforced before any typing happens.
+      // L2 §3 — priming pass NO LONGER hits /api/search (now
+      // auth-gated by SEC-3, so anonymous callers get 401 and the
+      // loop dies before it starts). We iterate DEMO_QUERIES and
+      // pull each response from the DEMO_FIXTURES constant above,
+      // so the loop rests entirely on hardcoded demo data — the
+      // '§2b: empty query exits the loop' rule is now unreachable
+      // because every fixture has results by construction. The
+      // demo-preview slot carries a `הדגמה` label (see JSX) so
+      // sighted users see the loop is a mockup.
       const primed: Array<{ q: string; data: SearchResponse }> = [];
       for (const q of DEMO_QUERIES) {
         if (cancelled) return;
-        try {
-          const data = await searchApi.query(q);
-          if (data && data.total > 0 && data.results.length > 0) {
-            primed.push({ q, data });
-          }
-        } catch { /* network hiccup — drop this query from rotation */ }
+        const fx = DEMO_FIXTURES[q];
+        if (fx && fx.results.length > 0) primed.push({ q, data: fx });
       }
-      // If every primed query returned 0 the loop never starts —
-      // per §2b. Also remove the armed class so the placeholder
-      // returns instead of staying suppressed forever behind an
-      // idle mark.
       if (cancelled || primed.length === 0) {
         armField?.classList.remove('demo-armed');
         return;
@@ -1066,6 +1125,15 @@ function LandingPageInner() {
                     aria-hidden="true"
                     style={{ pointerEvents: 'none' }}
                   >
+                    {/* L2 §3 — fixed "הדגמה" label. The demo cycle
+                        now runs on FRONTEND fixtures (not real
+                        inventory), so anything that renders here
+                        must be visibly framed as a mockup. Slate
+                        pill so it doesn't compete with the amber
+                        readout frame. */}
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600 bg-slate-100 border border-slate-300 rounded-full px-2 py-0.5">
+                      הדגמה
+                    </span>
                     {tags.map((t, i) => (
                       <span
                         key={i}

@@ -70,6 +70,15 @@ export const CODE_TO_HE: Record<string, string> = {
   already_registered:    'מספר הטלפון כבר רשום. אנא התחבר',
   email_already_in_use:  'כתובת האימייל כבר בשימוש',
   phone_exists:          'מספר הטלפון כבר רשום. אנא התחבר',
+  // L2 §4b — contractor approval gate on contact_reveal returns one
+  // of these three depending on approval_status.
+  entity_not_approved:   'החשבון שלך עדיין בבדיקה. נעדכן אותך בסיום.',
+  entity_rejected:       'החשבון לא אושר. פנה לתמיכה לפרטים.',
+  entity_suspended:      'החשבון מושהה. פנה לתמיכה.',
+  // L2 §4c א׳ — data.gov.il timeout during registration. Different
+  // wording from entity_not_approved so the user knows it's a
+  // temporary registry hiccup, not a rejection.
+  registry_unreachable:  'לא הצלחנו לאמת מול פנקס הקבלנים כרגע. אנחנו ננסה שוב אוטומטית — או שאפשר לאמת מחדש למטה.',
   invite_expired:        'ההזמנה פגה. פנה לשולח לקבלת הזמנה חדשה',
   invite_not_found_or_used: 'ההזמנה כבר בשימוש או לא נמצאה',
   invalid_role:          'התפקיד אינו תקין',
