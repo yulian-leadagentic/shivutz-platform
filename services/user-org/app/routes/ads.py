@@ -233,7 +233,12 @@ def usage(
         ent = fetch_entitlement(x_entity_id, x_entity_type)
     except httpx.HTTPError:
         raise HTTPException(status_code=503, detail="entitlement_service_unreachable")
-    limits = tier_limits(ent["tier"], "corporation")
+    # L4 — pass the caller's actual entity_type. Previously hardcoded
+    # "corporation" here, which returned wrong limits to contractors
+    # (they'd read corp reveals_per_month = NULL as "unlimited" when
+    # their contractor tier caps them). Same _FALLBACK bug the L4
+    # spec §3 mistake 2 called out, one layer up.
+    limits = tier_limits(ent["tier"], x_entity_type)
 
     conn = get_db()
     try:

@@ -783,35 +783,73 @@ async def invite_contractor_user(
         if not org:
             raise HTTPException(status_code=404, detail="Contractor not found")
 
-        # Pivot/v2 seat gate — reject when the contractor already has
-        # max_users active+pending memberships on their current tier.
-        # Payment/plans down = fail closed (503) rather than let a
-        # seat-check-bypass invite land.
+        # L4 seat gate — three outcomes now (was two):
+        #   used < included_users            → free invite
+        #   included ≤ used < max_users      → 402 seat_upgrade_required
+        #                                        (paid seat, message-only
+        #                                        this round; L5 wires the
+        #                                        actual charge)
+        #                                      OR 402 seat_limit when
+        #                                        extra_user_price_nis IS NULL
+        #                                        (tier doesn't sell extras)
+        #   used ≥ max_users                 → 402 seat_limit (hard cap,
+        #                                        no way past even in paid)
+        # Payment/plans down = fail closed (503).
         try:
             ent = fetch_entitlement(org_id, "contractor")
         except httpx.HTTPError:
             raise HTTPException(status_code=503, detail="entitlement_service_unreachable")
-        max_users = tier_limits(ent["tier"], "contractor").get("max_users")
-        if max_users is not None:
-            cur.execute(
-                """SELECT COUNT(*) AS n
-                     FROM auth_db.entity_memberships
-                    WHERE entity_type='contractor'
-                      AND entity_id=%s
-                      AND (is_active=TRUE OR invitation_accepted_at IS NULL)""",
-                (org_id,),
+        limits = tier_limits(ent["tier"], "contractor")
+        max_users     = limits.get("max_users")
+        included      = limits.get("included_users")
+        extra_price   = limits.get("extra_user_price_nis")
+        cur.execute(
+            """SELECT COUNT(*) AS n
+                 FROM auth_db.entity_memberships
+                WHERE entity_type='contractor'
+                  AND entity_id=%s
+                  AND (is_active=TRUE OR invitation_accepted_at IS NULL)""",
+            (org_id,),
+        )
+        used = int(cur.fetchone()["n"])
+        # Hard cap first — max_users is absolute even when the tier
+        # sells extra seats. NULL max_users = no cap.
+        if max_users is not None and used >= max_users:
+            raise HTTPException(
+                status_code=402,
+                detail={
+                    "code":  "seat_limit",
+                    "tier":  ent["tier"],
+                    "used":  used,
+                    "limit": max_users,
+                },
             )
-            used = int(cur.fetchone()["n"])
-            if used >= max_users:
+        # Beyond the included band — either upgrade path or hard block.
+        if included is not None and used >= included:
+            if extra_price is None:
+                # Tier doesn't sell extras. Same 402 seat_limit as before.
                 raise HTTPException(
                     status_code=402,
                     detail={
                         "code":  "seat_limit",
                         "tier":  ent["tier"],
                         "used":  used,
-                        "limit": max_users,
+                        "limit": included,
                     },
                 )
+            # L4 §3 mistake 1 — this is the MESSAGE PATH, not a charge.
+            # The 402 tells the UI "here's the price + math", and does
+            # NOT create the seat. L5 wires the actual purchase.
+            raise HTTPException(
+                status_code=402,
+                detail={
+                    "code":     "seat_upgrade_required",
+                    "tier":     ent["tier"],
+                    "used":     used,
+                    "included": included,
+                    "price":    extra_price,
+                },
+            )
 
         invite_token    = secrets.token_urlsafe(32)
         membership_id   = str(uuid.uuid4())

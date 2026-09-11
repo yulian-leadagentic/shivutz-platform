@@ -77,9 +77,15 @@ export interface UsageResponse {
   status:   'trialing' | 'active' | 'past_due' | 'cancelled' | 'expired';
   entitled: boolean;
   limits: {
-    reveals_per_month: number | null;
-    active_ads:        number | null;
-    can_boost:         boolean;
+    reveals_per_month:     number | null;
+    active_ads:            number | null;
+    can_boost:             boolean;
+    // L4 — seat model. `max_users` is the absolute cap; `included_users`
+    // is what the base price buys; `extra_user_price_nis` is the ₪/mo
+    // per additional seat (null = extras not sold on this tier).
+    max_users?:            number | null;
+    included_users?:       number | null;
+    extra_user_price_nis?: number | null;
   };
   usage: {
     reveals_this_month: number;

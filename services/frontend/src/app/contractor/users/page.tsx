@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState, FormEvent } from 'react';
 import { Loader2, UserPlus, Clock, CheckCircle2, Trash2, AlertCircle, Pencil } from 'lucide-react';
 import { memberApi, type TeamMember } from '@/lib/api';
+import { adApi, type UsageResponse } from '@/lib/api/ads';
 import { ApiError } from '@/lib/api/client';
 import { mapApiError } from '@/lib/api/errors';
 import { useAuth } from '@/lib/AuthContext';
@@ -45,6 +46,10 @@ export default function ContractorUsersPage() {
   const [pendingDelete, setPendingDelete] = useState<TeamMember | null>(null);
   const [deleting, setDeleting]   = useState(false);
   const [editing, setEditing]     = useState<TeamMember | null>(null);
+  // L4 §5 — contractor sees "X מתוך N משתמשים כלולים במנוי" + the
+  // per-extra-seat price so they know a paid upgrade is possible
+  // (message-only this round; L5 wires the actual charge).
+  const [usage, setUsage]         = useState<UsageResponse | null>(null);
 
   // Per-row toggle for is_deal_contact — mirrors the corp users page.
   // Server enforces min-1 deal contact per entity; failure surfaces
@@ -95,6 +100,8 @@ export default function ContractorUsersPage() {
         console.error('memberApi.list contractor failed', e);
       })
       .finally(() => setLoading(false));
+    // L4 §5 — seat display; failure just hides the pill.
+    adApi.usage().then(setUsage).catch(() => setUsage(null));
   }, [entityId]);
 
   async function handleInvite(e: FormEvent) {
@@ -191,6 +198,25 @@ export default function ContractorUsersPage() {
           {showForm ? 'ביטול' : 'הזמן חבר צוות'}
         </Button>
       </div>
+
+      {/* L4 §5 — seat count + upgrade text. Shown once usage loads AND
+          included_users is populated (older plans without seat data
+          simply skip the pill). No purchase button in this round —
+          message-only per §3 mistake 1; the actual charge flow lands
+          in L5. */}
+      {usage && usage.limits.included_users != null && (
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+          <span>
+            <b>{members.filter((m) => m.is_active || m.pending).length}</b> מתוך{' '}
+            <b>{usage.limits.included_users}</b> משתמשים כלולים במנוי
+          </span>
+          {usage.limits.extra_user_price_nis != null && (
+            <span className="text-xs text-slate-500">
+              המנוי כולל {usage.limits.included_users} משתמשים. משתמש נוסף — ₪{usage.limits.extra_user_price_nis} לחודש.
+            </span>
+          )}
+        </div>
+      )}
 
       {success && (
         <div className="flex items-center gap-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-md px-3 py-2">

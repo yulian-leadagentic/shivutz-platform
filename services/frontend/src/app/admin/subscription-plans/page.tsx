@@ -14,6 +14,11 @@ interface Plan {
   entity_type:            'contractor' | 'corporation';
   tier:                   'basic' | 'advanced' | 'pro';
   max_users:              number | null;
+  // L4 — new fields split off from max_users. included_users = seats
+  // bundled in monthly_price_nis; extra_user_price_nis = ₪/mo for
+  // seats past included, NULL = extras not sold on this tier.
+  included_users:         number | null;
+  extra_user_price_nis:   number | null;
   max_reveals_per_month:  number | null;
   max_active_ads:         number | null;
   max_ad_lifetime_days:   number | null;
@@ -28,7 +33,9 @@ const ENTITY_LABEL = { contractor: 'קבלן', corporation: 'תאגיד' } as co
 const TIER_LABEL   = { basic: 'בסיסי', advanced: 'מתקדם', pro: 'פרו' } as const;
 
 interface Draft {
-  max_users:             string;   // "" = unlimited
+  max_users:             string;   // "" = unlimited (hard cap)
+  included_users:        string;   // required — always a number
+  extra_user_price_nis:  string;   // "" = extras not sold
   max_reveals_per_month: string;
   max_active_ads:        string;
   max_ad_lifetime_days:  string;
@@ -40,6 +47,8 @@ interface Draft {
 function toDraft(p: Plan): Draft {
   return {
     max_users:             p.max_users             == null ? '' : String(p.max_users),
+    included_users:        p.included_users        == null ? '' : String(p.included_users),
+    extra_user_price_nis:  p.extra_user_price_nis  == null ? '' : String(p.extra_user_price_nis),
     max_reveals_per_month: p.max_reveals_per_month == null ? '' : String(p.max_reveals_per_month),
     max_active_ads:        p.max_active_ads        == null ? '' : String(p.max_active_ads),
     max_ad_lifetime_days:  p.max_ad_lifetime_days  == null ? '' : String(p.max_ad_lifetime_days),
@@ -86,19 +95,23 @@ export default function SubscriptionPlansPage() {
       return Number.isFinite(n) && n >= 0 ? { value: n } : { unlimited: true };
     };
     const users     = parseCap(d.max_users);
+    const extraP    = parseCap(d.extra_user_price_nis);
     const reveals   = parseCap(d.max_reveals_per_month);
     const ads       = parseCap(d.max_active_ads);
     const lifetime  = parseCap(d.max_ad_lifetime_days);
     const trialDays = parseInt(d.trial_days_default.trim() || '14', 10);
     const price     = d.monthly_price_nis.trim() === '' ? null : parseInt(d.monthly_price_nis, 10);
+    const included  = d.included_users.trim() === '' ? null : parseInt(d.included_users, 10);
 
     const body: Record<string, unknown> = {
       can_boost:          d.can_boost,
       trial_days_default: trialDays,
     };
     if (price !== null && Number.isFinite(price)) body.monthly_price_nis = price;
+    if (included !== null && Number.isFinite(included)) body.included_users = included;
     const unlimited: string[] = [];
     if (users.unlimited)    unlimited.push('max_users');             else body.max_users             = users.value;
+    if (extraP.unlimited)   unlimited.push('extra_user_price_nis');  else body.extra_user_price_nis  = extraP.value;
     if (reveals.unlimited)  unlimited.push('max_reveals_per_month'); else body.max_reveals_per_month = reveals.value;
     if (ads.unlimited)      unlimited.push('max_active_ads');        else body.max_active_ads        = ads.value;
     if (lifetime.unlimited) unlimited.push('max_ad_lifetime_days');  else body.max_ad_lifetime_days  = lifetime.value;
@@ -151,9 +164,21 @@ export default function SubscriptionPlansPage() {
                     </div>
 
                     <Field
-                      label="משתמשים במנוי"
+                      label="משתמשים כלולים במחיר"
+                      value={d.included_users}
+                      onChange={(v) => updateDraft(p.id, { included_users: v })}
+                      hideUnlimited
+                    />
+                    <Field
+                      label="תקרת משתמשים (מקסימום מוחלט)"
                       value={d.max_users}
                       onChange={(v) => updateDraft(p.id, { max_users: v })}
+                    />
+                    <Field
+                      label="₪/חודש למשתמש נוסף מעל הכלולים"
+                      value={d.extra_user_price_nis}
+                      onChange={(v) => updateDraft(p.id, { extra_user_price_nis: v })}
+                      placeholderUnlimited="לא נמכרים"
                     />
 
                     {isContractor && (
@@ -224,14 +249,19 @@ export default function SubscriptionPlansPage() {
 }
 
 function Field({
-  label, value, onChange, hideUnlimited,
+  label, value, onChange, hideUnlimited, placeholderUnlimited,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   hideUnlimited?: boolean;
+  // L4 — some "empty" fields don't mean "unlimited" — they mean
+  // something specific like "extras not sold". Override the
+  // placeholder + tooltip so the semantic is clear.
+  placeholderUnlimited?: string;
 }) {
   const isUnlimited = !hideUnlimited && (value.trim() === '' || value.trim() === '-');
+  const emptyLabel  = placeholderUnlimited ?? 'ללא הגבלה';
   return (
     <div>
       <label className="block text-xs font-semibold text-slate-600 mb-1">{label}</label>
@@ -244,13 +274,13 @@ function Field({
           className={`w-full border rounded-lg px-2 py-1.5 text-sm outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 ${
             isUnlimited ? 'border-brand-200 bg-brand-50/50 placeholder:text-slate-400' : 'border-slate-300'
           }`}
-          placeholder={hideUnlimited ? '' : 'ללא הגבלה'}
+          placeholder={hideUnlimited ? '' : emptyLabel}
         />
         {!hideUnlimited && (
           <button
             type="button"
             onClick={() => onChange('')}
-            title="ללא הגבלה"
+            title={emptyLabel}
             className="shrink-0 h-8 w-8 inline-flex items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50"
           >
             <InfIcon className="w-4 h-4" />
