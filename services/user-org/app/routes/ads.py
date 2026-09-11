@@ -327,6 +327,12 @@ def _public_ad(row: dict) -> dict:
     # is the only path that surfaces corp contact info.
     for k in ("owner_entity_id", "owner_entity_type"):
         out.pop(k, None)
+    # L3 §2.1 — trust_level surfaces only when the caller JOINed the
+    # corporations table (currently /public/{ad_id}). Featured / recent
+    # lists don't include it (kept minimal per L3 "אל תרחיב"; report as
+    # follow-up in §11 if landing carousels need the badge too).
+    if row.get("trust_level"):
+        out["trust_level"] = row["trust_level"]
     return out
 
 
@@ -542,13 +548,31 @@ def get_public_ad(ad_id: str):
     conn = get_db()
     try:
         cur = conn.cursor()
+        # L3 §2.1 — JOIN corporations so /public/{ad_id} carries the
+        # same trust_level signal as /search results. Contractors
+        # arriving via a direct ad link (H11 reveal-return, deep link)
+        # would otherwise see an unlabelled row and lose the same
+        # information they'd have gotten from search. Collation cast
+        # matches ads.py:796 pattern.
         cur.execute(
-            f"""SELECT {_PUBLIC_AD_COLS}
-                  FROM ads
-                 WHERE id = %s
-                   AND active = TRUE
-                   AND deleted_at IS NULL
-                   AND (expires_at IS NULL OR expires_at > NOW())
+            f"""SELECT a.id, a.ad_type, a.title_he, a.body_he, a.region,
+                       a.profession_code, a.origin_country, a.quantity,
+                       a.city, a.available_beds, a.price_per_bed_nis,
+                       a.amenities, a.photos,
+                       a.featured_until, a.published_at,
+                       CASE
+                         WHEN c.gov_registry_matched_at IS NOT NULL
+                              AND c.approval_status = 'approved' THEN 'verified'
+                         WHEN c.approval_status = 'approved'      THEN 'registered'
+                         ELSE 'unverified'
+                       END AS trust_level
+                  FROM ads a
+                  LEFT JOIN corporations c
+                    ON c.id COLLATE utf8mb4_0900_ai_ci = a.owner_entity_id
+                 WHERE a.id = %s
+                   AND a.active = TRUE
+                   AND a.deleted_at IS NULL
+                   AND (a.expires_at IS NULL OR a.expires_at > NOW())
                  LIMIT 1""",
             (ad_id,),
         )

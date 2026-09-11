@@ -12,13 +12,20 @@ export interface SearchFilters {
   canonical_query: string;
 }
 
+// L3 §2.1 — server-derived trust signal. Frontend renders one of three
+// badges; NEVER receives corp_name here (that stays paywalled behind
+// /contact-reveal).
+export type TrustLevel = 'verified' | 'registered' | 'unverified';
+
 // Search results omit contact info — that comes from a separate
 // reveal call gated on subscription. Housing fields are populated
 // only when ad_type === 'housing'.
 export type AdSearchResult = Omit<AdRow,
   | 'owner_entity_type'
   | 'active' | 'view_count' | 'created_at' | 'updated_at' | 'deleted_at'
->;
+> & {
+  trust_level: TrustLevel;
+};
 
 // NM — the backend's second pass runs when the exact match is thin
 // (< 3 rows) AND the rewriter extracted a relax-eligible filter. It

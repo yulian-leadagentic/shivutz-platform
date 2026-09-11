@@ -7,7 +7,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Loader2, Megaphone, Home, Eye, CreditCard, Clock, Plus } from 'lucide-react';
+import { Loader2, Megaphone, Home, Eye, CreditCard, Clock, Plus, AlertTriangle } from 'lucide-react';
 import { adApi, type UsageResponse } from '@/lib/api/ads';
 import { subscriptionApi, type SubscriptionRow } from '@/lib/api/payments';
 import { orgApi } from '@/lib/api';
@@ -67,6 +67,12 @@ export default function CorporationDashboardPage() {
   const [usage, setUsage] = useState<UsageResponse | null>(null);
   const [approvalStatus, setApproval] = useState<string | null>(null);
   const [companyName, setCompanyName] = useState<string>('');
+  // L3 §3b — corp's own trust state, mirrored from the search-results
+  // signal. Derived client-side from the same fields the server uses
+  // in search.py (approval_status + gov_registry_matched_at) so both
+  // ends read from the same truth. Banner appears only when the corp
+  // isn't 'verified'.
+  const [govMatchedAt, setGovMatchedAt] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -77,6 +83,7 @@ export default function CorporationDashboardPage() {
       orgApi.getCorporation(entityId).then((c) => {
         setApproval(c.approval_status ?? null);
         setCompanyName(c.company_name_he || c.company_name || '');
+        setGovMatchedAt(c.gov_registry_matched_at ?? null);
       }).catch(() => {});
     }
     // R1 — same fix landed in b3c6620 for the contractor dashboard:
@@ -152,6 +159,36 @@ export default function CorporationDashboardPage() {
             <h3 className="font-semibold text-sky-900">החשבון בבדיקה</h3>
             <p className="text-sm text-sky-700 mt-0.5">הרישום שלכם ממתין לאישור מנהל. תוכלו להמשיך בהכנת מודעות בינתיים.</p>
           </div>
+        </div>
+      )}
+
+      {/* L3 §3b — trust-signal banner for corps that are APPROVED but
+          not verified against the gov manpower-corps registry. The
+          same derivation the server uses in search.py:
+              verified   = approved AND gov_registry_matched_at NOT NULL
+              registered = approved AND gov_registry_matched_at IS NULL
+              unverified = anything else (covered by the pending banner
+                           above; skip here to avoid banner pile-up).
+          The point of the banner is to convert the badge from an
+          obstacle to a lever — the corp sees the same "טרם אומת"
+          contractors see and is prompted to fix it. Support is the
+          verification path because gov_corporations_registry is
+          admin-uploaded, not self-service. */}
+      {approvalStatus === 'approved' && !govMatchedAt && (
+        <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-2xl p-4">
+          <AlertTriangle className="h-5 w-5 text-amber-700 shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <h3 className="font-semibold text-amber-900">המודעות שלכם מוצגות עם התווית &quot;טרם אומת&quot;</h3>
+            <p className="text-sm text-amber-800 mt-0.5">
+              קבלנים רואים את המודעות שלכם, אך בלי סימון אמון של תאגיד מאומת מול המרשם הממשלתי. אימות הופך אתכם לבחירה מועדפת.
+            </p>
+          </div>
+          <Link
+            href="/support"
+            className="shrink-0 inline-flex items-center gap-2 bg-brand-600 hover:bg-brand-800 text-slate-900 text-sm font-semibold px-4 py-2 rounded-lg"
+          >
+            השלם אימות מול המרשם
+          </Link>
         </div>
       )}
 

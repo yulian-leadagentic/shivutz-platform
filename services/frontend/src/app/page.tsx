@@ -22,6 +22,7 @@ import {
   Users, Home as HomeIcon, Globe2, ArrowLeft, X, ArrowLeftCircle,
 } from 'lucide-react';
 import { PromotedBadge } from '@/components/ads/PromotedBadge';
+import { TrustBadge } from '@/components/ads/TrustBadge';
 import LandingNav from '@/components/landing/LandingNav';
 import LandingFooter from '@/components/landing/LandingFooter';
 import LeadCaptureModal from '@/components/landing/LeadCaptureModal';
@@ -39,7 +40,7 @@ import { RoleRegisterPicker } from '@/features/advertising/RoleRegisterPicker';
 import { VoiceInputButton } from '@/features/voice/VoiceInputButton';
 import { FeaturedAdsCarousel } from '@/features/advertising/FeaturedAdsCarousel';
 import { LandingTrustBar } from '@/features/advertising/LandingTrustBar';
-import { searchApi, type SearchResponse, type AdSearchResult, type ContactReveal } from '@/lib/api/search';
+import { searchApi, type SearchResponse, type AdSearchResult, type ContactReveal, type TrustLevel } from '@/lib/api/search';
 import { apiFetch, ApiError } from '@/lib/api/client';
 import { mapApiError } from '@/lib/api/errors';
 import { enumApi } from '@/lib/api/enums';
@@ -132,6 +133,10 @@ interface PublicAd {
   photos: string[] | null;
   featured_until: string | null;
   published_at: string;
+  // L3 §2.1 — /public/{ad_id} now returns trust_level (same JOIN as
+  // /search). Optional here because /public/recent + /public/featured
+  // don't yet include it (out of L3 scope; see follow-up in §11).
+  trust_level?: TrustLevel;
 }
 
 function LandingPageInner() {
@@ -516,11 +521,11 @@ function LandingPageInner() {
         { id: 'demo-1', ad_type: 'worker', title_he: '4 רצפים סינים · תל אביב', body_he: 'ניסיון 6+ שנים, ויזה בתוקף.',
           region: 'center', profession_code: 'flooring', origin_country: 'CN', quantity: 4,
           city: null, available_beds: null, price_per_bed_nis: null, amenities: null, photos: null,
-          featured_until: null, published_at: new Date().toISOString(), owner_entity_id: 'demo-owner-1' },
+          featured_until: null, published_at: new Date().toISOString(), owner_entity_id: 'demo-owner-1', trust_level: 'verified' as TrustLevel },
         { id: 'demo-2', ad_type: 'worker', title_he: '2 רצפים סינים · חיפה', body_he: 'זמינות מיידית, ידע בגרניט פורצלן.',
           region: 'north', profession_code: 'flooring', origin_country: 'CN', quantity: 2,
           city: null, available_beds: null, price_per_bed_nis: null, amenities: null, photos: null,
-          featured_until: null, published_at: new Date().toISOString(), owner_entity_id: 'demo-owner-2' },
+          featured_until: null, published_at: new Date().toISOString(), owner_entity_id: 'demo-owner-2', trust_level: 'registered' as TrustLevel },
       ] as AdSearchResult[],
       near_matches: null,
       relaxed: null,
@@ -532,7 +537,7 @@ function LandingPageInner() {
         { id: 'demo-3', ad_type: 'worker', title_he: '3 טייחים · פתח תקווה', body_he: 'צוות מגובש, יכולת התחלה השבוע.',
           region: 'center', profession_code: 'plastering', origin_country: 'UA', quantity: 3,
           city: null, available_beds: null, price_per_bed_nis: null, amenities: null, photos: null,
-          featured_until: null, published_at: new Date().toISOString(), owner_entity_id: 'demo-owner-3' },
+          featured_until: null, published_at: new Date().toISOString(), owner_entity_id: 'demo-owner-3', trust_level: 'verified' as TrustLevel },
       ] as AdSearchResult[],
       near_matches: null,
       relaxed: null,
@@ -544,7 +549,7 @@ function LandingPageInner() {
         { id: 'demo-4', ad_type: 'housing', title_he: '8 מיטות · ראשון לציון', body_he: 'דירה שלמה, מטבח וסלון, קרוב לתחנת רכבת.',
           region: 'center', profession_code: null, origin_country: 'IN', quantity: null,
           city: 'ראשון לציון', available_beds: 8, price_per_bed_nis: 950, amenities: ['מזגן','אינטרנט'], photos: null,
-          featured_until: null, published_at: new Date().toISOString(), owner_entity_id: 'demo-owner-4' },
+          featured_until: null, published_at: new Date().toISOString(), owner_entity_id: 'demo-owner-4', trust_level: 'unverified' as TrustLevel },
       ] as AdSearchResult[],
       near_matches: null,
       relaxed: null,
@@ -2034,6 +2039,11 @@ function AdRow({
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="results-title">{ad.title_he}</span>
+              {/* L3 §3 — trust badge next to title. Server-derived
+                  per row (verified / registered / unverified). Placed
+                  after PromotedBadge so "promoted + verified" reads
+                  as two distinct labels rather than one long chip. */}
+              {ad.trust_level && <TrustBadge level={ad.trust_level} size="sm" />}
               {boosted && <PromotedBadge size="sm" />}
             </div>
             {ad.body_he && <div className="results-body">{ad.body_he}</div>}

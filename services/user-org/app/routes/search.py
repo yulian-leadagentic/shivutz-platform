@@ -61,6 +61,11 @@ def _serialize_ad(row: dict) -> dict:
     # Strip contact-sensitive fields. Owner id is kept so the frontend
     # can call /ads/{id}/contact-reveal once the contractor decides
     # to reach out (subscription gate fires there).
+    # L3 §2.1 — trust_level is a server-derived signal (verified /
+    # registered / unverified) computed via a JOIN on corporations in
+    # the search SQL below. NEVER add corp_name here — Yulian 10.09:
+    # the name is the product /contact-reveal sells; leaking it in
+    # results would sell it for free.
     out = {
         "id":               row["id"],
         "owner_entity_id":  row["owner_entity_id"],
@@ -68,6 +73,7 @@ def _serialize_ad(row: dict) -> dict:
         "title_he":         row["title_he"],
         "body_he":          row["body_he"],
         "region":           row["region"],
+        "trust_level":      row.get("trust_level") or "unverified",
         "featured_until":   row["featured_until"].isoformat() if row.get("featured_until") else None,
         "published_at":     row["published_at"].isoformat() if row.get("published_at") else None,
         "expires_at":       row["expires_at"].isoformat()   if row.get("expires_at")   else None,
@@ -152,9 +158,23 @@ def search(body: SearchIn):
 
     # -- Pass 1: exact ---------------------------------------------------
     exact_wheres, exact_params = _build_where(filters)
+    # L3 §2.1 — LEFT JOIN corporations to derive trust_level per row.
+    # Collation cast is required: ads.owner_entity_id is utf8mb4_0900_ai_ci,
+    # corporations.id is legacy utf8mb4_unicode_ci — same pattern as
+    # ads.py:796. LEFT (not INNER) so a row whose corp was hard-deleted
+    # still surfaces with trust_level='unverified' rather than
+    # disappearing from results.
     exact_sql = f"""
-        SELECT a.*
+        SELECT a.*,
+               CASE
+                 WHEN c.gov_registry_matched_at IS NOT NULL
+                      AND c.approval_status = 'approved' THEN 'verified'
+                 WHEN c.approval_status = 'approved'      THEN 'registered'
+                 ELSE 'unverified'
+               END AS trust_level
           FROM ads a
+          LEFT JOIN corporations c
+            ON c.id COLLATE utf8mb4_0900_ai_ci = a.owner_entity_id
          WHERE {' AND '.join(exact_wheres)}
          ORDER BY {_order_clause(None, filters['ad_type'])}
          LIMIT {RESULT_LIMIT}
@@ -190,9 +210,18 @@ def search(body: SearchIn):
                     continue
                 attempts += 1
                 near_wheres, near_params = _build_where(filters, drop_field=candidate)
+                # L3 §2.1 — same trust_level JOIN as the exact pass.
                 near_sql = f"""
-                    SELECT a.*
+                    SELECT a.*,
+                           CASE
+                             WHEN c.gov_registry_matched_at IS NOT NULL
+                                  AND c.approval_status = 'approved' THEN 'verified'
+                             WHEN c.approval_status = 'approved'      THEN 'registered'
+                             ELSE 'unverified'
+                           END AS trust_level
                       FROM ads a
+                      LEFT JOIN corporations c
+                        ON c.id COLLATE utf8mb4_0900_ai_ci = a.owner_entity_id
                      WHERE {' AND '.join(near_wheres)}
                      ORDER BY {_order_clause(candidate, filters['ad_type'])}
                      LIMIT {NEAR_MATCH_LIMIT + RESULT_LIMIT}
