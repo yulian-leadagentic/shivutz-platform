@@ -1,6 +1,6 @@
 import os
 from fastapi import FastAPI, HTTPException
-from app.routes import contractors, corporations, users, admin_approvals, marketplace, marketplace_admin, marketplace_subscriptions, marketplace_uploads, support, membership_requests, uploads, ads, search
+from app.routes import contractors, corporations, users, admin_approvals, marketplace, marketplace_admin, marketplace_subscriptions, marketplace_uploads, support, membership_requests, uploads, ads, search, reveals
 from app.db import get_db, init_db
 from app.errors import register_error_handlers
 
@@ -58,4 +58,8 @@ app.include_router(support.router, prefix="/support-tickets", tags=["support"])
 app.include_router(membership_requests.router, prefix="", tags=["membership-requests"])
 app.include_router(ads.router, prefix="/ads", tags=["ads"])
 app.include_router(search.router, prefix="/search", tags=["search"])
+# L7 · reveal history — /ads/mine/reveals + /contractor/reveals live
+# in the same router because they share one contact_reveals table
+# with strict per-role WHERE gating (see reveals.py).
+app.include_router(reveals.router, prefix="", tags=["reveals"])
 # deploy probe — 2026-05-29 (boot runs migrations 031 + 032 on staging)

@@ -203,7 +203,7 @@ export default function CorporationDashboardPage() {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <Tile icon={Megaphone} label="עובדים" value={adsByType.worker  ?? 0} href="/corporation/ads" />
           <Tile icon={Home}      label="דיור"    value={adsByType.housing ?? 0} href="/corporation/ads" accent="slate" />
-          <Tile icon={Eye}       label="חשיפות פרטי קשר (30 יום)" value={revealsReceived30d} sub="פניות של קבלנים לפרטי הקשר שלכם" accent="emerald" />
+          <Tile icon={Eye}       label="חשיפות פרטי קשר (30 יום)" value={revealsReceived30d} sub="פניות של קבלנים לפרטי הקשר שלכם" accent="emerald" href="/corporation/reveals" />
           <Tile icon={Megaphone} label="פעילות כוללות" value={usage?.usage.active_ads ?? 0}
                 sub={usage?.limits.active_ads == null ? undefined : `מתוך ${usage.limits.active_ads}`}
                 href="/corporation/ads" />
