@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import {
   Search, Loader2, Home, Wrench, Briefcase, MoreHorizontal,
-  Building2, Filter, X,
+  Building2, Filter, X, Tag,
 } from 'lucide-react';
 import { marketplaceApi } from '@/lib/api';
 import type { MarketplaceListing } from '@/types';
@@ -13,13 +13,28 @@ import ListingCard from '@/components/marketplace/ListingCard';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 
-const CATEGORIES = [
+type CategoryOption = { value: string; label: string; icon: typeof Filter };
+
+// U1 §3b — fallback if the API is unreachable. Admins can rename these
+// or add new codes in /admin/marketplace/categories, so the live list
+// wins — but we keep the fallback so a network blip doesn't strand the
+// filter bar with nothing but "הכל". Do NOT delete: this is the safety
+// net the guardrail calls out.
+const FALLBACK_CATEGORIES: CategoryOption[] = [
   { value: '', label: 'הכל', icon: Filter },
   { value: 'housing', label: 'דיור', icon: Home },
   { value: 'equipment', label: 'ציוד', icon: Wrench },
   { value: 'services', label: 'שירותים', icon: Briefcase },
   { value: 'other', label: 'אחר', icon: MoreHorizontal },
 ];
+
+// Icon-per-code for known codes; unknown codes get a neutral tag icon.
+const CATEGORY_ICON: Record<string, typeof Filter> = {
+  housing:   Home,
+  equipment: Wrench,
+  services:  Briefcase,
+  other:     MoreHorizontal,
+};
 
 function SkeletonCard() {
   return (
@@ -41,6 +56,7 @@ export default function MarketplacePage() {
   const { regions } = useEnums();
   const [listings, setListings] = useState<MarketplaceListing[]>([]);
   const [loading, setLoading]   = useState(true);
+  const [categories, setCategories] = useState<CategoryOption[]>(FALLBACK_CATEGORIES);
 
   const [category, setCategory] = useState('');
   const [region, setRegion]     = useState('');
@@ -48,6 +64,27 @@ export default function MarketplacePage() {
   const [searchInput, setSearchInput] = useState('');
 
   const [loadError, setLoadError] = useState<string | null>(null);
+
+  // U1 §3b — hydrate from the live admin table; fall through to
+  // FALLBACK_CATEGORIES on any failure so the filter bar never looks
+  // broken. Empty is also treated as failure — an empty categories
+  // table would silently strip the whole filter row otherwise.
+  useEffect(() => {
+    marketplaceApi.listCategories()
+      .then((rows) => {
+        const mapped: CategoryOption[] = (rows ?? [])
+          .filter((r) => r.name_he)
+          .sort((a, b) => a.sort_order - b.sort_order)
+          .map((r) => ({
+            value: r.code,
+            label: r.name_he,
+            icon:  CATEGORY_ICON[r.code] ?? Tag,
+          }));
+        if (mapped.length === 0) return;
+        setCategories([{ value: '', label: 'הכל', icon: Filter }, ...mapped]);
+      })
+      .catch(() => { /* keep FALLBACK_CATEGORIES */ });
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -123,7 +160,7 @@ export default function MarketplacePage() {
 
         {/* Category filter tabs */}
         <div className="flex flex-wrap gap-2 mb-5">
-          {CATEGORIES.map(({ value, label, icon: Icon }) => (
+          {categories.map(({ value, label, icon: Icon }) => (
             <button
               key={value}
               type="button"

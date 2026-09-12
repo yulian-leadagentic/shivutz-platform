@@ -11,6 +11,7 @@
 // (page.tsx does not reserve space for it).
 
 import { useEffect, useRef, useState } from 'react';
+import { isLoggedIn } from '@/lib/auth';
 import {
   ChevronRight, ChevronLeft, Flame, Home, Users,
   Building2, Hammer, Wrench, PaintBucket, Bolt, Plug, Layers, Boxes,
@@ -75,6 +76,12 @@ export function FeaturedAdsCarousel() {
   const scroller = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    // U1 §1b — /ads/public/featured returns real corp inventory and
+    // was closed to anonymous callers in L2 §2. Skipping the fetch
+    // when there's no token keeps the browser console clean; the
+    // carousel returns null below when ads.length === 0, so the
+    // anonymous landing simply has no "hot in portal" section.
+    if (!isLoggedIn()) { setAds([]); return; }
     // F3 §2.2 — no /recent fallback. Only render when there are
     // actual boosted ads. Empty featured → ads stays [] → the
     // `if (ads.length === 0) return null` below unmounts the

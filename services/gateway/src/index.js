@@ -195,9 +195,17 @@ const PUBLIC_PREFIXES = [
   // the transcript is fed back into /api/search which now requires
   // auth, so voice can't be used as a search bypass.
   // L2 §2 — `/api/ads/public` prefix was public (featured/recent/
-  // stats/sponsored/{id}); every path except /stats returns real ad
-  // rows. `/stats` is numeric-only and safe. Explicit allow below.
+  // stats/sponsored/{id}); featured/recent/{id} return real ad rows
+  // and are correctly closed. `/stats` is numeric-only and safe.
   '/api/ads/public/stats',
+  // U1 §1 — /public/sponsored serves `sponsor_ads` (paid banner ads
+  // from brands like Brand and Ayalon), NOT ads table rows. It was
+  // closed as collateral damage in L2 and that broke the sponsor
+  // slot for anonymous visitors. Restoring: paid banners are meant
+  // to be seen; the L2 rule was about corp inventory (which this
+  // endpoint doesn't touch — verified _serialize contains no ads/
+  // corporations fields).
+  '/api/ads/public/sponsored',
   '/api/webhooks/vonage',        // Vonage webhooks — secured by Signature Secret JWT, not user JWT
   // L5 §5 · Cardcom recurring-charge webhook. HMAC-SHA256 header
   // signature is the security boundary (see payment/webhooks.py) —

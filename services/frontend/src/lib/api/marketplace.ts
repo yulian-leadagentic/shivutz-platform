@@ -1,7 +1,20 @@
 import { apiFetch } from './client';
 import type { MarketplaceListing, LeadFormData } from '@/types';
 
+export interface PublicMarketplaceCategory {
+  code:       string;
+  name_he:    string;
+  name_en:    string;
+  icon_slug?: string | null;
+  sort_order: number;
+}
+
 export const marketplaceApi = {
+  // U1 §3b — active categories only, for the public marketplace page.
+  // Admins manage the full list (incl. inactive) via marketplaceAdminApi.
+  listCategories: () =>
+    apiFetch<PublicMarketplaceCategory[]>('/marketplace/categories'),
+
   list: (params?: {
     category?: string;
     region?: string;

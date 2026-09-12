@@ -168,6 +168,31 @@ def list_listings(
         conn.close()
 
 
+# ── GET /marketplace/categories ────────────────────────────────────────────────
+# U1 §3b — the public marketplace page ships a hardcoded 4-item category
+# list. Admin-side, categories are configurable via
+# /marketplace/admin/categories, so the public page can drift the moment
+# an admin renames "שירותים" or adds a fifth code. Expose the active
+# categories publicly so both surfaces stay in lockstep. The listing
+# route below matches /{listing_id} greedily, so this MUST be defined
+# first for FastAPI's ordered matching.
+
+@router.get("/categories")
+def list_public_categories():
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT code, name_he, name_en, icon_slug, sort_order
+                 FROM marketplace_categories
+                WHERE is_active = 1
+                ORDER BY sort_order, code"""
+        )
+        return [_serialize(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
 # ── GET /marketplace/:id ───────────────────────────────────────────────────────
 
 @router.get("/{listing_id}")

@@ -20,7 +20,10 @@ export default function LandingFooter() {
           <div>
             <h4 className="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-3">פלטפורמה</h4>
             <ul className="space-y-2 text-sm">
-              <li><span className="text-slate-400 cursor-not-allowed" aria-disabled="true" title="לא זמין כרגע">שירותים נלווים <span className="text-[10px] bg-slate-100 text-slate-500 px-1 rounded">בקרוב</span></span></li>
+              {/* U1 §3 — /marketplace is live and public; the old
+                  "בקרוב" span was a dead label pointing at a working
+                  page. Same fix as LandingNav (desktop + mobile). */}
+              <li><Link href="/marketplace" className="hover:text-brand-600 transition-colors">שירותים נלווים</Link></li>
               <li><Link href="/register/contractor" className="hover:text-brand-600 transition-colors">הצטרף כקבלן</Link></li>
               <li><Link href="/register/corporation" className="hover:text-brand-600 transition-colors">הצטרף כתאגיד</Link></li>
             </ul>

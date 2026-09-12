@@ -276,10 +276,21 @@ function LandingPageInner() {
   }, []);
 
   useEffect(() => {
-    apiFetch<{ results: PublicAd[] }>('/ads/public/recent?limit=12')
-      .then((r) => setRecent(r.results))
-      .catch(() => setRecent([]))
-      .finally(() => setRecentLoaded(true));
+    // U1 §1b — /ads/public/recent is 401 for anonymous callers per
+    // L2 §2 (it returns real corp inventory). Skipping the call for
+    // anonymous visitors keeps the browser console clean and the
+    // "recent" grid simply absent — anonymous UX is the demo loop
+    // only per L2 §3, so a real-inventory grid never belonged there.
+    if (isLoggedIn()) {
+      apiFetch<{ results: PublicAd[] }>('/ads/public/recent?limit=12')
+        .then((r) => setRecent(r.results))
+        .catch(() => setRecent([]))
+        .finally(() => setRecentLoaded(true));
+    } else {
+      // Mark loaded so the H11 reveal-return effect below can proceed
+      // (it guards on `recentLoaded && !loading` before firing).
+      setRecentLoaded(true);
+    }
     // Best-effort: filters degrade to empty selects if the endpoints
     // 500 or the anon rate limit is hit.
     enumApi.professions().then(setProfessions).catch(() => setProfessions([]));
@@ -1993,6 +2004,23 @@ function AdRow({
   // the value.
   nearMatchTag?: string;
 }) {
+  // U1 §2 — click / Enter / Space on the row expands it in place to
+  // show body_he full + extra ad fields (visa, experience, languages
+  // for workers; gallery, amenities, rental_mode for housing). We do
+  // NOT ship /ads/[id] — a shareable link opens the L2 "who can
+  // read this" question all over again. Reveal CTA still lives in
+  // Cell 5 and gets stopPropagation so a click on it doesn't also
+  // toggle the row.
+  const [expanded, setExpanded] = useState(false);
+  const toggleExpanded = () => setExpanded((v) => !v);
+  const onRowKey = (e: React.KeyboardEvent<HTMLLIElement>) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      toggleExpanded();
+    } else if (e.key === 'Escape' && expanded) {
+      setExpanded(false);
+    }
+  };
   const profLabel   = ad.profession_code ? (professions.find((p) => p.code === ad.profession_code)?.name_he ?? ad.profession_code) : null;
   const originLabel = ad.origin_country  ? (origins.find((o)     => o.code === ad.origin_country)?.name_he  ?? ad.origin_country)  : null;
   const regionLabel = ad.region          ? (regions.find((r)     => r.code === ad.region)?.name_he          ?? ad.region)          : null;
@@ -2023,12 +2051,23 @@ function AdRow({
 
   return (
     <li
-      role="row"
+      // U1 §2 — role="button" replaces role="row" so the whole row
+      // is a first-class keyboard target with aria-expanded. The
+      // parent <ul> keeps role="table" for screen-reader summary
+      // (row count etc.); we trade tabular-row semantics on this
+      // element for the interactivity the click needs. The
+      // results-row grid layout is class-driven, so visual is
+      // unchanged.
+      role="button"
+      tabIndex={0}
+      aria-expanded={expanded}
+      onClick={toggleExpanded}
+      onKeyDown={onRowKey}
       // H6 · WCAG 2.4.11 — dynamic scroll-margin, unchanged: the
       // sticky-bar height + fixed-nav offset land the row below
       // both bars whether the readout is rendered or not.
       style={{ scrollMarginTop: 'calc(64px + var(--sticky-h, 72px) + 12px)' }}
-      className={`results-row ${boosted ? 'results-row--boosted' : ''}`}
+      className={`results-row cursor-pointer ${boosted ? 'results-row--boosted' : ''} ${expanded ? 'results-row--expanded' : ''}`}
     >
       {/* Cell 1 — title + one-line body + housing thumb */}
       <div className="results-cell" data-l="מודעה">
@@ -2046,7 +2085,14 @@ function AdRow({
               {ad.trust_level && <TrustBadge level={ad.trust_level} size="sm" />}
               {boosted && <PromotedBadge size="sm" />}
             </div>
-            {ad.body_he && <div className="results-body">{ad.body_he}</div>}
+            {/* U1 §2 — closed row: single-line body; expanded row:
+                full body_he. Uses white-space normal so the newlines
+                come through when open. */}
+            {ad.body_he && (
+              <div className={`results-body ${expanded ? 'whitespace-pre-line' : 'line-clamp-1'}`}>
+                {ad.body_he}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -2077,7 +2123,14 @@ function AdRow({
           the source; the CSS selector was also hardened below to
           exclude empty values so the bug can't come back if a
           future author passes an undefined label. */}
-      <div className="results-cell">
+      <div
+        className="results-cell"
+        // U1 §2 — click on this cell (or the reveal CTA inside it)
+        // must NOT toggle the row's expanded state. Stop propagation
+        // at the cell so nothing inside — the button OR any padding —
+        // can bubble to the row's onClick handler.
+        onClick={(e) => e.stopPropagation()}
+      >
         {revealed ? (
           <span className="results-cta-revealed" aria-label="נחשף"><Phone className="w-4 h-4" />✓ נחשף</span>
         ) : (
@@ -2092,6 +2145,72 @@ function AdRow({
           </button>
         )}
       </div>
+
+      {/* U1 §2 — expansion block. Shown when the row is expanded
+          and NOT yet revealed. If the reveal already happened, the
+          reveal-block below already carries the housing gallery +
+          amenities, so we don't stack a second panel on top. Uses
+          the same grid-column:1/-1 span pattern as the reveal-block
+          — no new mechanism. */}
+      {expanded && !revealed && (
+        <div className="results-reveal-block">
+          <div className="text-sm text-slate-800 space-y-2">
+            {isWorker ? (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                {ad.experience_min_months != null && (
+                  <div>
+                    <div className="text-slate-500">ניסיון מינימלי</div>
+                    <div className="font-semibold">{ad.experience_min_months} חודשים</div>
+                  </div>
+                )}
+                {ad.visa_valid_until && (
+                  <div>
+                    <div className="text-slate-500">ויזה בתוקף עד</div>
+                    <div className="font-semibold" dir="ltr">{new Date(ad.visa_valid_until).toLocaleDateString('he-IL')}</div>
+                  </div>
+                )}
+                {Array.isArray(ad.languages) && ad.languages.length > 0 && (
+                  <div className="col-span-2">
+                    <div className="text-slate-500">שפות</div>
+                    <div className="font-semibold">{ad.languages.join(' · ')}</div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {(ad.total_beds != null || ad.available_beds != null) && (
+                  <div className="text-xs text-slate-600">
+                    <span className="font-semibold text-slate-800">{ad.available_beds ?? '—'}</span> מיטות פנויות
+                    {ad.total_beds != null && <> מתוך <span className="font-semibold text-slate-800">{ad.total_beds}</span> סה&quot;כ</>}
+                  </div>
+                )}
+                {Array.isArray(ad.amenities) && ad.amenities.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {ad.amenities.map((a) => (
+                      <span key={a} className="text-[10px] font-semibold text-slate-600 bg-slate-100 rounded-full px-2 py-0.5">{a}</span>
+                    ))}
+                  </div>
+                )}
+                {Array.isArray(ad.photos) && ad.photos.length > 0 && (
+                  <div className="flex gap-2 overflow-x-auto">
+                    {ad.photos.slice(0, 4).map((url) => (
+                      <img
+                        key={url}
+                        src={url}
+                        alt={ad.title_he ?? ''}
+                        className="w-24 h-24 rounded-lg object-cover shrink-0 border border-slate-200"
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            <p className="text-xs text-slate-500 pt-1">
+              רוצה ליצור קשר? לחץ &quot;הצג פרטים&quot; בשורה זו.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Reveal block — full-width row that opens after successful
           reveal. Preserves R2 note + R4 cross-link (product

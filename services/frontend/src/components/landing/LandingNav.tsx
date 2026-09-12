@@ -122,14 +122,16 @@ export default function LandingNav(_: LandingNavProps) {
           >
             איך זה עובד
           </a>
-          <span
-            className="text-sm font-medium text-slate-400 cursor-not-allowed inline-flex items-center gap-1.5"
-            aria-disabled="true"
-            title="לא זמין כרגע"
+          {/* U1 §3 — /marketplace is live and public (no auth). The
+              old "בקרוב" span was a dead label pointing at a working
+              page, which reads as a broken product; making it a real
+              Link removes the friction. */}
+          <Link
+            href="/marketplace"
+            className={`text-sm font-medium transition-colors ${linkCls}`}
           >
             שירותים נלווים
-            <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">בקרוב</span>
-          </span>
+          </Link>
         </nav>
 
         {/* Desktop buttons */}
@@ -241,10 +243,14 @@ export default function LandingNav(_: LandingNavProps) {
           >
             איך זה עובד
           </a>
-          <span className="block text-sm font-medium text-slate-400 py-2.5 cursor-not-allowed" aria-disabled="true">
+          {/* U1 §3 — mobile mirror of the desktop change above. */}
+          <Link
+            href="/marketplace"
+            onClick={() => setMenuOpen(false)}
+            className="block text-sm font-medium text-slate-700 py-2.5 hover:text-brand-600"
+          >
             שירותים נלווים
-            <span className="ms-2 text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">בקרוב</span>
-          </span>
+          </Link>
           {/* "השאר פרטים" mobile entry removed — same de-dupe as desktop (R2 #5). */}
           <div className="pt-3 flex flex-col gap-2 border-t border-slate-100 mt-1">
             {isLoggedIn ? (
