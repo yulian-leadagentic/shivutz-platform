@@ -10,12 +10,34 @@ State as of writing: pre-launch. No live users, no live money. Database schemas 
 
 ## Branch model — important
 
-The active development branch is **`staging`**, not `main`.
+> **⚠️ CHECK THIS FIRST — verified 2026-08-13.** The description below says `staging`, but the
+> working checkout's HEAD is **`pivot/v2`**, and all 25 most recent commits are on `pivot/v2`.
+> `git log main..staging` returns only older commits. **Run `git rev-parse --abbrev-ref HEAD`
+> and commit to the branch you are actually on** — do not assume `staging` from this file.
+> Resolving this properly is item **B1** in `docs/cc-prompts/cc_master_backlog.md`, and it needs
+> a decision from Yulian: is `staging` still in the chain, or does `pivot/v2` go straight to `main`?
+
+The active development branch is **`staging`**, not `main`. *(Stale — see the warning above.)*
 
 - `staging` — where day-to-day commits land. The user's local Docker reads from this branch's working tree. Pushed to `origin/staging` → Railway staging auto-deploys.
 - `main` — production-only. Merged into from `staging` after staging passes QA. Pushed to `origin/main` → Railway production auto-deploys.
 
 When the system tells you "main branch (you will usually use this for PRs): main", that's misleading for this repo. The real default for new work is `staging`. PRs against `main` only happen at release time.
+
+## Line endings — known issue
+
+`git status` currently reports ~68 migrations and most of the repo as modified. This is CRLF
+conversion, not real work (`git diff --numstat db/migrations/001_initial_schema.sql` → `471 471`,
+i.e. every line "changed"). `core.autocrlf` is unset and there is no `.gitattributes`.
+
+Until item **B2** in `docs/cc-prompts/cc_master_backlog.md` lands, `git status` is not a reliable
+signal of what you changed. Use `git diff -w --stat -- <specific-file>` to review your own work,
+and stage files explicitly — never `git add -A`.
+
+## Start here
+
+`docs/cc-prompts/cc_master_backlog.md` is the run file: ordered backlog, launch blockers,
+repo-hygiene items, and the tracks. Read it before picking up work.
 
 ## Worktree workflow (when applicable)
 
@@ -67,6 +89,26 @@ Login locally: phone `+972525278625`, OTP `999999` (set `MASTER_OTP=999999` in `
 | Migrations | [db/migrations/](db/migrations/) — applied to all service DBs by [scripts/run_migrations.py](scripts/run_migrations.py) |
 | Local Docker stack | [docker-compose.yml](docker-compose.yml) (prod-style) + [docker-compose.override.yml](docker-compose.override.yml) (HMR overlay) |
 | Operations docs | [docs/](docs/) — start with [docs/ENVIRONMENTS.md](docs/ENVIRONMENTS.md) |
+
+## Migrations before code
+
+`origin/staging` auto-deploys. A push of code that reads a new column or
+table BEFORE that migration has run on the staging DB takes staging down
+until it does.
+
+Order, always:
+  1. run the migration on staging
+  2. verify the schema
+  3. push the code
+
+This is not a style preference — it is the deploy order. L4 and L5 shipped
+code before migrations `071` / `072` had run on staging; the pattern is
+captured here so it doesn't repeat.
+
+The user-org container runs `scripts/run_migrations.py` on entrypoint, so
+in practice the fix is to make sure the migration file lands in the same
+push as (or before) the code, and to verify via `railway ssh --service
+user-org` after Railway rebuilds.
 
 ## House style
 

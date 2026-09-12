@@ -15,6 +15,12 @@ import logging
 from typing import Optional
 
 from app.db import get_db
+# L9 §2c — is_fake comes from the SERVICE state, not from the message
+# shape (raw dict / txn id prefix). PAYMENT_FAKE_MODE is the single
+# source of truth here, imported from the same module that gates the
+# Cardcom network calls in charge_token — /start and record_event can
+# never disagree about mode.
+from app.services.cardcom import PAYMENT_FAKE_MODE
 
 logger = logging.getLogger(__name__)
 
@@ -41,17 +47,23 @@ def record_event(
     """
     event_id = str(uuid.uuid4())
     raw_json = json.dumps(raw or {}, ensure_ascii=False, default=str)[:65535]
+    # L9 §2c — is_fake reflects what the service was doing at the
+    # moment of the call, not what the payload looked like. A row
+    # written while PAYMENT_FAKE_MODE=1 is fake, period; the FAKE-
+    # prefix on the txn id in fake mode is a display convenience, not
+    # the truth signal.
+    is_fake = PAYMENT_FAKE_MODE
     conn = get_db("payment_db")
     try:
         cur = conn.cursor()
         try:
             cur.execute(
                 """INSERT INTO payment_events
-                     (id, entity_id, entity_type, kind, outcome, amount_nis,
+                     (id, entity_id, entity_type, kind, is_fake, outcome, amount_nis,
                       provider_transaction_id, response_code,
                       invoice_number, invoice_url, raw)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-                (event_id, entity_id, entity_type, kind, outcome, amount_nis,
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                (event_id, entity_id, entity_type, kind, is_fake, outcome, amount_nis,
                  provider_transaction_id, response_code,
                  invoice_number, invoice_url, raw_json),
             )
