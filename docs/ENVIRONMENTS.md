@@ -146,6 +146,40 @@ When tests pollute staging DB and you want a clean slate:
 2. Re-set `SEED_ADMIN_PHONE` + `SEED_ADMIN_NAME` on user-org (delete them after first boot to avoid clutter)
 3. Redeploy user-org → migrations rebuild + admin re-seeds
 
+### Smoke test
+
+`scripts/smoke_test.py` runs the API-layer half of the launch runsheet (§10) in about five minutes. It signs into four seeded phones and pokes at anon endpoints, cross-entity isolation, reveal-quota rules, response leaks, corp visibility, and payment_events (`is_fake` must equal 100% on staging).
+
+```
+python scripts/smoke_test.py --base-url https://gateway-staging-3a12.up.railway.app
+python scripts/smoke_test.py --base-url … --seed-report
+```
+
+Required env vars (never commit real values; keep them in your shell):
+
+| var | who |
+|---|---|
+| `CONTRACTOR_APPROVED_PHONE` | approved contractor, `is_seed=1` |
+| `CONTRACTOR_PENDING_PHONE`  | pending contractor,  `is_seed=1` |
+| `CONTRACTOR_B_PHONE`        | second approved contractor (isolation partner), `is_seed=1` |
+| `CORPORATION_PHONE`         | approved corporation, `is_seed=1` |
+| `MASTER_OTP`                | `999999` on staging (see above) |
+| `MYSQL_HOST`, `MYSQL_ROOT_PASSWORD` | staging plugin creds |
+
+First-time setup on a new environment:
+
+1. Apply migration `075_is_seed_on_entities.sql` (adds `is_seed` to contractors + corporations).
+2. Set the four env vars in your shell (or in a `.env.smoke` file, never committed).
+3. Run `python scripts/mark_seed_entities.py` — flips `is_seed=TRUE` on each phone's entities. Idempotent.
+4. Run the smoke test.
+
+Guardrails:
+- Refuses to run against production URL patterns (`gateway-production`, etc.). Exit 2, no override flag.
+- Never prints tokens, OTPs, or passwords.
+- Read-only against product data. The only writes are the API's own side effects of the calls the test performs — an intentionally-failing reveal writes nothing to `contact_reveals`; a successful call to `/auth/login/otp` issues a JWT and inserts a refresh_token row (unavoidable for any authenticated smoke test).
+
+Each run sends 4 real SMS OTPs to the seed phone owner (Vonage rate-limits `/auth/send-otp` at 3/phone/10min). Space runs ≥10 min apart, or the fourth run will start failing send-otp with 429.
+
 ---
 
 ## Production on Railway
