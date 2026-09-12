@@ -239,6 +239,27 @@ async def charge_token(
     """
     total = round(base_amount + vat_amount, 2)
 
+    # L5 §3 — the critical fix. charge_token was the ONE Cardcom
+    # entry point that ignored PAYMENT_FAKE_MODE (authorize / capture /
+    # void all honoured it — check them again below). That meant even
+    # with all fake flags on, a subscription/reveal charge would hit
+    # Cardcom for real. Now it returns a synthetic result shaped like
+    # the real one so upstream callers can't tell the difference.
+    if PAYMENT_FAKE_MODE:
+        fake_txn = f"FAKE-{uuid.uuid4().hex[:16]}"
+        logger.warning(
+            "[cardcom] FAKE charge deal=%s total=%.2f "
+            "(PAYMENT_FAKE_MODE=1, no network call)",
+            deal_id, total,
+        )
+        return {
+            "provider_transaction_id": fake_txn,
+            "response_code":           "0",
+            "invoice_number":          "",
+            "invoice_url":              None,
+            "raw":                     {"fake": True, "reason": "PAYMENT_FAKE_MODE=1"},
+        }
+
     if _free_launch_active():
         return _free_launch_result(deal_id, total, "charge_token")
 

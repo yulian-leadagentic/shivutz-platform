@@ -9,6 +9,7 @@ const { runTrialEndingReminderCron }    = require('./cron/trialEndingReminder');
 const { runAdExpiringReminderCron }     = require('./cron/adExpiringReminder');
 const { runGraceReminderCron }          = require('./cron/graceReminder');
 const { runGraceHardCapCron }           = require('./cron/graceHardCap');
+const { runSubscriptionRenewalCron }    = require('./cron/subscriptionRenewal');
 const notifRoutes = require('./routes/notifications');
 
 const app = express();
@@ -85,6 +86,17 @@ const PORT = process.env.NOTIF_PORT || 3006;
   cron.schedule('45 8 * * *', () => {
     console.log('[cron] Running grace hard-cap');
     runGraceHardCapCron().catch(console.error);
+  });
+
+  // L5 §6 — daily at 09:00 sweep subscriptions with a due
+  // current_period_end (first renewal) or a due next_attempt_at
+  // (failure-chain retry). Sits AFTER the grace hard-cap so a
+  // corp who just paid a resurrected subscription doesn't get
+  // hard-capped between the payment webhook landing and the
+  // renewal-restore path in payment/subscriptions.py.
+  cron.schedule('0 9 * * *', () => {
+    console.log('[cron] Running subscription renewal batch');
+    runSubscriptionRenewalCron().catch(console.error);
   });
 
   app.listen(PORT, () => console.log(`Notification service listening on ${PORT}`));

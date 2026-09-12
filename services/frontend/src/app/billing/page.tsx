@@ -76,6 +76,10 @@ export default function BillingPage() {
   // but the whole point is that IF the lazy-init breaks, the user sees
   // a CTA rather than assuming the app is broken.
   const [noSub, setNoSub]     = useState<boolean>(false);
+  // L5 §8 · last successful charge's Cardcom invoice link. Cleared
+  // on each upgrade attempt; hydrated only when the payment service
+  // returns `invoice_url` (real-mode only).
+  const [lastInvoiceUrl, setLastInvoiceUrl] = useState<string | null>(null);
 
   // Team-members merge (contractor-only). Corp still has /corporation/users.
   const [members, setMembers]   = useState<TeamMember[]>([]);
@@ -163,8 +167,13 @@ export default function BillingPage() {
   async function upgrade(tier: SubscriptionTier) {
     setBusy(tier);
     setError('');
+    setLastInvoiceUrl(null);
     try {
-      await subscriptionApi.start(tier);
+      const result = await subscriptionApi.start(tier);
+      // L5 §8 — surface the Cardcom invoice link when it came back.
+      // Fake mode returns no invoice, so this stays null and the
+      // "Invoice ready" row simply doesn't render.
+      if (result.invoice_url) setLastInvoiceUrl(result.invoice_url);
       await refresh();
     } catch (e) {
       // R3 — QA-3 follow-up. Sibling calls (`refresh`, `addMember`,
@@ -409,6 +418,23 @@ export default function BillingPage() {
           >
             <RefreshCw className="w-3.5 h-3.5" /> נסה שוב
           </button>
+        </div>
+      )}
+
+      {/* L5 §8 — Cardcom invoice link from the last successful charge.
+          Displayed only in real mode; fake mode returns no invoice_url
+          and this row simply doesn't render. */}
+      {lastInvoiceUrl && (
+        <div className="text-sm text-emerald-900 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 flex items-center gap-2">
+          <span className="flex-1">התשלום נקלט. חשבונית מוכנה להורדה מ-Cardcom.</span>
+          <a
+            href={lastInvoiceUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-900 hover:bg-emerald-100 px-2 py-1 rounded"
+          >
+            הצג חשבונית
+          </a>
         </div>
       )}
 

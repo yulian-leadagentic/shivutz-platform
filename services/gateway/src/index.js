@@ -167,6 +167,10 @@ const PUBLIC_PREFIXES = [
   // rows. `/stats` is numeric-only and safe. Explicit allow below.
   '/api/ads/public/stats',
   '/api/webhooks/vonage',        // Vonage webhooks — secured by Signature Secret JWT, not user JWT
+  // L5 §5 · Cardcom recurring-charge webhook. HMAC-SHA256 header
+  // signature is the security boundary (see payment/webhooks.py) —
+  // the JWT gate would break Cardcom's server-to-server call.
+  '/api/webhooks/cardcom-recurring',
   // L1 §2 · SEC-2 — `/api/uploads` is NO LONGER public. Every file on
   // that path is a private tenant document (business licence, ID,
   // etc.); logos / avatars / marketplace photos live on Cloudinary

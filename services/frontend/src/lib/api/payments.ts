@@ -25,7 +25,17 @@ export const subscriptionApi = {
     apiFetch<SubscriptionRow>('/payments/subscriptions/me'),
 
   start: (tier: SubscriptionTier) =>
-    apiFetch<{ mode: string; tier: SubscriptionTier; status: SubscriptionStatus; current_period_end: string }>(
+    apiFetch<{
+      mode:               string;   // 'fake' | 'real'
+      tier?:              SubscriptionTier;
+      status?:            SubscriptionStatus;
+      current_period_end?: string | null;
+      // L5 §8 — Cardcom returns these on a successful real charge.
+      // Absent in fake mode; the billing page shows the link when
+      // present and hides the row otherwise.
+      invoice_number?:    string | null;
+      invoice_url?:       string | null;
+    }>(
       '/payments/subscriptions/start',
       { method: 'POST', body: JSON.stringify({ tier }) },
     ),

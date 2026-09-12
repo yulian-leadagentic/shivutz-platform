@@ -1,10 +1,17 @@
+import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from app.db import get_db, init_db
 from app.errors import register_error_handlers
 from app.routes import payment_methods, webhooks, settings, subscriptions
+# L5 §3 — read fake-mode state from the same module that gates Cardcom
+# network calls, so the startup log tells the operator exactly what
+# the payment service is doing with real money.
+from app.services.cardcom import PAYMENT_FAKE_MODE
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
+logger = logging.getLogger(__name__)
 
 # D4: no scheduled jobs at present. The old capture-cron module was
 # deleted with the deal-lifecycle sunset — it swept J5 pre-auths
@@ -18,6 +25,14 @@ scheduler = AsyncIOScheduler()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+    # L5 §3 — one visible line per boot that answers "is real money on
+    # the line right now?". Without it the payment service silently ran
+    # for weeks in fake mode because the old subscriptions fake flag
+    # defaulted ON — the exact S2 category of bug the spec calls out.
+    mode = "fake" if PAYMENT_FAKE_MODE else "real"
+    reason = ("PAYMENT_FAKE_MODE=1" if PAYMENT_FAKE_MODE
+              else "PAYMENT_FAKE_MODE unset or 0")
+    logger.warning("[payment] mode=%s reason=%s", mode, reason)
     # No scheduled jobs at present. Subscription renewals run via
     # Cardcom's recurring engine (Cardcom pushes webhooks), not
     # via APScheduler.
