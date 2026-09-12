@@ -26,20 +26,24 @@ export default function LandingFooter() {
             </ul>
           </div>
 
-          {/* Legal */}
+          {/* Legal — L6 landed the four pages, so these are real Links
+              now. The pre-L6 footer had them as text spans and inline
+              "#how-it-works" pointed at the landing scroll anchor. */}
           <div>
             <h4 className="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-3">מידע</h4>
             <ul className="space-y-2 text-sm">
               <li><a href="#how-it-works" className="hover:text-brand-600 transition-colors">איך זה עובד</a></li>
-              <li><span className="text-slate-400">תנאי שימוש</span></li>
-              <li><span className="text-slate-400">מדיניות פרטיות</span></li>
-              <li><span className="text-slate-400">יצירת קשר</span></li>
+              <li><Link href="/terms" className="hover:text-brand-600 transition-colors">תנאי שימוש</Link></li>
+              <li><Link href="/privacy" className="hover:text-brand-600 transition-colors">מדיניות פרטיות</Link></li>
+              <li><Link href="/accessibility" className="hover:text-brand-600 transition-colors">הצהרת נגישות</Link></li>
+              <li><Link href="/contact" className="hover:text-brand-600 transition-colors">יצירת קשר</Link></li>
+              <li><Link href="/support" className="hover:text-brand-600 transition-colors">תמיכה</Link></li>
             </ul>
           </div>
         </div>
 
         <div className="border-t border-slate-200 pt-6 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500">
-          <span>© {new Date().getFullYear()} TagidAI פלטפורמה בע"מ — כל הזכויות שמורות</span>
+          <span>© {new Date().getFullYear()} <b>Lead Agentic</b> · עוסק מורשה <span dir="ltr">032340283</span> — כל הזכויות שמורות</span>
           <span>מורשה ופועל לפי חוקי הגנת העובד הזר בישראל</span>
         </div>
       </div>
