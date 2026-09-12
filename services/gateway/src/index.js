@@ -203,6 +203,10 @@ const PUBLIC_PREFIXES = [
   // signature is the security boundary (see payment/webhooks.py) —
   // the JWT gate would break Cardcom's server-to-server call.
   '/api/webhooks/cardcom-recurring',
+  // L10 · legal documents + site settings. Israeli law requires
+  // terms + privacy be reachable without login; L2 §2 closed
+  // /api/search but explicitly does NOT close /api/legal.
+  '/api/legal',
   // L1 §2 · SEC-2 — `/api/uploads` is NO LONGER public. Every file on
   // that path is a private tenant document (business licence, ID,
   // etc.); logos / avatars / marketplace photos live on Cloudinary

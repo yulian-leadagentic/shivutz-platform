@@ -1,6 +1,6 @@
 import os
 from fastapi import FastAPI, HTTPException
-from app.routes import contractors, corporations, users, admin_approvals, marketplace, marketplace_admin, marketplace_subscriptions, marketplace_uploads, support, membership_requests, uploads, ads, search, reveals
+from app.routes import contractors, corporations, users, admin_approvals, marketplace, marketplace_admin, marketplace_subscriptions, marketplace_uploads, support, membership_requests, uploads, ads, search, reveals, legal
 from app.db import get_db, init_db
 from app.errors import register_error_handlers
 
@@ -62,4 +62,9 @@ app.include_router(search.router, prefix="/search", tags=["search"])
 # in the same router because they share one contact_reveals table
 # with strict per-role WHERE gating (see reveals.py).
 app.include_router(reveals.router, prefix="", tags=["reveals"])
+# L10 · public legal documents + site settings. /legal/{slug} and
+# /legal/settings are UNAUTHENTICATED — Hebrew law requires terms +
+# privacy be reachable without a login. Gateway must include /api/legal
+# in PUBLIC_PREFIXES.
+app.include_router(legal.router, prefix="", tags=["legal"])
 # deploy probe — 2026-05-29 (boot runs migrations 031 + 032 on staging)

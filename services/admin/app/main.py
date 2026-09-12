@@ -1,5 +1,5 @@
 from fastapi import FastAPI, HTTPException
-from app.routes import dashboard, enums, approvals, registration_log, settings, users, leads, support, gov_corp_list, org_summary, notifications_test, ads as admin_ads, subscriptions as admin_subs, subscription_plans as admin_plans
+from app.routes import dashboard, enums, approvals, registration_log, settings, users, leads, support, gov_corp_list, org_summary, notifications_test, ads as admin_ads, subscriptions as admin_subs, subscription_plans as admin_plans, legal as admin_legal
 from app.db import get_db, init_db
 from app.errors import register_error_handlers
 
@@ -49,3 +49,6 @@ app.include_router(notifications_test.router, prefix="/admin",  tags=["notificat
 app.include_router(admin_ads.router,          prefix="/admin",  tags=["admin-ads"])
 app.include_router(admin_subs.router,         prefix="/admin",  tags=["admin-subscriptions"])
 app.include_router(admin_plans.router,        prefix="/admin",  tags=["admin-subscription-plans"])
+# L10 · legal_documents + site_settings CRUD. Gateway ADMIN_ONLY
+# blocks non-admin callers before reaching this router.
+app.include_router(admin_legal.router,        prefix="/admin",  tags=["admin-legal"])
