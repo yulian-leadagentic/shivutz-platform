@@ -18,10 +18,38 @@ app.use((req, _, next) => {
 app.use(morgan(':method :url :status :response-time ms - :req[x-request-id]'));
 
 // ─── CORS ──────────────────────────────────────────────────
+// L8 §2 — origin allowlist from CORS_ALLOWED_ORIGINS (comma-separated).
+// Empty / unset = permissive mode (echo the Origin) — the pre-L8
+// behaviour. This is the safe default per the launch spec: an
+// incorrect domain list would kill the whole site, so we don't guess.
+// Set CORS_ALLOWED_ORIGINS in Railway per environment. Report the
+// final list to Yulian for confirmation (§11 checklist item).
+//
+// Vary: Origin is always set so a proxy/CDN caches per-origin,
+// even in permissive mode.
+const CORS_ALLOWED_ORIGINS = (process.env.CORS_ALLOWED_ORIGINS || '')
+  .split(',').map((s) => s.trim()).filter(Boolean);
+const CORS_ALLOWED_HEADERS = 'Content-Type,Authorization,X-Entity-Id,X-Entity-Type,X-User-Role,X-Request-ID';
+const CORS_ALLOWED_METHODS = 'GET,POST,PUT,PATCH,DELETE,OPTIONS';
+
 app.use((req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization');
+  const origin = req.headers.origin;
+  res.setHeader('Vary', 'Origin');
+  if (CORS_ALLOWED_ORIGINS.length === 0) {
+    // Permissive fallback — echo the origin if any, else *. Same
+    // effect as the pre-L8 wildcard, without breaking preflight
+    // when a browser eventually sends credentials.
+    if (origin) res.setHeader('Access-Control-Allow-Origin', origin);
+    else        res.setHeader('Access-Control-Allow-Origin', '*');
+  } else if (origin && CORS_ALLOWED_ORIGINS.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  }
+  // If the origin isn't on the allowlist we intentionally OMIT the
+  // Access-Control-Allow-Origin header entirely — the browser will
+  // reject the response, and we don't leak the allowlist to the
+  // wire.
+  res.setHeader('Access-Control-Allow-Methods', CORS_ALLOWED_METHODS);
+  res.setHeader('Access-Control-Allow-Headers', CORS_ALLOWED_HEADERS);
   if (req.method === 'OPTIONS') return res.sendStatus(200);
   next();
 });

@@ -216,3 +216,23 @@ git push origin staging
 
 - `master` branch — deleted 2026-04-29. Was a leftover initial branch with no unique commits.
 - Any `${{shared.*}}` variables at the project level — removed during prod debugging. Use `${{Plugin.VAR}}` references on each service instead.
+
+---
+
+## Backups (L8 OPS-4 — investigation pending)
+
+**Current state: unverified.** Railway may auto-backup the MySQL plugin;
+nobody has confirmed it, and no restore has ever been rehearsed.
+
+Before launch, the following steps must complete:
+
+1. **Confirm Railway backup policy** — dashboard → MySQL plugin →
+   Settings. Note the schedule, retention window, and where snapshots
+   land. If the plan tier doesn't include backups, escalate to add
+   a paid plan OR ship a daily `mysqldump` cron to external storage.
+2. **Document the restore procedure here** — commands, credentials,
+   expected downtime.
+3. **Rehearse a restore once, into a throwaway environment.** A
+   backup that has never been restored isn't a backup — L8 §4 guardrail.
+
+Owner: Yulian. Blocker on launch checklist §11.

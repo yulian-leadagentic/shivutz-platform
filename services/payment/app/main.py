@@ -1,4 +1,5 @@
 import logging
+import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from app.db import get_db, init_db
@@ -8,6 +9,10 @@ from app.routes import payment_methods, webhooks, settings, subscriptions
 # network calls, so the startup log tells the operator exactly what
 # the payment service is doing with real money.
 from app.services.cardcom import PAYMENT_FAKE_MODE
+# L8 §1 — JSON error logger, Sentry alternative.
+os.environ.setdefault("SERVICE_NAME", "payment")
+from app.logging_config import configure_logging  # noqa: E402
+configure_logging(level=os.getenv("LOG_LEVEL", "INFO"))
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 

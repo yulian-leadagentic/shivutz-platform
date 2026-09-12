@@ -1,0 +1,86 @@
+name: CI
+
+# L8 · OPS-3 · minimal CI. Blocks the two things that matter most:
+#   1. A broken build would ship to Railway if we didn't stop it.
+#   2. Duplicate migration prefixes (052-054 vs 055-057 was the
+#      near-miss the launch spec called out) and stray secrets in
+#      .env.example are checked BEFORE anyone can merge.
+#
+# No DB, no E2E — those need budget we don't have pre-launch and
+# would turn CI into something everyone silently disables.
+
+on:
+  push:
+    branches: [main, staging, pivot/v2]
+  pull_request:
+    branches: [main, staging, pivot/v2]
+
+jobs:
+  frontend:
+    name: Frontend build + tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: services/frontend/package-lock.json
+      - run: npm ci
+      # tsc first — a type break is a build break, and it prints
+      # a real error instead of hiding inside `next build` logs.
+      - run: npx tsc --noEmit
+      # next build catches route-level issues (bad Suspense
+      # boundaries, missing generateStaticParams, etc.) that tsc
+      # misses.
+      - run: npm run build
+      # Existing .test.mjs files (some may be stale — CI reports
+      # a failure rather than hiding it. Spec §3.1 rule: never
+      # silently delete a failing test).
+      - run: npm test
+        continue-on-error: false
+
+  user-org:
+    name: user-org pytest
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/user-org
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install pytest
+      - name: Compile-check python
+        run: python -m compileall -q app
+      - name: Run pytest if tests exist
+        run: |
+          if compgen -G "test_*.py" > /dev/null || compgen -G "tests/test_*.py" > /dev/null; then
+            pytest
+          else
+            echo "no tests yet, skipping"
+          fi
+
+  checks:
+    name: Repo-level safety checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # L8 §3.3 · duplicate migration numbers = near-miss we already
+      # had between the worktree and staging (052-054 vs 055-057).
+      # Failing the CI here beats debugging it on a Railway boot log.
+      - name: No duplicate migration prefixes
+        run: node scripts/check-migration-prefixes.mjs
+      # L8 §3.3 · reject .env.example values that look like real
+      # keys (sk-*, AIza*, long hex). Silent secret leak in an
+      # ostensibly-safe file has bitten better projects than ours.
+      - name: No real secrets in .env.example
+        run: node scripts/check-env-example-secrets.mjs
