@@ -1059,7 +1059,7 @@ async def contact_reveal(
     try:
         cur = conn.cursor()
         cur.execute(
-            """SELECT a.owner_entity_id, a.title_he,
+            """SELECT a.owner_entity_id, a.ad_type, a.title_he,
                       c.company_name_he, c.company_name,
                       c.contact_phone, c.contact_email
                  FROM ads a
@@ -1070,6 +1070,24 @@ async def contact_reveal(
         row = cur.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="ad_not_found")
+
+        # H12 · SEC — corporations must not be able to reveal each
+        # other's worker ads. Workers are the corp's competitive
+        # inventory; without this check a rival corp could enumerate
+        # every foreign-worker phone number via `/ads/{id}/contact-reveal`.
+        # Surfaced by S1 smoke test §2.6. Raise BEFORE the INSERT below
+        # so a blocked attempt costs nothing on the caller's quota.
+        # Contractors are the paying discovery side and are exempt —
+        # they may reveal any worker ad they can afford.
+        # Housing ads are shared inventory and stay open to all revealers.
+        if (
+            x_entity_type == "corporation"
+            and row["ad_type"] == "worker"
+            and row["owner_entity_id"] != x_entity_id
+        ):
+            raise HTTPException(status_code=403, detail={
+                "code": "not_your_worker_ad",
+            })
 
         # 3. Audit — powers per-tier quota + reveals-received counters.
         cur.execute("SHOW TABLES LIKE 'contact_reveals'")

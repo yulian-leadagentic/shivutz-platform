@@ -25,7 +25,7 @@ to results AND near_matches.
 """
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, Field
 
 from app.db import get_db
@@ -100,13 +100,23 @@ def _serialize_ad(row: dict) -> dict:
     return out
 
 
-def _build_where(filters: dict, drop_field: Optional[str] = None) -> tuple[list[str], list[object]]:
+def _build_where(
+    filters: dict,
+    drop_field: Optional[str] = None,
+    corp_worker_owner: Optional[str] = None,
+) -> tuple[list[str], list[object]]:
     """Build the WHERE clause + bind params for the search query.
 
     `drop_field` (NM): when set, skip that filter — the caller wants to
     see what shows up if this constraint is removed. profession_code
     and ad_type are still applied even when named as drop_field (the
     caller shouldn't ask for those; enforced separately in the caller).
+
+    `corp_worker_owner` (H12): when set, adds `a.owner_entity_id = %s`
+    to restrict a corp-caller's worker-ad search to their own inventory.
+    Only passed when the caller is a corporation and the query is a
+    worker search — housing stays shared, contractor searches stay
+    fully open. Surfaced by S1 smoke test §2.6.
     """
     wheres = [
         "a.ad_type = %s",
@@ -115,6 +125,10 @@ def _build_where(filters: dict, drop_field: Optional[str] = None) -> tuple[list[
         "(a.expires_at IS NULL OR a.expires_at > NOW())",
     ]
     params: list[object] = [filters["ad_type"]]
+
+    if corp_worker_owner:
+        wheres.append("a.owner_entity_id = %s")
+        params.append(corp_worker_owner)
 
     if filters.get("profession_code"):
         wheres.append("(a.profession_code IS NULL OR a.profession_code = %s)")
@@ -153,11 +167,27 @@ def _order_clause(relaxed_field: Optional[str], ad_type: str) -> str:
 
 
 @router.post("")
-def search(body: SearchIn):
+def search(
+    body: SearchIn,
+    x_entity_id:   Optional[str] = Header(default=None),
+    x_entity_type: Optional[str] = Header(default=None),
+):
     filters = rewrite(body.query)
 
+    # H12 · SEC — a corp searching for workers must see only its own
+    # inventory. Without this filter a rival corp could enumerate the
+    # entire worker-ad market. Contractors are unfiltered (that's the
+    # whole marketplace point), and housing stays shared for everyone.
+    # Surfaced by S1 smoke test §2.6. Applied to both exact and NM
+    # passes so a relaxed filter doesn't re-open the leak.
+    corp_worker_owner = (
+        x_entity_id
+        if x_entity_type == "corporation" and filters.get("ad_type") == "worker"
+        else None
+    )
+
     # -- Pass 1: exact ---------------------------------------------------
-    exact_wheres, exact_params = _build_where(filters)
+    exact_wheres, exact_params = _build_where(filters, corp_worker_owner=corp_worker_owner)
     # L3 §2.1 — LEFT JOIN corporations to derive trust_level per row.
     # Collation cast is required: ads.owner_entity_id is utf8mb4_0900_ai_ci,
     # corporations.id is legacy utf8mb4_unicode_ci — same pattern as
@@ -209,7 +239,10 @@ def search(body: SearchIn):
                     # to relax. Skip without spending an attempt.
                     continue
                 attempts += 1
-                near_wheres, near_params = _build_where(filters, drop_field=candidate)
+                near_wheres, near_params = _build_where(
+                    filters, drop_field=candidate,
+                    corp_worker_owner=corp_worker_owner,
+                )
                 # L3 §2.1 — same trust_level JOIN as the exact pass.
                 near_sql = f"""
                     SELECT a.*,

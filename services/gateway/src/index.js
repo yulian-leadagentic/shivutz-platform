@@ -171,6 +171,11 @@ const services = {
   '/api/membership-requests': process.env.USER_ORG_SERVICE_URL || 'http://user-org:3002',
   '/api/ads':           process.env.USER_ORG_SERVICE_URL      || 'http://user-org:3002',
   '/api/search':        process.env.USER_ORG_SERVICE_URL      || 'http://user-org:3002',
+  // L10 shipped the /legal/{slug} + /legal/settings routes on user-org
+  // and added /api/legal to PUBLIC_PREFIXES, but forgot to add the
+  // proxy mapping here — every /api/legal/* call fell through to the
+  // default 404 handler. Surfaced by S1 smoke test §2.2 B2.
+  '/api/legal':         process.env.USER_ORG_SERVICE_URL      || 'http://user-org:3002',
   // L7 — /api/contractor/reveals (PRD-2). Named prefix so future
   // contractor-only routes can land here without a per-endpoint
   // gateway edit.
