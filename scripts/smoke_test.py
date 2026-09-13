@@ -264,6 +264,24 @@ class ApiClient:
             r = self.s.request(method, self._url(path),
                                headers=headers, data=body, params=params,
                                timeout=self.timeout)
+            # Gateway rate-limiter (services/gateway/src/rateLimit.js) uses
+            # 60-second Redis buckets keyed on user_id. Repeated runs of
+            # this smoke test can push a caller past 200 req/min. A 429
+            # here is infrastructure, not a real assertion failure — sleep
+            # past the current bucket edge (retry_after ≤ 60s) and retry
+            # once. Only one retry; a second 429 is a real signal.
+            if r.status_code == 429:
+                retry = 65
+                try:
+                    body_json = r.json()
+                    ra = int(body_json.get("retry_after", 65))
+                    retry = max(5, min(65, ra))
+                except (ValueError, TypeError):
+                    pass
+                time.sleep(retry)
+                r = self.s.request(method, self._url(path),
+                                   headers=headers, data=body, params=params,
+                                   timeout=self.timeout)
         except requests.RequestException as e:
             return (-1, None, f"REQUEST FAILED: {type(e).__name__}: {e}")
 
