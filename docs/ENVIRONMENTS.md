@@ -148,37 +148,56 @@ When tests pollute staging DB and you want a clean slate:
 
 ### Smoke test
 
-`scripts/smoke_test.py` runs the API-layer half of the launch runsheet (§10) in about five minutes. It signs into four seeded phones and pokes at anon endpoints, cross-entity isolation, reveal-quota rules, response leaks, corp visibility, and payment_events (`is_fake` must equal 100% on staging).
+`scripts/smoke_test.py` runs the API-layer half of the launch runsheet (§10). Three suites:
 
 ```
-python scripts/smoke_test.py --base-url https://gateway-staging-3a12.up.railway.app
-python scripts/smoke_test.py --base-url … --seed-report
+python scripts/smoke_test.py --base-url https://gateway-staging-3a12.up.railway.app                    # --suite core (default)
+python scripts/smoke_test.py --base-url … --suite money                                                # webhook + batch + price
+python scripts/smoke_test.py --base-url … --suite all                                                  # core + money + seats + XSS + dual-entry
+python scripts/smoke_test.py --base-url … --seed-report                                                # read-only inventory
 ```
 
 Required env vars (never commit real values; keep them in your shell):
 
-| var | who |
-|---|---|
-| `CONTRACTOR_APPROVED_PHONE` | approved contractor, `is_seed=1` |
-| `CONTRACTOR_PENDING_PHONE`  | pending contractor,  `is_seed=1` |
-| `CONTRACTOR_B_PHONE`        | second approved contractor (isolation partner), `is_seed=1` |
-| `CORPORATION_PHONE`         | approved corporation, `is_seed=1` |
-| `MASTER_OTP`                | `999999` on staging (see above) |
-| `MYSQL_HOST`, `MYSQL_ROOT_PASSWORD` | staging plugin creds |
+| var | required for | who |
+|---|---|---|
+| `CONTRACTOR_APPROVED_PHONE` | all | approved contractor, `is_seed=1` |
+| `CONTRACTOR_PENDING_PHONE`  | all | pending contractor,  `is_seed=1` |
+| `CONTRACTOR_B_PHONE`        | all | second approved contractor (isolation partner), `is_seed=1` |
+| `CORPORATION_PHONE`         | all | approved corporation, `is_seed=1` |
+| `MASTER_OTP`                | all | `999999` on staging (see above) |
+| `MYSQL_HOST`, `MYSQL_ROOT_PASSWORD` | all | staging plugin creds |
+| `PAYMENT_FAKE_MODE=1`       | money, all | anti-footgun — script refuses money suite otherwise |
+| `CARDCOM_WEBHOOK_SECRET`    | money, all | signed webhook auth |
+| `INTERNAL_BATCH_SECRET`     | money, all | shared secret for `/payments/subscriptions/internal/renewal-batch` |
+| `PAYMENT_SERVICE_URL`       | money, all | e.g. `http://payment.railway.internal:3009` |
+| `ADMIN_PHONE`               | all | admin user's phone (`users.role='admin'`) — for the XSS PATCH test |
+| `USER_ORG_SERVICE_URL`      | all | e.g. `http://user-org.railway.internal:3002` — for the dual-entry direct-service check |
 
 First-time setup on a new environment:
 
 1. Apply migration `075_is_seed_on_entities.sql` (adds `is_seed` to contractors + corporations).
-2. Set the four env vars in your shell (or in a `.env.smoke` file, never committed).
+2. Set the env vars in your shell (or in a `.env.smoke` file, never committed).
 3. Run `python scripts/mark_seed_entities.py` — flips `is_seed=TRUE` on each phone's entities. Idempotent.
 4. Run the smoke test.
 
-Guardrails:
-- Refuses to run against production URL patterns (`gateway-production`, etc.). Exit 2, no override flag.
+Guardrails (spec S1 + S2):
+- Refuses production URL patterns (`gateway-production`, etc.). Exit 2, no override flag.
+- Refuses money suite unless `PAYMENT_FAKE_MODE=1`. Exit 2, no override flag.
 - Never prints tokens, OTPs, or passwords.
-- Read-only against product data. The only writes are the API's own side effects of the calls the test performs — an intentionally-failing reveal writes nothing to `contact_reveals`; a successful call to `/auth/login/otp` issues a JWT and inserts a refresh_token row (unavoidable for any authenticated smoke test).
+- Bypasses `/auth/send-otp` — logs in via a directly-inserted `sms_otp` stub row so no Vonage SMS is sent and the per-phone rate limit doesn't apply. Master OTP still validates against the stub.
+- All test-created rows carry a traceable marker (`+9720000…` phone prefix, `S2-SMOKE-…` txn id) and are deleted in a `finally` block. Cleanup failure → exit 1 with a loud message.
+- XSS suite restores the original `body_md` in every code path — including test failure — and hard-fails if restore itself fails.
+- Does NOT fix bugs found. Findings land in the FAIL rows and their response bodies; fixing them is a follow-up commit.
 
-Each run sends 4 real SMS OTPs to the seed phone owner (Vonage rate-limits `/auth/send-otp` at 3/phone/10min). Space runs ≥10 min apart, or the fourth run will start failing send-otp with 429.
+Money suite writes (all cleaned up):
+- `payment_events`: one row per idempotency test (marked with `provider_transaction_id LIKE 'S2-SMOKE-%'`), deleted after.
+- `subscriptions.current_period_end`: nudged for the batch test, restored from the pre-test snapshot.
+- `auth_db.sms_otp`: one row per seed login per run (stub — no Vonage). Rows expire in 10 min naturally.
+
+Extension suite writes (all cleaned up):
+- `entity_memberships`: pending memberships with phone prefix `+9720000…`, up to 10 per test, deleted after.
+- `legal_documents.body_md` for slug `terms`: PATCHed once with malicious markdown, restored to the pre-test value in `finally`. Version bumps by 2 (this is by design; two rows also land in `legal_document_history`).
 
 ---
 
