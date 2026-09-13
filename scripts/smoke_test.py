@@ -909,6 +909,10 @@ def test_public_visibility(api: ApiClient, r: Runner,
               not foreign_ids, det if foreign_ids else None)
 
     # ── Corp on /public/recent?ad_type=housing — SHOULD see others' ──
+    # Compare corp count to APPROVED CONTRACTOR count (both should be
+    # unfiltered for housing — the H12 filter only applies to workers).
+    # Anon can't hit this endpoint at all (401), so anon-vs-corp isn't
+    # a valid comparison for the "shares with everyone" invariant.
     sc, body, det = api.call(
         "GET", "/api/ads/public/recent?limit=50&ad_type=housing",
         token=sess_corp.access_token,
@@ -918,18 +922,18 @@ def test_public_visibility(api: ApiClient, r: Runner,
         r.add("U3.c", "corp /public/recent housing reachable", "200 dict",
               str(sc), False, det)
     else:
-        # Housing is shared — count foreign housing rows via DB (public
-        # feed strips owner_entity_id in the response). Empty inventory
-        # is acceptable — a corp-caller must see AT LEAST as many rows
-        # as an anon caller for housing.
-        anon_sc, anon_body, _ = api.call(
-            "GET", "/api/ads/public/recent?limit=50&ad_type=housing")
-        anon_n = len(anon_body.get("results") or []) if isinstance(anon_body, dict) else 0
+        con_sc, con_body, _ = api.call(
+            "GET", "/api/ads/public/recent?limit=50&ad_type=housing",
+            token=sess_approved.access_token,
+            entity_id=sess_approved.entity_id,
+            entity_type=sess_approved.entity_type,
+        )
+        con_n = len(con_body.get("results") or []) if isinstance(con_body, dict) else -1
         corp_n = len(body.get("results") or [])
-        ok = corp_n == anon_n
-        r.add("U3.c", "corp /public/recent housing shares with anon",
-              "corp count == anon count",
-              f"corp={corp_n} anon={anon_n}",
+        ok = corp_n == con_n and corp_n >= 0
+        r.add("U3.c", "corp /public/recent housing == contractor's view",
+              "corp count == contractor count (both unfiltered)",
+              f"corp={corp_n} contractor={con_n}",
               ok, det if not ok else None)
 
     # ── Pending contractor on /search — 403 (§1.3 chosen: 403 code) ──
