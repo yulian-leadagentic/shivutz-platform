@@ -865,6 +865,162 @@ def test_corp_visibility(api: ApiClient, r: Runner, sess_corp: Session) -> None:
         org.close()
 
 
+def test_public_visibility(api: ApiClient, r: Runner,
+                           sess_approved: Session,
+                           sess_pending: Session,
+                           sess_corp: Session) -> None:
+    """U3 §3 — visibility across `/ads/public/{recent,featured}` and
+    `/search` for all three identities. These endpoints previously had
+    no owner filter; corp callers could enumerate every rival's worker
+    inventory just by hitting the landing feeds. All rules now live in
+    app.services.visibility.
+
+    Runs in --suite core so it's part of every launch check."""
+    # ── Corp on /public/recent — worker rows must be OWN only ──
+    sc, body, det = api.call(
+        "GET", "/api/ads/public/recent?limit=50",
+        token=sess_corp.access_token,
+        entity_id=sess_corp.entity_id, entity_type=sess_corp.entity_type,
+    )
+    if sc != 200 or not isinstance(body, dict):
+        r.add("U3.a", "corp /public/recent reachable", "200 dict",
+              str(sc), False, det)
+    else:
+        foreign_ids = _foreign_worker_ids(body, sess_corp.entity_id)
+        r.add("U3.a", "corp /public/recent — worker owner == self",
+              "no foreign worker ads",
+              ("clean" if not foreign_ids else f"FOREIGN: {foreign_ids}"),
+              not foreign_ids, det if foreign_ids else None)
+
+    # ── Corp on /public/featured — same rule ──
+    sc, body, det = api.call(
+        "GET", "/api/ads/public/featured?limit=50",
+        token=sess_corp.access_token,
+        entity_id=sess_corp.entity_id, entity_type=sess_corp.entity_type,
+    )
+    if sc != 200 or not isinstance(body, dict):
+        r.add("U3.b", "corp /public/featured reachable", "200 dict",
+              str(sc), False, det)
+    else:
+        foreign_ids = _foreign_worker_ids(body, sess_corp.entity_id)
+        r.add("U3.b", "corp /public/featured — worker owner == self",
+              "no foreign worker ads",
+              ("clean" if not foreign_ids else f"FOREIGN: {foreign_ids}"),
+              not foreign_ids, det if foreign_ids else None)
+
+    # ── Corp on /public/recent?ad_type=housing — SHOULD see others' ──
+    sc, body, det = api.call(
+        "GET", "/api/ads/public/recent?limit=50&ad_type=housing",
+        token=sess_corp.access_token,
+        entity_id=sess_corp.entity_id, entity_type=sess_corp.entity_type,
+    )
+    if sc != 200 or not isinstance(body, dict):
+        r.add("U3.c", "corp /public/recent housing reachable", "200 dict",
+              str(sc), False, det)
+    else:
+        # Housing is shared — count foreign housing rows via DB (public
+        # feed strips owner_entity_id in the response). Empty inventory
+        # is acceptable — a corp-caller must see AT LEAST as many rows
+        # as an anon caller for housing.
+        anon_sc, anon_body, _ = api.call(
+            "GET", "/api/ads/public/recent?limit=50&ad_type=housing")
+        anon_n = len(anon_body.get("results") or []) if isinstance(anon_body, dict) else 0
+        corp_n = len(body.get("results") or [])
+        ok = corp_n == anon_n
+        r.add("U3.c", "corp /public/recent housing shares with anon",
+              "corp count == anon count",
+              f"corp={corp_n} anon={anon_n}",
+              ok, det if not ok else None)
+
+    # ── Pending contractor on /search — 403 (§1.3 chosen: 403 code) ──
+    sc, body, det = api.call(
+        "POST", "/api/search",
+        token=sess_pending.access_token,
+        entity_id=sess_pending.entity_id, entity_type=sess_pending.entity_type,
+        json_body={"query": "פועל בניין"},
+    )
+    code = _extract_error_code(body) if isinstance(body, dict) else ""
+    ok = sc == 403 and "entity_not_approved" in code
+    r.add("U3.d", "pending contractor /search → 403 entity_not_approved",
+          "403 + entity_not_approved",
+          f"{sc} code={code!r}",
+          ok, det if not ok else None)
+
+    # ── Anonymous → all three → 401 (from gateway) ──
+    for name, path in (
+        ("/public/recent", "/api/ads/public/recent"),
+        ("/public/featured", "/api/ads/public/featured"),
+    ):
+        sc, _, det = api.call("GET", path)
+        r.add("U3.e", f"anon GET {name} → 401",
+              "401", str(sc), sc == 401,
+              det if sc != 401 else None)
+
+    # ── Near-match: corp does a query that triggers relax pass ──
+    # We can't force query_rewriter's output, but we can look at the
+    # response — if it has near_matches, every one must obey the same
+    # owner filter as `results`.
+    sc, body, det = api.call(
+        "POST", "/api/search",
+        token=sess_corp.access_token,
+        entity_id=sess_corp.entity_id, entity_type=sess_corp.entity_type,
+        json_body={"query": "רתכים מסין דרום"},   # narrow enough to often trigger NM
+    )
+    if sc == 200 and isinstance(body, dict):
+        near = body.get("near_matches") or []
+        # Combine results + near_matches — owner leak in either is a bug.
+        combined_ids = [x.get("id") for x in (body.get("results") or []) + near
+                        if isinstance(x, dict) and x.get("id")]
+        foreign_via_nm: List[str] = []
+        if combined_ids:
+            org = db("org_db")
+            try:
+                marks = ",".join(["%s"] * len(combined_ids))
+                for aid, owner in rows_of(
+                    org,
+                    f"""SELECT id, owner_entity_id FROM ads
+                          WHERE id IN ({marks}) AND ad_type='worker'""",
+                    tuple(combined_ids),
+                ):
+                    if owner != sess_corp.entity_id:
+                        foreign_via_nm.append(aid[:8])
+            finally:
+                org.close()
+        r.add("U3.f", "corp near-match — no foreign workers",
+              "no foreign workers in results+near",
+              ("clean" if not foreign_via_nm else f"FOREIGN: {foreign_via_nm}"),
+              not foreign_via_nm, det if foreign_via_nm else None)
+    else:
+        r.add("U3.f", "corp near-match reachable",
+              "200 (or expected 403 for non-corp)",
+              str(sc), sc == 200, det if sc != 200 else None)
+
+
+def _foreign_worker_ids(body: Any, own_id: str) -> List[str]:
+    """Look up worker ads returned by /public/{recent,featured} whose
+    owner_entity_id ≠ own_id. Public feed strips owner from the JSON;
+    we ask the DB by id. Empty list = clean."""
+    ids = [x.get("id") for x in (body.get("results") or [])
+           if isinstance(x, dict) and x.get("ad_type") == "worker" and x.get("id")]
+    if not ids:
+        return []
+    foreign: List[str] = []
+    org = db("org_db")
+    try:
+        marks = ",".join(["%s"] * len(ids))
+        for aid, owner in rows_of(
+            org,
+            f"""SELECT id, owner_entity_id FROM ads
+                  WHERE id IN ({marks}) AND ad_type='worker'""",
+            tuple(ids),
+        ):
+            if owner != own_id:
+                foreign.append(aid[:8])
+    finally:
+        org.close()
+    return foreign
+
+
 def test_money(r: Runner) -> None:
     """§2.7 — payment_events with is_fake=FALSE must be 0 on staging."""
     pay = db("payment_db")
@@ -1879,6 +2035,11 @@ def _run_core(api: ApiClient, sessions: Dict[str, Session], r: Runner) -> None:
     test_leaks(api, r, sessions["CONTRACTOR_APPROVED"], sessions["CORPORATION"])
     print("[smoke] §2.6 corp visibility…")
     test_corp_visibility(api, r, sessions["CORPORATION"])
+    print("[smoke] U3 §3 centralised visibility (recent, featured, near-match, pending /search)…")
+    test_public_visibility(api, r,
+                           sessions["CONTRACTOR_APPROVED"],
+                           sessions["CONTRACTOR_PENDING"],
+                           sessions["CORPORATION"])
     print("[smoke] §2.7 money guardrails…")
     test_money(r)
 

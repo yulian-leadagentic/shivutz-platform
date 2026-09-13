@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 from app.db import get_db
 from app.publisher import publish_event
 from app.services.subscription_limits import fetch_entitlement, tier_limits
+from app.services.visibility import require_contractor_approved, viewer_scope_wheres
 
 router = APIRouter()
 
@@ -342,21 +343,39 @@ def _public_ad(row: dict) -> dict:
 
 
 @router.get("/public/featured")
-def public_featured(limit: int = 12):
+def public_featured(
+    limit: int = 12,
+    x_entity_id:   Optional[str] = Header(default=None),
+    x_entity_type: Optional[str] = Header(default=None),
+):
     """Boosted ads first, then most-recent active. Powers the landing
-    carousel + trust bar."""
+    carousel + trust bar.
+
+    U3 · applies both visibility rules — H12 (corp callers only see
+    their own worker rows) and L2 (pending contractors get 403). Rules
+    live in app.services.visibility; do NOT inline them here."""
+    require_contractor_approved(x_entity_id, x_entity_type)
+    scope_wheres, scope_params = viewer_scope_wheres(x_entity_id, x_entity_type)
+
+    wheres = [
+        "a.active=TRUE", "a.deleted_at IS NULL",
+        "(a.expires_at IS NULL OR a.expires_at > NOW())",
+        "a.featured_until IS NOT NULL AND a.featured_until > NOW()",
+    ]
+    wheres.extend(scope_wheres)
+    params: list[object] = list(scope_params)
+    params.append(max(1, min(limit, 50)))
+
     conn = get_db()
     try:
         cur = conn.cursor()
         cur.execute(
             f"""SELECT {_PUBLIC_AD_COLS}
-                  FROM ads
-                 WHERE active=TRUE AND deleted_at IS NULL
-                   AND (expires_at IS NULL OR expires_at > NOW())
-                   AND featured_until IS NOT NULL AND featured_until > NOW()
-                 ORDER BY featured_until DESC, published_at DESC
+                  FROM ads a
+                 WHERE {' AND '.join(wheres)}
+                 ORDER BY a.featured_until DESC, a.published_at DESC
                  LIMIT %s""",
-            (max(1, min(limit, 50)),),
+            params,
         )
         return {"results": [_public_ad(r) for r in cur.fetchall()]}
     finally:
@@ -364,22 +383,36 @@ def public_featured(limit: int = 12):
 
 
 @router.get("/public/recent")
-def public_recent(limit: int = 12, ad_type: Optional[str] = None):
+def public_recent(
+    limit: int = 12,
+    ad_type: Optional[str] = None,
+    x_entity_id:   Optional[str] = Header(default=None),
+    x_entity_type: Optional[str] = Header(default=None),
+):
+    """Most-recent active ads. Same U3 rules as /public/featured."""
+    require_contractor_approved(x_entity_id, x_entity_type)
+    scope_wheres, scope_params = viewer_scope_wheres(x_entity_id, x_entity_type)
+
+    wheres = [
+        "a.active=TRUE", "a.deleted_at IS NULL",
+        "(a.expires_at IS NULL OR a.expires_at > NOW())",
+    ]
+    params: list[object] = []
+    if ad_type in ("worker", "housing"):
+        wheres.append("a.ad_type=%s")
+        params.append(ad_type)
+    wheres.extend(scope_wheres)
+    params.extend(scope_params)
+    params.append(max(1, min(limit, 50)))
+
     conn = get_db()
     try:
         cur = conn.cursor()
-        params: list[object] = []
-        wheres = ["active=TRUE", "deleted_at IS NULL",
-                  "(expires_at IS NULL OR expires_at > NOW())"]
-        if ad_type in ("worker", "housing"):
-            wheres.append("ad_type=%s")
-            params.append(ad_type)
-        params.append(max(1, min(limit, 50)))
         cur.execute(
             f"""SELECT {_PUBLIC_AD_COLS}
-                  FROM ads
+                  FROM ads a
                  WHERE {' AND '.join(wheres)}
-                 ORDER BY published_at DESC
+                 ORDER BY a.published_at DESC
                  LIMIT %s""",
             params,
         )
@@ -549,7 +582,26 @@ def get_sponsored_ads(
 #     what happened to `/public/sponsored` on its first deploy —
 #     see the block immediately below this comment.
 @router.get("/public/{ad_id}")
-def get_public_ad(ad_id: str):
+def get_public_ad(
+    ad_id: str,
+    x_entity_id:   Optional[str] = Header(default=None),
+    x_entity_type: Optional[str] = Header(default=None),
+):
+    """U3 · applies the same visibility rules as the list endpoints.
+    A corp caller fetching a foreign corp's worker-ad id gets 404 (the
+    row is filtered out of the WHERE, same as if the ad didn't exist)
+    — do NOT leak the "wrong owner" vs "no such ad" distinction."""
+    require_contractor_approved(x_entity_id, x_entity_type)
+    scope_wheres, scope_params = viewer_scope_wheres(x_entity_id, x_entity_type)
+
+    wheres = [
+        "a.id = %s", "a.active = TRUE", "a.deleted_at IS NULL",
+        "(a.expires_at IS NULL OR a.expires_at > NOW())",
+    ]
+    params: list[object] = [ad_id]
+    wheres.extend(scope_wheres)
+    params.extend(scope_params)
+
     conn = get_db()
     try:
         cur = conn.cursor()
@@ -574,12 +626,9 @@ def get_public_ad(ad_id: str):
                   FROM ads a
                   LEFT JOIN corporations c
                     ON c.id COLLATE utf8mb4_0900_ai_ci = a.owner_entity_id
-                 WHERE a.id = %s
-                   AND a.active = TRUE
-                   AND a.deleted_at IS NULL
-                   AND (a.expires_at IS NULL OR a.expires_at > NOW())
+                 WHERE {' AND '.join(wheres)}
                  LIMIT 1""",
-            (ad_id,),
+            params,
         )
         row = cur.fetchone()
     finally:

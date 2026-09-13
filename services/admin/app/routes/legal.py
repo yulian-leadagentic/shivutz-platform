@@ -50,7 +50,10 @@ def _serialize_doc(row: dict) -> dict:
 
 @router.get("/legal/documents")
 def list_documents():
-    conn = get_db()
+    # legal_documents + site_settings live in org_db (mig 074).
+    # admin's get_db() requires an explicit schema arg; without it
+    # every legal endpoint 500s. Surfaced by S2 §4 (finding #2).
+    conn = get_db("org_db")
     try:
         cur = conn.cursor()
         cur.execute(
@@ -68,7 +71,10 @@ def list_documents():
 def get_document(slug: str):
     if slug not in _ALLOWED_SLUGS:
         raise HTTPException(status_code=404, detail={"code": "unknown_slug"})
-    conn = get_db()
+    # legal_documents + site_settings live in org_db (mig 074).
+    # admin's get_db() requires an explicit schema arg; without it
+    # every legal endpoint 500s. Surfaced by S2 §4 (finding #2).
+    conn = get_db("org_db")
     try:
         cur = conn.cursor()
         cur.execute(
@@ -89,7 +95,10 @@ def get_document(slug: str):
 def list_document_history(slug: str):
     if slug not in _ALLOWED_SLUGS:
         raise HTTPException(status_code=404, detail={"code": "unknown_slug"})
-    conn = get_db()
+    # legal_documents + site_settings live in org_db (mig 074).
+    # admin's get_db() requires an explicit schema arg; without it
+    # every legal endpoint 500s. Surfaced by S2 §4 (finding #2).
+    conn = get_db("org_db")
     try:
         cur = conn.cursor()
         cur.execute(
@@ -130,7 +139,10 @@ def update_document(
     if not data:
         raise HTTPException(status_code=400, detail={"code": "no_changes"})
 
-    conn = get_db()
+    # legal_documents + site_settings live in org_db (mig 074).
+    # admin's get_db() requires an explicit schema arg; without it
+    # every legal endpoint 500s. Surfaced by S2 §4 (finding #2).
+    conn = get_db("org_db")
     try:
         cur = conn.cursor()
         # Fetch current row for history + version bump.
@@ -190,7 +202,10 @@ def update_document(
 
 @router.get("/legal/settings")
 def list_settings():
-    conn = get_db()
+    # legal_documents + site_settings live in org_db (mig 074).
+    # admin's get_db() requires an explicit schema arg; without it
+    # every legal endpoint 500s. Surfaced by S2 §4 (finding #2).
+    conn = get_db("org_db")
     try:
         cur = conn.cursor()
         cur.execute(
@@ -219,7 +234,10 @@ def update_setting(setting_key: str, body: SettingPatch):
     if isinstance(val, str) and val.strip() == "":
         val = None
 
-    conn = get_db()
+    # legal_documents + site_settings live in org_db (mig 074).
+    # admin's get_db() requires an explicit schema arg; without it
+    # every legal endpoint 500s. Surfaced by S2 §4 (finding #2).
+    conn = get_db("org_db")
     try:
         cur = conn.cursor()
         cur.execute(

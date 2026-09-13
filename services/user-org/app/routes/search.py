@@ -31,6 +31,7 @@ from pydantic import BaseModel, Field
 from app.db import get_db
 from app.services.query_rewriter import rewrite
 from app.services.query_reranker import rerank
+from app.services.visibility import require_contractor_approved, viewer_scope_wheres
 
 router = APIRouter()
 
@@ -103,7 +104,7 @@ def _serialize_ad(row: dict) -> dict:
 def _build_where(
     filters: dict,
     drop_field: Optional[str] = None,
-    corp_worker_owner: Optional[str] = None,
+    scope_extra: Optional[tuple[list[str], list[object]]] = None,
 ) -> tuple[list[str], list[object]]:
     """Build the WHERE clause + bind params for the search query.
 
@@ -112,11 +113,12 @@ def _build_where(
     and ad_type are still applied even when named as drop_field (the
     caller shouldn't ask for those; enforced separately in the caller).
 
-    `corp_worker_owner` (H12): when set, adds `a.owner_entity_id = %s`
-    to restrict a corp-caller's worker-ad search to their own inventory.
-    Only passed when the caller is a corporation and the query is a
-    worker search — housing stays shared, contractor searches stay
-    fully open. Surfaced by S1 smoke test §2.6.
+    `scope_extra` (H12 · U3): additional (wheres, params) from
+    `services.visibility.viewer_scope_wheres` — for a corp caller this
+    restricts worker-ad rows to that corp's own inventory. Housing
+    stays shared. Contractors + anon + admins get an empty scope.
+    Kept as an opaque pair so the visibility rule lives in ONE place;
+    do not inline the SQL fragment here.
     """
     wheres = [
         "a.ad_type = %s",
@@ -126,9 +128,10 @@ def _build_where(
     ]
     params: list[object] = [filters["ad_type"]]
 
-    if corp_worker_owner:
-        wheres.append("a.owner_entity_id = %s")
-        params.append(corp_worker_owner)
+    if scope_extra:
+        extra_wheres, extra_params = scope_extra
+        wheres.extend(extra_wheres)
+        params.extend(extra_params)
 
     if filters.get("profession_code"):
         wheres.append("(a.profession_code IS NULL OR a.profession_code = %s)")
@@ -172,22 +175,26 @@ def search(
     x_entity_id:   Optional[str] = Header(default=None),
     x_entity_type: Optional[str] = Header(default=None),
 ):
+    # U3 · L2 — pending contractors get 403 with entity_not_approved.
+    # Frontend already maps this code to a "בבדיקה" screen (see
+    # services/frontend/src/lib/api/errors.ts:75), so no FE change.
+    # Chosen over the L2 spec's counts-only shape because the FE isn't
+    # built for a two-mode response — a 403 is a clean single-code
+    # signal, and matches the pattern the reveal endpoint has always
+    # used.
+    require_contractor_approved(x_entity_id, x_entity_type)
+
     filters = rewrite(body.query)
 
-    # H12 · SEC — a corp searching for workers must see only its own
-    # inventory. Without this filter a rival corp could enumerate the
-    # entire worker-ad market. Contractors are unfiltered (that's the
-    # whole marketplace point), and housing stays shared for everyone.
-    # Surfaced by S1 smoke test §2.6. Applied to both exact and NM
-    # passes so a relaxed filter doesn't re-open the leak.
-    corp_worker_owner = (
-        x_entity_id
-        if x_entity_type == "corporation" and filters.get("ad_type") == "worker"
-        else None
-    )
+    # U3 · H12 — visibility rule imported from ONE place. Corp callers
+    # see only their own worker inventory; housing + contractors + anon
+    # + admin get an empty scope. Fragment is applied to both the exact
+    # pass and the NM near-match pass so a relaxed filter doesn't
+    # re-open the leak.
+    scope_extra = viewer_scope_wheres(x_entity_id, x_entity_type)
 
     # -- Pass 1: exact ---------------------------------------------------
-    exact_wheres, exact_params = _build_where(filters, corp_worker_owner=corp_worker_owner)
+    exact_wheres, exact_params = _build_where(filters, scope_extra=scope_extra)
     # L3 §2.1 — LEFT JOIN corporations to derive trust_level per row.
     # Collation cast is required: ads.owner_entity_id is utf8mb4_0900_ai_ci,
     # corporations.id is legacy utf8mb4_unicode_ci — same pattern as
@@ -241,7 +248,7 @@ def search(
                 attempts += 1
                 near_wheres, near_params = _build_where(
                     filters, drop_field=candidate,
-                    corp_worker_owner=corp_worker_owner,
+                    scope_extra=scope_extra,
                 )
                 # L3 §2.1 — same trust_level JOIN as the exact pass.
                 near_sql = f"""
