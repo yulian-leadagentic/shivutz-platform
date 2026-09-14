@@ -522,6 +522,9 @@ function RegisterCorporationInner() {
 
                 <Input
                   label="מספר ח.פ (9 ספרות)"
+                  name="business_number"
+                  inputMode="numeric"
+                  autoComplete="off"
                   placeholder="123456789"
                   maxLength={9}
                   dir="ltr"
@@ -598,6 +601,8 @@ function RegisterCorporationInner() {
 
                 <Input
                   label="שם התאגיד"
+                  name="organization"
+                  autoComplete="organization"
                   placeholder='חברת כוח אדם בע"מ'
                   value={step2.company_name_he}
                   onChange={(e) => setStep2((p) => ({ ...p, company_name_he: e.target.value }))}

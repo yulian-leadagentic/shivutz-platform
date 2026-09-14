@@ -653,6 +653,12 @@ function RegisterContractorInner() {
 
                 <Input
                   label="מספר ע.מ / ח.פ (9 ספרות)"
+                  name="business_number"
+                  inputMode="numeric"
+                  // U8 §5a — no browser autocomplete makes sense for
+                  // ח.פ; a filled-in wrong value here is worse than a
+                  // blank one because it looks intentional.
+                  autoComplete="off"
                   placeholder="123456789"
                   maxLength={9}
                   dir="ltr"
@@ -721,6 +727,8 @@ function RegisterContractorInner() {
 
                 <Input
                   label="שם החברה"
+                  name="organization"
+                  autoComplete="organization"
                   placeholder='חברת הבנייה בע"מ'
                   value={step2.company_name_he}
                   onChange={(e) => setStep2((p) => ({ ...p, company_name_he: e.target.value }))}
@@ -736,6 +744,11 @@ function RegisterContractorInner() {
                 <div>
                   <Input
                     label="מספר רישיון קבלן"
+                    name="kablan_number"
+                    // U8 §5a — same reasoning as ח.פ above: a
+                    // browser-filled contractor license number that
+                    // isn't yours is a data-integrity trap.
+                    autoComplete="off"
                     placeholder="לדוגמה: 3842"
                     value={step2.kablan_number}
                     onChange={(e) => setStep2((p) => ({ ...p, kablan_number: e.target.value.replace(/\D/g, '') }))}
