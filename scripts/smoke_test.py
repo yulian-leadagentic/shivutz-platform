@@ -1025,6 +1025,137 @@ def _foreign_worker_ids(body: Any, own_id: str) -> List[str]:
     return foreign
 
 
+def test_ad_edit(api: ApiClient, r: Runner,
+                 sess_corp: Session, sess_contractor: Session) -> None:
+    """U4 §5 · ad-edit regression coverage. The rowcount trap was
+    landed in `e74a9ab` — this suite locks it down so a future edit
+    to ads.py can't silently revive "עריכת מודעת עובדים לא עובדת".
+
+    Four scenarios (from the U4 prompt §5):
+      1. Corp edits its own worker ad with a REAL change → 200 + DB
+      2. Corp saves same ad WITHOUT changing anything → 200 (was 404)
+      3. Corp PATCHes another corp's ad → 404
+      4. Contractor PATCHes any ad → 403 (`_require_corp` gate)
+
+    Uses a real ad the CORPORATION session already owns — bumps its
+    quantity by 1, then reverts. If no corp-owned worker ad exists,
+    the tests SKIP as PASS rather than fabricate a fixture (creating
+    an ad hits subscription checks and dispatches notifications; that
+    machinery is not the point here)."""
+    org = db("org_db", dict_cursor=True)
+    my_ad_id: Optional[str] = None
+    orig_quantity: Optional[int] = None
+    other_ad_id: Optional[str] = None
+    try:
+        with org.cursor() as cur:
+            cur.execute(
+                """SELECT id, quantity FROM ads
+                     WHERE owner_entity_id=%s AND ad_type='worker'
+                       AND active=1 AND deleted_at IS NULL
+                     ORDER BY id ASC LIMIT 1""",
+                (sess_corp.entity_id,),
+            )
+            row = cur.fetchone()
+            if row:
+                my_ad_id = row["id"]
+                orig_quantity = row["quantity"]
+            cur.execute(
+                """SELECT id FROM ads
+                     WHERE owner_entity_type='corporation'
+                       AND owner_entity_id != %s
+                       AND deleted_at IS NULL
+                     ORDER BY id ASC LIMIT 1""",
+                (sess_corp.entity_id,),
+            )
+            row = cur.fetchone()
+            if row:
+                other_ad_id = row["id"]
+    finally:
+        org.close()
+
+    # E1 · real change → 200 + DB reflects the new value.
+    if my_ad_id is not None:
+        target = (orig_quantity or 0) + 1
+        sc, _, det = api.call(
+            "PATCH", f"/api/ads/{my_ad_id}",
+            token=sess_corp.access_token,
+            entity_id=sess_corp.entity_id, entity_type=sess_corp.entity_type,
+            json_body={"quantity": target},
+        )
+        conn = db("org_db")
+        try:
+            db_val = scalar(conn, "SELECT quantity FROM ads WHERE id=%s", (my_ad_id,))
+        finally:
+            conn.close()
+        ok1 = sc == 200 and db_val == target
+        r.add("U4", "E1 corp edits own ad with change",
+              "200 + DB=new value",
+              f"{sc} DB={db_val}", ok1, det if not ok1 else None)
+
+        # E2 · re-PATCH the SAME value → this is the bug the fix targets.
+        # Pre-fix this returned 404 because pymysql rowcount==0 when no
+        # row is actually changed. Post-fix it must return 200.
+        sc2, _, det2 = api.call(
+            "PATCH", f"/api/ads/{my_ad_id}",
+            token=sess_corp.access_token,
+            entity_id=sess_corp.entity_id, entity_type=sess_corp.entity_type,
+            json_body={"quantity": target},
+        )
+        r.add("U4", "E2 corp save-without-change",
+              "200 (not 404)", str(sc2), sc2 == 200,
+              det2 if sc2 != 200 else None)
+
+        # Restore ORIG value so downstream tests see the seed as-was.
+        # Cleanup is inline (not a Runner cleanup callback) because
+        # --suite core doesn't take one; the two writes above must be
+        # undone before test_money / other core checks run.
+        conn = db("org_db")
+        try:
+            with conn.cursor() as cur:
+                cur.execute("UPDATE ads SET quantity=%s WHERE id=%s",
+                            (orig_quantity, my_ad_id))
+        finally:
+            conn.close()
+    else:
+        r.add("U4", "E1 corp edits own ad with change",
+              "200 + DB changed", "no corp worker ad found — SKIP", True)
+        r.add("U4", "E2 corp save-without-change",
+              "200 (not 404)", "no corp worker ad found — SKIP", True)
+
+    # E3 · cross-corp — the SELECT-first branch returns 404 before the
+    # UPDATE runs. This test catches an accidental regression where a
+    # future refactor drops the ownership predicate from the SELECT.
+    if other_ad_id is not None:
+        sc3, _, det3 = api.call(
+            "PATCH", f"/api/ads/{other_ad_id}",
+            token=sess_corp.access_token,
+            entity_id=sess_corp.entity_id, entity_type=sess_corp.entity_type,
+            json_body={"quantity": 999},
+        )
+        r.add("U4", "E3 corp edits other corp's ad",
+              "404", str(sc3), sc3 == 404, det3 if sc3 != 404 else None)
+    else:
+        r.add("U4", "E3 corp edits other corp's ad",
+              "404", "no other-corp ad found — SKIP", True)
+
+    # E4 · `_require_corp` at ads.py:719 is the only gate keeping
+    # contractors out of ad mutations. If it ever gets weakened, this
+    # test catches the leak before it ships.
+    if my_ad_id is not None:
+        sc4, _, det4 = api.call(
+            "PATCH", f"/api/ads/{my_ad_id}",
+            token=sess_contractor.access_token,
+            entity_id=sess_contractor.entity_id,
+            entity_type=sess_contractor.entity_type,
+            json_body={"quantity": 999},
+        )
+        r.add("U4", "E4 contractor PATCH /ads/{id}",
+              "403", str(sc4), sc4 == 403, det4 if sc4 != 403 else None)
+    else:
+        r.add("U4", "E4 contractor PATCH /ads/{id}",
+              "403", "no ad found — SKIP", True)
+
+
 def test_money(r: Runner) -> None:
     """§2.7 — payment_events with is_fake=FALSE must be 0 on staging."""
     pay = db("payment_db")
@@ -2044,6 +2175,10 @@ def _run_core(api: ApiClient, sessions: Dict[str, Session], r: Runner) -> None:
                            sessions["CONTRACTOR_APPROVED"],
                            sessions["CONTRACTOR_PENDING"],
                            sessions["CORPORATION"])
+    print("[smoke] U4 §5 ad-edit rowcount trap regression…")
+    test_ad_edit(api, r,
+                 sess_corp=sessions["CORPORATION"],
+                 sess_contractor=sessions["CONTRACTOR_APPROVED"])
     print("[smoke] §2.7 money guardrails…")
     test_money(r)
 
