@@ -31,12 +31,28 @@ export type SiteSettings = Partial<Record<
 >>;
 
 export const legalApi = {
-  /** null on 404 — caller falls back to bundled file per §2. */
+  /** null on 404 OR any non-Api error — caller falls back to bundled
+   *  file (accessibility) or notFound() (terms/privacy).
+   *
+   *  U5 build-fix · Next 16's static prerender runs these Server
+   *  Components in a Node process where fetch() insists on absolute
+   *  URLs. BASE at build time is the relative `/api`, and Node throws
+   *  `TypeError: Invalid URL` before we can even inspect the response.
+   *  That TypeError is not an ApiError, so pre-fix it slipped past the
+   *  404 guard and crashed the whole build (spec: docs/cc-prompts/
+   *  cc_prompt_U5_anon_lockout.md — this was the mystery blocking the
+   *  frontend redeploy).
+   *
+   *  Catching every failure (not just 404) is safe here because the
+   *  callers already treat `null` as "no doc" and render the fallback.
+   *  A real backend outage still shows the bundled accessibility file,
+   *  or a `notFound()` for terms/privacy — same UX as a 404. */
   doc: async (slug: LegalSlug): Promise<LegalDoc | null> => {
     try {
       return await apiFetch<LegalDoc>(`/legal/${slug}`);
     } catch (e) {
       if (e instanceof ApiError && e.cause?.status === 404) return null;
+      if (!(e instanceof ApiError)) return null;
       throw e;
     }
   },
