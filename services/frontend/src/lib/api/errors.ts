@@ -281,6 +281,24 @@ export function mapApiError(err: unknown): string {
   return DEFAULT_MESSAGE;
 }
 
+// U8 §3b — FastAPI's 422 validation error shape:
+//   { detail: [{ loc: ["body","phone"], msg: "value is not a valid phone", ... }] }
+// Extract a human-legible sentence: "<field>: <message>". Return "" when
+// the payload doesn't look like a FastAPI 422 so the caller falls back
+// to its usual path.
+function fastApiValidationMessage(detail: unknown): string {
+  if (!Array.isArray(detail) || detail.length === 0) return '';
+  const first = detail[0] as Record<string, unknown>;
+  const msg = typeof first?.msg === 'string' ? first.msg : '';
+  if (!msg) return '';
+  // `loc` is ["body"|"query"|..., "<field>", ...]; skip the source
+  // segment and join what's left as a dotted field path. Non-string
+  // parts (numeric array indexes) are stringified as-is.
+  const loc = Array.isArray(first?.loc) ? first.loc.slice(1) : [];
+  const field = loc.map((s) => String(s)).join('.');
+  return field ? `${field}: ${msg}` : msg;
+}
+
 function normalize(err: unknown): ApiErrorPayload {
   if (!err) return {};
   if (typeof err === 'string')                          return { error: err };
@@ -293,12 +311,30 @@ function normalize(err: unknown): ApiErrorPayload {
     // Some callers stash the parsed body on `.cause`
     const cause = (err as Error & { cause?: unknown }).cause;
     if (cause && typeof cause === 'object') return cause as ApiErrorPayload;
-    return { error: m };
+    // U8 §3b · defect b — when the message is neither a known code
+    // nor Hebrew, the previous return `{ error: m }` sent it into
+    // step 2 (code lookup) which failed, then into step 3
+    // (`payload.message`) which was never set — so the UI silently
+    // fell to DEFAULT_MESSAGE. Set BOTH keys so step 3 has a real
+    // fallback. Step 2 still wins when a code IS registered.
+    return { error: m, message: m };
   }
   if (typeof err === 'object') {
     const o = err as Record<string, unknown>;
-    // Nested { detail: {...} } from FastAPI
-    if (o.detail && typeof o.detail === 'object') {
+    // U8 §3b · defect a — FastAPI 422 returns `detail` as an ARRAY.
+    // The old branch treated it as an object (typeof [] === 'object'
+    // is true), spread the array into an ApiErrorPayload, and
+    // produced `{ 0: {...} }` — no message, no error, no code, so
+    // every 422 dropped to DEFAULT_MESSAGE. Handle arrays first,
+    // pulling `msg` (+ `loc` field name if present) so
+    // "phone: value is not a valid phone" reaches the user.
+    if (Array.isArray(o.detail)) {
+      const message = fastApiValidationMessage(o.detail);
+      if (message) return { message };
+      // Empty/oddly-shaped array → fall through to the object path.
+    }
+    // Nested { detail: {…} } from FastAPI's HTTPException(detail={…}).
+    if (o.detail && typeof o.detail === 'object' && !Array.isArray(o.detail)) {
       return { ...(o.detail as ApiErrorPayload), ...(o as ApiErrorPayload) };
     }
     return o as ApiErrorPayload;

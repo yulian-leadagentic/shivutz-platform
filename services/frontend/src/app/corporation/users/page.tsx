@@ -1,8 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useState, FormEvent } from 'react';
-import { Loader2, UserPlus, Clock, CheckCircle2, Trash2, AlertCircle, Pencil } from 'lucide-react';
+import Link from 'next/link';
+import { Loader2, UserPlus, Clock, CheckCircle2, Trash2, AlertCircle, Pencil, Users } from 'lucide-react';
 import { memberApi, type TeamMember } from '@/lib/api';
+import { adApi, type UsageResponse } from '@/lib/api/ads';
 import { ApiError } from '@/lib/api/client';
 import { mapApiError } from '@/lib/api/errors';
 import { useAuth } from '@/lib/AuthContext';
@@ -44,6 +46,17 @@ export default function CorporationUsersPage() {
   const [deleting, setDeleting] = useState(false);
   // Edit-modal state — null means closed; otherwise the row being edited.
   const [editing, setEditing] = useState<TeamMember | null>(null);
+
+  // U8 §3c · seat quota data. `included_users` = what the base plan
+  // buys; `extra_user_price_nis` = ₪/mo per extra seat (null = extras
+  // not sold on this tier). We show a block AND disable the invite
+  // button when active seats reach `included_users` — the prompt
+  // called out that preventing a failed submit reads better than
+  // letting the user fill the form and hit seat_limit.
+  const [seat, setSeat] = useState<{
+    included: number | null;
+    extraPrice: number | null;
+  } | null>(null);
 
   // Per-row toggle for is_deal_contact. Server enforces min-1; if a
   // user tries to unmark the last remaining contact we surface the
@@ -96,6 +109,16 @@ export default function CorporationUsersPage() {
         console.error('memberApi.list corporation failed', e);
       })
       .finally(() => setLoading(false));
+
+    // Seat quota — best-effort. If /ads/usage fails we simply don't
+    // render the quota block; the invite form still works and the
+    // server-side seat_limit path is the ultimate gate.
+    adApi.usage()
+      .then((u: UsageResponse) => setSeat({
+        included:   u.limits.included_users        ?? null,
+        extraPrice: u.limits.extra_user_price_nis  ?? null,
+      }))
+      .catch(() => { /* fall through — quota card just won't render */ });
   }, [entityId]);
 
   async function handleInvite(e: FormEvent) {
@@ -176,6 +199,16 @@ export default function CorporationUsersPage() {
   const active  = visibleMembers.filter((m) => !m.pending);
   const pending = visibleMembers.filter((m) => m.pending);
 
+  // U8 §3c · seat counters. Total consumers = every membership row on
+  // the entity (active + pending), matching the server's seat model:
+  // an outstanding invite already holds a seat. `included` is the
+  // plan's base seat count; when it's null we simply can't tell (no
+  // usage data yet) and the block/lock-out doesn't render.
+  const seatUsed     = members.length;
+  const seatIncluded = seat?.included ?? null;
+  const seatExtraPrice = seat?.extraPrice ?? null;
+  const seatsFull    = seatIncluded !== null && seatUsed >= seatIncluded;
+
   const hasActiveFilter = roleFilter !== 'all' || search.trim() !== '';
   function clearFilters() { setRoleFilter('all'); setSearch(''); }
 
@@ -183,15 +216,72 @@ export default function CorporationUsersPage() {
     <div className="space-y-4 max-w-4xl">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-bold text-slate-900">צוות התאגיד</h2>
+        {/* U8 §3c — disable the invite button when the plan's seat
+            quota is used up. A form that always accepts but rejects
+            after submit is a worse experience than a lock-out that
+            explains itself. Title on the disabled button keeps the
+            keyboard/screen-reader path informative. */}
         <Button
           onClick={() => { setShowForm((p) => !p); setError(''); }}
           variant={showForm ? 'outline' : 'default'}
           size="sm"
+          disabled={!showForm && seatsFull}
+          title={
+            !showForm && seatsFull
+              ? 'הגעת לתקרת המשתמשים במסלול הנוכחי — שדרג כדי להוסיף עוד.'
+              : undefined
+          }
         >
           <UserPlus className="h-4 w-4" />
           {showForm ? 'ביטול' : 'הזמן חבר צוות'}
         </Button>
       </div>
+
+      {/* U8 §3c · seat quota block. Same information the dashboard
+          shows, plus the "buy an extra seat" price when the tier
+          supports it. When the quota is not yet full this reads as
+          a friendly reminder of how many seats are left; when full
+          it explains WHY the invite button above is locked out.
+          Renders only once seat data has arrived so the row doesn't
+          pop in with 0 / 0 during load. */}
+      {seatIncluded !== null && (
+        <div
+          className={
+            'rounded-2xl border p-4 flex flex-wrap items-center justify-between gap-3 ' +
+            (seatsFull
+              ? 'border-amber-300 bg-amber-50'
+              : 'border-slate-200 bg-white')
+          }
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            <div className={
+              'h-10 w-10 rounded-xl flex items-center justify-center shrink-0 ' +
+              (seatsFull ? 'bg-amber-200 text-amber-800' : 'bg-slate-100 text-slate-700')
+            }>
+              <Users className="h-5 w-5" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-slate-900">
+                {seatUsed} / {seatIncluded} משתמשים
+              </p>
+              <p className="text-xs text-slate-600">
+                {seatsFull
+                  ? 'הגעת לתקרת המשתמשים במסלול הנוכחי — שדרג כדי להוסיף עוד.'
+                  : `כל המשתמשים החדשים כלולים במסלול. נותרו ${seatIncluded - seatUsed}.`}
+                {seatExtraPrice !== null && seatsFull && (
+                  <> משתמש נוסף — ₪{seatExtraPrice}/חודש.</>
+                )}
+              </p>
+            </div>
+          </div>
+          <Link
+            href="/billing"
+            className="shrink-0 inline-flex items-center gap-1 text-sm font-semibold text-brand-700 hover:text-brand-900 underline underline-offset-2"
+          >
+            {seatsFull ? 'שדרג מסלול' : 'ניהול מנוי'}
+          </Link>
+        </div>
+      )}
 
       {success && (
         <div className="flex items-center gap-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-md px-3 py-2">

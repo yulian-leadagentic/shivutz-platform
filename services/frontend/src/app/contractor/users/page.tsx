@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useState, FormEvent } from 'react';
-import { Loader2, UserPlus, Clock, CheckCircle2, Trash2, AlertCircle, Pencil } from 'lucide-react';
+import Link from 'next/link';
+import { Loader2, UserPlus, Clock, CheckCircle2, Trash2, AlertCircle, Pencil, Users } from 'lucide-react';
 import { memberApi, type TeamMember } from '@/lib/api';
 import { adApi, type UsageResponse } from '@/lib/api/ads';
 import { ApiError } from '@/lib/api/client';
@@ -185,36 +186,79 @@ export default function ContractorUsersPage() {
   const hasActiveFilter = roleFilter !== 'all' || search.trim() !== '';
   function clearFilters() { setRoleFilter('all'); setSearch(''); }
 
+  // U8 §3c · same seat counters + lock-out as the corp side. Every
+  // outstanding invite already holds a seat per the server model, so
+  // `used` is the total of active + pending memberships (which is
+  // just `members.length`).
+  const seatIncluded   = usage?.limits.included_users ?? null;
+  const seatExtraPrice = usage?.limits.extra_user_price_nis ?? null;
+  const seatUsed       = members.length;
+  const seatsFull      = seatIncluded !== null && seatUsed >= seatIncluded;
+
   return (
     <div className="space-y-4 max-w-4xl">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-bold text-slate-900">ניהול צוות</h2>
+        {/* U8 §3c — disable the invite button when the plan's seat
+            quota is used up. Same treatment as /corporation/users;
+            without this the corp flow catches the error mid-submit,
+            the contractor flow used to catch it there too. */}
         <Button
           onClick={() => { setShowForm((p) => !p); setError(''); }}
           variant={showForm ? 'outline' : 'default'}
           size="sm"
+          disabled={!showForm && seatsFull}
+          title={
+            !showForm && seatsFull
+              ? 'הגעת לתקרת המשתמשים במסלול הנוכחי — שדרג כדי להוסיף עוד.'
+              : undefined
+          }
         >
           <UserPlus className="h-4 w-4" />
           {showForm ? 'ביטול' : 'הזמן חבר צוות'}
         </Button>
       </div>
 
-      {/* L4 §5 — seat count + upgrade text. Shown once usage loads AND
-          included_users is populated (older plans without seat data
-          simply skip the pill). No purchase button in this round —
-          message-only per §3 mistake 1; the actual charge flow lands
-          in L5. */}
-      {usage && usage.limits.included_users != null && (
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
-          <span>
-            <b>{members.filter((m) => m.is_active || m.pending).length}</b> מתוך{' '}
-            <b>{usage.limits.included_users}</b> משתמשים כלולים במנוי
-          </span>
-          {usage.limits.extra_user_price_nis != null && (
-            <span className="text-xs text-slate-500">
-              המנוי כולל {usage.limits.included_users} משתמשים. משתמש נוסף — ₪{usage.limits.extra_user_price_nis} לחודש.
-            </span>
-          )}
+      {/* U8 §3c — seat quota block. Was the L4 §5 one-line pill; now
+          a proper block with an "amber-when-full" state and an
+          upgrade CTA. `seatIncluded !== null` guards older plans
+          without seat metadata — those simply don't render the row. */}
+      {seatIncluded !== null && (
+        <div
+          className={
+            'rounded-2xl border p-4 flex flex-wrap items-center justify-between gap-3 ' +
+            (seatsFull
+              ? 'border-amber-300 bg-amber-50'
+              : 'border-slate-200 bg-white')
+          }
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            <div className={
+              'h-10 w-10 rounded-xl flex items-center justify-center shrink-0 ' +
+              (seatsFull ? 'bg-amber-200 text-amber-800' : 'bg-slate-100 text-slate-700')
+            }>
+              <Users className="h-5 w-5" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-slate-900">
+                {seatUsed} / {seatIncluded} משתמשים
+              </p>
+              <p className="text-xs text-slate-600">
+                {seatsFull
+                  ? 'הגעת לתקרת המשתמשים במסלול הנוכחי — שדרג כדי להוסיף עוד.'
+                  : `כל המשתמשים החדשים כלולים במסלול. נותרו ${seatIncluded - seatUsed}.`}
+                {seatExtraPrice !== null && seatsFull && (
+                  <> משתמש נוסף — ₪{seatExtraPrice}/חודש.</>
+                )}
+              </p>
+            </div>
+          </div>
+          <Link
+            href="/billing"
+            className="shrink-0 inline-flex items-center gap-1 text-sm font-semibold text-brand-700 hover:text-brand-900 underline underline-offset-2"
+          >
+            {seatsFull ? 'שדרג מסלול' : 'ניהול מנוי'}
+          </Link>
         </div>
       )}
 
