@@ -139,6 +139,18 @@ Push to `staging` to deploy. No manual redeploy needed; Railway auto-deploys on 
 - Cardcom is in `PAYMENT_FAKE_MODE=1` — payment flows simulate J5 holds, no real money.
 - SendGrid isn't configured anywhere — magic-link / admin-alert emails fail silently.
 
+### Wiping U2 marketplace demo listings
+
+`scripts/seed_marketplace.py` inserts ~16 demo rows into `marketplace_listings`, all marked `is_seed=TRUE`. To remove them entirely:
+
+```sql
+DELETE FROM org_db.marketplace_listings WHERE is_seed = TRUE;
+```
+
+Real corp-authored listings stay untouched (they carry `is_seed=FALSE` by default). To re-seed after wipe, rerun `python3 /scripts/seed_marketplace.py` inside a service container — it's idempotent so a second run inserts nothing extra.
+
+Seed listings use `+9720000-XXXX` phone numbers (Israeli unallocated range) so a real contractor calling one never reaches a real business. If a listing has a phone outside that range it was NOT created by this seeder.
+
 ### Wiping staging data
 
 When tests pollute staging DB and you want a clean slate:
