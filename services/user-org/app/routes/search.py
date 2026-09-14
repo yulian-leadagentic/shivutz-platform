@@ -23,6 +23,7 @@ results are anonymised and the frontend asks for contact reveal per
 ad, behind the subscription gate. That contract applies identically
 to results AND near_matches.
 """
+import json
 from typing import Optional
 
 from fastapi import APIRouter, Header, HTTPException
@@ -32,10 +33,17 @@ from app.db import get_db
 from app.services.query_rewriter import rewrite
 from app.services.query_reranker import rerank
 from app.services.visibility import require_contractor_approved, viewer_scope_wheres
+from app.services.search_normalize import normalize_search_term
 
 router = APIRouter()
 
 RESULT_LIMIT = 50
+
+# U6 §2 — federated marketplace pass. Cap kept modest: `/marketplace`
+# is the destination when a user actually wants to browse services;
+# the landing search is "did we find any related service" so 20 is
+# more than enough for the section preview.
+MARKETPLACE_LIMIT = 20
 
 # NM — trigger the second pass only when the exact result set is thin.
 # 3 is the point where the contractor stops feeling "I got a match" and
@@ -152,6 +160,98 @@ def _build_where(
             wheres.append("(a.quantity IS NULL OR a.quantity >= %s)")
         params.append(filters["quantity"])
     return wheres, params
+
+
+# ═══ U6 §2 · federated marketplace pass ════════════════════════════════════
+#
+# The `ads` pipeline above runs through query_rewriter → SQL over the
+# ads table. `marketplace_listings` is a completely separate table
+# with a completely different domain (housing rentals, transport,
+# insurance, courses — anything a contractor might need besides raw
+# manpower).
+#
+# Before U6 the landing search only hit `ads`. A query like "קורס עברית"
+# fell into query_rewriter's ad_type default (`worker`) and returned six
+# workers from China — a confidently wrong answer to a question the
+# ads table cannot answer. Root cause was VALID_AD_TYPES = {worker,
+# housing} in query_rewriter.py — but per the guardrail we do NOT
+# touch that file; instead we ADD a parallel branch over
+# marketplace_listings and let the frontend show two labelled
+# sections.
+#
+# The two branches never merge into one list — they have different
+# reveal models (workers are behind /contact-reveal + subscription
+# metering; marketplace has its own paywall on /marketplace/{id})
+# and different card layouts. Keeping the sections separate is the
+# whole point.
+
+
+def _serialize_marketplace_listing(row: dict) -> dict:
+    """Slim projection matching the MarketplaceListing type on the
+    frontend. Contact_phone / contact_name deliberately omitted — the
+    marketplace has its own reveal endpoint on /api/marketplace and
+    the landing preview doesn't need to know it."""
+    return {
+        "id":              row["id"],
+        "corporation_id":  row["corporation_id"],
+        "corporation_name": row.get("corporation_name_he") or row.get("corporation_name_en"),
+        "is_corporation_verified": bool(row.get("corp_verified_at")),
+        "category":        row["category"],
+        "subcategory":     row.get("subcategory"),
+        "title":           row["title"],
+        "description":     row.get("description"),
+        "city":            row.get("city"),
+        "region":          row.get("region"),
+        "price":           row.get("price"),
+        "price_unit":      row.get("price_unit"),
+        "capacity":        row.get("capacity"),
+        "images_json":     json.loads(row["images_json"]) if row.get("images_json") else None,
+        "status":          row["status"],
+        "created_at":      row["created_at"].isoformat() if row.get("created_at") else None,
+        "updated_at":      row["updated_at"].isoformat() if row.get("updated_at") else None,
+    }
+
+
+def _search_marketplace(raw_query: str) -> list[dict]:
+    """Federated marketplace-listings pass — U6 §2. Uses the SAME
+    `normalize_search_term` as /api/marketplace so `ביטוח,` and
+    `ביטוח` return identical rows. Multi-word queries AND their
+    per-token LIKEs. Rows sorted newest-first; the marketplace has
+    no `featured_until` / boost model to promote."""
+    _, tokens = normalize_search_term(raw_query)
+    if not tokens:
+        return []
+
+    conditions = ["ml.status = 'active'"]
+    params: list[object] = []
+    per_token: list[str] = []
+    for tok in tokens:
+        per_token.append(
+            "(ml.title LIKE %s ESCAPE '\\\\' "
+            "OR ml.description LIKE %s ESCAPE '\\\\' "
+            "OR ml.city LIKE %s ESCAPE '\\\\')"
+        )
+        params.extend([tok, tok, tok])
+    conditions.append("(" + " AND ".join(per_token) + ")")
+
+    sql = f"""
+        SELECT ml.*,
+               c.company_name_he AS corporation_name_he,
+               c.company_name    AS corporation_name_en,
+               c.gov_registry_matched_at AS corp_verified_at
+          FROM marketplace_listings ml
+          LEFT JOIN corporations c ON c.id = ml.corporation_id
+         WHERE {' AND '.join(conditions)}
+         ORDER BY ml.created_at DESC
+         LIMIT {MARKETPLACE_LIMIT}
+    """
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute(sql, params)
+        return [_serialize_marketplace_listing(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
 
 
 def _order_clause(relaxed_field: Optional[str], ad_type: str) -> str:
@@ -283,10 +383,35 @@ def search(
     reranked         = rerank(body.query, serialised_exact)
     serialised_near  = [_serialize_ad(r) for r in near_rows]
 
+    # U6 §2 — federated marketplace pass. Runs ALWAYS, on the raw
+    # query text (query_rewriter's structured output is meaningless
+    # for services). Empty-list is returned when nothing matches —
+    # the frontend suppresses the section on empty rather than
+    # rendering a hollow heading.
+    marketplace_matches = _search_marketplace(body.query)
+
+    # U6 §2 — section ordering. Two rules from the spec:
+    #   * profession_code extracted → workers is the intent → 'ads' first.
+    #   * nothing extracted BUT marketplace has hits AND ads came up
+    #     empty → 'marketplace' first (the marketplace answer is the
+    #     only real answer we can give).
+    # Ambiguous cases (both non-empty, no profession) still show ads
+    # first: the ads pipeline runs through the LLM reranker which
+    # already scored the query's intent; marketplace is the surprise
+    # bonus, not the headline.
+    marketplace_first = (
+        not filters.get("profession_code")
+        and not reranked
+        and bool(marketplace_matches)
+    )
+    primary_section = "marketplace" if marketplace_first else "ads"
+
     return {
-        "filters":      filters,
-        "results":      reranked,
-        "total":        len(reranked),
-        "near_matches": serialised_near,
-        "relaxed":      relaxed_field,
+        "filters":             filters,
+        "results":             reranked,
+        "total":               len(reranked),
+        "near_matches":        serialised_near,
+        "relaxed":             relaxed_field,
+        "marketplace_matches": marketplace_matches,
+        "primary_section":     primary_section,
     }

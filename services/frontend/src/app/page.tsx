@@ -26,6 +26,7 @@ import { TrustBadge } from '@/components/ads/TrustBadge';
 import LandingNav from '@/components/landing/LandingNav';
 import LandingFooter from '@/components/landing/LandingFooter';
 import LeadCaptureModal from '@/components/landing/LeadCaptureModal';
+import ListingCard from '@/components/marketplace/ListingCard';
 // Landing IA — mount the mock-driven floating bubble. Was orphan
 // code; mounting it here surfaces marketplace-activity ambient
 // cues on the public landing (see LiveActivityFeed for the future
@@ -1508,10 +1509,26 @@ function LandingPageInner() {
               className="max-w-6xl mx-auto px-4 py-2"
             >
               <div className="flex flex-col lg:flex-row gap-6">
-                <div className="flex-1 space-y-4 min-w-0">
+                {/* U6 §2 — the results column is a real flex column
+                    so its two children can be ordered independently:
+                    an "ads" block and a "marketplace" block. Default
+                    order puts ads first; the server flips
+                    primary_section to 'marketplace' when the query
+                    was clearly a services intent (no profession
+                    extracted, ads came up empty). */}
+                <div className="flex-1 flex flex-col gap-4 min-w-0">
                   {searchError && (
                     <div className="text-sm text-red-800 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{searchError}</div>
                   )}
+
+                  {/* ── Ads block ─────────────────────────────────
+                      One flex-item wrapper so its `order` toggles as
+                      a unit. Inner spacing is back to space-y-4 so
+                      nothing inside changes visually. */}
+                  <div className={
+                    (resp?.primary_section === 'marketplace' ? 'order-2' : 'order-1') +
+                    ' space-y-4'
+                  }>
 
                   {/* SR — card-shaped skeleton while the LLM + rerank
                       round-trip runs (real mode can take ~3s). Shows
@@ -1801,6 +1818,47 @@ function LandingPageInner() {
                       </div>
                     );
                   })()}
+                  </div>
+                  {/* ── /Ads block ────────────────────────────────*/}
+
+                  {/* ── Marketplace matches (U6 §2) ───────────────
+                      Federated section that surfaces `marketplace_listings`
+                      hits ALONGSIDE the ads results. Rendered ONLY when
+                      the server returned any matches — empty section is
+                      not drawn (no floating "שירותים נלווים" heading
+                      over zero cards). Uses ListingCard so cards match
+                      /marketplace's own visual language exactly. */}
+                  {resp?.marketplace_matches && resp.marketplace_matches.length > 0 && (
+                    <section
+                      aria-label="שירותים נלווים"
+                      className={
+                        (resp.primary_section === 'marketplace' ? 'order-1' : 'order-2') +
+                        ' space-y-3'
+                      }
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <h2 className="text-base sm:text-lg font-bold text-slate-900">
+                          שירותים נלווים
+                          <span className="ms-2 text-xs font-normal text-slate-500">
+                            {resp.marketplace_matches.length === 1
+                              ? 'תוצאה אחת'
+                              : `${resp.marketplace_matches.length} תוצאות`}
+                          </span>
+                        </h2>
+                        <Link
+                          href={`/marketplace?search=${encodeURIComponent(q || '')}`}
+                          className="text-xs font-semibold text-brand-700 hover:text-brand-900"
+                        >
+                          עוד ב״שירותים נלווים״ ←
+                        </Link>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {resp.marketplace_matches.slice(0, 6).map((listing) => (
+                          <ListingCard key={listing.id} listing={listing} />
+                        ))}
+                      </div>
+                    </section>
+                  )}
                 </div>
 
                 {/* F3 §2.1 — right-column AdSidebar removed. It

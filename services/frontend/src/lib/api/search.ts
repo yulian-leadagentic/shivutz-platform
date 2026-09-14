@@ -1,5 +1,6 @@
 import { apiFetch } from './client';
 import type { AdRow } from './ads';
+import type { MarketplaceListing } from '@/types';
 
 // Pivot/v2 Phase 3 — search + contact reveal.
 
@@ -37,12 +38,24 @@ export type AdSearchResult = Omit<AdRow,
 // empty near set.
 export type RelaxedFilter = 'quantity' | 'origin_country' | 'region';
 
+// U6 §2 — federated marketplace pass. Server always runs a
+// marketplace_listings LIKE-search alongside the ads pipeline, using
+// the same normalize_search_term helper the /api/marketplace endpoint
+// uses. `primary_section` tells the frontend which block to render
+// first: 'ads' by default; 'marketplace' when the rewriter extracted
+// no profession AND ads came up empty AND marketplace found matches.
+// A section with zero rows must NOT be rendered — no headline over
+// an empty list.
+export type SearchPrimarySection = 'ads' | 'marketplace';
+
 export interface SearchResponse {
-  filters:       SearchFilters;
-  results:       AdSearchResult[];
-  total:         number;
-  near_matches?: AdSearchResult[];
-  relaxed?:      RelaxedFilter | null;
+  filters:              SearchFilters;
+  results:              AdSearchResult[];
+  total:                number;
+  near_matches?:        AdSearchResult[];
+  relaxed?:             RelaxedFilter | null;
+  marketplace_matches?: MarketplaceListing[];
+  primary_section?:     SearchPrimarySection;
 }
 
 export interface ContactReveal {
