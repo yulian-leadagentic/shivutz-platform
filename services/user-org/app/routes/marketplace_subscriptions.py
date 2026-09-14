@@ -36,7 +36,10 @@ def _resolve_advertiser(
     enforce that the caller belongs to a business that can publish."""
     entity_id = x_entity_id or x_org_id
     entity_type = (x_entity_type or "").lower()
-    if not entity_id or entity_type not in ("contractor", "corporation"):
+    # U7 §2b — providers get a free subscription row (created on
+    # register) so they can appear in this table; leaving them out
+    # of the whitelist would return 403 on the plans list.
+    if not entity_id or entity_type not in ("contractor", "corporation", "service_provider"):
         raise HTTPException(status_code=403, detail="advertiser_required")
     return entity_type, entity_id
 

@@ -24,7 +24,7 @@ from pydantic import BaseModel, Field
 from app.db import get_db
 from app.publisher import publish_event
 from app.services.subscription_limits import fetch_entitlement, tier_limits
-from app.services.visibility import require_contractor_approved, viewer_scope_wheres
+from app.services.visibility import require_contractor_approved, require_no_service_provider, viewer_scope_wheres
 
 router = APIRouter()
 
@@ -1041,6 +1041,12 @@ async def contact_reveal(
 ):
     if not x_entity_id or not x_entity_type:
         raise HTTPException(status_code=401, detail="auth_required")
+
+    # U7 §3 — reveal is for contractors and (via re-match materialisation)
+    # corp callers. A service_provider has no business at this endpoint;
+    # letting one through would defeat the entire visibility gate for an
+    # entity type that signed up with no registry verification.
+    require_no_service_provider(x_entity_type)
 
     # L2 §4 · SEC-4 — contractor approval gate. This MUST run before
     # the entitlement + quota checks below: a blocked pending caller

@@ -45,14 +45,24 @@ def viewer_scope_wheres(
     """H12 · SQL WHERE fragments + params to AND into any `ads` query.
 
     Contract:
-      corporation caller  →  ["(a.ad_type <> 'worker' OR a.owner_entity_id = %s)"], [id]
-      contractor / anon / admin  →  ([], [])
+      corporation caller       →  ["(a.ad_type <> 'worker' OR a.owner_entity_id = %s)"], [id]
+      service_provider caller  →  ["1=0"], []          (U7 §3 · zero ads visible)
+      contractor / anon / admin →  ([], [])
 
     The predicate is deliberately worded so housing rows pass
     unconditionally (a.ad_type='housing' → left side true → row kept)
     and worker rows only pass when owned by the caller. This is the
     ONE place the H12 rule lives; if you find yourself writing it
     inline anywhere else, stop and import from here instead.
+
+    U7 §3 · service_provider is a third entity type that publishes
+    on `marketplace_listings` only. It has no worker ads, no housing
+    ads of its own, and MUST NOT see other entities' ads at all —
+    a provider is a service seller; letting one enumerate corp
+    workers or contractor housing would defeat the whole point of
+    the visibility gate for a caller who signed up with zero
+    registry verification. So we hand back the always-false clause
+    for provider callers rather than an unbounded scope.
 
     The `a.` alias is required — every caller uses `FROM ads a`. If a
     caller uses a different alias, rename in the SQL layer (do NOT
@@ -63,7 +73,39 @@ def viewer_scope_wheres(
             ["(a.ad_type <> 'worker' OR a.owner_entity_id = %s)"],
             [x_entity_id],
         )
+    if x_entity_type == "service_provider":
+        # 1=0 is deliberate: an unbounded LIMIT still executes but
+        # returns 0 rows, which is exactly the shape /search and the
+        # public feeds expect. Callers that route around the SQL and
+        # do their own list build (only ads.py:1052 today) should
+        # ALSO call require_no_service_provider() as a belt-and-braces
+        # check — see below.
+        return (["1=0"], [])
     return ([], [])
+
+
+def require_no_service_provider(x_entity_type: Optional[str]) -> None:
+    """U7 §3 · 403 for service_provider callers on paths not meant
+    for them.
+
+    Call at the TOP of any endpoint whose response is for
+    contractors or corporations only:
+      * POST /reveals              (worker/housing contact reveal)
+      * /corporation/*             (management screens for corp)
+      * /contractor/*              (management screens for contractor)
+      * /tenders/*                 (foreign-worker tenders)
+
+    Do NOT call for endpoints a provider legitimately uses:
+      * GET /marketplace           (their own domain)
+      * GET /how-it-works, legal   (public regardless)
+
+    This helper is NOT a full visibility layer — a service provider
+    who slips past it still runs into viewer_scope_wheres above
+    which returns an empty ads scope. Calling both is the intended
+    defense: gate rejects, scope backstops.
+    """
+    if x_entity_type == "service_provider":
+        raise HTTPException(status_code=403, detail={"code": "entity_type_forbidden"})
 
 
 def require_contractor_approved(

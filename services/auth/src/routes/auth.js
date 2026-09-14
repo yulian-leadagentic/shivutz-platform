@@ -546,6 +546,14 @@ router.post('/auth/invite/accept', async (req, res) => {
     const membership = memberships[0];
     if (!membership) return res.status(404).json({ error: 'invite_not_found_or_used' });
 
+    // U7 §1: service_provider is a single-owner entity — no team invites.
+    // If a provider membership row somehow reaches this endpoint (admin
+    // scripting, migration artifact), reject rather than fall through to
+    // the corporation branch below and mint the wrong role.
+    if (membership.entity_type === 'service_provider') {
+      return res.status(400).json({ error: 'provider_invites_unsupported' });
+    }
+
     const age = Date.now() - new Date(membership.created_at).getTime();
     if (age > 7 * 24 * 60 * 60 * 1000) return res.status(410).json({ error: 'invite_expired' });
 

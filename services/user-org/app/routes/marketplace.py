@@ -119,7 +119,8 @@ def list_listings(
             # contractor and corp advertisers cleanly.
             conditions.append("ml.advertiser_entity_id = %s")
             params.append(entity_id)
-            if entity_type in ("contractor", "corporation"):
+            # U7 §1: provider is a third advertiser type on the same table.
+            if entity_type in ("contractor", "corporation", "service_provider"):
                 conditions.append("ml.advertiser_entity_type = %s")
                 params.append(entity_type)
         else:
@@ -257,7 +258,12 @@ def create_listing(
     """
     entity_id   = x_entity_id or x_org_id
     entity_type = (x_entity_type or "").lower()
-    if not entity_id or entity_type not in ("contractor", "corporation"):
+    # U7 §2b — `service_provider` is the third valid advertiser type,
+    # added by migration 077. Denying it here would 403 a registered
+    # provider trying to publish their first listing — the exact
+    # rejection the U7 spec called out. Contractor + corporation
+    # paths below are unchanged.
+    if not entity_id or entity_type not in ("contractor", "corporation", "service_provider"):
         raise HTTPException(status_code=403, detail="advertiser_required")
     if not body.title.strip():
         raise HTTPException(status_code=400, detail="title_required")

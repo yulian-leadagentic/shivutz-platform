@@ -62,7 +62,10 @@ def get_upload_signature(
     signature can't be used to overwrite someone else's images."""
     entity_id = x_entity_id or x_org_id
     entity_type = (x_entity_type or "").lower()
-    if not entity_id or entity_type not in ("contractor", "corporation"):
+    # U7 §2b — image uploads for marketplace listings; provider
+    # publishes into the same marketplace_listings table so it needs
+    # the same signed-URL surface.
+    if not entity_id or entity_type not in ("contractor", "corporation", "service_provider"):
         raise HTTPException(status_code=403, detail="advertiser_required")
 
     if not _is_configured():

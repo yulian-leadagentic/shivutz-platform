@@ -37,9 +37,10 @@ def submit_ticket(
         raise HTTPException(status_code=401, detail="unauthorized")
 
     # entity_type mirrors the JWT entity context, falling back to the
-    # legacy role when no entity is attached (admins).
-    entity_type = x_user_role if x_user_role in ("contractor", "corporation", "admin") else None
-    entity_id   = x_org_id if entity_type in ("contractor", "corporation") else None
+    # legacy role when no entity is attached (admins). U7 §1: service
+    # providers can file tickets too — same shape, same table.
+    entity_type = x_user_role if x_user_role in ("contractor", "corporation", "service_provider", "admin") else None
+    entity_id   = x_org_id if entity_type in ("contractor", "corporation", "service_provider") else None
 
     ticket_id = str(uuid.uuid4())
     conn = get_db()
