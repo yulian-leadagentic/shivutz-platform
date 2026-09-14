@@ -20,6 +20,33 @@ export const orgApi = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
+  /** U7 · service provider self-registration. Auto-active, no gov-registry
+   *  cross-check. OTP was verified in the preceding /auth/send-otp step
+   *  (auth service checks recent-OTP internally). */
+  registerProvider: (data: {
+    name:            string;
+    contact_name:    string;
+    contact_phone:   string;
+    business_number?: string;
+    email?:          string;
+    city?:           string;
+    region?:         string;
+    website?:        string;
+    description?:    string;
+    logo_url?:       string;
+    whatsapp_opt_in?: boolean;
+  }) =>
+    apiFetch<{
+      id:            string;
+      name:          string;
+      status:        'active';
+      org_type:      'service_provider';
+      access_token?: string;
+      refresh_token?: string;
+    }>('/organizations/providers/register', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
   getContractor: (id: string) =>
     apiFetch<Contractor>(`/organizations/contractors/${id}`),
   getCorporation: (id: string) =>

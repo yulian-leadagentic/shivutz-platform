@@ -295,6 +295,28 @@ def create_listing(
     # services/user-org/app/routes/marketplace.py` confirms POST is
     # the only mutator that takes a category.
     is_corp_housing = entity_type == "corporation" and body.category == "housing"
+    # U7 §2b · service_provider publishes free across all provider
+    # categories (equipment, services, other + any admin-added). Housing
+    # is reserved for corp; worker is reserved for corp workers. This
+    # branch is the exact mirror of is_corp_housing above — same
+    # subscription/slot bypass, same NULL subscription_id on the row.
+    _PROVIDER_BLOCKED_CATEGORIES = {"housing", "worker"}
+    is_provider_free = (
+        entity_type == "service_provider"
+        and body.category not in _PROVIDER_BLOCKED_CATEGORIES
+    )
+    if entity_type == "service_provider" and not is_provider_free:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code":    "provider_category_forbidden",
+                "message": (
+                    "ספק שירות יכול לפרסם בקטגוריות שירות בלבד — "
+                    "לא ניתן לפרסם דיור או עובדים דרך חשבון ספק."
+                ),
+                "category": body.category,
+            },
+        )
     if entity_type == "corporation" and not is_corp_housing:
         raise HTTPException(
             status_code=403,
@@ -321,7 +343,7 @@ def create_listing(
         slot_count: Optional[int] = None
         used = 0
 
-        if not is_corp_housing:
+        if not is_corp_housing and not is_provider_free:
             # Find an active subscription that covers this category + has a
             # free slot. Locking the row would matter only at very high
             # concurrency; for now a serialized read is fine.

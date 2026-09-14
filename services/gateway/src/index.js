@@ -239,6 +239,7 @@ const PUBLIC_METHOD_ROUTES = {
   '/api/organizations/contractors/lookup': new Set(['POST']),   // pre-registration registry lookup (gated by recent OTP)
   '/api/organizations/corporations': new Set(['POST']),         // self-registration
   '/api/organizations/corporations/lookup': new Set(['POST']),  // pre-registration registry lookup (gated by recent OTP)
+  '/api/organizations/providers/register': new Set(['POST']),   // U7 · provider self-registration (OTP-gated in auth)
 };
 
 // Public only for specific HTTP methods matched by prefix (prefix → allowed methods)

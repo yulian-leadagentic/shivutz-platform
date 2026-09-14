@@ -14,6 +14,7 @@ import ListingCard from '@/components/marketplace/ListingCard';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import Logo from '@/components/Logo';
+import RegistrationCTASection from '@/components/landing/RegistrationCTASection';
 
 type CategoryOption = { value: string; label: string; icon: typeof Filter };
 
@@ -283,25 +284,9 @@ function MarketplacePageInner() {
         )}
       </div>
 
-      {/* Post CTA banner */}
-      <div className="bg-brand-600 mt-16">
-        <div className="max-w-4xl mx-auto px-6 py-10 text-center">
-          <h2 className="text-2xl font-bold text-white mb-2">יש לך דירה לתאגיד?</h2>
-          <p className="text-brand-200 mb-6">תאגידים רשומים מפרסמים ללא עלות</p>
-          <div className="flex flex-wrap justify-center gap-3">
-            <Link href="/register/corporation">
-              <Button className="bg-white text-brand-700 hover:bg-brand-50 font-semibold">
-                הירשם כתאגיד
-              </Button>
-            </Link>
-            <Link href="/login">
-              <Button variant="outline-light">
-                כניסה לחשבון קיים
-              </Button>
-            </Link>
-          </div>
-        </div>
-      </div>
+      {/* U7 Phase C · shared 3-role CTA (compact variant) replaces the
+          old corp-only banner. Providers are a first-class role here. */}
+      <RegistrationCTASection variant="compact" />
     </div>
   );
 }

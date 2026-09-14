@@ -78,6 +78,37 @@ SET @ddl := IF(
   'SELECT ''entity_audit.entity_type already has service_provider''');
 PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
+-- users.role — 001:17. Determines the JWT `role` claim → gateway
+-- `x-user-role` header. Provider users must carry role='service_provider'
+-- so gates that key off role behave correctly (they don't get bucketed
+-- as 'corporation' by mistake — see U7 audit report row #26).
+SET @ddl := IF(
+  (SELECT COLUMN_TYPE FROM INFORMATION_SCHEMA.COLUMNS
+     WHERE TABLE_SCHEMA='auth_db'
+       AND TABLE_NAME='users'
+       AND COLUMN_NAME='role') NOT LIKE '%service_provider%',
+  'ALTER TABLE users
+     MODIFY COLUMN role
+     ENUM(''admin'',''contractor'',''corporation'',''staff'',''service_provider'') NOT NULL',
+  'SELECT ''users.role already has service_provider''');
+PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- users.org_type — 001:19. Nullable legacy denorm. /auth/register
+-- writes this alongside role for downstream services that still read
+-- it. Provider registration UPDATEs org_type='service_provider' so
+-- the enum must accept the value or MySQL strict-mode rejects the
+-- write and the whole registration transaction rolls back.
+SET @ddl := IF(
+  (SELECT COLUMN_TYPE FROM INFORMATION_SCHEMA.COLUMNS
+     WHERE TABLE_SCHEMA='auth_db'
+       AND TABLE_NAME='users'
+       AND COLUMN_NAME='org_type') NOT LIKE '%service_provider%',
+  'ALTER TABLE users
+     MODIFY COLUMN org_type
+     ENUM(''contractor'',''corporation'',''service_provider'') NULL',
+  'SELECT ''users.org_type already has service_provider''');
+PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
 -- ── org_db · two ENUMs + the new table ───────────────────────────
 USE org_db;
 
