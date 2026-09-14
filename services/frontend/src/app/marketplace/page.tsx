@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { Suspense, useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import {
@@ -54,7 +54,32 @@ function SkeletonCard() {
   );
 }
 
+// U6 §2 build-fix — Next.js 16 requires every useSearchParams()
+// caller to sit inside a Suspense boundary, or the prerender step at
+// build time refuses the page ("useSearchParams() should be wrapped
+// in a suspense boundary at page /marketplace"). The commit that
+// added `?search=` reading (73243e1) broke every Railway build until
+// this Suspense wrapper landed. Do NOT hoist useSearchParams back
+// out of the inner component.
 export default function MarketplacePage() {
+  return (
+    <Suspense fallback={<MarketplaceFallback />}>
+      <MarketplacePageInner />
+    </Suspense>
+  );
+}
+
+function MarketplaceFallback() {
+  return (
+    <div className="min-h-screen bg-slate-50" dir="rtl">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-16">
+        <Loader2 className="w-6 h-6 animate-spin mx-auto text-slate-400" />
+      </div>
+    </div>
+  );
+}
+
+function MarketplacePageInner() {
   const { regions } = useEnums();
   const params = useSearchParams();
   const [listings, setListings] = useState<MarketplaceListing[]>([]);
