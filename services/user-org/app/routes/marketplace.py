@@ -264,54 +264,103 @@ def create_listing(
     if not body.category:
         raise HTTPException(status_code=400, detail="category_required")
 
+    # U8 §2 · corporation housing-only permission gate.
+    #
+    # Yulian, 14.09: "תאגיד יכול לפרסם רק דיור בנוסף לעובדים, וזה
+    # נכלל בחלק מהרישיון שיש לו, אין צורך להוסיף תשלום."
+    #
+    # This is a permission gate, NOT a billing gate:
+    #   * corporation + housing  → allowed. `marketplace_subscriptions`
+    #                              is skipped entirely; the license
+    #                              already includes housing, so we
+    #                              don't hit the 402 path and don't
+    #                              charge a slot. `subscription_id`
+    #                              stays NULL on the row.
+    #   * corporation + anything else → 403 corp_housing_only. Other
+    #                              categories (equipment, services,
+    #                              other) are reserved for service
+    #                              providers (U7).
+    #   * contractor + any category → unchanged. Subscription still
+    #                              required.
+    #
+    # PATCH doesn't need a mirror of this check — the ListingUpdate
+    # model deliberately omits `category`, so a corp cannot flip a
+    # housing listing to equipment after the fact. `grep 'category'
+    # services/user-org/app/routes/marketplace.py` confirms POST is
+    # the only mutator that takes a category.
+    is_corp_housing = entity_type == "corporation" and body.category == "housing"
+    if entity_type == "corporation" and not is_corp_housing:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code":    "corp_housing_only",
+                "message": (
+                    "תאגיד יכול לפרסם דיור בלבד. "
+                    "קטגוריות נוספות זמינות לספקי שירותים."
+                ),
+                "category": body.category,
+            },
+        )
+
     listing_id = str(uuid.uuid4())
     conn = get_db()
     try:
         cur = conn.cursor()
 
-        # Find an active subscription that covers this category + has a
-        # free slot. Locking the row would matter only at very high
-        # concurrency; for now a serialized read is fine.
-        cur.execute(
-            """SELECT id, slot_count
-                 FROM marketplace_subscriptions
-                WHERE advertiser_entity_type = %s
-                  AND advertiser_entity_id   = %s
-                  AND category_code          = %s
-                  AND status                 = 'active'
-                  AND expires_at             > NOW()
-                ORDER BY expires_at DESC LIMIT 1""",
-            (entity_type, entity_id, body.category),
-        )
-        sub = cur.fetchone()
-        if not sub:
-            raise HTTPException(
-                status_code=402,  # 402 Payment Required — closest fit
-                detail={
-                    "code": "no_active_subscription",
-                    "message": "אין מנוי פעיל בקטגוריה זו. רכוש מנוי כדי לפרסם.",
-                    "category": body.category,
-                },
-            )
+        # subscription_id + slot accounting only apply to callers that
+        # go through the marketplace_subscriptions path (contractors,
+        # and future U7 service_providers). Corp housing is licensed
+        # elsewhere and skips this branch entirely.
+        sub_id:     Optional[str] = None
+        slot_count: Optional[int] = None
+        used = 0
 
-        cur.execute(
-            """SELECT COUNT(*) AS n FROM marketplace_listings
-                WHERE subscription_id = %s
-                  AND deleted_at IS NULL
-                  AND status = 'active'""",
-            (sub["id"],),
-        )
-        used = int(cur.fetchone()["n"])
-        if used >= sub["slot_count"]:
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "code": "no_slots_available",
-                    "message": "כל מקומות הפרסום במנוי הזה מנוצלים. השבת מודעה קיימת או שדרג את המנוי.",
-                    "slot_count": sub["slot_count"],
-                    "slots_used": used,
-                },
+        if not is_corp_housing:
+            # Find an active subscription that covers this category + has a
+            # free slot. Locking the row would matter only at very high
+            # concurrency; for now a serialized read is fine.
+            cur.execute(
+                """SELECT id, slot_count
+                     FROM marketplace_subscriptions
+                    WHERE advertiser_entity_type = %s
+                      AND advertiser_entity_id   = %s
+                      AND category_code          = %s
+                      AND status                 = 'active'
+                      AND expires_at             > NOW()
+                    ORDER BY expires_at DESC LIMIT 1""",
+                (entity_type, entity_id, body.category),
             )
+            sub = cur.fetchone()
+            if not sub:
+                raise HTTPException(
+                    status_code=402,  # 402 Payment Required — closest fit
+                    detail={
+                        "code": "no_active_subscription",
+                        "message": "אין מנוי פעיל בקטגוריה זו. רכוש מנוי כדי לפרסם.",
+                        "category": body.category,
+                    },
+                )
+
+            cur.execute(
+                """SELECT COUNT(*) AS n FROM marketplace_listings
+                    WHERE subscription_id = %s
+                      AND deleted_at IS NULL
+                      AND status = 'active'""",
+                (sub["id"],),
+            )
+            used = int(cur.fetchone()["n"])
+            if used >= sub["slot_count"]:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "no_slots_available",
+                        "message": "כל מקומות הפרסום במנוי הזה מנוצלים. השבת מודעה קיימת או שדרג את המנוי.",
+                        "slot_count": sub["slot_count"],
+                        "slots_used": used,
+                    },
+                )
+            sub_id     = sub["id"]
+            slot_count = sub["slot_count"]
 
         # `corporation_id` is preserved for the V0 read path until 2.2
         # rewrites browse to use advertiser_entity_*; for contractor
@@ -329,7 +378,7 @@ def create_listing(
                available_from, contact_phone, contact_name, images_json)
             VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         """, (
-            listing_id, legacy_corp_id, sub["id"],
+            listing_id, legacy_corp_id, sub_id,
             entity_type, entity_id,
             body.category, body.subcategory, body.title.strip(), body.description,
             body.city, body.region, body.price, body.price_unit,
@@ -339,11 +388,14 @@ def create_listing(
         ))
         conn.commit()
         return {
-            "id": listing_id,
-            "status": "active",
-            "subscription_id": sub["id"],
-            "slots_used": used + 1,
-            "slot_count": sub["slot_count"],
+            "id":              listing_id,
+            "status":          "active",
+            # `subscription_id` is null for corp housing; slots not
+            # tracked. Contractor + provider responses carry the
+            # existing pair, unchanged.
+            "subscription_id": sub_id,
+            "slots_used":      used + 1 if sub_id else None,
+            "slot_count":      slot_count,
         }
     except HTTPException:
         raise

@@ -66,11 +66,21 @@ export default function NewListingPage() {
         const mapped = rows.map((c) => ({ value: c.code, label: c.name_he }));
         // Empty catalog (all deactivated) still reads as broken to a
         // corp user, so keep the fallback in that case too.
-        setCategories(mapped.length > 0 ? mapped : FALLBACK_CATEGORIES);
+        //
+        // U8 §2 — this page is on the /corporation/* branch, so the
+        // caller is always a corporation. Corporations can only
+        // publish housing (Yulian 14.09). Filter to housing after
+        // hydrating so FALLBACK_CATEGORIES stays four-value (other
+        // screens still use the full list). The server-side gate at
+        // marketplace.py POST is the real enforcement; this filter
+        // is UX-only, keeping a corp from seeing options they can't
+        // actually use.
+        const full = mapped.length > 0 ? mapped : FALLBACK_CATEGORIES;
+        setCategories(full.filter((c) => c.value === 'housing'));
       })
       .catch(() => {
         if (cancelled) return;
-        setCategories(FALLBACK_CATEGORIES);
+        setCategories(FALLBACK_CATEGORIES.filter((c) => c.value === 'housing'));
       })
       .finally(() => {
         if (!cancelled) setCatsLoading(false);
@@ -143,7 +153,13 @@ export default function NewListingPage() {
             <CardTitle className="text-base">פרטי המודעה</CardTitle>
           </CardHeader>
           <CardContent className="space-y-5">
-            {/* Category */}
+            {/* Category — U8 §2 · corp always publishes housing.
+                When the filtered list has ONE item we render it as
+                a static chip + explanatory note ("housing is included
+                in the license, no extra charge"), because a picker
+                with a single option reads like a load bug. Multi-
+                option branch stays for the day contractor/provider
+                gains reuse this form via role. */}
             <div className="space-y-2">
               <label className="text-sm font-medium text-slate-700">קטגוריה *</label>
               <div className="flex flex-wrap gap-2">
@@ -162,6 +178,12 @@ export default function NewListingPage() {
                       טוען
                     </span>
                   ))
+                ) : categories.length === 1 ? (
+                  <span
+                    className="px-4 py-2 rounded-full text-sm font-semibold border bg-brand-50 text-brand-800 border-brand-200"
+                  >
+                    {categories[0].label}
+                  </span>
                 ) : (
                   categories.map((c) => (
                     <button
@@ -179,6 +201,14 @@ export default function NewListingPage() {
                   ))
                 )}
               </div>
+              {/* U8 §2 — explanatory note. If the user sees only
+                  'דיור' as an option this answers the question they
+                  are about to ask ("why can't I add equipment?"). */}
+              {!catsLoading && categories.length === 1 && (
+                <p className="text-xs text-slate-500 pt-1">
+                  פרסום דיור כלול ברישיון התאגיד, ללא תשלום נוסף.
+                </p>
+              )}
             </div>
 
             {/* Title */}
