@@ -120,9 +120,19 @@ def update_origin(code: str, data: CountryUpdate):
     conn = get_db("worker_db")
     try:
         cur = conn.cursor()
-        cur.execute(f"UPDATE origin_countries SET {', '.join(fields)} WHERE code=%s", tuple(params))
-        if cur.rowcount == 0:
+        # U11 §4 · disambiguate "row missing" from "row unchanged".
+        # pymysql rowcount reports rows CHANGED, not rows MATCHED — so an
+        # admin who saves an origin without editing any value (or clicks
+        # "הפעל" on an already-active country) sees rowcount=0 and the
+        # old code returned 404 country_not_found even though the row is
+        # right there. Same shape as the U4 §2 fix — SELECT first,
+        # then UPDATE, and never enable CLIENT.FOUND_ROWS.
+        cur.execute("SELECT 1 FROM origin_countries WHERE code=%s", (code,))
+        if not cur.fetchone():
             raise HTTPException(status_code=404, detail="country_not_found")
+        cur.execute(f"UPDATE origin_countries SET {', '.join(fields)} WHERE code=%s", tuple(params))
+        # rowcount may be 0 here when the save didn't actually change
+        # any column — that's a no-op success, not an error.
         conn.commit()
         return {"code": code, "updated_fields": [f.split('=')[0] for f in fields]}
     finally:
@@ -138,9 +148,12 @@ def deactivate_origin(code: str):
     conn = get_db("worker_db")
     try:
         cur = conn.cursor()
-        cur.execute("UPDATE origin_countries SET is_active=0 WHERE code=%s", (code,))
-        if cur.rowcount == 0:
+        # U11 §4 · disambiguate "row missing" from "already inactive".
+        # Same MATCHED-vs-CHANGED trap as update_origin above.
+        cur.execute("SELECT 1 FROM origin_countries WHERE code=%s", (code,))
+        if not cur.fetchone():
             raise HTTPException(status_code=404, detail="country_not_found")
+        cur.execute("UPDATE origin_countries SET is_active=0 WHERE code=%s", (code,))
         conn.commit()
     finally:
         conn.close()

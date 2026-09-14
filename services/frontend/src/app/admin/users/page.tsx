@@ -1,8 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useState, FormEvent } from 'react';
-import { Loader2, UserPlus, ShieldCheck, ShieldAlert } from 'lucide-react';
+import { Fragment, useCallback, useEffect, useState, FormEvent } from 'react';
+import { Loader2, UserPlus, ShieldCheck, ShieldAlert, ChevronDown, ChevronLeft } from 'lucide-react';
 import { adminApi, type AdminUser } from '@/lib/adminApi';
+import { mapApiError } from '@/lib/api/errors';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -15,10 +16,16 @@ import { exportCsv } from '@/lib/csv';
 import { useTableKeyNav } from '@/hooks/useTableKeyNav';
 
 const ROLE_LABEL: Record<string, string> = {
-  admin:       'מנהל',
-  contractor:  'קבלן',
-  corporation: 'תאגיד',
+  admin:            'מנהל',
+  contractor:       'קבלן',
+  corporation:      'תאגיד',
+  service_provider: 'ספק שירות',
 };
+
+// U11 §3 · row-detail state. Kept out of AdminUser to avoid recomputing
+// the base list when detail rows come in.
+type UserDetails = Awaited<ReturnType<typeof adminApi.getUserDetails>>;
+type DetailState = { loading: true } | { loading: false; data: UserDetails } | { loading: false; error: string };
 
 function fmtDate(iso: string | null) {
   if (!iso) return '—';
@@ -42,6 +49,28 @@ export default function AdminUsersPage() {
   // an accidental click.
   const [pendingDisable, setPendingDisable] = useState<AdminUser | null>(null);
   const [toggling, setToggling] = useState(false);
+  // U11 §3 · lazy-loaded row detail. `expandedId` is what's open now,
+  // `details` caches every row we've fetched so re-opening is instant.
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [details, setDetails] = useState<Record<string, DetailState>>({});
+
+  async function toggleExpand(userId: string) {
+    const willOpen = expandedId !== userId;
+    setExpandedId(willOpen ? userId : null);
+    // Fetch only on first open; cached responses stay put so a close
+    // → reopen is instant. If a fetch previously errored, retry on
+    // next click by leaving that entry as-is (user re-triggers a
+    // fetch by closing + opening).
+    if (!willOpen) return;
+    if (details[userId]) return;
+    setDetails((m) => ({ ...m, [userId]: { loading: true } }));
+    try {
+      const data = await adminApi.getUserDetails(userId);
+      setDetails((m) => ({ ...m, [userId]: { loading: false, data } }));
+    } catch (e) {
+      setDetails((m) => ({ ...m, [userId]: { loading: false, error: mapApiError(e) } }));
+    }
+  }
 
   function pushToast(msg: string) {
     setToasts((t) => [...t, msg]);
@@ -295,35 +324,54 @@ export default function AdminUsersPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map((u) => (
-                    <tr
-                      key={u.id}
-                      data-table-row="true"
-                      tabIndex={-1}
-                      className="border-b border-slate-50 last:border-0 hover:bg-slate-50 focus:bg-amber-50 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-inset"
-                    >
-                      <td className="px-3 py-2.5 text-slate-800 font-medium">{u.full_name || '—'}</td>
-                      <td className="px-3 py-2.5 text-slate-600" dir="ltr">{u.phone || '—'}</td>
-                      <td className="px-3 py-2.5 text-slate-600" dir="ltr">{u.email || '—'}</td>
-                      <td className="px-3 py-2.5">
-                        <Badge variant={u.role === 'admin' ? 'default' : 'secondary'}>
-                          {ROLE_LABEL[u.role] || u.role}
-                        </Badge>
-                      </td>
-                      <td className="px-3 py-2.5 text-slate-600 text-xs">{u.org_name || '—'}</td>
-                      <td className="px-3 py-2.5 text-slate-500 text-xs" dir="ltr">{fmtDate(u.last_login_at)}</td>
-                      <td className="px-3 py-2.5">
-                        {u.is_active
-                          ? <span className="inline-flex items-center gap-1 text-xs text-emerald-700"><ShieldCheck className="h-3 w-3" /> פעיל</span>
-                          : <span className="inline-flex items-center gap-1 text-xs text-red-700"><ShieldAlert className="h-3 w-3" /> מושבת</span>}
-                      </td>
-                      <td className="px-3 py-2.5 text-end">
-                        <Button size="sm" variant="outline" data-table-row-action onClick={() => toggle(u)}>
-                          {u.is_active ? 'השבת' : 'הפעל'}
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
+                  {filtered.map((u) => {
+                    const isExpanded = expandedId === u.id;
+                    const detail = details[u.id];
+                    return (
+                      <Fragment key={u.id}>
+                        <tr
+                          data-table-row="true"
+                          tabIndex={-1}
+                          onClick={() => toggleExpand(u.id)}
+                          className="border-b border-slate-50 last:border-0 hover:bg-slate-50 focus:bg-amber-50 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-inset cursor-pointer"
+                        >
+                          <td className="px-3 py-2.5 text-slate-800 font-medium">
+                            <span className="inline-flex items-center gap-1.5">
+                              {isExpanded ? <ChevronDown className="h-3.5 w-3.5 text-slate-400" /> : <ChevronLeft className="h-3.5 w-3.5 text-slate-400" />}
+                              {u.full_name || '—'}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2.5 text-slate-600" dir="ltr">{u.phone || '—'}</td>
+                          <td className="px-3 py-2.5 text-slate-600" dir="ltr">{u.email || '—'}</td>
+                          <td className="px-3 py-2.5">
+                            <Badge variant={u.role === 'admin' ? 'default' : 'secondary'}>
+                              {ROLE_LABEL[u.role] || u.role}
+                            </Badge>
+                          </td>
+                          <td className="px-3 py-2.5 text-slate-600 text-xs">{u.org_name || '—'}</td>
+                          <td className="px-3 py-2.5 text-slate-500 text-xs" dir="ltr">{fmtDate(u.last_login_at)}</td>
+                          <td className="px-3 py-2.5">
+                            {u.is_active
+                              ? <span className="inline-flex items-center gap-1 text-xs text-emerald-700"><ShieldCheck className="h-3 w-3" /> פעיל</span>
+                              : <span className="inline-flex items-center gap-1 text-xs text-red-700"><ShieldAlert className="h-3 w-3" /> מושבת</span>}
+                          </td>
+                          <td className="px-3 py-2.5 text-end">
+                            <Button size="sm" variant="outline" data-table-row-action
+                              onClick={(e) => { e.stopPropagation(); toggle(u); }}>
+                              {u.is_active ? 'השבת' : 'הפעל'}
+                            </Button>
+                          </td>
+                        </tr>
+                        {isExpanded && (
+                          <tr className="bg-slate-50 border-b border-slate-100">
+                            <td colSpan={8} className="px-4 py-3">
+                              <UserDetailBlock state={detail} />
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -340,6 +388,7 @@ export default function AdminUsersPage() {
         ))}
       </div>
 
+      {/* ConfirmDialog immediately below */}
       <ConfirmDialog
         open={!!pendingDisable}
         title="השבתת משתמש"
@@ -352,6 +401,108 @@ export default function AdminUsersPage() {
         onConfirm={confirmDisable}
         onCancel={() => setPendingDisable(null)}
       />
+    </div>
+  );
+}
+
+// U11 §3 · row-detail renderer. Three parallel cards (Entity, Owner,
+// Subscription) — each independently null-safe:
+//   - entity=null    → "המשתמש לא משויך לישות" (usually an admin)
+//   - owner=null     → "בעל חשבון לא נמצא" (data anomaly worth flagging)
+//   - subscription=null → "אין מנוי פעיל" (not an error; U5 §3 rule)
+function UserDetailBlock({ state }: { state: DetailState | undefined }) {
+  if (!state || state.loading) {
+    return (
+      <div className="flex items-center gap-2 text-sm text-slate-500">
+        <Loader2 className="h-4 w-4 animate-spin" /> טוען פרטים…
+      </div>
+    );
+  }
+  if ('error' in state) {
+    return (
+      <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+        {state.error}
+      </div>
+    );
+  }
+  const { entity, owner, subscription } = state.data;
+  const ENTITY_TYPE_HE: Record<string, string> = {
+    contractor:       'קבלן',
+    corporation:      'תאגיד',
+    service_provider: 'ספק שירות',
+  };
+  const STATUS_HE: Record<string, string> = {
+    approved: 'מאושר', pending: 'ממתין לאישור', rejected: 'נדחה',
+    suspended: 'מושהה', active: 'פעיל',
+  };
+  const TIER_HE: Record<string, string> = {
+    basic: 'Basic', advanced: 'Advanced', pro: 'Pro',
+  };
+  const SUB_STATUS_HE: Record<string, string> = {
+    trialing: 'ניסיון', active: 'פעיל', past_due: 'חוב', cancelled: 'בוטל', expired: 'פג תוקף',
+  };
+  const fmt = (iso: string | null) =>
+    iso ? new Date(iso).toLocaleDateString('he-IL') : '—';
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+      {/* Entity */}
+      <div className="bg-white border border-slate-200 rounded-lg p-3">
+        <div className="text-[10px] uppercase tracking-wide text-slate-400 mb-1">הישות</div>
+        {entity ? (
+          <>
+            <div className="font-semibold text-slate-800">{entity.name || '—'}</div>
+            <dl className="mt-1.5 space-y-0.5 text-xs">
+              <div className="flex justify-between"><dt className="text-slate-500">סוג</dt><dd>{ENTITY_TYPE_HE[entity.type] || entity.type}</dd></div>
+              <div className="flex justify-between"><dt className="text-slate-500">ח.פ / ע.מ</dt><dd dir="ltr">{entity.business_number || '—'}</dd></div>
+              <div className="flex justify-between"><dt className="text-slate-500">סטטוס</dt><dd>{entity.approval_status ? (STATUS_HE[entity.approval_status] || entity.approval_status) : '—'}</dd></div>
+              <div className="flex justify-between"><dt className="text-slate-500">הצטרפות</dt><dd>{fmt(entity.joined_at)}</dd></div>
+              <div className="flex justify-between">
+                <dt className="text-slate-500">משתמשים</dt>
+                <dd>{entity.seats_included != null ? `${entity.seats_used} מתוך ${entity.seats_included}` : `${entity.seats_used}`}</dd>
+              </div>
+            </dl>
+          </>
+        ) : (
+          <div className="text-slate-400 text-xs">המשתמש אינו משויך לישות (בדרך כלל: משתמש מנהל).</div>
+        )}
+      </div>
+      {/* Owner */}
+      <div className="bg-white border border-slate-200 rounded-lg p-3">
+        <div className="text-[10px] uppercase tracking-wide text-slate-400 mb-1">בעל החשבון · ליצירת קשר</div>
+        {owner ? (
+          <>
+            <div className="font-semibold text-slate-800">{owner.full_name || '—'}</div>
+            <dl className="mt-1.5 space-y-0.5 text-xs">
+              <div className="flex justify-between items-baseline">
+                <dt className="text-slate-500">טלפון</dt>
+                <dd>{owner.phone ? <a className="text-brand-700 hover:underline" dir="ltr" href={`tel:${owner.phone}`}>{owner.phone}</a> : '—'}</dd>
+              </div>
+              <div className="flex justify-between items-baseline">
+                <dt className="text-slate-500">אימייל</dt>
+                <dd>{owner.email ? <a className="text-brand-700 hover:underline" dir="ltr" href={`mailto:${owner.email}`}>{owner.email}</a> : '—'}</dd>
+              </div>
+            </dl>
+          </>
+        ) : (
+          <div className="text-slate-400 text-xs">לא נמצא בעל חשבון פעיל.</div>
+        )}
+      </div>
+      {/* Subscription */}
+      <div className="bg-white border border-slate-200 rounded-lg p-3">
+        <div className="text-[10px] uppercase tracking-wide text-slate-400 mb-1">המנוי</div>
+        {subscription ? (
+          <>
+            <div className="font-semibold text-slate-800">{TIER_HE[subscription.tier] || subscription.tier}</div>
+            <dl className="mt-1.5 space-y-0.5 text-xs">
+              <div className="flex justify-between"><dt className="text-slate-500">סטטוס</dt><dd>{SUB_STATUS_HE[subscription.status] || subscription.status}</dd></div>
+              <div className="flex justify-between"><dt className="text-slate-500">ניסיון עד</dt><dd>{fmt(subscription.trial_ends_at)}</dd></div>
+              <div className="flex justify-between"><dt className="text-slate-500">חיוב הבא</dt><dd>{fmt(subscription.current_period_end)}</dd></div>
+            </dl>
+          </>
+        ) : (
+          <div className="text-slate-400 text-xs">אין מנוי פעיל.</div>
+        )}
+      </div>
     </div>
   );
 }

@@ -5,6 +5,7 @@
 import { useEffect, useState } from 'react';
 import { Loader2, Clock, Gift, Ban } from 'lucide-react';
 import { apiFetch } from '@/lib/api/client';
+import { mapApiError } from '@/lib/api/errors';
 import {
   SUBSCRIPTION_STATUS_HE_SHORT,
   TIER_HE_SHORT,
@@ -44,7 +45,7 @@ export default function AdminSubscriptionsPage() {
       const params = new URLSearchParams();
       if (statusFilter) params.set('status', statusFilter);
       setRows(await apiFetch<AdminSubRow[]>(`/admin/subscriptions?${params.toString()}`));
-    } catch (e) { setError((e as Error).message ?? ''); }
+    } catch (e) { setError(mapApiError(e)); }
     finally { setLoading(false); }
   }
   useEffect(() => { refresh(); }, [statusFilter]);
@@ -56,7 +57,7 @@ export default function AdminSubscriptionsPage() {
     if (!Number.isFinite(days) || days < 1) return;
     setBusy(row.id);
     try { await apiFetch(`/admin/subscriptions/${row.id}/extend-trial`, { method: 'POST', body: JSON.stringify({ days }) }); await refresh(); }
-    catch (e) { setError((e as Error).message ?? ''); }
+    catch (e) { setError(mapApiError(e)); }
     finally { setBusy(null); }
   }
 
@@ -69,7 +70,7 @@ export default function AdminSubscriptionsPage() {
     if (!Number.isFinite(months) || months < 1) return;
     setBusy(row.id);
     try { await apiFetch(`/admin/subscriptions/${row.id}/grant`, { method: 'POST', body: JSON.stringify({ tier, months }) }); await refresh(); }
-    catch (e) { setError((e as Error).message ?? ''); }
+    catch (e) { setError(mapApiError(e)); }
     finally { setBusy(null); }
   }
 
@@ -77,7 +78,7 @@ export default function AdminSubscriptionsPage() {
     if (!confirm(`לבטל מנוי של "${row.entity_name || row.entity_id}"?`)) return;
     setBusy(row.id);
     try { await apiFetch(`/admin/subscriptions/${row.id}/revoke`, { method: 'POST' }); await refresh(); }
-    catch (e) { setError((e as Error).message ?? ''); }
+    catch (e) { setError(mapApiError(e)); }
     finally { setBusy(null); }
   }
 
@@ -105,6 +106,12 @@ export default function AdminSubscriptionsPage() {
 
       {loading ? (
         <div className="text-center py-16"><Loader2 className="w-6 h-6 animate-spin mx-auto text-slate-400" /></div>
+      ) : error ? (
+        // U11 §1 · when the fetch failed, DO NOT also render the empty
+        // state — the red banner above already tells the user what
+        // happened, and "אין מנויים תואמים" would mislead an admin
+        // scrolling past the banner into thinking the DB is empty.
+        null
       ) : rows.length === 0 ? (
         <div className="bg-white border border-slate-200 rounded-2xl p-10 text-center text-slate-500">
           אין מנויים תואמים

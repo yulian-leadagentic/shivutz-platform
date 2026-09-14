@@ -271,7 +271,14 @@ def list_years():
 @router.get("/gov-corps-registry/{year}")
 def preview_year(year: int):
     """Return all rows for a given year — used by the admin UI to
-    inspect what was parsed."""
+    inspect what was parsed.
+
+    U11 §2 · attaches a `stats` block so admins (and future Claudes)
+    can see at a glance whether the rows have real data or came out
+    of the parser blank. If `with_business_number` is 0 while row_count
+    is high, that's a parser regression — do NOT re-run the PDF import
+    (which would wipe manually-added rows); investigate the parser.
+    """
     conn = get_db("org_db")
     try:
         cur = conn.cursor()
@@ -285,6 +292,18 @@ def preview_year(year: int):
         for r in rows:
             if hasattr(r.get("imported_at"), "isoformat"):
                 r["imported_at"] = r["imported_at"].isoformat()
-        return {"year": year, "rows": rows}
+        # Per-field fill counts. NULL is the interesting case — every
+        # row has an id/source_year/imported_at (schema NOT NULL) so
+        # only the nullable columns show a meaningful count here.
+        def _filled(field: str) -> int:
+            return sum(1 for r in rows if r.get(field))
+        stats = {
+            "row_count":             len(rows),
+            "with_business_number":  _filled("business_number"),
+            "with_company_name_he":  _filled("company_name_he"),
+            "with_serial_no":        _filled("serial_no"),
+            "with_address":          _filled("address"),
+        }
+        return {"year": year, "rows": rows, "stats": stats}
     finally:
         conn.close()

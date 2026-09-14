@@ -436,6 +436,38 @@ export const adminApi = {
   enableUser: (id: string) =>
     apiFetch<void>(`/admin/users/${id}/enable`, { method: 'PATCH' }),
 
+  /** U11 §3 · lazy-loaded row-detail block for /admin/users. Returns
+   *  entity + owner-contact + subscription snapshot; every field can
+   *  come back null (admin user without entity, entity without paid
+   *  plan, etc.). Fetched on row expand, not preloaded. */
+  getUserDetails: (id: string) =>
+    apiFetch<{
+      user_id: string;
+      entity: null | {
+        id:              string;
+        type:            'contractor' | 'corporation' | 'service_provider';
+        name:            string | null;
+        business_number: string | null;
+        approval_status: string | null;
+        joined_at:       string | null;
+        seats_used:      number;
+        seats_included:  number | null;
+      };
+      owner: null | {
+        id:        string;
+        full_name: string | null;
+        phone:     string | null;
+        email:     string | null;
+      };
+      subscription: null | {
+        id:                 string;
+        tier:               string;
+        status:             string;
+        trial_ends_at:      string | null;
+        current_period_end: string | null;
+      };
+    }>(`/admin/users/${id}/details`),
+
   // ── Org status (suspend / reactivate) ──────────────────────────────────
   setOrgStatus: (id: string, orgType: 'contractor' | 'corporation',
                  status: 'approved' | 'suspended' | 'rejected') =>

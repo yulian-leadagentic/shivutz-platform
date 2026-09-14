@@ -51,13 +51,24 @@ def list_subscriptions(
         params.append(entity_type)
 
     # Payment DB doesn't have entity names — join via cross-schema query.
+    # U11 §1 · payment_db.subscriptions was declared with CHARSET=utf8mb4
+    # only (055:36) → defaults to utf8mb4_0900_ai_ci on MySQL 8. org_db
+    # tables are utf8mb4_unicode_ci (per 001). Joining CHAR(36) columns
+    # across those two collations raises "Illegal mix of collations" and
+    # returns as a generic 500 — exactly the U11 §1 symptom. Force both
+    # sides to unicode_ci at the join, matching the same workaround
+    # search.py:314 already uses for ads.owner_entity_id.
     sql = f"""
         SELECT s.*,
                COALESCE(c.company_name_he, c.company_name,
                         corp.company_name_he, corp.company_name) AS entity_name
           FROM payment_db.subscriptions s
-          LEFT JOIN org_db.contractors  c    ON c.id    = s.entity_id AND s.entity_type = 'contractor'
-          LEFT JOIN org_db.corporations corp ON corp.id = s.entity_id AND s.entity_type = 'corporation'
+          LEFT JOIN org_db.contractors  c
+            ON c.id    = s.entity_id COLLATE utf8mb4_unicode_ci
+           AND s.entity_type = 'contractor'
+          LEFT JOIN org_db.corporations corp
+            ON corp.id = s.entity_id COLLATE utf8mb4_unicode_ci
+           AND s.entity_type = 'corporation'
          {'WHERE ' + ' AND '.join(wheres) if wheres else ''}
          ORDER BY s.updated_at DESC
          LIMIT {limit}

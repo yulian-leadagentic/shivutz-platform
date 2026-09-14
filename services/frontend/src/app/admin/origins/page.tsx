@@ -8,6 +8,7 @@
 import { useEffect, useState } from 'react';
 import { Loader2, Plus, Edit2, Save, X, EyeOff, Eye, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { adminApi } from '@/lib/adminApi';
+import { mapApiError } from '@/lib/api/errors';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ISO_COUNTRIES } from '@/data/iso3166';
@@ -61,7 +62,7 @@ export default function AdminOriginsPage() {
       });
       setRows(data);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'שגיאה בטעינת רשימת הארצות');
+      setError(mapApiError(e));
     } finally { setLoading(false); }
   }
 
@@ -82,7 +83,7 @@ export default function AdminOriginsPage() {
       setEditingCode(null);
       await reload();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'שגיאה בעדכון');
+      setError(mapApiError(e));
     } finally { setRowBusy(null); }
   }
 
@@ -94,7 +95,7 @@ export default function AdminOriginsPage() {
       flashToast(isActive(c) ? 'הארץ הושבתה' : 'הארץ הופעלה');
       await reload();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'שגיאה בשינוי הסטטוס');
+      setError(mapApiError(e));
     } finally { setRowBusy(null); }
   }
 
@@ -110,7 +111,7 @@ export default function AdminOriginsPage() {
       setAdding(false);
       await reload();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'שגיאה בהוספה');
+      setError(mapApiError(e));
     } finally { setSaving(false); }
   }
 

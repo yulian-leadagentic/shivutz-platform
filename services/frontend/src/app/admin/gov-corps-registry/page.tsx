@@ -215,19 +215,26 @@ export default function AdminGovCorpsPage() {
   );
 }
 
+// U11 §2 · fields that the endpoint ALWAYS returns are non-optional.
+// Optional-marker `?` on a field the API commits to send hides a
+// silent renderer regression (Yulian saw 450 rows of `—` and only the
+// count widget in the header revealed there was data at all). id +
+// source_year + imported_at are set on every INSERT; the rest come
+// from the parser and can legitimately be null on rows without a
+// business_number, so those stay `T | null` (no `?`).
 interface RegistryRow {
-  id: string;
-  serial_no?: number | null;
-  business_number?: string | null;
-  company_name_he?: string | null;
-  address?: string | null;
-  phone_mobile_1?: string | null;
-  phone_mobile_2?: string | null;
-  phone_landline_1?: string | null;
-  phone_landline_2?: string | null;
-  source_year?: number;
-  imported_at?: string;
-  imported_by?: string | null;
+  id:               string;
+  source_year:      number;
+  imported_at:      string;
+  serial_no:        number | null;
+  business_number:  string | null;
+  company_name_he:  string | null;
+  address:          string | null;
+  phone_mobile_1:   string | null;
+  phone_mobile_2:   string | null;
+  phone_landline_1: string | null;
+  phone_landline_2: string | null;
+  imported_by:      string | null;
 }
 
 /**

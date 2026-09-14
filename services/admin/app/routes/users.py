@@ -73,6 +73,174 @@ def list_users(role: Optional[str] = None):
         conn.close()
 
 
+# ── U11 §3 · Per-user expandable-row detail ────────────────────────────────
+
+@router.get("/users/{user_id}/details")
+def user_details(user_id: str):
+    """Composite detail block for the /admin/users expandable row.
+
+    Returns (entity, owner, subscription) so the admin sees:
+      - the ENTITY this user belongs to (name, type, business_number,
+        approval status, when joined),
+      - the ENTITY OWNER's name/phone/email — NOT the row-user's own
+        contact, per U11 §3 spec ("מנהל שרואה משתמש רוצה לדעת למי
+        להתקשר"),
+      - the entity's current subscription (tier, status, period end,
+        `X of Y` seat count).
+
+    Lazy-fetched on click, not preloaded — see U11 §3b · 13 users today
+    but the join is per-row and would degrade a 300-user list.
+
+    Fields can each independently come back null: an admin user without
+    an entity → entity=owner=subscription=null. A contractor without
+    a paid plan → subscription=null (that's "אין מנוי פעיל", NOT an
+    error — U5 §3 rule).
+    """
+    conn = get_db("auth_db")
+    try:
+        cur = conn.cursor()
+        # 1. User row + entity membership
+        cur.execute(
+            """SELECT u.id, u.role, u.org_id, u.org_type, u.phone, u.full_name,
+                      u.email, u.created_at
+                 FROM users u
+                WHERE u.id = %s AND u.deleted_at IS NULL LIMIT 1""",
+            (user_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="user_not_found")
+
+        entity: Optional[dict] = None
+        owner:  Optional[dict] = None
+        subscription: Optional[dict] = None
+
+        org_id   = row.get("org_id")
+        org_type = row.get("org_type")
+
+        # 2. Entity block (contractor / corporation / service_provider)
+        if org_id and org_type in ("contractor", "corporation", "service_provider"):
+            entity_cur = conn.cursor()
+            if org_type == "contractor":
+                entity_cur.execute(
+                    """SELECT id, company_name_he AS name, company_name,
+                              business_number, approval_status, created_at
+                         FROM org_db.contractors
+                        WHERE id = %s AND deleted_at IS NULL LIMIT 1""",
+                    (org_id,),
+                )
+            elif org_type == "corporation":
+                entity_cur.execute(
+                    """SELECT id, company_name_he AS name, company_name,
+                              business_number, approval_status, created_at
+                         FROM org_db.corporations
+                        WHERE id = %s AND deleted_at IS NULL LIMIT 1""",
+                    (org_id,),
+                )
+            else:  # service_provider
+                entity_cur.execute(
+                    """SELECT id, name, business_number,
+                              status AS approval_status, created_at
+                         FROM org_db.service_providers
+                        WHERE id = %s AND deleted_at IS NULL LIMIT 1""",
+                    (org_id,),
+                )
+            e = entity_cur.fetchone()
+            if e:
+                entity = {
+                    "id":              e["id"],
+                    "type":            org_type,
+                    "name":            e.get("name") or e.get("company_name"),
+                    "business_number": e.get("business_number"),
+                    "approval_status": e.get("approval_status"),
+                    "joined_at":       e["created_at"].isoformat() if e.get("created_at") else None,
+                }
+
+            # 3. Owner — first active 'owner'-role membership on the entity
+            owner_cur = conn.cursor()
+            owner_cur.execute(
+                """SELECT ou.id, ou.full_name, ou.phone, ou.email
+                     FROM entity_memberships em
+                     JOIN users ou ON ou.id = em.user_id
+                    WHERE em.entity_id = %s AND em.entity_type = %s
+                      AND em.role = 'owner' AND em.is_active = TRUE
+                    ORDER BY em.invitation_accepted_at ASC LIMIT 1""",
+                (org_id, org_type),
+            )
+            o = owner_cur.fetchone()
+            if o:
+                owner = {
+                    "id":        o["id"],
+                    "full_name": o.get("full_name"),
+                    "phone":     o.get("phone"),
+                    "email":     o.get("email"),
+                }
+
+            # 4. Subscription — same cross-schema join pattern as U11 §1
+            # (payment_db.subscriptions.entity_id needs explicit COLLATE
+            # or MySQL 8 throws "Illegal mix of collations"). Provider
+            # entities are free by decree — no payment_db row exists.
+            if org_type in ("contractor", "corporation"):
+                sub_cur = conn.cursor()
+                sub_cur.execute(
+                    """SELECT s.id, s.tier, s.status,
+                              s.trial_ends_at, s.current_period_end
+                         FROM payment_db.subscriptions s
+                        WHERE s.entity_id = %s COLLATE utf8mb4_unicode_ci
+                          AND s.entity_type = %s
+                        ORDER BY s.updated_at DESC LIMIT 1""",
+                    (org_id, org_type),
+                )
+                s = sub_cur.fetchone()
+                if s:
+                    subscription = {
+                        "id":                 s["id"],
+                        "tier":               s["tier"],
+                        "status":             s["status"],
+                        "trial_ends_at":      s["trial_ends_at"].isoformat() if s.get("trial_ends_at") else None,
+                        "current_period_end": s["current_period_end"].isoformat() if s.get("current_period_end") else None,
+                    }
+
+            # 5. Seat count — active members / plan.included_users. Miss
+            # either side gracefully; falls back to `used` only.
+            seat_cur = conn.cursor()
+            seat_cur.execute(
+                """SELECT COUNT(*) AS n
+                     FROM entity_memberships
+                    WHERE entity_id = %s AND entity_type = %s
+                      AND is_active = TRUE
+                      AND invitation_accepted_at IS NOT NULL""",
+                (org_id, org_type),
+            )
+            seat_row = seat_cur.fetchone()
+            used = int(seat_row["n"]) if seat_row else 0
+            included = None
+            if subscription and subscription.get("tier"):
+                plan_cur = conn.cursor()
+                plan_cur.execute(
+                    """SELECT included_users
+                         FROM payment_db.subscription_plans
+                        WHERE entity_type = %s AND tier = %s
+                        LIMIT 1""",
+                    (org_type, subscription["tier"]),
+                )
+                plan_row = plan_cur.fetchone()
+                if plan_row and plan_row.get("included_users") is not None:
+                    included = int(plan_row["included_users"])
+            if entity:
+                entity["seats_used"]     = used
+                entity["seats_included"] = included
+
+        return {
+            "user_id":      row["id"],
+            "entity":       entity,
+            "owner":        owner,
+            "subscription": subscription,
+        }
+    finally:
+        conn.close()
+
+
 # ── Add a new admin user ───────────────────────────────────────────────────
 
 class AdminUserIn(BaseModel):
