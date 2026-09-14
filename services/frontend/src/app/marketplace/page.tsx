@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import {
   Search, Loader2, Home, Wrench, Briefcase, MoreHorizontal,
   Building2, Filter, X, Tag,
@@ -55,14 +56,24 @@ function SkeletonCard() {
 
 export default function MarketplacePage() {
   const { regions } = useEnums();
+  const params = useSearchParams();
   const [listings, setListings] = useState<MarketplaceListing[]>([]);
   const [loading, setLoading]   = useState(true);
   const [categories, setCategories] = useState<CategoryOption[]>(FALLBACK_CATEGORIES);
 
-  const [category, setCategory] = useState('');
-  const [region, setRegion]     = useState('');
-  const [search, setSearch]     = useState('');
-  const [searchInput, setSearchInput] = useState('');
+  // U6 §2 — hydrate the filter state from `?search=` / `?category=` /
+  // `?region=` on the URL so the landing's "עוד ב״שירותים נלווים״"
+  // link lands here pre-filtered. Read once at mount only; further
+  // typing in the search box drives state via handleSearch below.
+  // Marketplace was written before the landing needed to deep-link
+  // into it, so `?search=` was ignored until now.
+  const initialSearch   = params?.get('search')   ?? '';
+  const initialCategory = params?.get('category') ?? '';
+  const initialRegion   = params?.get('region')   ?? '';
+  const [category, setCategory] = useState(initialCategory);
+  const [region, setRegion]     = useState(initialRegion);
+  const [search, setSearch]     = useState(initialSearch);
+  const [searchInput, setSearchInput] = useState(initialSearch);
 
   const [loadError, setLoadError] = useState<string | null>(null);
 
