@@ -6,6 +6,49 @@ import { mapApiError, type ApiErrorPayload } from './errors';
 export const BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api';
 
 /**
+ * Resolve `path` to a URL that Node's fetch will accept.
+ *
+ * BASE is inlined at build time from NEXT_PUBLIC_API_URL. On Railway
+ * staging it's `/api` — perfect for browsers (same-origin) but fatal
+ * for the Node SSR process because Node's fetch throws
+ * `TypeError: Invalid URL` when given a relative URL. That's exactly
+ * what was making `/terms`, `/privacy`, and `/accessibility` render as
+ * 404 after U5's `force-dynamic` fix (see U5 build-unblock report).
+ *
+ * Rule:
+ *   Browser → return `${BASE}${path}` verbatim (relative works fine).
+ *   Node server-side → prepend an absolute URL. Precedence:
+ *     1. INTERNAL_API_URL env var (per-env override)
+ *     2. Railway container-network gateway (`http://gateway.railway.internal:3000`)
+ *     3. Local Docker Compose gateway (`http://localhost:3000`)
+ *
+ * We resolve INSIDE apiFetch (not at module load) so a config change on
+ * the running container doesn't need a rebuild.
+ */
+function ssrResolvedUrl(path: string): string {
+  if (typeof window !== 'undefined') return `${BASE}${path}`;
+  // Server-side. If BASE is already absolute (http/https), use it.
+  if (/^https?:\/\//i.test(BASE)) return `${BASE}${path}`;
+  const override = process.env.INTERNAL_API_URL;
+  if (override && /^https?:\/\//i.test(override)) return `${override.replace(/\/$/, '')}${path}`;
+  // Railway container network first, then Docker Compose fallback.
+  // We can't know which one is live from inside this module, so we
+  // pick Railway (production-shaped) and let the Docker Compose dev
+  // environment set INTERNAL_API_URL explicitly if it needs the
+  // localhost path.
+  const railwayFallback = 'http://gateway.railway.internal:3000';
+  return `${railwayFallback}${BASE.startsWith('/') ? BASE : '/api'}${path}`;
+}
+
+// U5 build-fix (Railway diagnosis) — cap SSR fetches so a hanging
+// upstream doesn't stall page rendering (or worse, static prerender).
+// 8s is well over any real gateway timeout but short enough that a
+// dropped connection surfaces the null-fallback before Next.js kills
+// the request. Only applied server-side; browser fetches keep whatever
+// timeout the user's network gives them.
+const SSR_FETCH_TIMEOUT_MS = 8_000;
+
+/**
  * Turn a server-stored file URL into something the browser can fetch.
  *
  * Uploaded-document rows store `file_url` as a path-only string starting
@@ -287,7 +330,17 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...(options.headers as Record<string, string> | undefined),
   };
-  const res = await fetch(`${BASE}${path}`, { ...options, headers });
+  const url = ssrResolvedUrl(path);
+  const isSsr = typeof window === 'undefined';
+  // Attach an abort timeout only for SSR — see SSR_FETCH_TIMEOUT_MS.
+  const ac = isSsr ? new AbortController() : null;
+  const timer = ac ? setTimeout(() => ac.abort(), SSR_FETCH_TIMEOUT_MS) : null;
+  let res: Response;
+  try {
+    res = await fetch(url, { ...options, headers, signal: ac?.signal });
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
   if (res.status === 401 && typeof window !== 'undefined') {
     // U5 §1 · P0 — anonymous visitor hitting a closed endpoint (e.g.
     // /ads/public/recent after L2 closed it) used to be blanket-
@@ -314,7 +367,7 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
         Authorization: `Bearer ${newToken}`,
         ...(options.headers as Record<string, string> | undefined),
       };
-      const retry = await fetch(`${BASE}${path}`, { ...options, headers: retryHeaders });
+      const retry = await fetch(ssrResolvedUrl(path), { ...options, headers: retryHeaders });
       if (retry.status !== 401) {
         if (!retry.ok) {
           const { hebrew, payload } = await toHebrewAndPayload(retry);
