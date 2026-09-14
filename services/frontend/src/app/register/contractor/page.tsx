@@ -568,6 +568,8 @@ function RegisterContractorInner() {
                 <Input
                   label="מספר טלפון נייד"
                   type="tel"
+                  inputMode="tel"
+                  name="phone"
                   placeholder="050-0000000"
                   value={step1.phone}
                   onChange={(e) => setStep1((p) => ({ ...p, phone: e.target.value }))}

@@ -274,10 +274,14 @@ function LoginPageInner() {
     // surfaced as the generic "הבקשה לא תקינה" because err.code was
     // undefined (fixed on the server side too in otp.js).
     const check = checkIsraeliPhone(phone);
-    if (!check.valid) { setError(check.message ?? PHONE_ERROR_INVALID); return; }
+    if (!check.valid || !check.normalized) { setError(check.message ?? PHONE_ERROR_INVALID); return; }
     setLoading(true);
     try {
-      const res = await otpApi.sendOtp(phone.trim(), 'login');
+      // U8 §4a — send the normalized form, not the raw text. Before
+      // this fix, the caller passed `phone.trim()` and a user who
+      // typed `052-526-7879` or a mix like `0525267879גגג` shipped
+      // that mixed string straight to the SMS gateway.
+      const res = await otpApi.sendOtp(check.normalized, 'login');
       setNormPhone(res.phone);
       setOtpPhase('code');
       setCode('');
@@ -402,6 +406,8 @@ function LoginPageInner() {
                 <Input
                   label="מספר טלפון נייד"
                   type="tel"
+                  inputMode="tel"
+                  name="phone"
                   placeholder="050-0000000"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}

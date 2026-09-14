@@ -10,6 +10,7 @@ from app.services import rate_limit
 from app.services.entity_access import require_entity_access
 from app.services import notification_recipients as notif_recipients
 from app.services import team_membership as team_mgmt
+from app.services.phone_normalize import InvalidPhone, normalize_israeli_phone
 from app.services import membership_requests as mreq
 from app.services.subscription_limits import fetch_entitlement, tier_limits
 from app.integrations import data_gov_il
@@ -613,6 +614,17 @@ async def invite_corporation_user(
     x_user_id: Optional[str] = Header(None),
 ):
     """Send a phone-based team invitation."""
+    # U8 §4c — server-side border. The frontend now sends the
+    # normalized form (checkIsraeliPhone().normalized), but this
+    # route is directly reachable, and stored `invited_phone` used
+    # to accept "0525267879גגג" verbatim then propagate it to the
+    # team.invited SMS payload. Reject unless the input strictly
+    # matches an Israeli mobile pattern.
+    try:
+        data.phone = normalize_israeli_phone(data.phone)
+    except InvalidPhone as e:
+        raise HTTPException(status_code=400, detail={"code": e.code, "error": e.code})
+
     conn = get_db()
     try:
         cur = conn.cursor()

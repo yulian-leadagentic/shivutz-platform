@@ -27,16 +27,54 @@ export interface PhoneCheck {
   valid:   boolean;
   /** Localized Hebrew message for the failure case. `null` on valid. */
   message: string | null;
+  /**
+   * U8 §4a — canonical form of a valid phone. Callers MUST send THIS
+   * to the server, not the raw text. `null` on invalid.
+   *
+   *   05XXXXXXXX   (10-digit local form, kept for the SMS provider)
+   *   +972XXXXXXXXX (international form)
+   *
+   * Design note: we intentionally return the local `05XXXXXXXX`
+   * shape unchanged for legacy backends that regex on it. The
+   * backend's `normalisePhone` (services/auth/src/otp.js) accepts
+   * both.
+   */
+  normalized: string | null;
 }
 
-/** Same rule the backend applies. Returns `{valid, message}` so the
- *  caller can decide whether to show `PHONE_ERROR_REQUIRED` for a
- *  blank field vs `PHONE_ERROR_INVALID` for a malformed one. */
+// U8 §4a — characters the input may legitimately contain around the
+// digits. Everything else (letters, punctuation, control chars) is
+// forbidden from the START — the old validator stripped these out
+// with `replace(/\D/g, '')` BEFORE the length check, so
+// `0525267879גגג` passed as valid then the caller sent the raw text
+// with the Hebrew letters straight to the SMS gateway. The
+// backend's normalisePhone shares the same permissiveness, so a
+// server-side re-validate wouldn't have saved us either.
+const COSMETIC_CHARS = /[\s\-()]/g;
+
+/** Same rule the backend applies. Returns `{valid, message, normalized}`
+ *  so callers can (a) show `PHONE_ERROR_REQUIRED` for a blank field vs
+ *  `PHONE_ERROR_INVALID` for a malformed one, and (b) send the
+ *  canonical form to the server instead of the raw text. */
 export function checkIsraeliPhone(raw: string | null | undefined): PhoneCheck {
   const trimmed = (raw ?? '').trim();
-  if (trimmed.length === 0) return { valid: false, message: PHONE_ERROR_REQUIRED };
-  const digits = trimmed.replace(/\D/g, '');
-  if (digits.startsWith('972') && digits.length === 12) return { valid: true, message: null };
-  if (digits.startsWith('0')   && digits.length === 10) return { valid: true, message: null };
-  return { valid: false, message: PHONE_ERROR_INVALID };
+  if (trimmed.length === 0) {
+    return { valid: false, message: PHONE_ERROR_REQUIRED, normalized: null };
+  }
+  // U8 §4a — strip ONLY cosmetic formatting (spaces, dashes,
+  // parentheses). What remains MUST be digits, with an optional
+  // leading `+`. Anything else — Hebrew letters, dots, slashes,
+  // emoji — makes the input invalid up front.
+  const stripped = trimmed.replace(COSMETIC_CHARS, '');
+  if (!/^\+?\d+$/.test(stripped)) {
+    return { valid: false, message: PHONE_ERROR_INVALID, normalized: null };
+  }
+  const digits = stripped.replace(/^\+/, '');
+  if (digits.startsWith('972') && digits.length === 12) {
+    return { valid: true, message: null, normalized: '+' + digits };
+  }
+  if (digits.startsWith('0') && digits.length === 10) {
+    return { valid: true, message: null, normalized: digits };
+  }
+  return { valid: false, message: PHONE_ERROR_INVALID, normalized: null };
 }

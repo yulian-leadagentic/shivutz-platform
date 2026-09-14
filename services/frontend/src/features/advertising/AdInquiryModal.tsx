@@ -11,6 +11,7 @@ import { X, Loader2, CheckCircle2, Send } from 'lucide-react';
 import { apiFetch } from '@/lib/api/client';
 import { useModalA11y } from '@/components/ui/useModalA11y';
 import { checkIsraeliPhone } from '@/lib/phone';
+import { mapApiError } from '@/lib/api/errors';
 
 export function AdInquiryModal({
   open,
@@ -54,22 +55,32 @@ export function AdInquiryModal({
     // positived (a random 9-char string would pass). Now the same
     // rule the auth service uses in normalisePhone().
     const check = checkIsraeliPhone(phone);
-    if (!check.valid) { setError(check.message ?? 'מספר טלפון לא תקין'); return; }
+    if (!check.valid || !check.normalized) {
+      setError(check.message ?? 'מספר טלפון לא תקין');
+      return;
+    }
     setBusy(true);
     setError('');
     try {
+      // U8 §4a — send the normalized form; the raw text may contain
+      // legitimate cosmetic formatting (dashes/spaces) OR the older
+      // trap of appended letters. Support tickets going out to the
+      // admin should be in a consistent shape.
       await apiFetch('/support-tickets', {
         method: 'POST',
         body: JSON.stringify({
           subject: `[${subject}] ${name.trim()}`,
-          body:    `טלפון: ${phone.trim()}\n\n${message.trim() || '(ללא הודעה)'}`,
+          body:    `טלפון: ${check.normalized}\n\n${message.trim() || '(ללא הודעה)'}`,
           contact_name:  name.trim(),
-          contact_phone: phone.trim(),
+          contact_phone: check.normalized,
         }),
       });
       setSent(true);
     } catch (e) {
-      setError((e as Error).message ?? 'שגיאה בשליחה');
+      // U8 §3 — this callback was using the raw .message which
+      // caught defect (b) — mapApiError now handles the fallback
+      // properly, use it here too for a consistent Hebrew string.
+      setError(mapApiError(e));
     } finally { setBusy(false); }
   }
 

@@ -7,6 +7,7 @@ import { memberApi, type TeamMember } from '@/lib/api';
 import { adApi, type UsageResponse } from '@/lib/api/ads';
 import { ApiError } from '@/lib/api/client';
 import { mapApiError } from '@/lib/api/errors';
+import { checkIsraeliPhone } from '@/lib/phone';
 import { useAuth } from '@/lib/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -108,11 +109,16 @@ export default function ContractorUsersPage() {
   async function handleInvite(e: FormEvent) {
     e.preventDefault();
     if (!entityId) return;
-    if (!phone.trim()) { setError('יש להזין מספר טלפון'); return; }
+    // U8 §4 — same treatment as /corporation/users. Was only `!phone.trim()`.
+    const check = checkIsraeliPhone(phone);
+    if (!check.valid || !check.normalized) {
+      setError(check.message ?? 'מספר טלפון לא תקין');
+      return;
+    }
     setSaving(true); setError(''); setSuccess('');
     try {
       const m = await memberApi.invite('contractors', entityId, {
-        phone:      phone.trim(),
+        phone:      check.normalized,
         role,
         jobTitle:   jobTitle || undefined,
         firstName:  firstName.trim() || undefined,
@@ -123,7 +129,7 @@ export default function ContractorUsersPage() {
         membership_id: m.membership_id, user_id: null, role: m.role,
         job_title: jobTitle || null, is_active: false,
         invitation_accepted_at: null, created_at: new Date().toISOString(),
-        phone: phone.trim(), full_name: fullName, email: null, pending: true,
+        phone: check.normalized!, full_name: fullName, email: null, pending: true,
         invited_first_name: firstName.trim() || null,
         invited_last_name:  lastName.trim()  || null,
       }]);
@@ -291,6 +297,9 @@ export default function ContractorUsersPage() {
             <Input
               label="מספר טלפון נייד"
               type="tel"
+              inputMode="tel"
+              name="phone"
+              autoComplete="tel"
               placeholder="050-0000000"
               dir="ltr"
               value={phone}

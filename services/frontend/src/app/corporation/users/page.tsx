@@ -7,6 +7,7 @@ import { memberApi, type TeamMember } from '@/lib/api';
 import { adApi, type UsageResponse } from '@/lib/api/ads';
 import { ApiError } from '@/lib/api/client';
 import { mapApiError } from '@/lib/api/errors';
+import { checkIsraeliPhone } from '@/lib/phone';
 import { useAuth } from '@/lib/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -124,11 +125,19 @@ export default function CorporationUsersPage() {
   async function handleInvite(e: FormEvent) {
     e.preventDefault();
     if (!entityId) return;
-    if (!phone.trim()) { setError('יש להזין מספר טלפון'); return; }
+    // U8 §4 — full validation. The old check was `!phone.trim()`
+    // (just "not empty"), which let `0525267879גגג` and `08976567654`
+    // through, and the raw text with Hebrew letters shipped to the
+    // SMS gateway. Validate + send `normalized`.
+    const check = checkIsraeliPhone(phone);
+    if (!check.valid || !check.normalized) {
+      setError(check.message ?? 'מספר טלפון לא תקין');
+      return;
+    }
     setSaving(true); setError(''); setSuccess('');
     try {
       const m = await memberApi.invite('corporations', entityId, {
-        phone:      phone.trim(),
+        phone:      check.normalized,
         role,
         jobTitle:   jobTitle || undefined,
         firstName:  firstName.trim() || undefined,
@@ -139,7 +148,7 @@ export default function CorporationUsersPage() {
         membership_id: m.membership_id, user_id: null, role: m.role,
         job_title: jobTitle || null, is_active: false,
         invitation_accepted_at: null, created_at: new Date().toISOString(),
-        phone: phone.trim(), full_name: fullName, email: null, pending: true,
+        phone: check.normalized!, full_name: fullName, email: null, pending: true,
         invited_first_name: firstName.trim() || null,
         invited_last_name:  lastName.trim()  || null,
       }]);
@@ -312,6 +321,9 @@ export default function CorporationUsersPage() {
             <Input
               label="מספר טלפון נייד"
               type="tel"
+              inputMode="tel"
+              name="phone"
+              autoComplete="tel"
               placeholder="050-0000000"
               dir="ltr"
               value={phone}

@@ -24,7 +24,19 @@ function normalisePhone(raw) {
   // already exists in lib/api/errors.ts. That's the actual "unclear
   // error message" bug — the string was there, just never wired up.
   if (!raw) throw Object.assign(new Error('phone_required'), { status: 400, code: 'phone_required' });
-  const digits = String(raw).replace(/\D/g, '');
+  // U8 §4c — server-side border. The frontend now sends canonical
+  // `checkIsraeliPhone().normalized` (see lib/phone.ts), but this
+  // path is also called directly by /otp/send-otp from any client.
+  // Reject inputs that carry non-formatting characters BEFORE the
+  // digits-only strip — that's the exact hole `0525267879גגג` used
+  // to walk through: the old .replace(/\D/g,'') tossed the Hebrew
+  // suffix and produced a valid-looking 10-digit number. Cosmetic
+  // formatting (spaces, dashes, parens, leading `+`) still allowed.
+  const stripped = String(raw).trim().replace(/[\s\-()]/g, '');
+  if (!/^\+?\d+$/.test(stripped)) {
+    throw Object.assign(new Error('invalid_phone'), { status: 400, code: 'invalid_phone' });
+  }
+  const digits = stripped.replace(/^\+/, '');
   if (digits.startsWith('972') && digits.length === 12) return '+' + digits;
   if (digits.startsWith('0')   && digits.length === 10) return '+972' + digits.slice(1);
   throw Object.assign(new Error('invalid_phone'), { status: 400, code: 'invalid_phone' });

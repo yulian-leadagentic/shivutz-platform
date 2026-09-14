@@ -125,16 +125,19 @@ export default function BillingPage() {
 
   async function addMember() {
     if (!entityId || !isContractor) return;
-    const phone = newPhone.trim();
-    // H11 §3.2 — unified with the auth-service phone rule (was
-    // `length < 9` which accepted junk 9-char strings and rejected
-    // reasonable partials).
-    const check = checkIsraeliPhone(phone);
-    if (!check.valid) { setError(check.message ?? 'מספר טלפון לא תקין'); return; }
+    // U8 §4a — validate the raw text then send the NORMALIZED
+    // form. `phone.trim()` used to ship "0525267879גגג" straight to
+    // the server. `check.normalized` is always the canonical form
+    // (0XXXXXXXXX or +972XXXXXXXXX).
+    const check = checkIsraeliPhone(newPhone);
+    if (!check.valid || !check.normalized) {
+      setError(check.message ?? 'מספר טלפון לא תקין');
+      return;
+    }
     setBusyMem('add');
     setError('');
     try {
-      await memberApi.invite('contractors', entityId, { phone, role: 'member' });
+      await memberApi.invite('contractors', entityId, { phone: check.normalized, role: 'member' });
       setNewPhone('');
       const next = await memberApi.list('contractors', entityId);
       setMembers(next);
