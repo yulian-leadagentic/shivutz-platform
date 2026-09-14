@@ -24,8 +24,8 @@ export default function LandingFooter() {
                   "בקרוב" span was a dead label pointing at a working
                   page. Same fix as LandingNav (desktop + mobile). */}
               <li><Link href="/marketplace" className="hover:text-brand-600 transition-colors">שירותים נלווים</Link></li>
-              <li><Link href="/register/contractor" className="hover:text-brand-600 transition-colors">הצטרף כקבלן</Link></li>
-              <li><Link href="/register/corporation" className="hover:text-brand-600 transition-colors">הצטרף כתאגיד</Link></li>
+              <li><Link href="/register/contractor" className="hover:text-brand-600 transition-colors">הצטרף עכשיו כקבלן</Link></li>
+              <li><Link href="/register/corporation" className="hover:text-brand-600 transition-colors">הצטרף עכשיו כתאגיד</Link></li>
             </ul>
           </div>
 

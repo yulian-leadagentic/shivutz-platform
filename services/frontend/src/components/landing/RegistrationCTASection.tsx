@@ -56,7 +56,7 @@ export default function RegistrationCTASection({ onLeadCapture }: RegistrationCT
                 href="/register/contractor"
                 className="flex items-center justify-between w-full bg-brand-600 hover:bg-brand-800 text-slate-900 font-semibold text-sm px-5 py-3 rounded-xl transition-colors"
               >
-                <span>הצטרף כקבלן — בחינם</span>
+                <span>הצטרף עכשיו כקבלן — בחינם</span>
                 <ArrowLeft className="h-4 w-4" />
               </Link>
               {/* Secondary CTA — outlined button so its clickability is
@@ -91,7 +91,7 @@ export default function RegistrationCTASection({ onLeadCapture }: RegistrationCT
                 href="/register/corporation"
                 className="flex items-center justify-between w-full bg-navy-600 hover:bg-navy-500 text-white font-semibold text-sm px-5 py-3 rounded-xl transition-colors"
               >
-                <span>הצטרף כתאגיד — בחינם</span>
+                <span>הצטרף עכשיו כתאגיד — בחינם</span>
                 <ArrowLeft className="h-4 w-4" />
               </Link>
               <Button type="button" variant="outline" onClick={onLeadCapture} className="w-full">

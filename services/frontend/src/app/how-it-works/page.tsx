@@ -1,18 +1,12 @@
-// U5 §4 · full public "how it works" page.
-//
-// The home page has a collapsing HowItWorksSection component that F1
-// §4 locked the copy on. U5 §4 asks for a dedicated route so the nav
-// links to a full explanation instead of a hash-toggled accordion
-// that fights the sticky search bar for space on mobile. The three
-// step lines below are the SAME strings F1 §4 signed off on — do not
-// rephrase them here or in HowItWorksSection.tsx:
+// U5 §4 · full public "how it works" page. U6 §7 later removed the
+// home-page collapsing section — this route is now the ONE source
+// of truth for the F1 §4 three-step copy. Do not rephrase the three
+// step strings anywhere:
 //
 //   שואלים בעברית → המערכת מבינה ומציגה → מתחברים וחושפים קשר
 //
-// This page expands AROUND those three lines with separate reads for
-// contractors and corporations (their needs are different) and a
-// register CTA at the bottom. Content-only page — no data fetches,
-// so no gateway auth is needed. Fully public.
+// Content-only page — no data fetches, so no gateway auth is
+// needed. Fully public.
 
 import Link from 'next/link';
 import type { Metadata } from 'next';

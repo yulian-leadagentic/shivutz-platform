@@ -187,7 +187,7 @@ export default function LandingNav(_: LandingNavProps) {
                 href="/register/contractor"
                 className="text-sm font-semibold bg-brand-600 hover:bg-brand-800 text-slate-900 px-4 py-2 rounded-lg transition-colors shadow-sm"
               >
-                הצטרף
+                הצטרף עכשיו
               </Link>
             </>
           )}
@@ -252,7 +252,7 @@ export default function LandingNav(_: LandingNavProps) {
             ) : (
               <>
                 <Link href="/login" className="w-full text-center text-sm font-medium text-slate-600 py-2.5 rounded-lg hover:bg-slate-50 border border-slate-200" onClick={() => setMenuOpen(false)}>משתמש רשום? לחץ כאן</Link>
-                <Link href="/register/contractor" className="w-full text-center text-sm font-semibold text-slate-900 bg-brand-600 hover:bg-brand-800 py-2.5 rounded-lg" onClick={() => setMenuOpen(false)}>הצטרף</Link>
+                <Link href="/register/contractor" className="w-full text-center text-sm font-semibold text-slate-900 bg-brand-600 hover:bg-brand-800 py-2.5 rounded-lg" onClick={() => setMenuOpen(false)}>הצטרף עכשיו</Link>
               </>
             )}
           </div>

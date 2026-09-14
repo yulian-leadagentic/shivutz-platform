@@ -10,6 +10,7 @@ import json
 import uuid
 
 from app.db import get_db
+from app.services.search_normalize import normalize_search_term
 
 router = APIRouter()
 
@@ -137,9 +138,25 @@ def list_listings(
             conditions.append("ml.capacity >= %s")
             params.append(min_capacity)
         if search:
-            conditions.append("(ml.title LIKE %s OR ml.description LIKE %s OR ml.city LIKE %s)")
-            like = f"%{search}%"
-            params.extend([like, like, like])
+            # U6 §2b-1 — normalize before hitting LIKE. Raw user input
+            # was matched literally, so `ביטוח,` (with trailing comma,
+            # very common Hebrew habit) returned zero rows even though
+            # `ביטוח` did. The shared normalizer strips edge
+            # punctuation, splits multi-word queries into AND-of-LIKE
+            # tokens, and escapes `%`/`_` wildcards. When the input
+            # reduces to nothing (e.g. lone comma), we silently drop
+            # the search filter rather than returning zero rows.
+            _, tokens = normalize_search_term(search)
+            if tokens:
+                per_token = []
+                for tok in tokens:
+                    per_token.append(
+                        "(ml.title LIKE %s ESCAPE '\\\\' "
+                        "OR ml.description LIKE %s ESCAPE '\\\\' "
+                        "OR ml.city LIKE %s ESCAPE '\\\\')"
+                    )
+                    params.extend([tok, tok, tok])
+                conditions.append("(" + " AND ".join(per_token) + ")")
 
         where = " AND ".join(conditions)
         params.extend([limit, offset])

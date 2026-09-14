@@ -26,7 +26,6 @@ import { TrustBadge } from '@/components/ads/TrustBadge';
 import LandingNav from '@/components/landing/LandingNav';
 import LandingFooter from '@/components/landing/LandingFooter';
 import LeadCaptureModal from '@/components/landing/LeadCaptureModal';
-import HowItWorksSection from '@/components/landing/HowItWorksSection';
 // Landing IA — mount the mock-driven floating bubble. Was orphan
 // code; mounting it here surfaces marketplace-activity ambient
 // cues on the public landing (see LiveActivityFeed for the future
@@ -253,6 +252,17 @@ function LandingPageInner() {
       return () => clearTimeout(t);
     }
   }, [params]);
+
+  // U6 §7 — the collapsing HowItWorksSection on the home page was
+  // removed. Existing links to `/#how-it-works` (email, WhatsApp
+  // shares, bookmarks) must not silently 404 into the landing.
+  // Send them to the dedicated public page instead. `replace` (not
+  // push) so Back doesn't return to a hash that redirects again.
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.location.hash === '#how-it-works') {
+      router.replace('/how-it-works');
+    }
+  }, [router]);
 
   // H6 — publish live sticky-bar height to --sticky-h so scroll-margin
   // targets and the results-section spacer track the real element,
@@ -1843,18 +1853,10 @@ function LandingPageInner() {
             </section>
           )}
 
-          {/* RoleRegisterPicker — pre-F1 wrapped in `!resp && !loading`
-              alongside the "how-it-works" section. The picker is a
-              signup CTA that only makes sense to a visitor who
-              hasn't yet run a search, so it stays gated. */}
+          {/* RoleRegisterPicker — the picker is a signup CTA that
+              only makes sense to a visitor who hasn't yet run a
+              search, so it stays gated. */}
           {!resp && !loading && <RoleRegisterPicker />}
-
-          {/* F1 §4 — "איך זה עובד" now renders ALWAYS, below the
-              results area (or below the recent-ads grid when no
-              search has run). It stays as reference for visitors
-              who scroll to the end but doesn't compete with a
-              running search demo above the fold. */}
-          <HowItWorksSection />
         </main>
 
         <LandingFooter />

@@ -119,7 +119,7 @@ export default function MarketplacePreview() {
             href="/register/corporation"
             className="inline-flex items-center gap-2 bg-brand-600 hover:bg-brand-800 text-slate-900 font-semibold text-sm px-6 py-2.5 rounded-xl shadow-lg shadow-brand-600/20 transition-all hover:-translate-y-0.5"
           >
-            הצטרף כתאגיד
+            הצטרף עכשיו כתאגיד
             <ArrowLeft className="h-4 w-4" />
           </Link>
         </div>
