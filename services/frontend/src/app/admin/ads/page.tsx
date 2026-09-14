@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import { EyeOff, Eye, Trash2, Loader2 } from 'lucide-react';
 import { apiFetch } from '@/lib/api/client';
 import { TableToolbar } from '@/components/table/TableToolbar';
+import { AD_TYPE_HE, labelFor } from '@/lib/labels';
 
 interface AdminAdRow {
   id: string;
@@ -21,7 +22,9 @@ interface AdminAdRow {
   deleted_at: string | null;
 }
 
-const AD_TYPE_LABEL: Record<string, string> = { worker: 'עובדים', housing: 'דיור' };
+// U8 §1 — moved to lib/labels.ts (AD_TYPE_HE). Three files used to
+// define the same two-key map; consolidated so a future change
+// affects one place, not three.
 
 export default function AdminAdsPage() {
   const [ads, setAds]         = useState<AdminAdRow[]>([]);
@@ -136,7 +139,7 @@ export default function AdminAdsPage() {
                   <tr key={ad.id} className={`border-b border-slate-100 ${hidden ? 'opacity-50' : ''}`}>
                     <td className="px-3 py-2 max-w-xs truncate font-medium text-slate-900">{ad.title_he}</td>
                     <td className="px-3 py-2 text-slate-600">{ad.owner_name || '—'}</td>
-                    <td className="px-3 py-2 text-slate-600">{AD_TYPE_LABEL[ad.ad_type]}</td>
+                    <td className="px-3 py-2 text-slate-600">{labelFor(AD_TYPE_HE, ad.ad_type)}</td>
                     <td className="px-3 py-2">
                       {hidden
                         ? <span className="text-xs font-semibold text-red-700 bg-red-50 border border-red-200 rounded-full px-2 py-0.5">מחוק</span>

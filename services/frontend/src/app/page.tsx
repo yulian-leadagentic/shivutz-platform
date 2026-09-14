@@ -1898,8 +1898,14 @@ function LandingPageInner() {
                           </>
                         ) : (
                           <>
-                            {ad.profession_code && <span>{ad.profession_code}</span>}
-                            {ad.origin_country  && <span>· {ad.origin_country}</span>}
+                            {/* U8 §1 — was rendering raw enum codes
+                                (`flooring`, `CN`) on every recent-ads
+                                card. `labelFor` here is the local
+                                enum-array helper defined higher in
+                                this file, not the map-based one in
+                                lib/labels.ts. */}
+                            {ad.profession_code && <span>{labelFor(professions, ad.profession_code)}</span>}
+                            {ad.origin_country  && <span>· {labelFor(origins,     ad.origin_country)}</span>}
                             {ad.quantity        && <span>· {ad.quantity} עובדים</span>}
                           </>
                         )}

@@ -5,6 +5,10 @@
 import { useEffect, useState } from 'react';
 import { Loader2, Clock, Gift, Ban } from 'lucide-react';
 import { apiFetch } from '@/lib/api/client';
+import {
+  SUBSCRIPTION_STATUS_HE_SHORT,
+  TIER_HE_SHORT,
+} from '@/lib/labels';
 
 type Status = 'trialing' | 'active' | 'past_due' | 'cancelled' | 'expired';
 type Tier   = 'basic' | 'advanced' | 'pro';
@@ -21,10 +25,10 @@ interface AdminSubRow {
   updated_at: string;
 }
 
-const STATUS_LABEL: Record<Status, string> = {
-  trialing: 'ניסיון', active: 'פעיל', past_due: 'תשלום נכשל', cancelled: 'בוטל', expired: 'פג',
-};
-const TIER_LABEL: Record<Tier, string> = { basic: 'בסיסי', advanced: 'מתקדם', pro: 'פרו' };
+// U8 §1 — moved to lib/labels.ts (SUBSCRIPTION_STATUS_HE_SHORT +
+// TIER_HE_SHORT). Aliased here to keep the call sites tight.
+const STATUS_LABEL = SUBSCRIPTION_STATUS_HE_SHORT;
+const TIER_LABEL   = TIER_HE_SHORT;
 
 export default function AdminSubscriptionsPage() {
   const [rows, setRows]       = useState<AdminSubRow[]>([]);

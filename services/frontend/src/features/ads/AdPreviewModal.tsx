@@ -13,6 +13,8 @@ import {
 } from 'lucide-react';
 import type { AdCreateInput } from '@/lib/api/ads';
 import { useModalA11y } from '@/components/ui/useModalA11y';
+import { useEnums } from '@/features/enums/EnumsContext';
+import { labelFor } from '@/lib/labels';
 
 const PROFESSION_STYLE: Record<string, { grad: string; icon: typeof Hammer; label: string }> = {
   flooring:    { grad: 'from-orange-500 to-rose-600',    icon: Layers,       label: 'ריצוף' },
@@ -30,10 +32,10 @@ const PROFESSION_STYLE: Record<string, { grad: string; icon: typeof Hammer; labe
 const HOUSING_STYLE = { grad: 'from-emerald-500 to-teal-700', icon: Home,     label: 'דיור' };
 const DEFAULT_STYLE = { grad: 'from-slate-600 to-slate-800',   icon: Building2, label: 'מודעה' };
 
-const ORIGIN_LABEL: Record<string, string> = {
-  CN: 'סין', IN: 'הודו', LK: 'סרי לנקה', MD: 'מולדובה',
-  PH: 'פיליפינים', RO: 'רומניה', TH: 'תאילנד', UA: 'אוקראינה', UZ: 'אוזבקיסטן',
-};
+// U8 §1 — was hardcoded ORIGIN_LABEL. Origin values come from the
+// same origins enum EnumsContext publishes; the local copy went
+// stale whenever the DB added a new country. Wired to the context
+// inside the component.
 
 function styleFor(p: AdCreateInput) {
   if (p.ad_type === 'housing') return HOUSING_STYLE;
@@ -50,6 +52,7 @@ export function AdPreviewModal({
   onCancel: () => void;
   onConfirm: () => Promise<void>;
 }) {
+  const { originMap } = useEnums();
   const [busy, setBusy]   = useState(false);
   const [error, setError] = useState('');
   const dialogRef         = useRef<HTMLDivElement>(null);
@@ -125,7 +128,7 @@ export function AdPreviewModal({
               <p className="text-xs text-white/85 mt-0.5">
                 {isHousing
                   ? [payload.city, payload.price_per_bed_nis ? `₪${payload.price_per_bed_nis}/מיטה` : null].filter(Boolean).join(' · ')
-                  : [payload.origin_country && `מוצא: ${ORIGIN_LABEL[payload.origin_country] ?? payload.origin_country}`, payload.region].filter(Boolean).join(' · ')}
+                  : [payload.origin_country && `מוצא: ${labelFor(originMap, payload.origin_country)}`, payload.region].filter(Boolean).join(' · ')}
               </p>
             </div>
           </div>

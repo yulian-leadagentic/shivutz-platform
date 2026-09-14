@@ -15,11 +15,14 @@ import { ApiError } from '@/lib/api/client';
 import { getAccessToken, decodeJwtPayload } from '@/lib/auth';
 import { mapApiError } from '@/lib/api/errors';
 import { PublishFirstAdBanner } from '@/features/corporation/PublishFirstAdBanner';
+import {
+  SUBSCRIPTION_STATUS_HE_SHORT as STATUS_LABEL,
+  TIER_HE_SHORT as TIER_LABEL,
+} from '@/lib/labels';
 
-const STATUS_LABEL: Record<string, string> = {
-  trialing: 'ניסיון', active: 'פעיל', past_due: 'תשלום נכשל', cancelled: 'בוטל', expired: 'פג',
-};
-const TIER_LABEL: Record<string, string> = { basic: 'בסיסי', advanced: 'מתקדם', pro: 'פרו' };
+// U8 §1 — STATUS_LABEL + TIER_LABEL moved to lib/labels.ts. Same
+// values as the previous local copy — verified byte-identical
+// during the scan.
 
 function daysUntil(iso: string | null): number | null {
   if (!iso) return null;

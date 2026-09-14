@@ -8,6 +8,7 @@
 import { useEffect, useState } from 'react';
 import { Loader2, Save, Infinity as InfIcon } from 'lucide-react';
 import { apiFetch } from '@/lib/api/client';
+import { ENTITY_TYPE_HE, TIER_HE_SHORT } from '@/lib/labels';
 
 interface Plan {
   id:                     string;
@@ -29,8 +30,11 @@ interface Plan {
   updated_at:             string;
 }
 
-const ENTITY_LABEL = { contractor: 'קבלן', corporation: 'תאגיד' } as const;
-const TIER_LABEL   = { basic: 'בסיסי', advanced: 'מתקדם', pro: 'פרו' } as const;
+// U8 §1 — moved to lib/labels.ts (ENTITY_TYPE_HE — includes the
+// U7-reserved 'service_provider' key — and TIER_HE_SHORT). Aliased
+// here so the existing call sites don't need touching.
+const ENTITY_LABEL = ENTITY_TYPE_HE;
+const TIER_LABEL   = TIER_HE_SHORT;
 
 interface Draft {
   max_users:             string;   // "" = unlimited (hard cap)

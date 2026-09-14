@@ -13,14 +13,18 @@ import Link from 'next/link';
 import { Loader2, Download, RefreshCw, Phone, Mail, ChevronRight, Search } from 'lucide-react';
 import { revealsApi, type ContractorReveal } from '@/lib/api/reveals';
 import { mapApiError } from '@/lib/api/errors';
-
-const AD_TYPE_LABEL: Record<string, string> = { worker: 'עובדים', housing: 'דיור' };
+import { useEnums } from '@/features/enums/EnumsContext';
+import { AD_TYPE_HE, labelFor } from '@/lib/labels';
 
 function fmtDateTime(iso: string): string {
   try { return new Date(iso).toLocaleString('he-IL'); } catch { return iso; }
 }
 
 export default function ContractorRevealsPage() {
+  // U8 §1a — enum-driven labels (profession/origin/region) come from
+  // EnumsContext. Was showing raw codes ('flooring', 'CN') to the
+  // contractor next to the corp name they just paid to reveal.
+  const { professionMap, regionMap, originMap } = useEnums();
   const [rows, setRows]     = useState<ContractorReveal[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError]   = useState('');
@@ -113,10 +117,10 @@ export default function ContractorRevealsPage() {
                   <td className="px-3 py-2">
                     <div className="text-slate-900 font-medium">{r.title_he}</div>
                     <div className="text-xs text-slate-500 flex items-center gap-1 flex-wrap">
-                      <span>{AD_TYPE_LABEL[r.ad_type] || r.ad_type}</span>
-                      {r.profession_code && <><span>·</span><span>{r.profession_code}</span></>}
-                      {r.origin_country  && <><span>·</span><span>{r.origin_country}</span></>}
-                      {r.region          && <><span>·</span><span>{r.region}</span></>}
+                      <span>{labelFor(AD_TYPE_HE, r.ad_type)}</span>
+                      {r.profession_code && <><span>·</span><span>{labelFor(professionMap, r.profession_code)}</span></>}
+                      {r.origin_country  && <><span>·</span><span>{labelFor(originMap, r.origin_country)}</span></>}
+                      {r.region          && <><span>·</span><span>{labelFor(regionMap, r.region)}</span></>}
                       {r.ad_removed && <span className="ms-1 text-[10px] uppercase tracking-wider bg-slate-200 text-slate-700 rounded px-1.5">מודעה הוסרה</span>}
                     </div>
                   </td>

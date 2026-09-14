@@ -18,6 +18,8 @@ import {
 } from 'lucide-react';
 import { apiFetch } from '@/lib/api/client';
 import { PromotedBadge } from '@/components/ads/PromotedBadge';
+import { useEnums } from '@/features/enums/EnumsContext';
+import { labelFor } from '@/lib/labels';
 
 interface PublicAd {
   id:              string;
@@ -54,16 +56,10 @@ const PROFESSION_STYLE: Record<string, { grad: string; icon: typeof Hammer }> = 
 const HOUSING_STYLE = { grad: 'from-emerald-500 to-teal-700', icon: Home };
 const DEFAULT_STYLE = { grad: 'from-slate-600 to-slate-800',   icon: Building2 };
 
-const PROFESSION_LABEL: Record<string, string> = {
-  flooring: 'ריצוף', electrician: 'חשמל', electricity: 'חשמל',
-  painting: 'צביעה', plumbing: 'אינסטלציה', plastering: 'טיח',
-  formwork: 'תפסן', mason: 'בנאי', skeleton: 'ברזלן',
-  scaffolding: 'פיגומים', general: 'פועל כללי',
-};
-const ORIGIN_LABEL: Record<string, string> = {
-  CN: 'סין', IN: 'הודו', LK: 'סרי לנקה', MD: 'מולדובה',
-  PH: 'פיליפינים', RO: 'רומניה', TH: 'תאילנד', UA: 'אוקראינה', UZ: 'אוזבקיסטן',
-};
+// U8 §1 — was hardcoded PROFESSION_LABEL + ORIGIN_LABEL, both stale
+// clones of what EnumsContext already publishes from the DB. When
+// admin added a new profession code the carousel showed the raw
+// code until this file caught up. Now enum-driven.
 
 function styleFor(ad: PublicAd) {
   if (ad.ad_type === 'housing') return HOUSING_STYLE;
@@ -72,6 +68,7 @@ function styleFor(ad: PublicAd) {
 }
 
 export function FeaturedAdsCarousel() {
+  const { professionMap, originMap } = useEnums();
   const [ads, setAds] = useState<PublicAd[]>([]);
   const scroller = useRef<HTMLDivElement>(null);
 
@@ -132,8 +129,8 @@ export function FeaturedAdsCarousel() {
           const isHousing = ad.ad_type === 'housing';
           const st = styleFor(ad);
           const Icon = st.icon;
-          const profLabel = ad.profession_code ? (PROFESSION_LABEL[ad.profession_code] ?? ad.profession_code) : '';
-          const orgLabel  = ad.origin_country  ? (ORIGIN_LABEL[ad.origin_country]  ?? ad.origin_country)  : '';
+          const profLabel = ad.profession_code ? labelFor(professionMap, ad.profession_code, '') : '';
+          const orgLabel  = ad.origin_country  ? labelFor(originMap,     ad.origin_country,  '') : '';
           return (
             <a
               key={ad.id}

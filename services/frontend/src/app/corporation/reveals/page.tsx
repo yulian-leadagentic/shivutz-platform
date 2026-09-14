@@ -12,14 +12,21 @@ import Link from 'next/link';
 import { Loader2, Download, RefreshCw, ChevronRight } from 'lucide-react';
 import { revealsApi, type CorpReveal } from '@/lib/api/reveals';
 import { mapApiError } from '@/lib/api/errors';
-
-const AD_TYPE_LABEL: Record<string, string> = { worker: 'עובדים', housing: 'דיור' };
+import { useEnums } from '@/features/enums/EnumsContext';
+import { AD_TYPE_HE, labelFor } from '@/lib/labels';
 
 function fmtDateTime(iso: string): string {
   try { return new Date(iso).toLocaleString('he-IL'); } catch { return iso; }
 }
 
 export default function CorporationRevealsPage() {
+  // U8 §1a — enums are the SOURCE OF TRUTH for profession labels.
+  // The old code showed the raw ENUM code (`flooring`) whenever a
+  // corp opened the reveals table. `professionMap` was already
+  // available through EnumsContext — this file just wasn't reading
+  // it. If the map is empty (context not hydrated yet) `labelFor`
+  // falls back to the raw code, then to '—' if code is missing.
+  const { professionMap } = useEnums();
   const [rows, setRows]     = useState<CorpReveal[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError]   = useState('');
@@ -99,8 +106,8 @@ export default function CorporationRevealsPage() {
                 <tr key={r.id}>
                   <td className="px-3 py-2 tabular-nums text-slate-700">{fmtDateTime(r.revealed_at)}</td>
                   <td className="px-3 py-2 text-slate-900">{r.title_he}</td>
-                  <td className="px-3 py-2 text-slate-600">{AD_TYPE_LABEL[r.ad_type] || r.ad_type}</td>
-                  <td className="px-3 py-2 text-slate-600">{r.profession_code || '—'}</td>
+                  <td className="px-3 py-2 text-slate-600">{labelFor(AD_TYPE_HE, r.ad_type)}</td>
+                  <td className="px-3 py-2 text-slate-600">{labelFor(professionMap, r.profession_code)}</td>
                 </tr>
               ))}
             </tbody>

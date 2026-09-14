@@ -16,7 +16,14 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { Badge } from '@/components/ui/badge';
+import { CATEGORY_HE_FALLBACK, labelFor } from '@/lib/labels';
 
+// STATUS_LABELS stays local — U8 §1 flagged a value conflict on the
+// listing-status axis: the buyer-facing /marketplace/[id] page uses
+// 'זמין' (available), the corp management view uses 'פעיל' (active).
+// Different perspectives → different label sets, kept apart on
+// purpose. The color+label shape here also carries admin-view tone
+// (bg-emerald etc.) which the shared map does not.
 const STATUS_LABELS: Record<string, { label: string; cls: string }> = {
   active:  { label: 'פעיל',      cls: 'bg-emerald-100 text-emerald-700' },
   rented:  { label: 'מושכר',     cls: 'bg-blue-100 text-blue-700' },
@@ -24,9 +31,7 @@ const STATUS_LABELS: Record<string, { label: string; cls: string }> = {
   paused:  { label: 'מושהה',     cls: 'bg-amber-100 text-amber-700' },
 };
 
-const CATEGORY_HE: Record<string, string> = {
-  housing: 'דיור', equipment: 'ציוד', services: 'שירותים', other: 'אחר',
-};
+// U8 §1 — was a local copy of the four-key CATEGORY_HE map.
 
 function fmtDate(s?: string) {
   if (!s) return '—';
@@ -202,7 +207,7 @@ export default function CorporationMarketplacePage() {
                         <div className="min-w-0 flex-1">
                           <h3 className="font-medium text-slate-900 leading-snug">{l.title}</h3>
                           <p className="text-xs text-slate-500 mt-1">
-                            {CATEGORY_HE[l.category] ?? l.category} · {l.city || '—'}
+                            {labelFor(CATEGORY_HE_FALLBACK, l.category)} · {l.city || '—'}
                           </p>
                           <p className="text-xs text-slate-400 mt-0.5">{fmtDate(l.created_at)}</p>
                         </div>
@@ -258,7 +263,7 @@ export default function CorporationMarketplacePage() {
                     return (
                       <tr key={l.id} className="hover:bg-slate-50/50">
                         <td className="px-5 py-3 font-medium text-slate-900 max-w-xs truncate">{l.title}</td>
-                        <td className="px-5 py-3 text-slate-500">{CATEGORY_HE[l.category] ?? l.category}</td>
+                        <td className="px-5 py-3 text-slate-500">{labelFor(CATEGORY_HE_FALLBACK, l.category)}</td>
                         <td className="px-5 py-3 text-slate-500">{l.city || '—'}</td>
                         <td className="px-5 py-3 text-slate-400 text-xs">{fmtDate(l.created_at)}</td>
                         <td className="px-5 py-3">

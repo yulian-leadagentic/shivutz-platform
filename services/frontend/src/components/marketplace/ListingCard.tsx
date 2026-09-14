@@ -1,18 +1,15 @@
 import Link from 'next/link';
 import { MapPin, Users, CheckCircle2, Home, Wrench, Briefcase, MoreHorizontal } from 'lucide-react';
 import type { MarketplaceListing } from '@/types';
+import { CATEGORY_HE_FALLBACK, PRICE_UNIT_HE, labelFor } from '@/lib/labels';
 
+// U8 §1 — CATEGORY_HE and PRICE_UNIT_HE moved to lib/labels.ts.
+// Icons stay local; they aren't labels.
 const CATEGORY_ICONS = {
   housing:   Home,
   equipment: Wrench,
   services:  Briefcase,
   other:     MoreHorizontal,
-};
-const CATEGORY_HE = {
-  housing: 'דיור', equipment: 'ציוד', services: 'שירותים', other: 'אחר',
-};
-const PRICE_UNIT_HE: Record<string, string> = {
-  per_month: 'לחודש', per_night: 'ללילה', fixed: 'מחיר קבוע', negotiable: 'למשא ומתן',
 };
 
 function daysAgo(dateStr: string): string {
@@ -26,7 +23,7 @@ function daysAgo(dateStr: string): string {
 
 export default function ListingCard({ listing }: { listing: MarketplaceListing }) {
   const Icon = CATEGORY_ICONS[listing.category] ?? MoreHorizontal;
-  const catHe = CATEGORY_HE[listing.category] ?? listing.category;
+  const catHe = labelFor(CATEGORY_HE_FALLBACK, listing.category);
 
   return (
     <Link
@@ -103,7 +100,7 @@ export default function ListingCard({ listing }: { listing: MarketplaceListing }
               ₪{Number(listing.price).toLocaleString('he-IL')}
             </span>
             {listing.price_unit && (
-              <span className="text-xs text-slate-500">{PRICE_UNIT_HE[listing.price_unit] ?? listing.price_unit}</span>
+              <span className="text-xs text-slate-500">{labelFor(PRICE_UNIT_HE, listing.price_unit)}</span>
             )}
           </div>
         )}
