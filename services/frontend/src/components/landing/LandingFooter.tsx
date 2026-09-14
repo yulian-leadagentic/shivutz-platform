@@ -35,7 +35,7 @@ export default function LandingFooter() {
           <div>
             <h4 className="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-3">מידע</h4>
             <ul className="space-y-2 text-sm">
-              <li><a href="#how-it-works" className="hover:text-brand-600 transition-colors">איך זה עובד</a></li>
+              <li><Link href="/how-it-works" className="hover:text-brand-600 transition-colors">איך זה עובד</Link></li>
               <li><Link href="/terms" className="hover:text-brand-600 transition-colors">תנאי שימוש</Link></li>
               <li><Link href="/privacy" className="hover:text-brand-600 transition-colors">מדיניות פרטיות</Link></li>
               <li><Link href="/accessibility" className="hover:text-brand-600 transition-colors">הצהרת נגישות</Link></li>

@@ -25,27 +25,6 @@ export default function LandingNav(_: LandingNavProps) {
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
-  // H8 §4 — mirror of the `#how-it-works` disclosure state. Read from
-  // the URL hash (single source of truth shared with
-  // HowItWorksSection), synced via `hashchange`. Drives aria-expanded
-  // on the nav trigger AND the toggle direction on click.
-  const [howOpen, setHowOpen] = useState(false);
-  useEffect(() => {
-    const sync = () => setHowOpen(window.location.hash === '#how-it-works');
-    sync();
-    window.addEventListener('hashchange', sync);
-    return () => window.removeEventListener('hashchange', sync);
-  }, []);
-  function toggleHow(e: React.MouseEvent) {
-    e.preventDefault();
-    if (window.location.hash === '#how-it-works') {
-      // Strip hash without a Back-stack entry the user has to escape.
-      history.pushState(null, '', window.location.pathname + window.location.search);
-      window.dispatchEvent(new HashChangeEvent('hashchange'));
-    } else {
-      window.location.hash = 'how-it-works';
-    }
-  }
   const userMenuRef = useRef<HTMLDivElement>(null);
   const { isLoggedIn, displayName, entityType, role } = useAuth();
 
@@ -108,20 +87,16 @@ export default function LandingNav(_: LandingNavProps) {
             buttons in the RegistrationCTA section; having a third nav
             entry made the top bar feel cluttered with duplicate paths. */}
         <nav className="hidden md:flex items-center gap-6">
-          {/* H8 §4 — was an anchor scrolling to a permanently-open
-              section. Now a disclosure trigger — aria-expanded /
-              aria-controls wire it to HowItWorksSection which is
-              hidden by default. Kept href for progressive
-              enhancement (no-JS users still land at the anchor). */}
-          <a
-            href="#how-it-works"
-            onClick={toggleHow}
-            aria-expanded={howOpen}
-            aria-controls="how-it-works"
+          {/* U5 §4 — routes to a dedicated public page instead of
+              the hash-toggled disclosure. The disclosure section on
+              the home page stays put (per U5 §4 guardrail) so no-JS
+              users and users who scroll to it still see it. */}
+          <Link
+            href="/how-it-works"
             className={`text-sm font-medium transition-colors ${linkCls}`}
           >
             איך זה עובד
-          </a>
+          </Link>
           {/* U1 §3 — /marketplace is live and public (no auth). The
               old "בקרוב" span was a dead label pointing at a working
               page, which reads as a broken product; making it a real
@@ -231,18 +206,14 @@ export default function LandingNav(_: LandingNavProps) {
       {/* Mobile drawer */}
       {menuOpen && (
         <div className="md:hidden bg-white border-t border-slate-100 px-6 py-4 space-y-1 shadow-xl">
-          {/* H8 §4 — mirrors the desktop trigger. Same aria-controls
-              value so the section's Esc handler can find EITHER
-              trigger via querySelector and restore focus to it. */}
-          <a
-            href="#how-it-works"
-            onClick={(e) => { toggleHow(e); setMenuOpen(false); }}
-            aria-expanded={howOpen}
-            aria-controls="how-it-works"
+          {/* U5 §4 — mirrors the desktop change. */}
+          <Link
+            href="/how-it-works"
+            onClick={() => setMenuOpen(false)}
             className="block text-sm font-medium text-slate-700 py-2.5 hover:text-brand-600"
           >
             איך זה עובד
-          </a>
+          </Link>
           {/* U1 §3 — mobile mirror of the desktop change above. */}
           <Link
             href="/marketplace"

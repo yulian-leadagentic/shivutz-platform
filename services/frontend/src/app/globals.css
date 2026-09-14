@@ -38,9 +38,14 @@ html[dir="rtl"] {
    who opted out of animation. */
 html {
   scroll-behavior: smooth;
-  /* Offset for the fixed top nav so anchor targets don't get hidden
-     under it after the smooth scroll lands. */
-  scroll-padding-top: 80px;
+  /* U5 §4 — anchor targets have to clear BOTH the fixed nav (64px) AND
+     the sticky search bar. The search bar's live height is published
+     to `--sticky-h` by the landing page (page.tsx H6 measurement) and
+     defaults to 72px on any surface that doesn't publish. Was:
+     hardcoded `scroll-padding-top: 80px` — too short for the sticky
+     search bar and the "איך זה עובד" section landed cropped under it
+     on mobile 390 (Yulian, 14.09). */
+  scroll-padding-top: calc(64px + var(--sticky-h, 72px) + 12px);
 }
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
