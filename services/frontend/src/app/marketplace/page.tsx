@@ -15,6 +15,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import Logo from '@/components/Logo';
 import RegistrationCTASection from '@/components/landing/RegistrationCTASection';
+import { MarketplaceSponsorBanner, MarketplaceSponsorCarousel } from '@/features/advertising/MarketplaceSponsors';
 
 type CategoryOption = { value: string; label: string; icon: typeof Filter };
 
@@ -251,6 +252,13 @@ function MarketplacePageInner() {
             {listings.length === 0 ? 'לא נמצאו מודעות' : `${listings.length} מודעות`}
           </p>
         )}
+
+        {/* U7 §5 · sponsor placements above the grid. Each component
+            self-hides when zero rows come back (F3 · no sections
+            without active ads), so an empty ad table doesn't leave
+            placeholders behind. */}
+        <MarketplaceSponsorBanner />
+        <MarketplaceSponsorCarousel />
 
         {/* Grid */}
         {loading ? (

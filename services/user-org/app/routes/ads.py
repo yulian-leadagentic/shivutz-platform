@@ -474,9 +474,22 @@ def get_sponsored_ads(
     profession: Optional[str] = None,
     ad_type:    Optional[str] = None,
     region:     Optional[str] = None,
+    placement:  Optional[str] = None,
     limit:      int = 2,
 ):
-    lim = max(1, min(limit, 5))
+    # U7 §5 · placements gate. Contract per spec: NULL placements ≡
+    # "search_inline" (never "all"). So:
+    #   * placement=None (or "search_inline")  → rows where placements
+    #                                             is NULL OR JSON_CONTAINS
+    #                                             for "search_inline".
+    #   * placement="marketplace_banner"       → rows whose placements
+    #                                             array contains that value.
+    #   * placement="marketplace_carousel"     → same.
+    # An ad that opts into carousel-only never leaks into search results.
+    _ALLOWED_PLACEMENTS = {"search_inline", "marketplace_banner", "marketplace_carousel"}
+    if placement is not None and placement not in _ALLOWED_PLACEMENTS:
+        raise HTTPException(status_code=400, detail="invalid_placement")
+    lim = max(1, min(limit, 12))
     conn = get_db()
     try:
         cur = conn.cursor()
@@ -505,6 +518,19 @@ def get_sponsored_ads(
             WHERE active = TRUE
               AND (starts_at IS NULL OR starts_at <= NOW())
               AND (ends_at   IS NULL OR ends_at   >= NOW())
+              /* U7 §5 · placements filter. When the caller asks for
+                 search_inline (the default), NULL placements passes
+                 (backwards compat with pre-078 rows). For any other
+                 placement the row's placements JSON must explicitly
+                 include it. */
+              AND (
+                (%s IS NULL AND (placements IS NULL
+                                 OR JSON_CONTAINS(placements, JSON_QUOTE('search_inline'), '$')))
+                OR (%s = 'search_inline' AND (placements IS NULL
+                                 OR JSON_CONTAINS(placements, JSON_QUOTE(%s), '$')))
+                OR (%s <> 'search_inline' AND placements IS NOT NULL
+                                 AND JSON_CONTAINS(placements, JSON_QUOTE(%s), '$'))
+              )
               /* Soft-filter each axis independently — NULL target
                  always passes, concrete target must contain the
                  caller's value. */
@@ -521,6 +547,7 @@ def get_sponsored_ads(
                 profession, profession,
                 ad_type,    ad_type,
                 region,     region,
+                placement, placement, placement, placement, placement,
                 profession, profession,
                 ad_type,    ad_type,
                 region,     region,

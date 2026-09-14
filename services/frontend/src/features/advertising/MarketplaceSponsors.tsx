@@ -1,0 +1,151 @@
+'use client';
+
+/**
+ * U7 §5 · marketplace sponsor placements.
+ *
+ * Two surfaces render above the marketplace listing grid:
+ *   - Banner    · full-width strip. One creative at a time; rotates
+ *                 on refresh (backend orders by RAND()).
+ *   - Carousel  · horizontal row of up to 4 cards. Scrolls on mobile,
+ *                 grid on desktop.
+ *
+ * Both hit the SAME endpoint (/ads/public/sponsored) with a
+ * ?placement= param — the backend gates search_inline vs banner vs
+ * carousel so nothing leaks across surfaces.
+ *
+ * F3 · "no sections without active ads" — if the endpoint returns
+ * zero rows, the component renders NOTHING (not a placeholder, not
+ * a skeleton, not a "coming soon"). Migration 078 seeds enough rows
+ * (2 banners + 3 carousel) that this only kicks in for a genuinely
+ * emptied ad table.
+ */
+import { useEffect, useState } from 'react';
+import { apiFetch } from '@/lib/api/client';
+
+interface SponsorAd {
+  id:              string;
+  advertiser_name: string;
+  headline_he:     string;
+  body_he:         string | null;
+  chips_he:        string[] | null;
+  cta_label_he:    string;
+  cta_url:         string | null;
+  logo_url:        string | null;
+  brand_bg:        string | null;
+  brand_fg:        string | null;
+}
+
+async function fetchSponsored(placement: string, limit: number): Promise<SponsorAd[]> {
+  try {
+    const res = await apiFetch<{ results: SponsorAd[] }>(
+      `/ads/public/sponsored?placement=${encodeURIComponent(placement)}&limit=${limit}`,
+    );
+    return res.results ?? [];
+  } catch {
+    return [];   // network / auth blip → hide the section, F3-safe
+  }
+}
+
+export function MarketplaceSponsorBanner() {
+  const [ad, setAd] = useState<SponsorAd | null>(null);
+  useEffect(() => {
+    fetchSponsored('marketplace_banner', 1).then((rows) => setAd(rows[0] ?? null));
+  }, []);
+
+  if (!ad) return null;
+  const bg = ad.brand_bg ?? '#1e293b';
+  const fg = ad.brand_fg ?? '#ffffff';
+
+  return (
+    <div className="mb-6">
+      <div className="text-[10px] uppercase tracking-wide text-slate-400 mb-1">מודעה ממומנת</div>
+      <div
+        className="rounded-2xl px-6 py-5 shadow-sm flex flex-col sm:flex-row items-start sm:items-center gap-4"
+        style={{ backgroundColor: bg, color: fg }}
+      >
+        {ad.logo_url && (
+          <img src={ad.logo_url} alt="" className="h-12 w-auto shrink-0" />
+        )}
+        <div className="flex-1 min-w-0">
+          <h3 className="text-lg font-bold leading-tight">{ad.headline_he}</h3>
+          {ad.body_he && (
+            <p className="text-sm opacity-90 mt-1 leading-relaxed">{ad.body_he}</p>
+          )}
+        </div>
+        {ad.cta_url ? (
+          <a
+            href={ad.cta_url}
+            target="_blank"
+            rel="noopener noreferrer sponsored"
+            className="shrink-0 inline-flex items-center bg-white/95 hover:bg-white text-slate-900 text-sm font-semibold px-4 py-2 rounded-lg transition-colors"
+          >
+            {ad.cta_label_he}
+          </a>
+        ) : (
+          <span className="shrink-0 inline-flex items-center bg-white/20 text-sm font-semibold px-4 py-2 rounded-lg opacity-80">
+            {ad.cta_label_he}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function MarketplaceSponsorCarousel() {
+  const [ads, setAds] = useState<SponsorAd[]>([]);
+  useEffect(() => {
+    fetchSponsored('marketplace_carousel', 4).then(setAds);
+  }, []);
+
+  if (ads.length === 0) return null;
+
+  return (
+    <div className="mb-6">
+      <div className="text-[10px] uppercase tracking-wide text-slate-400 mb-2">שירותים ממומנים</div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+        {ads.map((ad) => (
+          <CarouselCard key={ad.id} ad={ad} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CarouselCard({ ad }: { ad: SponsorAd }) {
+  const bg = ad.brand_bg ?? '#0f172a';
+  const fg = ad.brand_fg ?? '#ffffff';
+  return (
+    <div
+      className="rounded-xl p-4 shadow-sm flex flex-col h-full"
+      style={{ backgroundColor: bg, color: fg }}
+    >
+      <h3 className="text-sm font-bold leading-tight">{ad.headline_he}</h3>
+      {ad.body_he && (
+        <p className="text-xs opacity-90 mt-1 leading-relaxed flex-1">{ad.body_he}</p>
+      )}
+      {ad.chips_he && ad.chips_he.length > 0 && (
+        <div className="flex flex-wrap gap-1 mt-2">
+          {ad.chips_he.slice(0, 3).map((c) => (
+            <span key={c} className="text-[10px] px-2 py-0.5 rounded-full bg-white/15">
+              {c}
+            </span>
+          ))}
+        </div>
+      )}
+      {ad.cta_url ? (
+        <a
+          href={ad.cta_url}
+          target="_blank"
+          rel="noopener noreferrer sponsored"
+          className="mt-3 inline-flex items-center justify-center bg-white/95 hover:bg-white text-slate-900 text-xs font-semibold px-3 py-1.5 rounded-md transition-colors"
+        >
+          {ad.cta_label_he}
+        </a>
+      ) : (
+        <span className="mt-3 inline-flex items-center justify-center bg-white/20 text-xs font-semibold px-3 py-1.5 rounded-md opacity-80">
+          {ad.cta_label_he}
+        </span>
+      )}
+    </div>
+  );
+}
