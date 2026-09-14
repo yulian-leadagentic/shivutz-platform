@@ -143,7 +143,7 @@ function RegisterContractorInner() {
   const [success, setSuccess] = useState(false);
   // Duplicate ח.פ outcome — see corp register for the same pattern.
   const [duplicateExistingName, setDuplicateExistingName] = useState<string | null>(null);
-  const { regions } = useEnums();
+  const { regions, loading: enumsLoading, error: enumsError, retry: retryEnums } = useEnums();
 
   const [step1, setStep1] = useState<Step1>({
     phone: '', normPhone: '', full_name: '',
@@ -754,9 +754,27 @@ function RegisterContractorInner() {
                 <div className="flex flex-col gap-2">
                   <label className="text-sm font-medium text-slate-700">אזורי פעילות</label>
                   <div className="grid grid-cols-2 gap-2 max-h-44 overflow-y-auto border border-slate-200 rounded-md p-3">
-                    {regions.length === 0
-                      ? <p className="text-sm text-slate-500 col-span-2">טוען אזורים…</p>
-                      : regions.map((r) => (
+                    {/* U5 §2 — three explicit states so a failed enum
+                        load doesn't silently render an eternal spinner
+                        (the pre-fix behaviour). Priority: error → loading
+                        → data. Empty-after-load is treated as an error
+                        because the DB is seeded with 5 regions; zero
+                        rows means the fetch didn't reach the DB. */}
+                    {enumsError || (!enumsLoading && regions.length === 0) ? (
+                      <div className="col-span-2 flex flex-col gap-2">
+                        <p className="text-sm text-red-700">לא הצלחנו לטעון את רשימת האזורים.</p>
+                        <button
+                          type="button"
+                          onClick={retryEnums}
+                          className="self-start text-sm font-medium text-brand-700 hover:text-brand-800 underline"
+                        >
+                          נסה שוב
+                        </button>
+                      </div>
+                    ) : enumsLoading ? (
+                      <p className="text-sm text-slate-500 col-span-2">טוען אזורים…</p>
+                    ) : (
+                      regions.map((r) => (
                         <label key={r.code} className="flex items-center gap-2 text-sm cursor-pointer">
                           <input
                             type="checkbox"
@@ -766,7 +784,8 @@ function RegisterContractorInner() {
                           />
                           {r.name_he}
                         </label>
-                      ))}
+                      ))
+                    )}
                   </div>
                 </div>
                 {error && (
