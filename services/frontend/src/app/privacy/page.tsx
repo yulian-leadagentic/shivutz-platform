@@ -7,7 +7,8 @@ import type { Metadata } from 'next';
 import { legalApi } from '@/lib/api/legal';
 import { renderLegalMarkdown } from '@/lib/legal-render';
 
-export const revalidate = 60;
+// U5 build-fix — see accessibility/page.tsx for the reason.
+export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
   title:       'מדיניות פרטיות · TagidAI',

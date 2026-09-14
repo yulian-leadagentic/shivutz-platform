@@ -10,7 +10,10 @@ import type { Metadata } from 'next';
 import { legalApi } from '@/lib/api/legal';
 import { renderLegalMarkdown } from '@/lib/legal-render';
 
-export const revalidate = 60;  // page is cached for 60s between edits
+// U5 build-fix — see accessibility/page.tsx for the reason. Build-time
+// prerender was hanging on the gateway fetch and failing the whole
+// Nixpacks image build.
+export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
   title:       'תנאי שימוש · TagidAI',

@@ -19,7 +19,15 @@ import { legalApi, type SiteSettings } from '@/lib/api/legal';
 import { renderLegalMarkdown } from '@/lib/legal-render';
 import { readAccessibilityMdFallback } from '@/lib/legal-fallback';
 
-export const revalidate = 60;
+// U5 build-fix — force per-request SSR. At build time the Nixpacks
+// container has no gateway to fetch legal_documents from, so
+// `apiFetch('/legal/accessibility')` hangs → Turbopack times out at
+// 60s × 3 retries → whole build fails and Railway can't ship. Making
+// this page dynamic skips the build-time prerender attempt entirely;
+// at request time the frontend Node process reaches the gateway
+// normally. If the fetch still fails at runtime, legalApi.doc()
+// returns null and the file-fallback branch renders instead.
+export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
   title:       'הצהרת נגישות · TagidAI',
