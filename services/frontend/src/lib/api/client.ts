@@ -276,6 +276,12 @@ export class ApiError extends Error {
 
 export async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = getToken();
+  // U5 §1 · capture whether this caller had ANY auth material at request
+  // time. Used below to decide whether a 401 means "session expired,
+  // send to /login" vs "anonymous visitor tried a closed endpoint, let
+  // the caller handle it". Reads once here so a token cleared mid-flight
+  // still counts (the fetch already went out with it).
+  const hadSession = !!token || !!getRefreshToken();
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -283,6 +289,24 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
   };
   const res = await fetch(`${BASE}${path}`, { ...options, headers });
   if (res.status === 401 && typeof window !== 'undefined') {
+    // U5 §1 · P0 — anonymous visitor hitting a closed endpoint (e.g.
+    // /ads/public/recent after L2 closed it) used to be blanket-
+    // redirected to /login. That meant nobody could open `/`,
+    // `/marketplace`, or any other public route once ANY component
+    // called a closed endpoint. Yulian's launch-blocker on 14.09.
+    //
+    // Rule: `/login` redirect is for expired sessions ONLY. An anonymous
+    // caller's 401 is a normal "denied" — throw ApiError and let the
+    // caller decide (U1 §1b already added `isLoggedIn()` guards on the
+    // landing page; anything that slipped through those guards should
+    // just handle the ApiError gracefully rather than force navigation).
+    //
+    // Do NOT reopen the endpoints in gateway PUBLIC_PREFIXES — L2's
+    // decision to close them stands; the client is what needs to cope
+    // with the resulting 401s.
+    if (!hadSession) {
+      throw new ApiError('Unauthorized', { error: 'unauthorized', status: 401 });
+    }
     const newToken = await tryRefresh();
     if (newToken) {
       const retryHeaders: HeadersInit = {

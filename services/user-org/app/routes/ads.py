@@ -751,9 +751,23 @@ def update_ad(
     conn = get_db()
     try:
         cur = conn.cursor()
-        cur.execute(sql, params)
-        if cur.rowcount == 0:
+        # U4 · rowcount trap. pymysql (via MariaDB/MySQL default) reports
+        # the number of CHANGED rows, not MATCHED rows. So `save without
+        # actually changing anything` UPDATEd nothing → rowcount == 0 →
+        # we used to raise 404 ad_not_found. That's wrong: the ad still
+        # exists, and a save-with-no-change is a successful no-op, not a
+        # failure. Yulian reported this as "עריכת מודעת עובדים לא עובדת"
+        # on 14.09. Fix: distinguish "not found" from "no change" via a
+        # SELECT before the UPDATE. Do NOT switch the connection to
+        # CLIENT.FOUND_ROWS — that changes rowcount semantics for every
+        # other query in the service.
+        cur.execute(
+            "SELECT id FROM ads WHERE id=%s AND owner_entity_id=%s AND deleted_at IS NULL",
+            (ad_id, corp_id),
+        )
+        if cur.fetchone() is None:
             raise HTTPException(status_code=404, detail="ad_not_found")
+        cur.execute(sql, params)
         conn.commit()
         cur.execute("SELECT * FROM ads WHERE id=%s", (ad_id,))
         return _serialize(cur.fetchone())
