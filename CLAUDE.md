@@ -8,6 +8,61 @@ Shivutz Platform — a Hebrew-first marketplace connecting Israeli construction 
 
 State as of writing: pre-launch. No live users, no live money. Database schemas and APIs are **safe to break** in service of cleaner design — no migrations need to be reversible, no data needs to be preserved. This loosens the "be conservative" reflex; ship the right fix, not the safe-but-ugly one.
 
+## Session start — run these four checks
+
+Four failures have each cost more than a day. All four are cheap to prevent.
+
+**1. Are you in the right checkout?**
+
+```
+git worktree list
+git rev-parse --abbrev-ref HEAD
+```
+
+The main checkout is `C:/Users/yulia/Projects/Shivutz-platform` on **`pivot/v2`**.
+There is a stale worktree at `.claude/.claude/worktrees/crazy-hermann-09dfbb`
+pinned to `4352f1b` (10 Aug) and marked **prunable**. It predates
+`docs/cc-prompts/` and all work from U6 onward. Twice now a session has
+started there and reported current files as "missing". **If `docs/cc-prompts/`
+does not exist where you are, you are in the wrong checkout — do not proceed.**
+
+**2. Are the prompt files tracked?**
+
+```
+git status --porcelain -- docs/cc-prompts
+```
+
+Prompt and run-sheet files are written into the working tree by Claude
+through the desktop bridge, which copies files but does **not** run `git add`.
+They arrive untracked, so a later `git log` / branch search finds nothing and
+the work looks lost.
+
+**Every run: `git add` the `docs/cc-prompts/*.md` files you were given, by
+name, and commit them with your work.** Never `git add -A` — see the CRLF
+section below.
+
+**3. Did your push reach both branches?**
+
+Railway staging deploys from `staging`, but day-to-day commits land on
+`pivot/v2`. On 17 Sep, `staging` was found four commits behind — all of U7
+and U11 were written, reviewed, and never deployed, and three diagnostic
+rounds ran against a server that did not contain the code being diagnosed.
+
+**After every push, run this and paste the output in your report:**
+
+```
+git rev-list --left-right --count origin/staging...origin/pivot/v2
+```
+
+`0	0` or you are not finished.
+
+**4. Stuck `.git/index.lock`?**
+
+The desktop bridge cannot delete files in this folder, so a git command run
+from Claude's side can leave a zero-byte `.git/index.lock` behind. If you hit
+`fatal: Unable to create '.git/index.lock': File exists`, no git process is
+running — **move the file aside and continue**; do not wait and do not retry.
+
 ## Branch model — important
 
 > **⚠️ CHECK THIS FIRST — verified 2026-08-13.** The description below says `staging`, but the
