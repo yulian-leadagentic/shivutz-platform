@@ -556,11 +556,37 @@ export const adminApi = {
     }> }>('/admin/gov-corps-registry/years'),
 
   /** Preview every parsed row for a given year — for spot-checking
-   *  the import. */
+   *  the import. U11 §2 · row shape is committed by the endpoint;
+   *  don't loosen this back to `Record<string, unknown>` — that's the
+   *  regression the page.tsx `as unknown as` was papering over. `stats`
+   *  is populated when the endpoint recognises U11's shape and gives
+   *  admins per-field fill counts (helpful for diagnosing silent
+   *  parser regressions). */
   previewGovCorpsYear: (year: number) =>
-    apiFetch<{ year: number; rows: Array<Record<string, unknown>> }>(
-      `/admin/gov-corps-registry/${year}`,
-    ),
+    apiFetch<{
+      year:  number;
+      rows:  Array<{
+        id:               string;
+        source_year:      number;
+        imported_at:      string;
+        serial_no:        number | null;
+        business_number:  string | null;
+        company_name_he:  string | null;
+        address:          string | null;
+        phone_mobile_1:   string | null;
+        phone_mobile_2:   string | null;
+        phone_landline_1: string | null;
+        phone_landline_2: string | null;
+        imported_by:      string | null;
+      }>;
+      stats?: {
+        row_count:            number;
+        with_business_number: number;
+        with_company_name_he: number;
+        with_serial_no:       number;
+        with_address:         number;
+      };
+    }>(`/admin/gov-corps-registry/${year}`),
 
   /** Add a single row to gov_corporations_registry without uploading
    *  a PDF. Handy when the official PDF missed a corp, or to backfill

@@ -257,7 +257,17 @@ function RegistryRowsBrowser({ years }: { years: YearStat[] }) {
     if (year == null) { setRows(null); return; }
     setLoading(true);
     adminApi.previewGovCorpsYear(year)
-      .then((res) => setRows(res.rows as unknown as RegistryRow[]))
+      .then((res) => {
+        // U11 §2 (R1) · leave one debug log in place for the first
+        // response after the fix lands — this is the raw shape Yulian
+        // needs pasted to close the "why 450 empty rows" acceptance.
+        // Remove after the report is captured.
+        if (typeof console !== 'undefined' && res.rows[0]) {
+          console.log('[gov-corps preview] row[0]:', JSON.stringify(res.rows[0]));
+          if (res.stats) console.log('[gov-corps preview] stats:', JSON.stringify(res.stats));
+        }
+        setRows(res.rows);
+      })
       .catch(() => setRows([]))
       .finally(() => setLoading(false));
   }, [year]);
