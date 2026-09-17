@@ -2,6 +2,8 @@ import Link from 'next/link';
 import { HardHat, Building2, Wrench, Check, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
+import { ROLES, type RoleId } from '@/features/advertising/roles';
+
 /**
  * U7 · shared 3-card registration CTA.
  *
@@ -13,6 +15,11 @@ import { Button } from '@/components/ui/button';
  * The three roles are contractor, corporation, and (U7) service
  * provider. Every role is a live, free registration path — nothing
  * says "coming soon".
+ *
+ * R2 · role identity (href) is sourced from `@/features/advertising/roles`
+ * so this component and RoleRegisterPicker can't drift on which routes
+ * exist. Visual details (icon, tagline, colors, benefits) live here
+ * because they are presentation-only.
  */
 
 interface RegistrationCTASectionProps {
@@ -20,9 +27,8 @@ interface RegistrationCTASectionProps {
   onLeadCapture?:  () => void;   // only used in "full"; when undefined the secondary button is hidden
 }
 
-interface RoleCard {
-  href:     string;
-  title:    string;
+interface CardVisuals {
+  cardTitle: string;                    // "אני …" phrasing, differs from short role.title
   tagline:  string;
   cta:      string;
   benefits: string[];
@@ -37,10 +43,9 @@ interface RoleCard {
   };
 }
 
-const CARDS: RoleCard[] = [
-  {
-    href:    '/register/contractor',
-    title:   'אני קבלן',
+const VISUALS: Record<RoleId, CardVisuals> = {
+  contractor: {
+    cardTitle: 'אני קבלן',
     tagline: 'מחפש עובדים זרים מיומנים לפרויקטים? מצא, בחר ושבץ — הכל דיגיטלי.',
     cta:     'הצטרף עכשיו כקבלן — בחינם',
     benefits: [
@@ -59,9 +64,8 @@ const CARDS: RoleCard[] = [
       btnText: 'text-slate-900',
     },
   },
-  {
-    href:    '/register/corporation',
-    title:   'אני תאגיד',
+  corporation: {
+    cardTitle: 'אני תאגיד',
     tagline: 'תאגיד כוח אדם? פרסם עובדיך לקבלנים מאושרים ברחבי הארץ.',
     cta:     'הצטרף עכשיו כתאגיד — בחינם',
     benefits: [
@@ -80,9 +84,8 @@ const CARDS: RoleCard[] = [
       btnText: 'text-white',
     },
   },
-  {
-    href:    '/register/provider',
-    title:   'אני ספק שירות',
+  service_provider: {
+    cardTitle: 'אני ספק שירות',
     tagline: 'הובלות, ביטוח, ציוד, קורסים? פרסם את השירותים שלך לקבלנים ותאגידים.',
     cta:     'הצטרף עכשיו כספק — בחינם',
     benefits: [
@@ -101,7 +104,10 @@ const CARDS: RoleCard[] = [
       btnText: 'text-white',
     },
   },
-];
+};
+
+interface RoleCard extends CardVisuals { href: string; }
+const CARDS: RoleCard[] = ROLES.map((r) => ({ href: r.href, ...VISUALS[r.id] }));
 
 export default function RegistrationCTASection({
   variant = 'full',
@@ -118,8 +124,12 @@ function FullSection({ onLeadCapture }: { onLeadCapture?: () => void }) {
     <section className="bg-white py-24 border-t border-slate-100">
       <div className="max-w-6xl mx-auto px-6">
         <div className="text-center mb-12">
+          {/* U7 · R2 · heading aligned with RoleRegisterPicker per
+              Yulian 14.09. Both landing role-selectors read "הרשם
+              עכשיו" as their primary call now; grep for the old
+              "הצטרפו לפלטפורמה" catches a drift. */}
           <p className="text-xs font-semibold uppercase tracking-widest text-brand-600 mb-3">מוכנים להתחיל?</p>
-          <h2 className="text-3xl md:text-4xl font-extrabold text-slate-900 mb-3">הצטרפו לפלטפורמה המובילה</h2>
+          <h2 className="text-3xl md:text-4xl font-extrabold text-slate-900 mb-3">הרשם עכשיו</h2>
           <p className="text-slate-500">קבלנים, תאגידים וספקי שירות — לכולם יש כאן מקום</p>
         </div>
 
@@ -145,7 +155,7 @@ function FullCard({ card, onLeadCapture }: { card: RoleCard; onLeadCapture?: () 
       <div className={`h-12 w-12 rounded-2xl ${colors.iconBg} flex items-center justify-center mb-5`}>
         <Icon className={`h-6 w-6 ${colors.iconFg}`} />
       </div>
-      <h3 className="text-xl font-bold text-slate-900 mb-1">{card.title}</h3>
+      <h3 className="text-xl font-bold text-slate-900 mb-1">{card.cardTitle}</h3>
       <p className="text-sm text-slate-500 mb-5 leading-relaxed">{card.tagline}</p>
       <ul className="space-y-2.5 mb-7 flex-1">
         {card.benefits.map((b) => (
@@ -198,7 +208,7 @@ function CompactCard({ card }: { card: RoleCard }) {
         <Icon className={`h-5 w-5 ${colors.iconFg}`} />
       </div>
       <div className="flex-1 min-w-0">
-        <h3 className="font-semibold text-slate-900">{card.title}</h3>
+        <h3 className="font-semibold text-slate-900">{card.cardTitle}</h3>
         <p className="text-xs text-slate-500 truncate">{card.tagline}</p>
       </div>
       <ArrowLeft className={`h-4 w-4 shrink-0 ${colors.iconFg} group-hover:translate-x-[-2px] transition-transform`} />
