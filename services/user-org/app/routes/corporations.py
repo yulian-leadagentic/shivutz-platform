@@ -12,7 +12,7 @@ from app.services import notification_recipients as notif_recipients
 from app.services import team_membership as team_mgmt
 from app.services.phone_normalize import InvalidPhone, normalize_israeli_phone
 from app.services import membership_requests as mreq
-from app.services.subscription_limits import fetch_entitlement, tier_limits
+from app.services.subscription_limits import fetch_entitlement, tier_limits, effective_seats
 from app.integrations import data_gov_il
 from app.integrations.israeli_id import is_valid_israeli_id
 
@@ -636,61 +636,51 @@ async def invite_corporation_user(
         if not org:
             raise HTTPException(status_code=404, detail="Corporation not found")
 
-        # L4 seat gate — corp plans are seeded with extra_user_price_nis
-        # NULL on every tier (Yulian: extra-seat billing is contractor-
-        # only this round). That means the "beyond included" branch
-        # always returns 402 seat_limit, identical to the pre-L4
-        # behaviour. included_users == max_users in every corp tier,
-        # so used >= included and used >= max_users are the same
-        # cut-line. Same numbers to the corp — the branching just
-        # exists so a future "sell corp seats" change is a one-column
-        # edit, not a code path.
+        # R4 · seat gate reads effective_seats (same helper contractors
+        # use). Corp plans still have extra_user_price_nis NULL — no
+        # extra-seat purchase — so a corp above `total` always gets
+        # 402 seat_limit, not seat_upgrade_required. Admin grants can
+        # push total above max_users; that's intentional (R4 §3a).
         try:
-            ent = fetch_entitlement(org_id, "corporation")
+            eff = effective_seats(org_id, "corporation")
         except httpx.HTTPError:
             raise HTTPException(status_code=503, detail="entitlement_service_unreachable")
-        limits = tier_limits(ent["tier"], "corporation")
+        limits = tier_limits(eff["tier"], "corporation")
         max_users   = limits.get("max_users")
-        included    = limits.get("included_users")
         extra_price = limits.get("extra_user_price_nis")
-        cur.execute(
-            """SELECT COUNT(*) AS n
-                 FROM auth_db.entity_memberships
-                WHERE entity_type='corporation'
-                  AND entity_id=%s
-                  AND (is_active=TRUE OR invitation_accepted_at IS NULL)""",
-            (org_id,),
-        )
-        used = int(cur.fetchone()["n"])
-        if max_users is not None and used >= max_users:
+        used = eff["in_use"]
+        if max_users is not None and used >= max_users and eff["granted"] == 0:
             raise HTTPException(
                 status_code=402,
                 detail={
                     "code":  "seat_limit",
-                    "tier":  ent["tier"],
+                    "tier":  eff["tier"],
                     "used":  used,
                     "limit": max_users,
+                    "seats": {k: eff[k] for k in ("included","paid","granted","total")},
                 },
             )
-        if included is not None and used >= included:
+        if used >= eff["total"]:
             if extra_price is None:
                 raise HTTPException(
                     status_code=402,
                     detail={
                         "code":  "seat_limit",
-                        "tier":  ent["tier"],
+                        "tier":  eff["tier"],
                         "used":  used,
-                        "limit": included,
+                        "limit": eff["total"],
+                        "seats": {k: eff[k] for k in ("included","paid","granted","total")},
                     },
                 )
             raise HTTPException(
                 status_code=402,
                 detail={
                     "code":     "seat_upgrade_required",
-                    "tier":     ent["tier"],
+                    "tier":     eff["tier"],
                     "used":     used,
-                    "included": included,
+                    "included": eff["included"],
                     "price":    extra_price,
+                    "seats":    {k: eff[k] for k in ("included","paid","granted","total")},
                 },
             )
 

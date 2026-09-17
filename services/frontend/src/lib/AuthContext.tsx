@@ -21,7 +21,10 @@ export interface AuthState {
   /** Role within the active entity (owner/admin/operator/viewer). */
   membershipRole: string | null;
   entityId: string | null;
-  entityType: 'contractor' | 'corporation' | null;
+  // R5 §1 · widened to include 'service_provider' (see U7 §1) so a
+  // provider JWT no longer squeezes through the null branch and gets
+  // routed into the contractor section.
+  entityType: 'contractor' | 'corporation' | 'service_provider' | null;
   /** True once entity context has been embedded in the JWT. */
   hasEntityContext: boolean;
 }
@@ -60,7 +63,7 @@ function parseToken(token: string | undefined): AuthState {
       null,
     membershipRole: (p.membership_role as string) ?? null,
     entityId: (p.entity_id as string) ?? null,
-    entityType: (p.entity_type as 'contractor' | 'corporation') ?? null,
+    entityType: (p.entity_type as 'contractor' | 'corporation' | 'service_provider') ?? null,
     hasEntityContext: !!(p.entity_id),
   };
 }

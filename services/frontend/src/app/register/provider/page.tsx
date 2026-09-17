@@ -123,9 +123,12 @@ export default function ProviderRegisterPage() {
         saveTokens(res.access_token, res.refresh_token);
       }
       setPhase('done');
-      // Land on the entity picker; when the provider portal lands in
-      // Phase C this will redirect straight to /provider/dashboard.
-      setTimeout(() => router.push('/select-entity'), 1200);
+      // R5 §1 · a fresh provider has exactly one entity (this one).
+      // Sending them to /select-entity to pick from a list of one is
+      // pure friction, and the old fallback into /contractor/dashboard
+      // is what created the "אין לך חשבון קבלן" screen Yulian saw.
+      // Land them directly on their own dashboard.
+      setTimeout(() => router.push('/provider/dashboard'), 1200);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'הרישום נכשל';
       setError(msg);

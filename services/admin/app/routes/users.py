@@ -180,11 +180,16 @@ def user_details(user_id: str):
             # (payment_db.subscriptions.entity_id needs explicit COLLATE
             # or MySQL 8 throws "Illegal mix of collations"). Provider
             # entities are free by decree — no payment_db row exists.
+            # R4 · also fetch extra_seats_paid + extra_seats_granted +
+            # seats_note so the admin block can render the breakdown
+            # (5 כלולים · 2 שנרכשו · 1 מהנהלה) and open the grant modal.
             if org_type in ("contractor", "corporation"):
                 sub_cur = conn.cursor()
                 sub_cur.execute(
                     """SELECT s.id, s.tier, s.status,
-                              s.trial_ends_at, s.current_period_end
+                              s.trial_ends_at, s.current_period_end,
+                              s.extra_seats_paid, s.extra_seats_granted,
+                              s.seats_note
                          FROM payment_db.subscriptions s
                         WHERE s.entity_id = %s COLLATE utf8mb4_unicode_ci
                           AND s.entity_type = %s
@@ -199,6 +204,10 @@ def user_details(user_id: str):
                         "status":             s["status"],
                         "trial_ends_at":      s["trial_ends_at"].isoformat() if s.get("trial_ends_at") else None,
                         "current_period_end": s["current_period_end"].isoformat() if s.get("current_period_end") else None,
+                        # R4 · seat breakdown fields
+                        "extra_seats_paid":    int(s.get("extra_seats_paid") or 0),
+                        "extra_seats_granted": int(s.get("extra_seats_granted") or 0),
+                        "seats_note":          s.get("seats_note"),
                     }
 
             # 5. Seat count — active members / plan.included_users. Miss
@@ -230,6 +239,16 @@ def user_details(user_id: str):
             if entity:
                 entity["seats_used"]     = used
                 entity["seats_included"] = included
+                # R4 · raw component fields for the admin card. The
+                # canonical sum is computed by
+                # user-org/subscription_limits.effective_seats and is
+                # the only place seat GATES read it — this endpoint
+                # forwards the components, and the admin FE displays
+                # them side by side ("5 · 2 · 1"). We deliberately do
+                # NOT ship a pre-summed `seats_total` from here so the
+                # sum lives in exactly one place.
+                entity["seats_paid"]    = subscription["extra_seats_paid"]    if subscription else 0
+                entity["seats_granted"] = subscription["extra_seats_granted"] if subscription else 0
 
         return {
             "user_id":      row["id"],

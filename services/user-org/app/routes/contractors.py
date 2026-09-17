@@ -11,7 +11,7 @@ from app.services import notification_recipients as notif_recipients
 from app.services import team_membership as team_mgmt
 from app.services.phone_normalize import InvalidPhone, normalize_israeli_phone
 from app.services import membership_requests as mreq
-from app.services.subscription_limits import fetch_entitlement, tier_limits
+from app.services.subscription_limits import fetch_entitlement, tier_limits, effective_seats
 from app.services.entity_access import require_entity_access
 from app.integrations import data_gov_il
 from app.integrations.israeli_id import is_valid_israeli_id
@@ -792,71 +792,67 @@ async def invite_contractor_user(
         if not org:
             raise HTTPException(status_code=404, detail="Contractor not found")
 
-        # L4 seat gate — three outcomes now (was two):
-        #   used < included_users            → free invite
-        #   included ≤ used < max_users      → 402 seat_upgrade_required
-        #                                        (paid seat, message-only
-        #                                        this round; L5 wires the
-        #                                        actual charge)
-        #                                      OR 402 seat_limit when
-        #                                        extra_user_price_nis IS NULL
-        #                                        (tier doesn't sell extras)
-        #   used ≥ max_users                 → 402 seat_limit (hard cap,
-        #                                        no way past even in paid)
-        # Payment/plans down = fail closed (503).
+        # R4 · seat gate now reads subscription_limits.effective_seats
+        # — one function, three inputs (included + paid + granted),
+        # so admin-granted seats and paid seats both count without
+        # inline math. L4's inline arithmetic here caused the seven
+        # rare-path bugs the runsheet cited.
         try:
-            ent = fetch_entitlement(org_id, "contractor")
+            eff = effective_seats(org_id, "contractor")
         except httpx.HTTPError:
             raise HTTPException(status_code=503, detail="entitlement_service_unreachable")
-        limits = tier_limits(ent["tier"], "contractor")
-        max_users     = limits.get("max_users")
-        included      = limits.get("included_users")
-        extra_price   = limits.get("extra_user_price_nis")
-        cur.execute(
-            """SELECT COUNT(*) AS n
-                 FROM auth_db.entity_memberships
-                WHERE entity_type='contractor'
-                  AND entity_id=%s
-                  AND (is_active=TRUE OR invitation_accepted_at IS NULL)""",
-            (org_id,),
-        )
-        used = int(cur.fetchone()["n"])
-        # Hard cap first — max_users is absolute even when the tier
-        # sells extra seats. NULL max_users = no cap.
-        if max_users is not None and used >= max_users:
+        limits = tier_limits(eff["tier"], "contractor")
+        max_users   = limits.get("max_users")
+        extra_price = limits.get("extra_user_price_nis")
+        used = eff["in_use"]
+        # Hard cap first — max_users is a per-plan ceiling. Admin
+        # grants OVERRIDE it (R4 §3a: "פעולת אדמין גוברת על max_users").
+        # So effective_seats["total"] can legitimately exceed max_users
+        # when granted > 0; only compare `used` against `total` for the
+        # hard block.
+        if max_users is not None and used >= max_users and eff["granted"] == 0:
             raise HTTPException(
                 status_code=402,
                 detail={
                     "code":  "seat_limit",
-                    "tier":  ent["tier"],
+                    "tier":  eff["tier"],
                     "used":  used,
                     "limit": max_users,
+                    # R4 · always ship the breakdown so the UI can
+                    # render "5 כלולים · 2 שנרכשו · 1 מהנהלה".
+                    "seats": {k: eff[k] for k in ("included","paid","granted","total")},
                 },
             )
-        # Beyond the included band — either upgrade path or hard block.
-        if included is not None and used >= included:
+        # Below the effective total — allow. This is the branch admin
+        # grants and paid seats both flow through.
+        if used < eff["total"]:
+            pass
+        else:
+            # No room in effective seats. Two branches:
+            #   * tier sells extras → 402 seat_upgrade_required
+            #     (message-only; the purchase endpoint is what
+            #     actually adds a paid seat).
+            #   * tier doesn't sell extras → 402 seat_limit.
             if extra_price is None:
-                # Tier doesn't sell extras. Same 402 seat_limit as before.
                 raise HTTPException(
                     status_code=402,
                     detail={
                         "code":  "seat_limit",
-                        "tier":  ent["tier"],
+                        "tier":  eff["tier"],
                         "used":  used,
-                        "limit": included,
+                        "limit": eff["total"],
+                        "seats": {k: eff[k] for k in ("included","paid","granted","total")},
                     },
                 )
-            # L4 §3 mistake 1 — this is the MESSAGE PATH, not a charge.
-            # The 402 tells the UI "here's the price + math", and does
-            # NOT create the seat. L5 wires the actual purchase.
             raise HTTPException(
                 status_code=402,
                 detail={
                     "code":     "seat_upgrade_required",
-                    "tier":     ent["tier"],
+                    "tier":     eff["tier"],
                     "used":     used,
-                    "included": included,
+                    "included": eff["included"],
                     "price":    extra_price,
+                    "seats":    {k: eff[k] for k in ("included","paid","granted","total")},
                 },
             )
 

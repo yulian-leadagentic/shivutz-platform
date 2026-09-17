@@ -96,3 +96,76 @@ def tier_limits(tier: str, entity_type: str = "contractor") -> dict[str, Optiona
         "monthly_price_nis":    row["monthly_price_nis"],
         "can_boost":            bool(row["can_boost"]),
     }
+
+
+def effective_seats(entity_id: str, entity_type: str) -> dict:
+    """R4 · single source of truth for how many seats an entity has.
+
+    Three inputs, three outputs, plus the runtime totals:
+        included  — from subscription_plans (admin-editable at
+                    /admin/subscription-plans)
+        paid      — from subscriptions.extra_seats_paid (customer
+                    bought via /subscriptions/seats/…; billed in the
+                    renewal batch)
+        granted   — from subscriptions.extra_seats_granted (admin
+                    granted at /admin/subscriptions/…; NEVER billed)
+        total     — included + paid + granted
+        in_use    — active memberships on the entity (accepted or
+                    pending invite; matches the count contractors.py
+                    and corporations.py were computing inline)
+
+    R4 §2 rule: every seat gate reads this one function. Do NOT
+    re-compute the sum at a call site — inline math is exactly the
+    pattern that produced seven L4 bugs.
+
+    Contract when payment_db is unreachable: falls back to the
+    subscription_plans row via tier_limits(), assumes paid=0
+    granted=0, and marks `stale=True` on the return so the UI can
+    surface that the extras count may be behind reality.
+    """
+    ent = fetch_entitlement(entity_id, entity_type)
+    limits = tier_limits(ent["tier"], entity_type)
+    included = limits.get("included_users") or 0
+
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        # subscriptions is on payment_db, memberships on auth_db.
+        # Cross-schema read on the same connection — matches the
+        # pattern L4 uses for tier_limits above.
+        cur.execute(
+            """SELECT extra_seats_paid, extra_seats_granted
+                 FROM payment_db.subscriptions
+                WHERE entity_id=%s AND entity_type=%s
+                LIMIT 1""",
+            (entity_id, entity_type),
+        )
+        row = cur.fetchone()
+        paid    = int(row["extra_seats_paid"])    if row else 0
+        granted = int(row["extra_seats_granted"]) if row else 0
+        stale   = row is None
+
+        cur.execute(
+            """SELECT COUNT(*) AS n
+                 FROM auth_db.entity_memberships
+                WHERE entity_type=%s
+                  AND entity_id=%s
+                  AND (is_active=TRUE OR invitation_accepted_at IS NULL)""",
+            (entity_type, entity_id),
+        )
+        in_use = int(cur.fetchone()["n"])
+    finally:
+        conn.close()
+
+    return {
+        "included": int(included),
+        "paid":     paid,
+        "granted":  granted,
+        "total":    int(included) + paid + granted,
+        "in_use":   in_use,
+        "tier":     ent["tier"],
+        # R4 §2 fallback marker — True when no payment_db row exists
+        # yet (fresh trial). Callers should treat this as "extras
+        # are best-effort 0" and NOT as an error.
+        "stale":    stale,
+    }

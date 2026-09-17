@@ -9,7 +9,7 @@ defaults — flag before wildly increasing them.
 from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Header, Query
 from pydantic import BaseModel
 
 from app.db import get_db
@@ -138,6 +138,90 @@ def grant_paid(sub_id: str, body: GrantIn):
             raise HTTPException(status_code=404, detail="subscription_not_found")
         conn.commit()
         return {"id": sub_id, "tier": body.tier, "current_period_end": period_end.isoformat()}
+    finally:
+        conn.close()
+
+
+# ── R4 · Grant / revoke admin-only seats ─────────────────────────────────
+#
+# Admin edits `extra_seats_granted` only. `extra_seats_paid` is the
+# purchase column and belongs to the customer via /subscriptions/seats/…
+# — a mixed edit here would let a support ticket turn a paid seat into
+# a granted one and vice versa. Guarded at the SQL level (WHERE clause
+# never mentions extra_seats_paid) and at the schema level (the admin
+# API here has no field for it).
+
+class GrantSeatsIn(BaseModel):
+    count: int          # absolute value for extra_seats_granted (not delta)
+    note:  str          # human explanation, required. blank string → 422
+
+
+@router.post("/subscriptions/{sub_id}/grant-seats")
+def grant_seats(
+    sub_id: str,
+    body: GrantSeatsIn,
+    x_user_id: Optional[str] = Header(default=None),
+):
+    """Set the admin-granted seat count on a subscription.
+
+    R4 §3a — count can exceed the plan's max_users; warn UI-side,
+    server permits. Note is mandatory so a look-back six months later
+    knows *why* (R4 §1 · seats_note).
+    """
+    if body.count < 0 or body.count > 100:
+        raise HTTPException(status_code=400, detail="count must be 0..100")
+    note = (body.note or "").strip()
+    if not note:
+        raise HTTPException(status_code=400, detail="note_required")
+
+    conn = get_db("payment_db")
+    try:
+        cur = conn.cursor()
+        # Read old value first so the audit row captures the delta.
+        cur.execute(
+            "SELECT entity_id, entity_type, extra_seats_granted "
+            "FROM subscriptions WHERE id=%s",
+            (sub_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="subscription_not_found")
+        old_count = int(row["extra_seats_granted"])
+
+        cur.execute(
+            "UPDATE subscriptions "
+            "SET extra_seats_granted=%s, seats_note=%s "
+            "WHERE id=%s",
+            (body.count, note, sub_id),
+        )
+        conn.commit()
+
+        # Audit — R4 §3a requires who/when/from/to/why. Stored in the
+        # same audit_log table admin org-status changes use, so the
+        # existing admin log view surfaces this row too.
+        import json
+        audit_cur = conn.cursor()
+        audit_cur.execute(
+            """INSERT INTO auth_db.audit_log
+                 (entity_type, entity_id, actor_id, action, metadata)
+               VALUES (%s, %s, %s, %s, %s)""",
+            (
+                row["entity_type"], row["entity_id"],
+                x_user_id or "admin",
+                "seats_granted",
+                json.dumps(
+                    {"from": old_count, "to": body.count, "note": note},
+                    ensure_ascii=False,
+                ),
+            ),
+        )
+        conn.commit()
+        return {
+            "id":                  sub_id,
+            "extra_seats_granted": body.count,
+            "previous":            old_count,
+            "seats_note":          note,
+        }
     finally:
         conn.close()
 

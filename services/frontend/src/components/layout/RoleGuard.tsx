@@ -35,7 +35,11 @@ import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { NoAccessCard } from './NoAccessCard';
 
-export type RoleSection = 'contractor' | 'corporation' | 'admin';
+// R5 §1 · 'provider' section covers /provider/* routes for
+// service_provider entities. Kept as a distinct section value so a
+// contractor page that wraps its children in <RoleGuard expect="contractor">
+// still bounces a provider (guardrail default = OUT).
+export type RoleSection = 'contractor' | 'corporation' | 'admin' | 'provider';
 
 interface Props {
   expect: RoleSection;
@@ -93,6 +97,16 @@ export default function RoleGuard({ expect, children }: Props) {
 
     // ── correct entity type — happy path ──────────────────────────
     if (entityType === expect) return;
+
+    // R5 §1 · symmetric mirroring only applies between contractor and
+    // corporation (the two-section product surface). A provider that
+    // wandered into /contractor/dashboard or a contractor that hit
+    // /provider/dashboard has NO mirror path — the sections don't
+    // have symmetric pages. Fall through to NoAccessCard rather than
+    // silently mangling the URL.
+    if (expect === 'provider' || entityType === 'service_provider') {
+      return;
+    }
 
     // ── wrong entity type. If the current path has a mirror in the
     // right section, translate 1:1; else drop the user on the right

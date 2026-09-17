@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Loader2, Building2, HardHat, ShieldCheck } from 'lucide-react';
+import { Loader2, Building2, HardHat, ShieldCheck, Wrench } from 'lucide-react';
 import { otpApi, type Membership } from '@/lib/api';
 import { saveTokens, getAccessToken, decodeJwtPayload } from '@/lib/auth';
 import { useAuth } from '@/lib/AuthContext';
@@ -17,9 +17,15 @@ import Logo from '@/components/Logo';
 // helper login/register/* use so priority stays consistent.
 import { resolveDestination } from '@/features/prospect/returnTo';
 
+// R5 §1 · was two-value, dropped raw enum on the third row of any
+// provider card. lib/labels.ts is the U8 §1 shared map — but it
+// doesn't currently expose ENTITY_HE, so keeping the local map and
+// adding service_provider here. When the shared file grows an
+// ENTITY_HE map, this constant folds into it.
 const ENTITY_LABELS: Record<string, string> = {
-  contractor:  'קבלן',
-  corporation: 'תאגיד',
+  contractor:       'קבלן',
+  corporation:      'תאגיד',
+  service_provider: 'ספק שירותים נלווים',
 };
 
 const ROLE_LABELS: Record<string, string> = {
@@ -162,9 +168,14 @@ function SelectEntityInner() {
       // this, a multi-entity user who came in from a RevealModal
       // click would end up on the dashboard because the picker step
       // was the last hop and it hardcoded the dashboard push.
-      const dashboard = m.entity_type === 'corporation'
-        ? '/corporation/dashboard'
-        : '/contractor/dashboard';
+      // R5 §1 · three entity types now, not two — provider was
+      // silently falling into the contractor branch and landing on
+      // /contractor/dashboard (which then bounced with "אין לך
+      // חשבון קבלן"). Route by explicit switch.
+      const dashboard =
+        m.entity_type === 'corporation'      ? '/corporation/dashboard' :
+        m.entity_type === 'service_provider' ? '/provider/dashboard' :
+        '/contractor/dashboard';
       router.push(resolveDestination(
         searchParams?.get('next'),
         searchParams?.get('returnTo'),
@@ -234,7 +245,9 @@ function SelectEntityInner() {
                 className="w-full flex items-center gap-4 p-4 rounded-lg border-2 border-slate-200 hover:border-brand-400 hover:bg-brand-50 transition-colors text-start disabled:opacity-60"
               >
                 {m.entity_type === 'contractor'
-                  ? <HardHat className="h-8 w-8 text-brand-600 shrink-0" />
+                  ? <HardHat   className="h-8 w-8 text-brand-600 shrink-0" />
+                  : m.entity_type === 'service_provider'
+                  ? <Wrench    className="h-8 w-8 text-emerald-600 shrink-0" />
                   : <Building2 className="h-8 w-8 text-brand-600 shrink-0" />
                 }
                 <div className="flex-1 min-w-0">

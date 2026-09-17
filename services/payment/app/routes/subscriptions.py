@@ -440,7 +440,8 @@ async def renewal_batch(x_internal_secret: Optional[str] = Header(default=None))
         cur = conn.cursor()
         cur.execute(
             f"""SELECT id, entity_id, entity_type, tier, status,
-                       current_period_end, rebill_attempts, next_attempt_at
+                       current_period_end, rebill_attempts, next_attempt_at,
+                       extra_seats_paid
                   FROM subscriptions
                  WHERE (
                         (status='active'   AND current_period_end <= %s)
@@ -475,13 +476,29 @@ async def renewal_batch(x_internal_secret: Optional[str] = Header(default=None))
             failed += 1
             continue
 
-        price = _lookup_plan_price(sub["entity_type"], sub["tier"])
-        if price is None:
+        base_price = _lookup_plan_price(sub["entity_type"], sub["tier"])
+        if base_price is None:
             logger.error(
                 "[renewal-batch] sub=%s has no seeded price for tier=%s — skipping",
                 sub["id"], sub["tier"],
             )
             continue
+        # R4 §5a · renewal = monthly_price + extra_seats_paid × extra_user_price_nis.
+        # extra_seats_granted is deliberately NOT included — it's a
+        # goodwill grant and NEVER bills. If we ever collapse the two
+        # columns, this comment is the reminder of why we didn't.
+        paid_seats = int(sub.get("extra_seats_paid") or 0)
+        extra_price_per_seat = _lookup_extra_seat_price(sub["entity_type"], sub["tier"])
+        seats_surcharge = 0
+        if paid_seats > 0 and extra_price_per_seat:
+            seats_surcharge = paid_seats * int(extra_price_per_seat)
+        price = int(base_price) + seats_surcharge
+        if seats_surcharge > 0:
+            logger.info(
+                "[renewal-batch] sub=%s tier=%s base=%s + %s×%s seats = %s",
+                sub["id"], sub["tier"], base_price,
+                paid_seats, extra_price_per_seat, price,
+            )
 
         idem = str(uuid.uuid4())
         try:
@@ -665,6 +682,28 @@ def _lookup_plan_price(entity_type: str, tier: str) -> Optional[int]:
         return _plan_price(cur, entity_type, tier)
     finally:
         conn.close()
+
+
+def _lookup_extra_seat_price(entity_type: str, tier: str) -> Optional[int]:
+    """R4 · per-seat price for the given plan (₪/month), or None when
+    the plan doesn't sell extra seats (corp tiers today). Reads the
+    same subscription_plans row _plan_price does; a separate helper
+    so the renewal batch doesn't accidentally add corp seats when
+    extra_user_price_nis is NULL."""
+    conn = get_db("payment_db")
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT extra_user_price_nis FROM subscription_plans "
+            "WHERE entity_type=%s AND tier=%s",
+            (entity_type, tier),
+        )
+        row = cur.fetchone()
+    finally:
+        conn.close()
+    if not row or row.get("extra_user_price_nis") is None:
+        return None
+    return int(row["extra_user_price_nis"])
 
 
 def _invoice_data_for_id(entity_id: str, entity_type: str, *,

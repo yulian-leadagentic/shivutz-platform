@@ -1,10 +1,16 @@
 import { apiFetch } from './client';
 import type { User } from '@/types';
 
+// R5 §1 · entity_type widened to include service_provider so the
+// select-entity switch and any component that reads Membership no
+// longer silently drops the provider case (which produced the
+// "אין לך חשבון קבלן" bounce Yulian reported).
+export type MembershipEntityType = 'contractor' | 'corporation' | 'service_provider';
+
 export interface Membership {
   membership_id: string;
   entity_id: string;
-  entity_type: 'contractor' | 'corporation';
+  entity_type: MembershipEntityType;
   /** Hebrew company name (or fallback to non-Hebrew name). May be null
    *  for legacy memberships where the org row was deleted but the
    *  membership row lingered — display logic should fall back to the

@@ -35,8 +35,15 @@ import { MIX_BUBBLE_BY_ROLE, MOCK_ITEMS } from '@/features/live-activity/mocks';
 import type { ActivityItem, AudienceRole } from '@/features/live-activity/types';
 import { resolveCta } from '@/features/live-activity/ctas';
 
-function audienceFor(entityType: 'contractor' | 'corporation' | null): AudienceRole {
-  return entityType ?? 'anon';
+function audienceFor(
+  entityType: 'contractor' | 'corporation' | 'service_provider' | null,
+): AudienceRole {
+  // AudienceRole today is 'anon' | 'contractor' | 'corporation' — the
+  // live-activity feed doesn't have provider-shaped items yet, so a
+  // provider viewer sees the same mixed 'anon' feed non-authed
+  // visitors get, rather than being silently bucketed into 'contractor'.
+  if (entityType === 'contractor' || entityType === 'corporation') return entityType;
+  return 'anon';
 }
 
 const CATEGORY_ICON = {
