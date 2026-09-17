@@ -196,9 +196,10 @@ export default function TopBar({ mobileNav }: TopBarProps = {}) {
       const tokens = await otpApi.selectEntity(m.entity_id, m.entity_type);
       saveTokens(tokens.access_token, tokens.refresh_token);
       refreshAuth();
-      const target = m.entity_type === 'corporation'
-        ? '/corporation/dashboard'
-        : '/contractor/dashboard';
+      const target =
+        m.entity_type === 'corporation'      ? '/corporation/dashboard' :
+        m.entity_type === 'service_provider' ? '/provider/dashboard'    :
+        '/contractor/dashboard';
       if (typeof window !== 'undefined') {
         window.location.assign(target);
       } else {

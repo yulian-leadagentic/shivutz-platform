@@ -68,8 +68,9 @@ function ErrorBlock({ error }: { error: string }) {
 // resolveDestination() has a fallback string to hand back, instead of
 // redirectByRole owning the router.push call. Kept as a pure fn.
 function defaultForRole(role: string | null): string {
-  if (role === 'admin')       return '/admin/dashboard';
-  if (role === 'corporation') return '/corporation/dashboard';
+  if (role === 'admin')            return '/admin/dashboard';
+  if (role === 'corporation')      return '/corporation/dashboard';
+  if (role === 'service_provider') return '/provider/dashboard';
   return '/contractor/dashboard';
 }
 

@@ -41,7 +41,10 @@ class ProviderCreate(BaseModel):
     name: str                            # display name (falls back to contact_name if empty)
     contact_name: str                    # owner full name (also used as user.full_name)
     contact_phone: str                   # owner mobile (used as user.phone for SMS login)
-    business_number: Optional[str] = None
+    # R5 §2a · ח.פ / ע.מ was optional pre-17.09; Yulian promoted it to
+    # required. Format-only check (9 digits) — providers aren't in
+    # ראשם החברות so we deliberately DON'T lookup like corporations do.
+    business_number: str
     email: Optional[EmailStr] = None
     city: Optional[str] = None
     region: Optional[str] = None
@@ -65,31 +68,81 @@ async def register_provider(data: ProviderCreate):
     if not data.contact_phone.strip():
         raise HTTPException(status_code=400, detail="contact_phone_required")
 
-    # ── Duplicate business_number guard ────────────────────────────
+    # R5 §2a · format-only ח.פ check (9 digits). No registry lookup —
+    # provider is deliberately outside the corp registry (that's why the
+    # entity type exists in the first place).
+    bn = (data.business_number or "").strip()
+    if not bn:
+        raise HTTPException(status_code=400, detail={
+            "code":    "business_number_required",
+            "message": "ח.פ / ע.מ הוא שדה חובה",
+        })
+    if not bn.isdigit() or len(bn) != 9:
+        raise HTTPException(status_code=400, detail={
+            "code":    "invalid_business_number",
+            "message": "ח.פ / ע.מ חייב להיות 9 ספרות",
+        })
+
+    # ── Duplicate business_number guard — checks ALL three entity
+    # types, not just service_providers. A ח.פ that's registered as a
+    # corporation or contractor should redirect the user to log in
+    # with the right role instead of creating a parallel provider
+    # profile (R5 §2a · "הודעה ברורה + הפניה לכניסה, לא 500").
     conn = get_db()
     try:
         cur = conn.cursor()
-        if data.business_number:
-            cur.execute(
-                """SELECT id, name FROM service_providers
-                    WHERE business_number = %s
-                      AND deleted_at IS NULL
-                    LIMIT 1""",
-                (data.business_number,),
+        cur.execute(
+            """SELECT id, name FROM service_providers
+                WHERE business_number = %s
+                  AND deleted_at IS NULL
+                LIMIT 1""",
+            (bn,),
+        )
+        existing = cur.fetchone()
+        if existing:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "provider_already_registered",
+                    "message": (
+                        "ספק שירות עם ח.פ זה כבר רשום במערכת. "
+                        "אנא היכנס במקום להירשם."
+                    ),
+                    "existing_name": existing.get("name"),
+                },
             )
-            existing = cur.fetchone()
-            if existing:
-                raise HTTPException(
-                    status_code=409,
-                    detail={
-                        "code": "provider_already_registered",
-                        "message": (
-                            "ספק שירות עם ח.פ זה כבר רשום במערכת. "
-                            "אנא היכנס במקום להירשם."
-                        ),
-                        "existing_name": existing.get("name"),
-                    },
-                )
+        # Same ח.פ registered as contractor?
+        cur.execute(
+            "SELECT id, company_name_he FROM contractors "
+            "WHERE business_number = %s AND deleted_at IS NULL LIMIT 1",
+            (bn,),
+        )
+        c_existing = cur.fetchone()
+        if c_existing:
+            raise HTTPException(status_code=409, detail={
+                "code":    "business_number_registered_as_contractor",
+                "message": (
+                    "ח.פ זה כבר רשום כקבלן במערכת. אנא היכנס לחשבון "
+                    "הקבלן שלך במקום להירשם כספק."
+                ),
+                "existing_name": c_existing.get("company_name_he"),
+            })
+        # Same ח.פ registered as corporation?
+        cur.execute(
+            "SELECT id, company_name_he FROM corporations "
+            "WHERE business_number = %s AND deleted_at IS NULL LIMIT 1",
+            (bn,),
+        )
+        corp_existing = cur.fetchone()
+        if corp_existing:
+            raise HTTPException(status_code=409, detail={
+                "code":    "business_number_registered_as_corporation",
+                "message": (
+                    "ח.פ זה כבר רשום כתאגיד במערכת. אנא היכנס לחשבון "
+                    "התאגיד שלך במקום להירשם כספק."
+                ),
+                "existing_name": corp_existing.get("company_name_he"),
+            })
 
         # Duplicate phone → block. Providers are single-owner; if the
         # same phone already owns an active provider, this is a re-reg
@@ -130,7 +183,7 @@ async def register_provider(data: ProviderCreate):
                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
                        'active', %s, FALSE, %s, %s)""",
             (
-                provider_id, name, data.business_number,
+                provider_id, name, bn,
                 data.contact_name.strip(), data.contact_phone.strip(),
                 data.email, data.city, data.region, data.website,
                 data.description, data.logo_url,

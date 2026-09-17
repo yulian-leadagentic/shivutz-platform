@@ -53,8 +53,9 @@ export default function LandingNav(_: LandingNavProps) {
   // the home page (that was triggering an OTP loop because they'd
   // bounce through /login while still holding a valid token).
   const dashboardHref =
-    entityType === 'corporation' ? '/corporation/dashboard' :
-    entityType === 'contractor'  ? '/contractor/dashboard'  :
+    entityType === 'corporation'      ? '/corporation/dashboard' :
+    entityType === 'contractor'       ? '/contractor/dashboard'  :
+    entityType === 'service_provider' ? '/provider/dashboard'    :
     '/select-entity';
 
   useEffect(() => {
@@ -140,7 +141,10 @@ export default function LandingNav(_: LandingNavProps) {
                       <p className="text-sm text-slate-800 font-medium truncate">{displayName}</p>
                       {entityType && (
                         <p className="text-xs text-slate-400 truncate">
-                          {entityType === 'corporation' ? 'תאגיד' : entityType === 'contractor' ? 'קבלן' : entityType}
+                          {entityType === 'corporation'      ? 'תאגיד' :
+                           entityType === 'contractor'       ? 'קבלן'  :
+                           entityType === 'service_provider' ? 'ספק שירותים' :
+                           entityType}
                         </p>
                       )}
                     </div>

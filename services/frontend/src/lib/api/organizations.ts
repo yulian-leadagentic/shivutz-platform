@@ -27,7 +27,7 @@ export const orgApi = {
     name:            string;
     contact_name:    string;
     contact_phone:   string;
-    business_number?: string;
+    business_number: string;   // R5 §2a · required (was optional)
     email?:          string;
     city?:           string;
     region?:         string;

@@ -1477,12 +1477,29 @@ function LandingPageInner() {
                 ? `שגיאה בחיפוש: ${searchError}`
                 : resp
                   ? (() => {
-                      const exact = resp.results.length;
-                      const near  = resp.near_matches?.length ?? 0;
-                      if (exact === 0 && near === 0) return 'לא נמצאו מודעות התואמות לחיפוש';
-                      const exactPart = exact === 1 ? 'תוצאה אחת מדויקת' : `${exact} תוצאות מדויקות`;
-                      if (near === 0) return `נמצאו ${exactPart}`;
-                      return `${exactPart} · ${near} תוצאות קרובות`;
+                      // R5 §4 · counter now includes marketplace_matches
+                      // so a query like "קורס עברית" (which lands only
+                      // in the services section) reads "תוצאה אחת",
+                      // not "0 תוצאות". Yulian: "יש תוצאות ולא נמצאו
+                      // מודעות באותו מסך" was the counter and the
+                      // amber block reading off two of the three
+                      // possible sources.
+                      const exact  = resp.results.length;
+                      const near   = resp.near_matches?.length ?? 0;
+                      const market = resp.marketplace_matches?.length ?? 0;
+                      const total  = exact + near + market;
+                      if (total === 0) return 'לא נמצאו מודעות התואמות לחיפוש';
+                      const parts: string[] = [];
+                      if (exact > 0) {
+                        parts.push(exact === 1 ? 'תוצאה אחת מדויקת' : `${exact} תוצאות מדויקות`);
+                      }
+                      if (near > 0) {
+                        parts.push(near === 1 ? 'תוצאה אחת קרובה' : `${near} תוצאות קרובות`);
+                      }
+                      if (market > 0) {
+                        parts.push(market === 1 ? 'שירות אחד נלווה' : `${market} שירותים נלווים`);
+                      }
+                      return parts.join(' · ');
                     })()
                   : ''}
           </div>
@@ -1575,7 +1592,18 @@ function LandingPageInner() {
                     </div>
                   )}
 
-                  {resp && resp.results.length === 0 && (!resp.near_matches || resp.near_matches.length === 0) && (() => {
+                  {resp
+                    && resp.results.length === 0
+                    && (!resp.near_matches || resp.near_matches.length === 0)
+                    // R5 §4 · when marketplace_matches has hits, the
+                    // amber "no results" block would read like a
+                    // system failure sitting next to a real result
+                    // card. Suppress it — the heading of the services
+                    // section IS the message. Only render the amber
+                    // when the whole search came up empty across
+                    // exact, near, AND services.
+                    && (!resp.marketplace_matches || resp.marketplace_matches.length === 0)
+                    && (() => {
                     // NM — when near_matches is populated the amber
                     // "no results" empty-state is suppressed; the
                     // near-match heading below IS the message. Only
@@ -1836,6 +1864,17 @@ function LandingPageInner() {
                         ' space-y-3'
                       }
                     >
+                      {/* R5 §4 · when workers came up empty but services
+                          matched, prepend a one-liner that explains what
+                          the reader sees. Reads as "we don't have workers
+                          matching your query but here's a service that
+                          does" instead of an unlabelled results block
+                          next to a "0 results" counter. */}
+                      {resp.results.length === 0 && (!resp.near_matches || resp.near_matches.length === 0) && (
+                        <p className="text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                          לא נמצאו עובדים או דיור לחיפוש הזה. מצאנו התאמה בשירותים הנלווים.
+                        </p>
+                      )}
                       <div className="flex items-center justify-between gap-2">
                         <h2 className="text-base sm:text-lg font-bold text-slate-900">
                           שירותים נלווים

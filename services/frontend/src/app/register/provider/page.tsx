@@ -106,13 +106,21 @@ export default function ProviderRegisterPage() {
     setError(null);
     if (!name.trim()) return setError('שם העסק הוא שדה חובה');
     if (!contactName.trim()) return setError('שם איש קשר הוא שדה חובה');
+    // R5 §2a · ח.פ was optional until Yulian's 17.09 call. Format check
+    // only (9 digits) — providers aren't in ראשם החברות so we
+    // deliberately don't cross-check a registry; that's the whole point
+    // of the service_provider entity type. Server-side validation in
+    // providers.py is the source of truth; client is convenience.
+    const bn = businessNumber.trim();
+    if (!bn) return setError('ח.פ / ע.מ הוא שדה חובה');
+    if (!/^\d{9}$/.test(bn)) return setError('ח.פ / ע.מ חייב להיות 9 ספרות');
     setBusy(true);
     try {
       const res = await orgApi.registerProvider({
         name:            name.trim(),
         contact_name:    contactName.trim(),
         contact_phone:   normPhone,
-        business_number: businessNumber.trim() || undefined,
+        business_number: bn,
         email:           email.trim() || undefined,
         city:            city.trim() || undefined,
         website:         website.trim() || undefined,
@@ -248,12 +256,15 @@ export default function ProviderRegisterPage() {
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <label className="block text-sm">
-                      <span className="text-slate-700 mb-1 block">ח.פ / ע.מ (אופציונלי)</span>
+                      <span className="text-slate-700 mb-1 block">ח.פ / ע.מ *</span>
                       <Input
                         value={businessNumber}
-                        onChange={(e) => setBizNumber(e.target.value)}
+                        onChange={(e) => setBizNumber(e.target.value.replace(/\D/g, '').slice(0, 9))}
                         dir="ltr"
                         inputMode="numeric"
+                        pattern="\d{9}"
+                        maxLength={9}
+                        required
                       />
                     </label>
                     <label className="block text-sm">
