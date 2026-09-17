@@ -452,6 +452,12 @@ export const adminApi = {
         joined_at:       string | null;
         seats_used:      number;
         seats_included:  number | null;
+        // R4 · admin-grant breakdown. Sum lives in
+        // subscription_limits.effective_seats (backend), so this type
+        // deliberately doesn't pre-sum a total — the FE renders each
+        // component side by side.
+        seats_paid?:     number;
+        seats_granted?:  number;
       };
       owner: null | {
         id:        string;
@@ -465,8 +471,28 @@ export const adminApi = {
         status:             string;
         trial_ends_at:      string | null;
         current_period_end: string | null;
+        // R4 · included in the payload so the grant modal can prefill
+        // the current admin-granted count without a second call.
+        extra_seats_paid?:    number;
+        extra_seats_granted?: number;
+        seats_note?:          string | null;
       };
     }>(`/admin/users/${id}/details`),
+
+  /** R4 §3a · set the admin-granted seat count on a subscription.
+   *  `count` is the ABSOLUTE new value, not a delta. `note` is
+   *  required — every grant lands in the audit log. Never touches
+   *  extra_seats_paid (that's customer money). */
+  grantSeats: (subId: string, count: number, note: string) =>
+    apiFetch<{
+      id:                  string;
+      extra_seats_granted: number;
+      previous:            number;
+      seats_note:          string;
+    }>(`/admin/subscriptions/${subId}/grant-seats`, {
+      method: 'POST',
+      body: JSON.stringify({ count, note }),
+    }),
 
   // ── Org status (suspend / reactivate) ──────────────────────────────────
   setOrgStatus: (id: string, orgType: 'contractor' | 'corporation',

@@ -3,6 +3,7 @@
 import { Fragment, useCallback, useEffect, useState, FormEvent } from 'react';
 import { Loader2, UserPlus, ShieldCheck, ShieldAlert, ChevronDown, ChevronLeft } from 'lucide-react';
 import { adminApi, type AdminUser } from '@/lib/adminApi';
+import { SeatGrantModal, type SeatGrantDetail } from '@/features/subscription/SeatGrantModal';
 import { mapApiError } from '@/lib/api/errors';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -54,6 +55,16 @@ export default function AdminUsersPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [details, setDetails] = useState<Record<string, DetailState>>({});
 
+  async function fetchDetail(userId: string) {
+    setDetails((m) => ({ ...m, [userId]: { loading: true } }));
+    try {
+      const data = await adminApi.getUserDetails(userId);
+      setDetails((m) => ({ ...m, [userId]: { loading: false, data } }));
+    } catch (e) {
+      setDetails((m) => ({ ...m, [userId]: { loading: false, error: mapApiError(e) } }));
+    }
+  }
+
   async function toggleExpand(userId: string) {
     const willOpen = expandedId !== userId;
     setExpandedId(willOpen ? userId : null);
@@ -63,13 +74,7 @@ export default function AdminUsersPage() {
     // fetch by closing + opening).
     if (!willOpen) return;
     if (details[userId]) return;
-    setDetails((m) => ({ ...m, [userId]: { loading: true } }));
-    try {
-      const data = await adminApi.getUserDetails(userId);
-      setDetails((m) => ({ ...m, [userId]: { loading: false, data } }));
-    } catch (e) {
-      setDetails((m) => ({ ...m, [userId]: { loading: false, error: mapApiError(e) } }));
-    }
+    await fetchDetail(userId);
   }
 
   function pushToast(msg: string) {
@@ -365,7 +370,7 @@ export default function AdminUsersPage() {
                         {isExpanded && (
                           <tr className="bg-slate-50 border-b border-slate-100">
                             <td colSpan={8} className="px-4 py-3">
-                              <UserDetailBlock state={detail} />
+                              <UserDetailBlock state={detail} onRefresh={() => fetchDetail(u.id)} />
                             </td>
                           </tr>
                         )}
@@ -410,7 +415,9 @@ export default function AdminUsersPage() {
 //   - entity=null    → "המשתמש לא משויך לישות" (usually an admin)
 //   - owner=null     → "בעל חשבון לא נמצא" (data anomaly worth flagging)
 //   - subscription=null → "אין מנוי פעיל" (not an error; U5 §3 rule)
-function UserDetailBlock({ state }: { state: DetailState | undefined }) {
+function UserDetailBlock({ state, onRefresh }: { state: DetailState | undefined; onRefresh: () => Promise<void> }) {
+  const [grantOpen, setGrantOpen] = useState(false);
+
   if (!state || state.loading) {
     return (
       <div className="flex items-center gap-2 text-sm text-slate-500">
@@ -443,6 +450,27 @@ function UserDetailBlock({ state }: { state: DetailState | undefined }) {
   };
   const fmt = (iso: string | null) =>
     iso ? new Date(iso).toLocaleDateString('he-IL') : '—';
+
+  // R4 · seat breakdown. Backend returns raw components; sum lives
+  // in subscription_limits.effective_seats. FE renders each part
+  // side-by-side so admins can see WHERE the ceiling comes from.
+  const seatsPaid    = entity?.seats_paid    ?? 0;
+  const seatsGranted = entity?.seats_granted ?? 0;
+  const seatsTotal   = entity?.seats_included != null
+    ? entity.seats_included + seatsPaid + seatsGranted
+    : null;
+
+  const grantDetail: SeatGrantDetail | null = (entity && subscription) ? {
+    subscriptionId: subscription.id,
+    entityName:     entity.name || ENTITY_TYPE_HE[entity.type] || entity.type,
+    tier:           TIER_HE[subscription.tier] || subscription.tier,
+    seatsIncluded:  entity.seats_included,
+    seatsPaid,
+    seatsGranted:   subscription.extra_seats_granted ?? seatsGranted,
+    seatsUsed:      entity.seats_used,
+    seatsNote:      subscription.seats_note ?? null,
+  } : null;
+
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
       {/* Entity */}
@@ -456,9 +484,24 @@ function UserDetailBlock({ state }: { state: DetailState | undefined }) {
               <div className="flex justify-between"><dt className="text-slate-500">ח.פ / ע.מ</dt><dd dir="ltr">{entity.business_number || '—'}</dd></div>
               <div className="flex justify-between"><dt className="text-slate-500">סטטוס</dt><dd>{entity.approval_status ? (STATUS_HE[entity.approval_status] || entity.approval_status) : '—'}</dd></div>
               <div className="flex justify-between"><dt className="text-slate-500">הצטרפות</dt><dd>{fmt(entity.joined_at)}</dd></div>
-              <div className="flex justify-between">
-                <dt className="text-slate-500">משתמשים</dt>
-                <dd>{entity.seats_included != null ? `${entity.seats_used} מתוך ${entity.seats_included}` : `${entity.seats_used}`}</dd>
+              <div className="pt-1 mt-1 border-t border-slate-100">
+                <div className="flex justify-between">
+                  <dt className="text-slate-500">משתמשים בשימוש</dt>
+                  <dd className="font-semibold text-slate-800">
+                    {entity.seats_used}
+                    {seatsTotal != null && <span className="text-slate-500 font-normal"> / {seatsTotal}</span>}
+                  </dd>
+                </div>
+                {entity.seats_included != null && (
+                  <div className="flex justify-between mt-0.5 text-[11px] text-slate-500">
+                    <span>הרכב</span>
+                    <span>
+                      {entity.seats_included} כלולים
+                      {seatsPaid    > 0 && <> · {seatsPaid} שרכשו</>}
+                      {seatsGranted > 0 && <> · {seatsGranted} מהנהלה</>}
+                    </span>
+                  </div>
+                )}
               </div>
             </dl>
           </>
@@ -497,12 +540,35 @@ function UserDetailBlock({ state }: { state: DetailState | undefined }) {
               <div className="flex justify-between"><dt className="text-slate-500">סטטוס</dt><dd>{SUB_STATUS_HE[subscription.status] || subscription.status}</dd></div>
               <div className="flex justify-between"><dt className="text-slate-500">ניסיון עד</dt><dd>{fmt(subscription.trial_ends_at)}</dd></div>
               <div className="flex justify-between"><dt className="text-slate-500">חיוב הבא</dt><dd>{fmt(subscription.current_period_end)}</dd></div>
+              {subscription.seats_note && (
+                <div className="pt-1 mt-1 border-t border-slate-100 text-[11px] text-slate-500 italic">
+                  &ldquo;{subscription.seats_note}&rdquo;
+                </div>
+              )}
             </dl>
+            {grantDetail && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="mt-3 w-full text-xs"
+                onClick={() => setGrantOpen(true)}
+              >
+                הענק / עדכן מושבים
+              </Button>
+            )}
           </>
         ) : (
           <div className="text-slate-400 text-xs">אין מנוי פעיל.</div>
         )}
       </div>
+
+      {grantOpen && grantDetail && (
+        <SeatGrantModal
+          detail={grantDetail}
+          onClose={() => setGrantOpen(false)}
+          onSuccess={() => { void onRefresh(); }}
+        />
+      )}
     </div>
   );
 }
