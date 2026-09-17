@@ -12,8 +12,9 @@ import Link from 'next/link';
 import type { Metadata } from 'next';
 import {
   MessageSquare, Sparkles, Handshake, ShieldCheck, Building2, HardHat,
-  ArrowLeft, CheckCircle2,
+  ArrowLeft, CheckCircle2, Wrench,
 } from 'lucide-react';
+import Logo from '@/components/Logo';
 
 export const metadata: Metadata = {
   title:       'איך זה עובד · TagidAI',
@@ -47,13 +48,39 @@ const STEPS = [
     body:
       'ההרשמה נדרשת רק כדי לחשוף את פרטי הקשר של התאגיד. משם, הפנייה ישירה — בלי מתווכים.',
     detail:
-      'החשיפה כוללת שם התאגיד, טלפון של מוקד הזמנות ואימייל. לפי המנוי נקבע כמה חשיפות בחודש; הצפייה במודעה עצמה חינמית ולא נחשבת במכסה.',
+      // U9 §3a · was "טלפון של מוקד הזמנות" — a manpower corp has an
+      // account contact, not a call centre. Also reordered: what you
+      // get → what's free → what's metered, so the reader isn't hit
+      // with "there's a quota" before they know the platform is free
+      // to browse. Reveal count is deliberately not quoted here —
+      // it lives on the pricing plans page (max_reveals_per_month per
+      // tier) and would go stale the moment an admin edits a plan.
+      'מה שנחשף: שם התאגיד, טלפון ישיר של איש הקשר וכתובת אימייל — כדי שתוכל לפנות בעצמך, בלי מתווך. הצפייה במודעות היא תמיד חופשית ובלתי מוגבלת; רק חשיפת פרטי הקשר נספרת במכסה החודשית של המנוי.',
   },
 ] as const;
 
 export default function HowItWorksPage() {
   return (
-    <main dir="rtl" className="max-w-5xl mx-auto px-4 py-10 md:py-14 space-y-14 text-slate-800">
+    <main dir="rtl" className="max-w-5xl mx-auto px-4 py-6 md:py-8 space-y-10 text-slate-800">
+      {/* U9 §1 · top nav — LandingNav is home-page bound and holds
+          landing state, so we use a minimal in-page bar. Same Logo
+          component U6 §5 wired into /marketplace; never spell out
+          "TagidAI" as text. Bottom "חזרה" link at the end of the
+          page stays (U9 §1c). */}
+      <nav aria-label="ניווט עליון" className="flex items-center justify-between mb-2">
+        <Link href="/" aria-label="TagidAI · דף הבית" className="inline-flex items-center">
+          <span className="sm:hidden"><Logo kind="icon"   size="sm" decorative /></span>
+          <span className="hidden sm:inline-flex"><Logo kind="lockup" size="sm" decorative /></span>
+        </Link>
+        <Link
+          href="/"
+          className="inline-flex items-center gap-1 text-sm text-slate-600 hover:text-slate-900"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          חזרה לדף הבית
+        </Link>
+      </nav>
+
       {/* Header */}
       <header className="text-center space-y-3 max-w-2xl mx-auto">
         <p className="text-xs font-semibold text-brand-600 tracking-widest uppercase">פשוט, מהיר ובטוח</p>
@@ -152,12 +179,22 @@ export default function HowItWorksPage() {
             <span>הקבלן מגיע כשהוא כבר יודע מה יש לכם. השיחה מתחילה מעניין אמיתי.</span>
           </li>
           <li className="flex items-start gap-2">
+            {/* U9 §3b · was "מודעות דיור וציוד" — conflicts with U8 §2
+                (corp housing-only marketplace gate). The server
+                returns 403 corp_housing_only on any category that
+                isn't housing, so promising equipment here is a
+                broken promise. Equipment is reserved for the
+                service_provider marketplace. */}
             <CheckCircle2 className="h-4 w-4 text-emerald-600 mt-1 shrink-0" />
-            <span>אפשר להוסיף מודעות דיור וציוד לצד מודעות עובדים — ערוץ אחד לכל השירותים הנלווים.</span>
+            <span>אפשר להוסיף מודעות דיור לצד מודעות עובדים — פרסום הדיור כלול ברישיון התאגיד, ללא תשלום נוסף.</span>
           </li>
           <li className="flex items-start gap-2">
+            {/* U9 §3c · was "כמות המודעות והצפיות הפעילות" — but
+                max_reveals_per_month is NULL for all three corp tiers
+                (059:35-37). What the tier actually widens is
+                max_active_ads (3/15/∞) plus can_boost. */}
             <CheckCircle2 className="h-4 w-4 text-emerald-600 mt-1 shrink-0" />
-            <span>מנוי חודשי מרחיב את כמות המודעות והצפיות הפעילות שלכם במקביל.</span>
+            <span>מנוי חודשי מרחיב את מספר המודעות הפעילות שאפשר להחזיק במקביל, ומאפשר קידום מודעות.</span>
           </li>
         </ul>
         <div className="pt-2">
@@ -171,6 +208,57 @@ export default function HowItWorksPage() {
         </div>
       </section>
 
+      {/* U9 §2 · service provider section. Added after U7 shipped the
+          /register/provider route + the marketplace publishes services
+          alongside housing/workers. Without this, a visitor who
+          searches "קורס עברית" gets results but the page describing
+          the product mentions only workers + housing — a mismatch
+          Yulian called out. */}
+      <section aria-labelledby="for-provider" className="bg-white border border-slate-200 rounded-2xl p-6 md:p-8 space-y-5">
+        <div className="flex items-center gap-3">
+          <div className="h-11 w-11 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center">
+            <Wrench className="h-5 w-5" />
+          </div>
+          <div>
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">לספקי שירות</p>
+            <h2 id="for-provider" className="text-xl md:text-2xl font-bold text-slate-900">שירותים נלווים — דיור, הסעות, ביטוח וציוד</h2>
+          </div>
+        </div>
+        <ul className="grid gap-3 text-sm md:text-base text-slate-700 leading-relaxed">
+          <li className="flex items-start gap-2">
+            <CheckCircle2 className="h-4 w-4 text-emerald-600 mt-1 shrink-0" />
+            <span>חיפוש אחד מכסה גם עובדים וגם שירותים נלווים. אין צורך לדעת מראש איפה לחפש.</span>
+          </li>
+          <li className="flex items-start gap-2">
+            <CheckCircle2 className="h-4 w-4 text-emerald-600 mt-1 shrink-0" />
+            <span>דיור לעובדים, הסעות, ביטוח, ציוד וקורסי עברית — מספקים שנרשמו לפלטפורמה.</span>
+          </li>
+          <li className="flex items-start gap-2">
+            <CheckCircle2 className="h-4 w-4 text-emerald-600 mt-1 shrink-0" />
+            <span>הצפייה חופשית לגמרי — כמו שאר המודעות בפלטפורמה.</span>
+          </li>
+          <li className="flex items-start gap-2">
+            <CheckCircle2 className="h-4 w-4 text-emerald-600 mt-1 shrink-0" />
+            <span>ספק שירותים? הרשמה חופשית ופרסום ללא עלות עד סוף 2026.</span>
+          </li>
+        </ul>
+        <div className="pt-2 flex flex-wrap gap-3">
+          <Link
+            href="/register/provider"
+            className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-5 py-2.5 rounded-lg min-h-11"
+          >
+            הרשמה כספק שירותים — חינם
+            <ArrowLeft className="h-4 w-4" />
+          </Link>
+          <Link
+            href="/marketplace"
+            className="inline-flex items-center gap-2 border border-slate-300 hover:border-slate-400 text-slate-700 font-semibold px-5 py-2.5 rounded-lg min-h-11"
+          >
+            צפייה במודעות
+          </Link>
+        </div>
+      </section>
+
       {/* Trust footer */}
       <section aria-label="שקיפות" className="text-center max-w-2xl mx-auto space-y-3 pt-2 pb-4">
         <div className="inline-flex items-center gap-2 text-emerald-700">
@@ -178,7 +266,13 @@ export default function HowItWorksPage() {
           <span className="text-sm font-semibold">הכל במקום אחד — דיגיטלי, מהיר ושקוף</span>
         </div>
         <p className="text-xs text-slate-500 leading-relaxed">
-          פלטפורמה של Lead Agentic. תאגידים עוברים אימות מול מרשם החברות ומרשם היבואנים לפני שהמודעות שלהם מתפרסמות.
+          {/* U9 §3d · was "מרשם החברות ומרשם היבואנים" — but
+              corporations.py:92 hits data.gov.il ica (רשם החברות) and
+              cross-checks the annual רשות האוכלוסין manpower-corps
+              list uploaded by admin. There is no "מרשם היבואנים"
+              lookup anywhere. Rewriting to match what the code
+              actually does. */}
+          פלטפורמה של Lead Agentic. תאגידים עוברים אימות מול מרשם החברות וברשימת תאגידי כוח אדם מורשים של רשות האוכלוסין וההגירה לפני שהמודעות שלהם מתפרסמות.
         </p>
         <p className="text-xs">
           <Link href="/" className="text-slate-500 hover:text-slate-800">← חזרה לדף הבית</Link>

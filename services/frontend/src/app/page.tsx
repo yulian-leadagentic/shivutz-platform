@@ -1881,14 +1881,27 @@ function LandingPageInner() {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {recent.slice(0, 9).map((ad) => {
                   const isHousing = ad.ad_type === 'housing';
+                  // U10 · Yulian 14.09 — the "פרסום חדש בפורטל"
+                  // mosaic was a plain <div>, not linked. Same shape
+                  // as FeaturedAdsCarousel now: `?ad=<id>` on the
+                  // landing route so H11's reveal-return code path
+                  // and the existing prospect/returnTo flow both
+                  // resolve without a new route. aria-label carries
+                  // the ad title so the whole card is one clear tab
+                  // stop instead of nine "קישור" items.
                   return (
-                    <div key={ad.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                    <Link
+                      key={ad.id}
+                      href={`/?ad=${ad.id}`}
+                      aria-label={ad.title_he || 'פרסום חדש'}
+                      className="group rounded-2xl border border-slate-200 bg-white p-4 shadow-sm hover:shadow-md hover:border-brand-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 transition"
+                    >
                       <div className="flex items-center gap-2 mb-2">
                         <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${isHousing ? 'bg-slate-100 text-slate-700' : 'bg-brand-50 text-brand-700'}`}>
                           {isHousing ? <HomeIcon className="w-4 h-4" /> : <Users className="w-4 h-4" />}
                         </div>
                       </div>
-                      <h3 className="text-sm font-bold text-slate-900 line-clamp-2 min-h-[2.5rem]">{ad.title_he}</h3>
+                      <h3 className="text-sm font-bold text-slate-900 line-clamp-2 min-h-[2.5rem] group-hover:text-brand-700 transition-colors">{ad.title_he}</h3>
                       <p className="text-xs text-slate-500 mt-1 flex flex-wrap gap-x-2">
                         {isHousing ? (
                           <>
@@ -1910,7 +1923,7 @@ function LandingPageInner() {
                           </>
                         )}
                       </p>
-                    </div>
+                    </Link>
                   );
                 })}
               </div>
