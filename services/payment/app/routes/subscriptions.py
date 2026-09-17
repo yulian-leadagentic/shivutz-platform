@@ -401,6 +401,237 @@ def _restore_grace_hard_capped_ads(corp_id: str) -> None:
         logger.warning("[subscriptions] grace-restore skipped: %s", exc)
 
 
+# ─── POST /payments/subscriptions/seats/purchase ─────────────────────────────
+# R4 §4 · contractor buys N extra seats mid-cycle. `extra_seats_paid`
+# on the subscription row goes up by N; the renewal batch (§5) picks
+# up the new value and bills base + N × extra_price at the next cycle.
+#
+# Contract:
+#   * count       — 1..50 (business bound)
+#   * idempotency_key — client-provided uuid so a double-click doesn't
+#                        double-charge. Server dedups on the same
+#                        payment_events UNIQUE the renewal batch uses,
+#                        so a replayed key → returns the same result
+#                        without charging or bumping seats again.
+#
+# Cardcom + fake mode: mirrors /start exactly. In fake mode we skip
+# the Cardcom call and mark the row with a `FAKE-…` provider txn id
+# so the payment_events row is tagged is_fake=TRUE (S2 §2).
+
+class SeatPurchaseBody(BaseModel):
+    count: int
+    idempotency_key: str
+
+
+@router.post("/seats/purchase")
+async def purchase_seats(
+    body: SeatPurchaseBody,
+    x_entity_id:   Optional[str] = Header(default=None),
+    x_entity_type: Optional[str] = Header(default=None),
+):
+    entity_id, entity_type = _resolve_entity(x_entity_id, x_entity_type)
+    if body.count < 1 or body.count > 50:
+        raise HTTPException(status_code=400, detail={
+            "code": "count_out_of_range",
+            "message": "מספר המושבים חייב להיות בין 1 ל-50",
+        })
+    if not body.idempotency_key or len(body.idempotency_key) < 8:
+        raise HTTPException(status_code=400, detail={
+            "code": "idempotency_key_required",
+        })
+
+    conn = get_db("payment_db")
+    try:
+        cur = conn.cursor()
+        row = _fetch(cur, entity_id, entity_type)
+        if row is None:
+            # No subscription row = no cycle to bill against = nothing
+            # to attach the seat to. Force the /start flow first.
+            raise HTTPException(status_code=409, detail={
+                "code":    "no_subscription",
+                "message": "יש להפעיל מנוי לפני רכישת מושב נוסף.",
+            })
+
+        # Per-seat price from the plan (admin edits this at
+        # /admin/subscription-plans). NULL means the tier doesn't sell
+        # extras — corp today; the seat gate wouldn't route the user
+        # here in that case, but belt-and-braces at the API too.
+        seat_price = None
+        cur.execute(
+            "SELECT extra_user_price_nis FROM subscription_plans "
+            "WHERE entity_type=%s AND tier=%s",
+            (entity_type, row["tier"]),
+        )
+        pp = cur.fetchone()
+        if pp and pp.get("extra_user_price_nis") is not None:
+            seat_price = int(pp["extra_user_price_nis"])
+        if seat_price is None:
+            raise HTTPException(status_code=402, detail={
+                "code":    "tier_no_extra_seats",
+                "message": "המסלול הנוכחי אינו כולל רכישת מושבים נוספים.",
+                "tier":    row["tier"],
+            })
+        amount = seat_price * body.count
+
+        # Deal id built off the idempotency key so a replay produces the
+        # same provider_transaction_id even before Cardcom sees it. Same
+        # UNIQUE constraint on payment_events blocks a double-write on
+        # our side if the client retries after a successful charge.
+        deal_id = f"sub:{entity_type}:{entity_id}:seat:{body.idempotency_key}"
+
+        if PAYMENT_FAKE_MODE:
+            # In fake mode we skip Cardcom entirely but still write a
+            # payment_events row so the renewal batch, reporting, and
+            # tests see a real audit trail. is_fake=TRUE flows from the
+            # FAKE- prefix (S2 §2 hook in record_event / payment_events).
+            fake_txn = f"FAKE-{body.idempotency_key[:12]}"
+            inserted, event_id = record_event(
+                entity_id=entity_id, entity_type=entity_type,
+                kind="seat_purchase", outcome="ok",
+                amount_nis=amount,
+                provider_transaction_id=fake_txn,
+                response_code="fake",
+                invoice_number=None, invoice_url=None,
+                raw={"count": body.count, "seat_price": seat_price,
+                     "fake": True},
+            )
+            if not inserted:
+                # Second click on the same idempotency key — return the
+                # current row without bumping seats. This is the R4
+                # acceptance "לחיצה כפולה → רכישה אחת" branch.
+                cur.execute(
+                    "SELECT extra_seats_paid FROM subscriptions WHERE id=%s",
+                    (row["id"],),
+                )
+                cur_row = cur.fetchone()
+                return {
+                    "mode":                "fake",
+                    "kind":                "seat_purchase",
+                    "count":               body.count,
+                    "amount_nis":          amount,
+                    "extra_seats_paid":    int(cur_row["extra_seats_paid"]) if cur_row else row["extra_seats_paid"],
+                    "duplicate":           True,
+                    "event_id":            event_id,
+                }
+            cur.execute(
+                "UPDATE subscriptions "
+                "SET extra_seats_paid = extra_seats_paid + %s "
+                "WHERE id=%s",
+                (body.count, row["id"]),
+            )
+            conn.commit()
+            return {
+                "mode":                "fake",
+                "kind":                "seat_purchase",
+                "count":               body.count,
+                "amount_nis":          amount,
+                "extra_seats_paid":    int(row["extra_seats_paid"]) + body.count,
+                "duplicate":           False,
+                "event_id":            event_id,
+            }
+
+        # ── Real Cardcom path ─────────────────────────────────────
+        pm = _default_payment_method(cur, entity_id, entity_type)
+        if not pm:
+            raise HTTPException(status_code=402, detail={
+                "code":    "no_payment_method",
+                "message": "יש להזין כרטיס אשראי לפני רכישת מושב נוסף.",
+            })
+        invoice_data = _invoice_data_for(
+            cur, entity_id, entity_type,
+            plan_tier=row["tier"], amount=amount,
+        )
+        try:
+            charge = await charge_token(
+                provider_token  = decrypt_token(pm["provider_token"]),
+                base_amount     = amount,
+                vat_amount      = 0,
+                deal_id         = deal_id,
+                idempotency_key = body.idempotency_key,
+                invoice_data    = invoice_data,
+            )
+        except CardcomDeclinedError as exc:
+            record_event(
+                entity_id=entity_id, entity_type=entity_type,
+                kind="seat_purchase", outcome="declined",
+                amount_nis=amount,
+                provider_transaction_id=None,
+                response_code=getattr(exc, "code", None),
+                raw={"count": body.count, "seat_price": seat_price,
+                     "error": str(exc)},
+            )
+            raise HTTPException(status_code=402, detail={
+                "code":    "card_declined",
+                "reason":  str(exc),
+            })
+        except CardcomNetworkError as exc:
+            record_event(
+                entity_id=entity_id, entity_type=entity_type,
+                kind="seat_purchase", outcome="error",
+                amount_nis=amount,
+                provider_transaction_id=None,
+                raw={"count": body.count, "seat_price": seat_price,
+                     "error": str(exc)},
+            )
+            raise HTTPException(status_code=502, detail={
+                "code": "payment_provider_unreachable",
+            })
+
+        inserted, event_id = record_event(
+            entity_id=entity_id, entity_type=entity_type,
+            kind="seat_purchase", outcome="ok",
+            amount_nis=amount,
+            provider_transaction_id=charge.get("provider_transaction_id"),
+            response_code=charge.get("response_code"),
+            invoice_number=charge.get("invoice_number") or None,
+            invoice_url=charge.get("invoice_url"),
+            raw={"count": body.count, "seat_price": seat_price,
+                 "raw": charge.get("raw")},
+        )
+        if not inserted:
+            logger.warning(
+                "[seats] duplicate seat_purchase for %s/%s (event=%s) "
+                "— NOT incrementing seats.",
+                entity_type, entity_id, event_id,
+            )
+            cur.execute(
+                "SELECT extra_seats_paid FROM subscriptions WHERE id=%s",
+                (row["id"],),
+            )
+            cur_row = cur.fetchone()
+            return {
+                "mode":              "real",
+                "kind":              "seat_purchase",
+                "count":             body.count,
+                "amount_nis":        amount,
+                "extra_seats_paid":  int(cur_row["extra_seats_paid"]) if cur_row else row["extra_seats_paid"],
+                "duplicate":         True,
+                "invoice_number":    charge.get("invoice_number") or None,
+                "invoice_url":       charge.get("invoice_url"),
+                "event_id":          event_id,
+            }
+        cur.execute(
+            "UPDATE subscriptions "
+            "SET extra_seats_paid = extra_seats_paid + %s "
+            "WHERE id=%s",
+            (body.count, row["id"]),
+        )
+        conn.commit()
+        return {
+            "mode":              "real",
+            "kind":              "seat_purchase",
+            "count":             body.count,
+            "amount_nis":        amount,
+            "extra_seats_paid":  int(row["extra_seats_paid"]) + body.count,
+            "duplicate":         False,
+            "invoice_number":    charge.get("invoice_number") or None,
+            "invoice_url":       charge.get("invoice_url"),
+            "event_id":          event_id,
+        }
+    finally:
+        conn.close()
+
+
 # ─── POST /payments/internal/renewal-batch ───────────────────────────────────
 # L5 §6 · monthly renewal + §7 · failure chain.
 #

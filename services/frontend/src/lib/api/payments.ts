@@ -9,7 +9,7 @@ export type SubscriptionStatus = 'trialing' | 'active' | 'past_due' | 'cancelled
 export interface SubscriptionRow {
   id: string;
   entity_id: string;
-  entity_type: 'contractor' | 'corporation';
+  entity_type: 'contractor' | 'corporation' | 'service_provider';
   tier: SubscriptionTier;
   status: SubscriptionStatus;
   cardcom_plan_code: string | null;
@@ -44,6 +44,25 @@ export const subscriptionApi = {
     apiFetch<{ status: 'cancelled' }>(
       '/payments/subscriptions/cancel',
       { method: 'POST' },
+    ),
+
+  /** R4 · buy N extra seats mid-cycle. The server dedups on
+   *  idempotency_key so a double-click cannot double-charge; the
+   *  response's `duplicate: true` flag says a replay was detected. */
+  purchaseSeats: (count: number, idempotencyKey: string) =>
+    apiFetch<{
+      mode:              string;     // 'fake' | 'real'
+      kind:              'seat_purchase';
+      count:             number;
+      amount_nis:        number;
+      extra_seats_paid:  number;
+      duplicate:         boolean;
+      invoice_number?:   string | null;
+      invoice_url?:      string | null;
+      event_id?:         string;
+    }>(
+      '/payments/subscriptions/seats/purchase',
+      { method: 'POST', body: JSON.stringify({ count, idempotency_key: idempotencyKey }) },
     ),
 };
 

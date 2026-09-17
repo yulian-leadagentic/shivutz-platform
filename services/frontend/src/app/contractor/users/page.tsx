@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { NotificationRecipientsSection } from '@/features/notification-recipients/NotificationRecipientsSection';
 import { EditMemberModal } from '@/components/team/EditMemberModal';
+import { SeatUpgradeModal, type SeatUpgradeDetail } from '@/features/subscription/SeatUpgradeModal';
 import { TableToolbar } from '@/components/table/TableToolbar';
 import { useTableState } from '@/components/table/useTableState';
 
@@ -48,6 +49,10 @@ export default function ContractorUsersPage() {
   const [pendingDelete, setPendingDelete] = useState<TeamMember | null>(null);
   const [deleting, setDeleting]   = useState(false);
   const [editing, setEditing]     = useState<TeamMember | null>(null);
+  // R4 §4 · seat_upgrade_required (402 from POST invite) opens a
+  // purchase dialog with the price+count breakdown. When set, the
+  // SeatUpgradeModal renders and calls paymentApi.purchaseSeats.
+  const [seatUpgrade, setSeatUpgrade] = useState<SeatUpgradeDetail | null>(null);
   // L4 §5 — contractor sees "X מתוך N משתמשים כלולים במנוי" + the
   // per-extra-seat price so they know a paid upgrade is possible
   // (message-only this round; L5 wires the actual charge).
@@ -141,7 +146,23 @@ export default function ContractorUsersPage() {
       // L1 — compare on structured status/code, not a server message
       // string. R1 fixed this exact anti-pattern on /billing; the same
       // shape survived here.
-      if (err instanceof ApiError && err.cause?.status === 404) {
+      // R4 §4 · when the server returns 402 seat_upgrade_required,
+      // open the purchase dialog instead of showing an unhelpful
+      // "you hit your seat limit" text with no action.
+      if (err instanceof ApiError && err.cause?.error === 'seat_upgrade_required') {
+        const c = err.cause as { tier?: string; used?: number; included?: number; price?: number; seats?: SeatUpgradeDetail['seats']; };
+        if (typeof c.price === 'number' && typeof c.included === 'number' && typeof c.used === 'number') {
+          setSeatUpgrade({
+            tier:     c.tier || 'basic',
+            used:     c.used,
+            included: c.included,
+            price:    c.price,
+            seats:    c.seats,
+          });
+        } else {
+          setError(mapApiError(err));
+        }
+      } else if (err instanceof ApiError && err.cause?.status === 404) {
         setError('ארגון לא נמצא');
       } else {
         setError(mapApiError(err));
@@ -614,6 +635,26 @@ export default function ContractorUsersPage() {
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {/* R4 §4 · seat purchase dialog. Opens when the invite POST
+          returns 402 seat_upgrade_required. After a successful
+          purchase we refresh usage (which drives the "X / N" banner)
+          and re-open the invite form so the user can complete the
+          action they came for. */}
+      {seatUpgrade && (
+        <SeatUpgradeModal
+          detail={seatUpgrade}
+          onClose={() => setSeatUpgrade(null)}
+          onSuccess={({ count, duplicate }) => {
+            // Best-effort usage refresh; failures don't block the modal.
+            adApi.usage().then(setUsage).catch(() => undefined);
+            setSuccess(duplicate
+              ? 'הרכישה כבר תועדה — אפשר להזמין את המשתמש'
+              : `${count} מושבים נוספו לחשבון. אפשר להזמין את המשתמש כעת.`);
+            setTimeout(() => setSuccess(''), 6000);
+          }}
+        />
       )}
 
       {/* Edit modal — shared by active + pending rows. */}
