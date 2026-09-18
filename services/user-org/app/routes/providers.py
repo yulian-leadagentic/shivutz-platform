@@ -45,6 +45,11 @@ class ProviderCreate(BaseModel):
     # required. Format-only check (9 digits) — providers aren't in
     # ראשם החברות so we deliberately DON'T lookup like corporations do.
     business_number: str
+    # R5 §2b · trade the provider self-selected at signup. Validated
+    # against the live marketplace_categories table below so a stale
+    # client can't seed a bogus code. Association only — the provider
+    # can still publish listings in other categories.
+    primary_category: str
     email: Optional[EmailStr] = None
     city: Optional[str] = None
     region: Optional[str] = None
@@ -83,6 +88,16 @@ async def register_provider(data: ProviderCreate):
             "message": "ח.פ / ע.מ חייב להיות 9 ספרות",
         })
 
+    # R5 §2b · primary_category must be an active marketplace_category.
+    # Validated live so an admin renaming the category set can't leave
+    # a stale client seeding an orphan code.
+    cat = (data.primary_category or "").strip()
+    if not cat:
+        raise HTTPException(status_code=400, detail={
+            "code":    "primary_category_required",
+            "message": "יש לבחור קטגוריה",
+        })
+
     # ── Duplicate business_number guard — checks ALL three entity
     # types, not just service_providers. A ח.פ that's registered as a
     # corporation or contractor should redirect the user to log in
@@ -91,6 +106,17 @@ async def register_provider(data: ProviderCreate):
     conn = get_db()
     try:
         cur = conn.cursor()
+        # Live-validate category before we do any writes.
+        cur.execute(
+            """SELECT 1 FROM marketplace_categories
+                WHERE code = %s AND is_active = 1 LIMIT 1""",
+            (cat,),
+        )
+        if not cur.fetchone():
+            raise HTTPException(status_code=400, detail={
+                "code":    "unknown_category",
+                "message": "הקטגוריה שנבחרה אינה זמינה",
+            })
         cur.execute(
             """SELECT id, name FROM service_providers
                 WHERE business_number = %s
@@ -177,13 +203,14 @@ async def register_provider(data: ProviderCreate):
         now = datetime.utcnow()
         cur.execute(
             """INSERT INTO service_providers
-                 (id, name, business_number, contact_name, contact_phone,
+                 (id, name, business_number, primary_category,
+                  contact_name, contact_phone,
                   email, city, region, website, description, logo_url,
                   status, verified_at, is_seed, created_at, updated_at)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
                        'active', %s, FALSE, %s, %s)""",
             (
-                provider_id, name, bn,
+                provider_id, name, bn, cat,
                 data.contact_name.strip(), data.contact_phone.strip(),
                 data.email, data.city, data.region, data.website,
                 data.description, data.logo_url,
@@ -258,7 +285,8 @@ def get_my_provider(
     try:
         cur = conn.cursor()
         cur.execute(
-            """SELECT id, name, business_number, contact_name, contact_phone,
+            """SELECT id, name, business_number, primary_category,
+                      contact_name, contact_phone,
                       email, city, region, website, description, logo_url,
                       status, verified_at, created_at
                  FROM service_providers

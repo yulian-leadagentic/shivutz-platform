@@ -24,20 +24,24 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 
 interface ProviderMe {
-  id:              string;
-  name:            string;
-  business_number: string | null;
-  contact_name:    string;
-  contact_phone:   string;
-  email:           string | null;
-  city:            string | null;
-  region:          string | null;
-  website:         string | null;
-  description:     string | null;
-  logo_url:        string | null;
-  status:          'pending' | 'active' | 'suspended';
-  verified_at:     string | null;
-  created_at:      string;
+  id:                string;
+  name:              string;
+  business_number:   string | null;
+  // R5 §2b · trade the provider self-selected at signup. Passed to
+  // the listing-creation form as ?category=<code> so it's the
+  // default without a second pick.
+  primary_category:  string | null;
+  contact_name:      string;
+  contact_phone:     string;
+  email:             string | null;
+  city:              string | null;
+  region:            string | null;
+  website:           string | null;
+  description:       string | null;
+  logo_url:          string | null;
+  status:            'pending' | 'active' | 'suspended';
+  verified_at:       string | null;
+  created_at:        string;
 }
 
 export default function ProviderDashboardPage() {
@@ -110,7 +114,7 @@ export default function ProviderDashboardPage() {
                 שוק המודעות
               </Button>
             </Link>
-            <Link href="/corporation/marketplace/new">
+            <Link href={me.primary_category ? `/provider/marketplace/new?category=${encodeURIComponent(me.primary_category)}` : '/provider/marketplace/new'}>
               <Button size="sm">
                 <Plus className="h-4 w-4" />
                 פרסום מודעה
@@ -129,7 +133,12 @@ export default function ProviderDashboardPage() {
             {listings.length === 0 ? (
               <div className="text-center py-8 text-sm text-slate-500">
                 <p>עדיין לא פרסמת מודעה.</p>
-                <Link href="/corporation/marketplace/new" className="mt-3 inline-block text-emerald-700 font-semibold hover:underline">
+                <Link
+                  href={me.primary_category
+                    ? `/provider/marketplace/new?category=${encodeURIComponent(me.primary_category)}`
+                    : '/provider/marketplace/new'}
+                  className="mt-3 inline-block text-emerald-700 font-semibold hover:underline"
+                >
                   פרסם את המודעה הראשונה →
                 </Link>
               </div>

@@ -88,7 +88,7 @@ export const otpApi = {
    *  caller can drop the user into the trial → register flow without a
    *  second OTP. The `intent` param lets us route them to the right
    *  trial surface (today: contractor only). */
-  loginOtp: (phone: string, code: string, intent?: 'contractor' | 'corporation') =>
+  loginOtp: (phone: string, code: string, intent?: 'contractor' | 'corporation' | 'service_provider') =>
     apiFetch<
       | {
           prospect?: undefined;

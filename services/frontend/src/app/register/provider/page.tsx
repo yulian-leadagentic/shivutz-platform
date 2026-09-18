@@ -18,12 +18,14 @@
  * fields, that means product decided "provider needs verification too" —
  * at which point split into 3 steps like corp/contractor.
  */
-import { useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { AlertCircle, CheckCircle2, Loader2, ShieldCheck } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Loader2, ShieldCheck, RefreshCw } from 'lucide-react';
 
 import { orgApi, otpApi } from '@/lib/api';
+import { marketplaceApi } from '@/lib/api/marketplace';
+import type { PublicMarketplaceCategory } from '@/lib/api/marketplace';
 import { saveTokens } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -56,6 +58,44 @@ export default function ProviderRegisterPage() {
   const [description, setDescription]   = useState('');
   const [website, setWebsite]           = useState('');
   const [whatsappOptIn, setWaOptIn]     = useState(false);
+  // R5 §2b · trade the provider self-selects. First field in the form
+  // per Yulian's spec ("that I pick a category first"). Loaded live
+  // from /marketplace/categories — admin edits it in
+  // /admin/marketplace/categories so we never hard-code the list.
+  const [primaryCategory, setPrimaryCategory] = useState('');
+  const [categories, setCategories]           = useState<PublicMarketplaceCategory[] | null>(null);
+  const [catLoading, setCatLoading]           = useState(false);
+  const [catError, setCatError]               = useState<string | null>(null);
+
+  const loadCategories = useCallback(async () => {
+    setCatLoading(true);
+    setCatError(null);
+    try {
+      const list = await marketplaceApi.listCategories();
+      // R5 §2b · load failure → explanatory error + retry, never an
+      // empty select and never an eternal spinner (U5 §2 rule).
+      if (!list || list.length === 0) {
+        setCatError('לא הוחזרו קטגוריות. נסה שוב.');
+        setCategories([]);
+        return;
+      }
+      setCategories(list);
+    } catch {
+      setCatError('טעינת הקטגוריות נכשלה. בדוק חיבור לרשת ונסה שוב.');
+      setCategories(null);
+    } finally {
+      setCatLoading(false);
+    }
+  }, []);
+
+  // Lazy-load when the user reaches the form phase. Not on mount:
+  // that would fetch categories for someone who bounces at the OTP
+  // screen and never sees the form.
+  useEffect(() => {
+    if (phase === 'form' && categories === null && !catLoading && !catError) {
+      void loadCategories();
+    }
+  }, [phase, categories, catLoading, catError, loadCategories]);
 
   async function sendOtp(e: FormEvent) {
     e.preventDefault();
@@ -104,6 +144,10 @@ export default function ProviderRegisterPage() {
   async function submit(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    // R5 §2b · category first. Yulian: "התהליך צריך להיות שאני בוחר
+    // קודם קטגוריה" — the field sits first in the form and blocks
+    // submit until picked.
+    if (!primaryCategory) return setError('יש לבחור קטגוריה');
     if (!name.trim()) return setError('שם העסק הוא שדה חובה');
     if (!contactName.trim()) return setError('שם איש קשר הוא שדה חובה');
     // R5 §2a · ח.פ was optional until Yulian's 17.09 call. Format check
@@ -117,15 +161,16 @@ export default function ProviderRegisterPage() {
     setBusy(true);
     try {
       const res = await orgApi.registerProvider({
-        name:            name.trim(),
-        contact_name:    contactName.trim(),
-        contact_phone:   normPhone,
-        business_number: bn,
-        email:           email.trim() || undefined,
-        city:            city.trim() || undefined,
-        website:         website.trim() || undefined,
-        description:     description.trim() || undefined,
-        whatsapp_opt_in: whatsappOptIn,
+        name:             name.trim(),
+        contact_name:     contactName.trim(),
+        contact_phone:    normPhone,
+        business_number:  bn,
+        primary_category: primaryCategory,
+        email:            email.trim() || undefined,
+        city:             city.trim() || undefined,
+        website:          website.trim() || undefined,
+        description:      description.trim() || undefined,
+        whatsapp_opt_in:  whatsappOptIn,
       });
       if (res.access_token && res.refresh_token) {
         saveTokens(res.access_token, res.refresh_token);
@@ -235,6 +280,52 @@ export default function ProviderRegisterPage() {
                     הטלפון אומת. נותרו פרטי העסק:
                   </div>
 
+                  {/* R5 §2b · category picker sits FIRST — Yulian's spec
+                      is "pick the category first, everything else after". */}
+                  <div>
+                    <label className="block text-sm">
+                      <span className="text-slate-700 mb-1 block">קטגוריית השירות *</span>
+                      {catLoading && (
+                        <div className="flex items-center gap-2 text-xs text-slate-500 h-10">
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          טוען קטגוריות…
+                        </div>
+                      )}
+                      {!catLoading && catError && (
+                        <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800 flex items-start justify-between gap-2">
+                          <div className="flex items-start gap-2">
+                            <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                            <span>{catError}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => { void loadCategories(); }}
+                            className="text-xs font-medium text-rose-700 hover:text-rose-900 flex items-center gap-1"
+                          >
+                            <RefreshCw className="w-3.5 h-3.5" />
+                            נסה שוב
+                          </button>
+                        </div>
+                      )}
+                      {!catLoading && !catError && categories && categories.length > 0 && (
+                        <select
+                          value={primaryCategory}
+                          onChange={(e) => setPrimaryCategory(e.target.value)}
+                          required
+                          className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-600"
+                        >
+                          <option value="" disabled>בחר קטגוריה</option>
+                          {categories.map((c) => (
+                            <option key={c.code} value={c.code}>{c.name_he || c.code}</option>
+                          ))}
+                        </select>
+                      )}
+                    </label>
+                    <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                      הקטגוריה משמשת כברירת מחדל לפרסום מודעות. אפשר לפרסם גם בקטגוריות אחרות.
+                    </p>
+                  </div>
+
                   <label className="block text-sm">
                     <span className="text-slate-700 mb-1 block">שם העסק *</span>
                     <Input
@@ -318,7 +409,11 @@ export default function ProviderRegisterPage() {
                     <span>אשמח לקבל התראות ב־WhatsApp במקום SMS</span>
                   </label>
 
-                  <Button type="submit" disabled={busy} className="w-full">
+                  <Button
+                    type="submit"
+                    disabled={busy || catLoading || !!catError || !primaryCategory}
+                    className="w-full"
+                  >
                     {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : 'סיום רישום'}
                   </Button>
                 </form>

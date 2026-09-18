@@ -39,6 +39,7 @@ import { RevealModal, type RevealBlock } from '@/features/advertising/RevealModa
 import { RoleRegisterPicker } from '@/features/advertising/RoleRegisterPicker';
 import { VoiceInputButton } from '@/features/voice/VoiceInputButton';
 import { FeaturedAdsCarousel } from '@/features/advertising/FeaturedAdsCarousel';
+import { HomeSponsorBanner, HomeSponsorCarousel } from '@/features/advertising/MarketplaceSponsors';
 import { LandingTrustBar } from '@/features/advertising/LandingTrustBar';
 import { searchApi, type SearchResponse, type AdSearchResult, type ContactReveal, type TrustLevel } from '@/lib/api/search';
 import { apiFetch, ApiError } from '@/lib/api/client';
@@ -1910,6 +1911,19 @@ function LandingPageInner() {
                     kept in the tree for the future promotion-
                     driven return. */}
               </div>
+            </section>
+          )}
+
+          {/* R5 §3 · home sponsor slots. Between the search area and
+              "פרסום חדש בפורטל" per Yulian's spec. F3 rule holds:
+              each component returns null on empty, so no shell renders
+              without an active ad. Landing-only (skip mid-search) so
+              ads don't jostle results — same condition as the recent
+              mosaic below. */}
+          {!resp && !loading && (
+            <section className="max-w-6xl mx-auto px-4">
+              <HomeSponsorBanner />
+              <HomeSponsorCarousel />
             </section>
           )}
 

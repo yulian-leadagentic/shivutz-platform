@@ -1,10 +1,11 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Loader2, ArrowRight } from 'lucide-react';
 import { marketplaceApi } from '@/lib/api';
 import { marketplaceSubscriptionsApi } from '@/lib/api/marketplaceSubscriptions';
+import { useAuth } from '@/lib/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -31,10 +32,18 @@ const PRICE_UNITS = [
 ];
 
 export default function NewListingPage() {
-  const router = useRouter();
+  const router       = useRouter();
+  const searchParams = useSearchParams();
+  const { entityType } = useAuth();
+  // R5 §2b · providers pre-select via ?category=<code> from the
+  // dashboard button. Falls back to housing (the corp-side default)
+  // when absent. Validated when categories load — if the passed
+  // code isn't in the active catalog the useEffect below drops us
+  // to the first available.
+  const hintedCategory = searchParams?.get('category') || null;
 
   const [form, setForm] = useState({
-    category:      'housing',
+    category:      hintedCategory || 'housing',
     title:         '',
     description:   '',
     city:          '',
@@ -67,26 +76,28 @@ export default function NewListingPage() {
         // Empty catalog (all deactivated) still reads as broken to a
         // corp user, so keep the fallback in that case too.
         //
-        // U8 §2 — this page is on the /corporation/* branch, so the
-        // caller is always a corporation. Corporations can only
-        // publish housing (Yulian 14.09). Filter to housing after
-        // hydrating so FALLBACK_CATEGORIES stays four-value (other
-        // screens still use the full list). The server-side gate at
-        // marketplace.py POST is the real enforcement; this filter
-        // is UX-only, keeping a corp from seeing options they can't
-        // actually use.
+        // U8 §2 — corporations can only publish housing (Yulian 14.09).
+        // R5 §2b · providers use the SAME page but see the full active
+        // catalog. Server-side gate in marketplace.py enforces both
+        // sides; this filter is UX-only. Contractors don't publish, so
+        // they'll never see this page.
         const full = mapped.length > 0 ? mapped : FALLBACK_CATEGORIES;
-        setCategories(full.filter((c) => c.value === 'housing'));
+        setCategories(entityType === 'service_provider' ? full : full.filter((c) => c.value === 'housing'));
       })
       .catch(() => {
         if (cancelled) return;
-        setCategories(FALLBACK_CATEGORIES.filter((c) => c.value === 'housing'));
+        setCategories(entityType === 'service_provider'
+          ? FALLBACK_CATEGORIES
+          : FALLBACK_CATEGORIES.filter((c) => c.value === 'housing'));
       })
       .finally(() => {
         if (!cancelled) setCatsLoading(false);
       });
     return () => { cancelled = true; };
-  }, []);
+    // Re-evaluate the filter when we learn the entity type (may hydrate
+    // after mount) or when a hinted category arrives via URL.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entityType]);
 
   // If the initial 'housing' default isn't in the loaded list (e.g.
   // admin renamed the codes), switch to the first available so the

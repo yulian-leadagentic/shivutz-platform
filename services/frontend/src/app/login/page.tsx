@@ -26,7 +26,7 @@ import { sanitizeReturnTo, writeReturnTo, resolveDestination } from '@/features/
 
 type Mode = 'sms' | 'email';
 type OtpPhase = 'phone' | 'code';
-type Intent = 'contractor' | 'corporation' | null;
+type Intent = 'contractor' | 'corporation' | 'service_provider' | null;
 
 import { mapApiError } from '@/lib/api/errors';
 
@@ -95,6 +95,14 @@ const COPY = {
     registerHref:   '/register/corporation',
     noAccountHint:  'מספר זה אינו רשום כתאגיד. רוצה להירשם?',
   },
+  service_provider: {
+    title:           'כניסה כספק שירותים נלווים',
+    description:    'פרסם את השירות שלך והגיע לקבלנים ותאגידים בענף',
+    existingLabel:  'התחבר',
+    newLabel:       'ספק חדש — הירשם כאן',
+    registerHref:   '/register/provider',
+    noAccountHint:  'מספר זה אינו רשום כספק שירותים. רוצה להירשם?',
+  },
   generic: {
     title:           'כניסה למערכת',
     description:    'נשלח קוד אימות ל-SMS / WhatsApp',
@@ -132,7 +140,10 @@ function LoginPageInner() {
   // page and (2) auto-resolve membership selection after auth so the
   // intermediate /select-entity screen is skipped.
   const rawIntent = searchParams?.get('intent');
-  const intent: Intent = rawIntent === 'contractor' || rawIntent === 'corporation' ? rawIntent : null;
+  const intent: Intent =
+    rawIntent === 'contractor' || rawIntent === 'corporation' || rawIntent === 'service_provider'
+      ? rawIntent
+      : null;
   const copy = intent ? COPY[intent] : COPY.generic;
 
   // P0-3 — When the register wizard detects a KNOWN phone it bounces
@@ -243,9 +254,7 @@ function LoginPageInner() {
           refreshAuth();
           // RT — same rule as the no-selection-needed branch above:
           // saved reveal intent beats the role's dashboard.
-          router.push(whereTo(
-            intent === 'corporation' ? '/corporation/dashboard' : '/contractor/dashboard',
-          ));
+          router.push(whereTo(defaultForRole(intent)));
           return;
         } catch {
           // Fall through to the picker on any failure — safer than

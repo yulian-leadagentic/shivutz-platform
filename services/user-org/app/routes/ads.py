@@ -486,7 +486,17 @@ def get_sponsored_ads(
     #                                             array contains that value.
     #   * placement="marketplace_carousel"     → same.
     # An ad that opts into carousel-only never leaks into search results.
-    _ALLOWED_PLACEMENTS = {"search_inline", "marketplace_banner", "marketplace_carousel"}
+    # R5 §3 · home_banner + home_carousel land the same sponsor rows
+    # on the app's home page (below the search field, above "פרסום חדש
+    # בפורטל"). Same backend contract as marketplace_* — NULL placements
+    # never leaks into a home slot; placements JSON must name it.
+    _ALLOWED_PLACEMENTS = {
+        "search_inline",
+        "marketplace_banner",
+        "marketplace_carousel",
+        "home_banner",
+        "home_carousel",
+    }
     if placement is not None and placement not in _ALLOWED_PLACEMENTS:
         raise HTTPException(status_code=400, detail="invalid_placement")
     lim = max(1, min(limit, 12))

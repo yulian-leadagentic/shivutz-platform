@@ -1,23 +1,26 @@
 'use client';
 
 /**
- * U7 §5 · marketplace sponsor placements.
+ * U7 §5 · marketplace sponsor placements + R5 §3 · home sponsor slots.
  *
- * Two surfaces render above the marketplace listing grid:
+ * Two surfaces per host page:
  *   - Banner    · full-width strip. One creative at a time; rotates
  *                 on refresh (backend orders by RAND()).
  *   - Carousel  · horizontal row of up to 4 cards. Scrolls on mobile,
  *                 grid on desktop.
  *
  * Both hit the SAME endpoint (/ads/public/sponsored) with a
- * ?placement= param — the backend gates search_inline vs banner vs
- * carousel so nothing leaks across surfaces.
+ * ?placement= param — the backend gates every allowed value
+ * separately so nothing leaks across surfaces. `SponsorBanner` and
+ * `SponsorCarousel` are the parameterised components; the named
+ * `MarketplaceSponsor*` / `HomeSponsor*` wrappers are what callers
+ * actually import so grep-for-placement stays honest.
  *
  * F3 · "no sections without active ads" — if the endpoint returns
  * zero rows, the component renders NOTHING (not a placeholder, not
- * a skeleton, not a "coming soon"). Migration 078 seeds enough rows
- * (2 banners + 3 carousel) that this only kicks in for a genuinely
- * emptied ad table.
+ * a skeleton, not a "coming soon"). Migration 078 seeds marketplace
+ * rows; home_banner / home_carousel rows are seeded in the R5 §3
+ * follow-up seeder (docs/cc-prompts/…).
  */
 import { useEffect, useState } from 'react';
 import { apiFetch } from '@/lib/api/client';
@@ -46,11 +49,13 @@ async function fetchSponsored(placement: string, limit: number): Promise<Sponsor
   }
 }
 
-export function MarketplaceSponsorBanner() {
+// Parameterised banner. Named exports below (Marketplace/Home) pin
+// the placement string so grep-for-placement stays honest.
+function SponsorBanner({ placement, label }: { placement: string; label?: string }) {
   const [ad, setAd] = useState<SponsorAd | null>(null);
   useEffect(() => {
-    fetchSponsored('marketplace_banner', 1).then((rows) => setAd(rows[0] ?? null));
-  }, []);
+    fetchSponsored(placement, 1).then((rows) => setAd(rows[0] ?? null));
+  }, [placement]);
 
   if (!ad) return null;
   const bg = ad.brand_bg ?? '#1e293b';
@@ -58,7 +63,9 @@ export function MarketplaceSponsorBanner() {
 
   return (
     <div className="mb-6">
-      <div className="text-[10px] uppercase tracking-wide text-slate-400 mb-1">מודעה ממומנת</div>
+      <div className="text-[10px] uppercase tracking-wide text-slate-400 mb-1">
+        {label ?? 'מודעה ממומנת'}
+      </div>
       <div
         className="rounded-2xl px-6 py-5 shadow-sm flex flex-col sm:flex-row items-start sm:items-center gap-4"
         style={{ backgroundColor: bg, color: fg }}
@@ -91,17 +98,19 @@ export function MarketplaceSponsorBanner() {
   );
 }
 
-export function MarketplaceSponsorCarousel() {
+function SponsorCarousel({ placement, label }: { placement: string; label?: string }) {
   const [ads, setAds] = useState<SponsorAd[]>([]);
   useEffect(() => {
-    fetchSponsored('marketplace_carousel', 4).then(setAds);
-  }, []);
+    fetchSponsored(placement, 4).then(setAds);
+  }, [placement]);
 
   if (ads.length === 0) return null;
 
   return (
     <div className="mb-6">
-      <div className="text-[10px] uppercase tracking-wide text-slate-400 mb-2">שירותים ממומנים</div>
+      <div className="text-[10px] uppercase tracking-wide text-slate-400 mb-2">
+        {label ?? 'שירותים ממומנים'}
+      </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
         {ads.map((ad) => (
           <CarouselCard key={ad.id} ad={ad} />
@@ -110,6 +119,14 @@ export function MarketplaceSponsorCarousel() {
     </div>
   );
 }
+
+// ── Named wrappers. Import these, not the parameterised bases, so
+//    the file's grep footprint mirrors what's actually rendered on
+//    each page. Adding a new placement = add a new wrapper.
+export function MarketplaceSponsorBanner()   { return <SponsorBanner   placement="marketplace_banner"   />; }
+export function MarketplaceSponsorCarousel() { return <SponsorCarousel placement="marketplace_carousel" />; }
+export function HomeSponsorBanner()          { return <SponsorBanner   placement="home_banner"          />; }
+export function HomeSponsorCarousel()        { return <SponsorCarousel placement="home_carousel"        />; }
 
 function CarouselCard({ ad }: { ad: SponsorAd }) {
   const bg = ad.brand_bg ?? '#0f172a';

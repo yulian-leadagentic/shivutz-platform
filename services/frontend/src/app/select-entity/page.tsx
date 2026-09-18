@@ -121,7 +121,7 @@ function SelectEntityInner() {
     // "enter as <role>" links → /select-entity?intent=<role>), fall
     // back to sessionStorage (entry via login flow that seeded it).
     const intent = searchParams?.get('intent') ?? sessionStorage.getItem('pending_intent');
-    if (intent === 'contractor' || intent === 'corporation') {
+    if (intent === 'contractor' || intent === 'corporation' || intent === 'service_provider') {
       const matching = list.filter((m) => m.entity_type === intent);
       if (matching.length === 1) {
         select(matching[0]);
@@ -140,10 +140,26 @@ function SelectEntityInner() {
       // the intent, and no picker button will get them into a corp
       // account they don't own). Route them to the add-role flow
       // — same destination NoAccessCard's "הוסף חשבון X" links to,
-      // so the two entry points converge.
+      // so the two entry points converge. For providers the target
+      // is /register/provider (paths kept separate to match backend).
       sessionStorage.removeItem('pending_memberships');
       sessionStorage.removeItem('pending_intent');
-      router.replace(`/register/${intent}?add=1`);
+      const target = intent === 'service_provider' ? '/register/provider' : `/register/${intent}`;
+      router.replace(`${target}?add=1`);
+      return;
+    }
+    // R5 §2c — no intent, but exactly one membership. Showing a
+    // one-item picker is friction, not a choice. Admin users are
+    // the exception: their picker also carries the admin-dashboard
+    // tile, so leaving them on it stays useful.
+    const adminClaim = (() => {
+      const t = getAccessToken();
+      if (!t) return false;
+      const p = decodeJwtPayload(t);
+      return !!(p && typeof p.role === 'string' && p.role === 'admin');
+    })();
+    if (!adminClaim && list.length === 1) {
+      select(list[0]);
       return;
     }
     setMemberships(list);

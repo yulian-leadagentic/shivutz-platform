@@ -24,16 +24,17 @@ export const orgApi = {
    *  cross-check. OTP was verified in the preceding /auth/send-otp step
    *  (auth service checks recent-OTP internally). */
   registerProvider: (data: {
-    name:            string;
-    contact_name:    string;
-    contact_phone:   string;
-    business_number: string;   // R5 §2a · required (was optional)
-    email?:          string;
-    city?:           string;
-    region?:         string;
-    website?:        string;
-    description?:    string;
-    logo_url?:       string;
+    name:             string;
+    contact_name:     string;
+    contact_phone:    string;
+    business_number:  string;   // R5 §2a · required (was optional)
+    primary_category: string;   // R5 §2b · required — trade the provider self-selected
+    email?:           string;
+    city?:            string;
+    region?:          string;
+    website?:         string;
+    description?:     string;
+    logo_url?:        string;
     whatsapp_opt_in?: boolean;
   }) =>
     apiFetch<{
