@@ -50,6 +50,10 @@ const STATUS_LABEL: Record<string, string> = {
   past_due:  'תשלום נכשל',
   cancelled: 'בוטל',
   expired:   'פג תוקף',
+  // R9 §5 · admin-granted comp. Yulian: "the contractor sees an
+  // indicator — 'active subscription · no billing'. Not 'trial' and
+  // not 'free'; it's a full account."
+  comped:    'מנוי פעיל · ללא חיוב',
 };
 
 function daysUntil(iso: string | null): number | null {
@@ -249,9 +253,14 @@ export default function BillingPage() {
         const currentTier = sub ? TIERS.find(t => t.code === sub.tier) : null;
         const isTrialing  = sub?.status === 'trialing';
         const isActive    = sub?.status === 'active';
-        const isLapsed    = sub && !isActive && !isTrialing;
+        // R9 §5 · comped renders like `active` (both are "your account
+        // works"). Kept as its own variable so the chip label — which
+        // reads differently — stays honest.
+        const isComped    = sub?.status === 'comped';
+        const isLapsed    = sub && !isActive && !isTrialing && !isComped;
         const statusColor = isTrialing ? 'bg-amber-100 text-amber-800 border-amber-300'
                         : isActive     ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                        : isComped     ? 'bg-sky-100 text-sky-800 border-sky-300'
                         :                'bg-red-100 text-red-800 border-red-300';
         return (
       <section className="rounded-2xl overflow-hidden shadow-md border border-slate-200 bg-gradient-to-l from-brand-50 via-white to-white">
@@ -451,7 +460,8 @@ export default function BillingPage() {
           const targetOrder   = TIER_ORDER[t.code];
           // Highlight current tier for both trialing + active so it's
           // marked from day 0, not only after conversion.
-          const isCurrent     = sub?.tier === t.code && (sub?.status === 'active' || sub?.status === 'trialing');
+          // R9 §5 · comped tier is highlighted the same way active/trialing is.
+          const isCurrent     = sub?.tier === t.code && (sub?.status === 'active' || sub?.status === 'trialing' || sub?.status === 'comped');
           const isUpgrade     = !isCurrent && targetOrder > currentOrder;
           const isDowngrade   = !isCurrent && targetOrder < currentOrder;
           return (

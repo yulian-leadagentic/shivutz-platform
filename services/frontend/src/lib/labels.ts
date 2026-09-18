@@ -74,6 +74,8 @@ export const SUBSCRIPTION_STATUS_HE_SHORT: Record<string, string> = {
   past_due:  'תשלום נכשל',
   cancelled: 'בוטל',
   expired:   'פג',
+  // R9 §5 · admin-granted, never billed.
+  comped:    'פעיל · ללא חיוב',
 };
 
 // Entity type. `service_provider` reserved for U7 — every existing

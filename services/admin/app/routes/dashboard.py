@@ -76,7 +76,8 @@ def get_pivot_stats():
                             ) AS q""")
         pending_approvals = int(org_cur.fetchone()["total"] or 0)
 
-        pay_cur.execute("SELECT tier, COUNT(*) AS n FROM subscriptions WHERE status IN ('trialing','active') GROUP BY tier")
+        # R9 §5 · `comped` counts as an active subscription for tier tallies.
+        pay_cur.execute("SELECT tier, COUNT(*) AS n FROM subscriptions WHERE status IN ('trialing','active','comped') GROUP BY tier")
         subs_by_tier = {r["tier"]: int(r["n"]) for r in pay_cur.fetchall()}
 
         return {

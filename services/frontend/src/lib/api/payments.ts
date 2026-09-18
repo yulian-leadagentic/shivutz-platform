@@ -4,7 +4,9 @@ import type { PaymentMethod } from '@/types';
 // ─── Pivot/v2 — subscription endpoints ──────────────────────────────────────
 
 export type SubscriptionTier   = 'basic' | 'advanced' | 'pro';
-export type SubscriptionStatus = 'trialing' | 'active' | 'past_due' | 'cancelled' | 'expired';
+// R9 §5 · `comped` is the admin-granted freebie status. Never billed,
+// never expires; treated as entitled at every gate.
+export type SubscriptionStatus = 'trialing' | 'active' | 'past_due' | 'cancelled' | 'expired' | 'comped';
 
 export interface SubscriptionRow {
   id: string;

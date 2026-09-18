@@ -45,11 +45,23 @@ REBILL_MAX_ATTEMPTS  = 3
 # unknown state. 100 subs per pass is plenty for launch scale.
 RENEWAL_BATCH_LIMIT  = 100
 
-TRIAL_DAYS = 14
+TRIAL_DAYS = 14  # R9 §4 · LAST-RESORT fallback only. Real default lives
+                 # in subscription_plans.trial_days_default (admin-editable
+                 # in /admin/subscription-plans). _insert_trial prefers
+                 # that value; this constant applies only when the plan
+                 # row is missing entirely — same shape as the older
+                 # bootstrap contract, but not the ship-default anymore.
 FAKE_PERIOD_DAYS = 30
 
 VALID_TIERS  = {"basic", "advanced", "pro"}
 VALID_TYPES  = {"contractor", "corporation"}
+
+# R9 §5 · entitlement gate. Any place asking "is this subscription
+# entitled to publish / reveal / use seats" should compare against
+# this set, not the raw string 'active'. `comped` was added in
+# migration 082 as the admin-granted freebie tier; not billed, never
+# expires, but IS entitled.
+ENTITLED_STATUSES = ("active", "comped")
 
 
 def _serialize(row: dict) -> dict:
@@ -79,9 +91,33 @@ def _fetch(cur, entity_id: str, entity_type: str) -> Optional[dict]:
 GRACE_DAYS = 7  # spec B3 — corp trial-end grace before hard-cap
 
 
+def _trial_days_for(cur, entity_type: str, tier: str = "basic") -> int:
+    """R9 §4 · trial length is admin-editable per plan.
+
+    Reads `trial_days_default` from `subscription_plans` for the matching
+    (entity_type, tier). Missing row → hard-coded TRIAL_DAYS fallback.
+    Row present but NULL → same fallback (defensive; the schema declares
+    NOT NULL DEFAULT 14 so NULL shouldn't happen).
+    """
+    try:
+        cur.execute(
+            "SELECT trial_days_default FROM subscription_plans "
+            "WHERE entity_type=%s AND tier=%s LIMIT 1",
+            (entity_type, tier),
+        )
+        row = cur.fetchone()
+    except Exception:
+        # DB blip → fallback; a trial insert must never fail on a lookup.
+        return TRIAL_DAYS
+    if not row or row.get("trial_days_default") is None:
+        return TRIAL_DAYS
+    return int(row["trial_days_default"])
+
+
 def _insert_trial(cur, entity_id: str, entity_type: str) -> dict:
     sub_id = str(uuid.uuid4())
-    trial_ends = datetime.utcnow() + timedelta(days=TRIAL_DAYS)
+    trial_days = _trial_days_for(cur, entity_type, "basic")
+    trial_ends = datetime.utcnow() + timedelta(days=trial_days)
     grace_ends = trial_ends + timedelta(days=GRACE_DAYS)
     cur.execute(
         """INSERT INTO subscriptions
@@ -688,10 +724,12 @@ async def renewal_batch(x_internal_secret: Optional[str] = Header(default=None))
     finally:
         conn.close()
 
-    processed  = 0
-    charged    = 0
-    failed     = 0
-    dedup_skip = 0
+    processed        = 0
+    charged          = 0
+    failed           = 0
+    dedup_skip       = 0
+    skipped_no_pm    = 0
+    skipped_amount   = 0
 
     for sub in due:
         # LATCH — mark attempted BEFORE the network call so a parallel
@@ -699,14 +737,9 @@ async def renewal_batch(x_internal_secret: Optional[str] = Header(default=None))
         _latch_attempt(sub["id"], now)
         processed += 1
 
-        pm = _default_payment_method_by_id(sub["entity_id"], sub["entity_type"])
-        if not pm:
-            # No card on file — mark past_due, but with a specific reason
-            # so the UI can prompt the user to re-add a card.
-            _apply_failure(sub, reason="no_payment_method")
-            failed += 1
-            continue
-
+        # Compute the price up front so BOTH the charge path and the
+        # no-payment-method skip path record the same intended amount.
+        # Priced-out plan rows drop through unchanged (unusual; logged).
         base_price = _lookup_plan_price(sub["entity_type"], sub["tier"])
         if base_price is None:
             logger.error(
@@ -730,6 +763,28 @@ async def renewal_batch(x_internal_secret: Optional[str] = Header(default=None))
                 sub["id"], sub["tier"], base_price,
                 paid_seats, extra_price_per_seat, price,
             )
+
+        pm = _default_payment_method_by_id(sub["entity_id"], sub["entity_type"])
+        if not pm:
+            # R9 §3 · no payment method on file → this is NOT a failed
+            # charge. We never asked for a card. Push the period forward
+            # so the sub stays active, log an audit event with the
+            # amount we WOULD have charged (so a monthly aggregate
+            # answers "how much did we forgo?"), and do NOT touch the
+            # rebill_attempts chain. `_apply_failure` is off-limits on
+            # this path — that's what caused the free-launch suspension
+            # bug this section fixes.
+            record_event(
+                entity_id=sub["entity_id"], entity_type=sub["entity_type"],
+                kind="renewal", outcome="skipped_no_payment_method",
+                amount_nis=price,
+                provider_transaction_id=None,
+                raw={"reason": "no_payment_method", "sub_id": sub["id"]},
+            )
+            _advance_period_no_charge(sub)
+            skipped_no_pm  += 1
+            skipped_amount += price
+            continue
 
         idem = str(uuid.uuid4())
         try:
@@ -793,10 +848,14 @@ async def renewal_batch(x_internal_secret: Optional[str] = Header(default=None))
         charged += 1
 
     return {
-        "processed":  processed,
-        "charged":    charged,
-        "failed":     failed,
-        "dedup_skip": dedup_skip,
+        "processed":      processed,
+        "charged":        charged,
+        "failed":         failed,
+        "dedup_skip":     dedup_skip,
+        # R9 §3 · surfacing "how many free-launch renewals sailed through
+        # this pass, and how much revenue that represents".
+        "skipped_no_pm":  skipped_no_pm,
+        "skipped_amount": skipped_amount,
     }
 
 
@@ -834,6 +893,40 @@ def _apply_success(sub: dict) -> None:
     # just went through.
     if sub["entity_type"] == "corporation":
         _restore_grace_hard_capped_ads(sub["entity_id"])
+
+
+def _advance_period_no_charge(sub: dict) -> None:
+    """R9 §3 · sub whose renewal was skipped because it had no payment
+    method. Move current_period_end forward one period so the batch's
+    next-day pass doesn't re-consider it, and keep it `active` — this
+    is deliberately DIFFERENT from `_apply_success`:
+
+      - No `rebill_attempts` reset — those never advanced in the first
+        place.
+      - No `grace_sms_step` reset — no dunning SMS were sent.
+      - No status transition — the row was already `active`.
+      - No `_restore_grace_hard_capped_ads` — nothing to restore; the
+        renewal batch only picks up already-active subs, so their ads
+        were already live.
+
+    Splitting this out (rather than reusing `_apply_success`) is
+    intentional: `_apply_success` implies a paid charge landed, which
+    triggers a paid-invoice event upstream. This helper implies the
+    opposite — a paid event was NOT recorded, only the audit-trail
+    'skipped_no_payment_method' one that record_event wrote above.
+    """
+    conn = get_db("payment_db")
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """UPDATE subscriptions
+                 SET current_period_end=DATE_ADD(NOW(), INTERVAL %s DAY)
+               WHERE id=%s""",
+            (FAKE_PERIOD_DAYS, sub["id"]),
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def _apply_failure(sub: dict, *, reason: str) -> None:
@@ -963,6 +1056,12 @@ def cancel_subscription(
         row = _fetch(cur, entity_id, entity_type)
         if row is None:
             raise HTTPException(status_code=404, detail="no_subscription")
+        # R9 §5 · comped subs are admin-controlled. User-side "cancel"
+        # is a no-op: nothing is being billed, and removing the comp is
+        # an admin decision. Return the current status untouched so the
+        # billing page doesn't render a stale "cancelled" chip.
+        if row["status"] == "comped":
+            return {"status": "comped"}
         cur.execute(
             """UPDATE subscriptions
                  SET status='cancelled', cancelled_at=NOW()
@@ -1015,6 +1114,11 @@ def check_entitlement(
             entitled = row["current_period_end"] is None or row["current_period_end"] > now
         elif status == "past_due":
             entitled = True  # short grace, payment service flips to expired on retry exhaustion
+        elif status == "comped":
+            # R9 §5 · admin-granted freebie. Never expires (period_end
+            # may be far-future or NULL; either way ignored). Treated
+            # exactly like `active` at every entitlement seam.
+            entitled = True
 
         if not entitled:
             raise HTTPException(

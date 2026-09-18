@@ -1,13 +1,15 @@
 """Pivot/v2 admin — subscription oversight.
 
 Reads from payment_db.subscriptions and cross-joins with org names.
-Actions: extend trial, grant a paid tier for N months, revoke.
+Actions: extend trial, grant a paid tier for N months, revoke,
+R9 convert-to-comped (free launch), R4 grant/revoke admin seats.
 
-Numeric caps below (14d trial extend, 12mo grant limit) are business
+Numeric caps below (90d trial extend, 12mo grant limit) are business
 defaults — flag before wildly increasing them.
 """
 from datetime import datetime, timedelta
 from typing import Optional
+import json
 
 from fastapi import APIRouter, HTTPException, Header, Query
 from pydantic import BaseModel
@@ -58,10 +60,21 @@ def list_subscriptions(
     # returns as a generic 500 — exactly the U11 §1 symptom. Force both
     # sides to unicode_ci at the join, matching the same workaround
     # search.py:314 already uses for ads.owner_entity_id.
+    #
+    # R9 §4 · days_remaining is derived here (not in the FE) so a sort
+    # or filter on the client works off the same number the server
+    # computed, and doesn't drift when the client clock is off.
     sql = f"""
         SELECT s.*,
                COALESCE(c.company_name_he, c.company_name,
-                        corp.company_name_he, corp.company_name) AS entity_name
+                        corp.company_name_he, corp.company_name) AS entity_name,
+               CASE
+                 WHEN s.status = 'trialing' AND s.trial_ends_at      IS NOT NULL
+                   THEN GREATEST(0, DATEDIFF(s.trial_ends_at,      NOW()))
+                 WHEN s.status = 'active'   AND s.current_period_end IS NOT NULL
+                   THEN GREATEST(0, DATEDIFF(s.current_period_end, NOW()))
+                 ELSE NULL
+               END AS days_remaining
           FROM payment_db.subscriptions s
           LEFT JOIN org_db.contractors  c
             ON c.id    = s.entity_id COLLATE utf8mb4_unicode_ci
@@ -78,6 +91,128 @@ def list_subscriptions(
         cur = conn.cursor()
         cur.execute(sql, params)
         return [_serialize(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+# ── R9 §3 · Renewal-skip summary (current calendar month) ────────────
+#
+# Aggregate view of "how many free-launch subs coasted through
+# renewal this month, and how much revenue we forwent". Reads
+# `payment_events` — the audit trail the batch writes when it hits
+# `skipped_no_payment_method`. Shown as a tile on /admin/subscriptions;
+# NOT emailed (an email per skip would be nine hundred emails per
+# month, which is why the batch just writes an event).
+
+@router.get("/subscriptions/skip-summary")
+def skip_summary():
+    """Return {count, total_amount_nis, last_at, month_start} for the
+    current calendar month. Empty month → count=0, total=0.
+    """
+    conn = get_db("payment_db")
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT COUNT(*)                     AS n,
+                      COALESCE(SUM(amount_nis), 0) AS total,
+                      MAX(created_at)              AS last_at
+                 FROM payment_events
+                WHERE kind='renewal'
+                  AND outcome='skipped_no_payment_method'
+                  AND created_at >= DATE_FORMAT(NOW(), '%Y-%m-01')"""
+        )
+        row = cur.fetchone() or {}
+    finally:
+        conn.close()
+
+    last_at = row.get("last_at")
+    return {
+        "count":            int(row.get("n") or 0),
+        "total_amount_nis": int(row.get("total") or 0),
+        "last_at":          last_at.isoformat() if last_at else None,
+        # Month window is UTC-normalised on the server so an admin in a
+        # different TZ still gets one true value per calendar month.
+        "month_start":      datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat(),
+    }
+
+
+# ── R9 §5 · Convert a subscription to `comped` (free, admin-granted) ─
+#
+# Purposefully separate from `grant`. `grant` sets `status='active'`
+# with a period_end and stays inside the paid lifecycle (renewal
+# batch may still charge if a PM appears). `comped` says "we've
+# decided this account is free until we say otherwise" — the batch
+# won't touch it, and gating code treats it exactly like `active`.
+# Note is mandatory; audit_log records the transition just like
+# grant-seats does.
+
+class CompIn(BaseModel):
+    note: str    # human explanation — required; blank string → 422
+
+
+@router.post("/subscriptions/{sub_id}/comp")
+def convert_to_comped(
+    sub_id: str,
+    body: CompIn,
+    x_user_id: Optional[str] = Header(default=None),
+):
+    note = (body.note or "").strip()
+    if not note:
+        raise HTTPException(status_code=400, detail="note_required")
+
+    conn = get_db("payment_db")
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT entity_id, entity_type, tier, status "
+            "FROM subscriptions WHERE id=%s",
+            (sub_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="subscription_not_found")
+        old_status = row["status"]
+
+        # Flip to comped. current_period_end is deliberately left as
+        # whatever it was — comped is not gated on it (check_entitlement
+        # returns True unconditionally for comped) so mutating the date
+        # would only muddy the audit trail. rebill_attempts + next_attempt_at
+        # are cleared so if the row is ever un-comped it starts clean.
+        cur.execute(
+            """UPDATE subscriptions
+                 SET status='comped',
+                     rebill_attempts=0,
+                     next_attempt_at=NULL,
+                     grace_sms_step=0,
+                     cancelled_at=NULL
+               WHERE id=%s""",
+            (sub_id,),
+        )
+        conn.commit()
+
+        audit_cur = conn.cursor()
+        audit_cur.execute(
+            """INSERT INTO auth_db.audit_log
+                 (entity_type, entity_id, actor_id, action, metadata)
+               VALUES (%s, %s, %s, %s, %s)""",
+            (
+                row["entity_type"], row["entity_id"],
+                x_user_id or "admin",
+                "sub_comped",
+                json.dumps(
+                    {"from_status": old_status, "to_status": "comped",
+                     "tier": row["tier"], "note": note},
+                    ensure_ascii=False,
+                ),
+            ),
+        )
+        conn.commit()
+        return {
+            "id":          sub_id,
+            "status":      "comped",
+            "from_status": old_status,
+            "note":        note,
+        }
     finally:
         conn.close()
 
