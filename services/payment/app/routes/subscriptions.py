@@ -647,8 +647,16 @@ async def purchase_seats(
         conn.close()
 
 
-# ─── POST /payments/internal/renewal-batch ───────────────────────────────────
+# ─── POST /payments/subscriptions/internal/renewal-batch ─────────────────────
 # L5 §6 · monthly renewal + §7 · failure chain.
+#
+# The `subscriptions` router mounts at prefix='/payments/subscriptions'
+# in payment/app/main.py, so this route's absolute path is
+# /payments/subscriptions/internal/renewal-batch — NOT
+# /payments/internal/renewal-batch. The comment used to say the latter,
+# which matched the notification cron's typo; R11 tests caught it after
+# months of silent 404s (every prior verify called this handler
+# in-process).
 #
 # Sweep pattern mirrors services/notification/src/cron/*: no gateway
 # exposure (the notification service posts to it internally on the

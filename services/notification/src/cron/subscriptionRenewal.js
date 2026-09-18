@@ -10,10 +10,17 @@
 //     schedules retries in +3d chunks and the batch is what
 //     actually fires them.
 //
-// The endpoint on payment is /payments/internal/renewal-batch and
-// is gated by a shared secret (INTERNAL_BATCH_SECRET) that must
+// The endpoint on payment is /payments/subscriptions/internal/renewal-batch
+// and is gated by a shared secret (INTERNAL_BATCH_SECRET) that must
 // match the header X-Internal-Secret. Both this file and the
 // payment service read the value from Railway env.
+//
+// R11 · the URL was previously '/payments/internal/renewal-batch' —
+// missing the `/subscriptions/` segment. subscriptions.router is
+// mounted at prefix='/payments/subscriptions' in payment/app/main.py,
+// so the correct absolute path includes it. Every prior verification
+// ran renewal_batch() via in-process import and never noticed; the
+// scheduled 09:00 tick has been 404-ing silently in production.
 //
 // Idempotency: the batch itself is idempotent via the
 // payment_events UNIQUE(provider_transaction_id) — running it twice
@@ -29,7 +36,7 @@ async function runSubscriptionRenewalCron() {
     return { skipped: true };
   }
   try {
-    const res = await fetch(`${PAYMENT_SVC}/payments/internal/renewal-batch`, {
+    const res = await fetch(`${PAYMENT_SVC}/payments/subscriptions/internal/renewal-batch`, {
       method:  'POST',
       headers: { 'X-Internal-Secret': secret, 'content-type': 'application/json' },
       body:    '{}',
