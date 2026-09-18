@@ -4,8 +4,9 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Loader2, Globe2, Plus, AlertCircle, ArrowLeft } from 'lucide-react';
+import { Loader2, Globe2, Plus, AlertCircle, ArrowLeft, RefreshCw } from 'lucide-react';
 import { tenderApi, type Tender } from '@/lib/api';
+import { mapApiError } from '@/lib/api/errors';
 import { useEnums } from '@/features/enums/EnumsContext';
 import { Button } from '@/components/ui/button';
 import { TableToolbar } from '@/components/table/TableToolbar';
@@ -33,14 +34,21 @@ export default function ContractorTendersPage() {
   const { professionMap, originMap } = useEnums();
   const [tenders, setTenders] = useState<Tender[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError]     = useState(false);
+  // R7 · error was `boolean` — no way to distinguish a real 500 from a
+  // "network blip, please retry". Track the mapped Hebrew string
+  // instead so we render what actually happened, and expose a retry.
+  const [error, setError]     = useState<string | null>(null);
 
-  useEffect(() => {
+  const load = useCallback(() => {
+    setLoading(true);
+    setError(null);
     tenderApi.listMine()
       .then(setTenders)
-      .catch(() => setError(true))
+      .catch((e) => setError(mapApiError(e)))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => { load(); }, [load]);
 
   // ── Filter + sort ───────────────────────────────────────────────
   type TenderStatus = 'all' | 'active' | 'in_progress' | 'closed' | 'cancelled';
@@ -100,9 +108,17 @@ export default function ContractorTendersPage() {
       )}
 
       {error && !loading && (
-        <div className="bg-white border border-slate-200 rounded-2xl flex flex-col items-center gap-3 py-12 text-center px-4">
+        // R7 · real errors only (empty list is caught by the block
+        // below, so this NEVER shows for a fresh contractor). Renders
+        // the mapped Hebrew message + a retry so a network blip isn't
+        // a dead end.
+        <div className="bg-white border border-red-200 rounded-2xl flex flex-col items-center gap-3 py-12 text-center px-4">
           <AlertCircle className="h-10 w-10 text-red-400" />
-          <p className="text-slate-700 font-medium">לא ניתן לטעון את הבקשות</p>
+          <p className="text-red-700 font-medium">שגיאה בטעינת הבקשות</p>
+          <p className="text-slate-500 text-sm">{error}</p>
+          <Button variant="outline" size="sm" onClick={load} className="mt-1">
+            <RefreshCw className="w-3.5 h-3.5" /> נסה שוב
+          </Button>
         </div>
       )}
 

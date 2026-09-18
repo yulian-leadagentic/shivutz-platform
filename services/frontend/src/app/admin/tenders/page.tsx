@@ -10,9 +10,10 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
   Loader2, Globe2, AlertCircle, Users, ShieldCheck, ChevronDown, Check,
-  XCircle, Pencil, Snowflake, Play, Trash2, Hash, Save,
+  XCircle, Pencil, Snowflake, Play, Trash2, Hash, Save, RefreshCw,
 } from 'lucide-react';
 import { tenderApi, orgApi, type Tender } from '@/lib/api';
+import { mapApiError } from '@/lib/api/errors';
 import { useEnums } from '@/features/enums/EnumsContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -42,7 +43,8 @@ export default function AdminTendersPage() {
   const { professionMap } = useEnums();
   const [tenders, setTenders] = useState<Tender[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError]     = useState(false);
+  // R7 · error was boolean; render mapped Hebrew + retry.
+  const [error, setError]     = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [acting, setActing]   = useState<string | null>(null);
   // T1 — spot-check filter. Flips the fetch to WHERE auto_published=1
@@ -65,6 +67,7 @@ export default function AdminTendersPage() {
 
   const load = useCallback(() => {
     setLoading(true);
+    setError(null);
     tenderApi.adminListAll({ autoPublished: autoOnly })
       .then((rows) => {
         setTenders(rows);
@@ -82,7 +85,7 @@ export default function AdminTendersPage() {
             .catch(() => {});
         });
       })
-      .catch(() => setError(true))
+      .catch((e) => setError(mapApiError(e)))
       .finally(() => setLoading(false));
   }, [autoOnly]);
 
@@ -284,9 +287,16 @@ export default function AdminTendersPage() {
 
       {loading && <div className="flex justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-slate-400" /></div>}
       {error && !loading && (
-        <div className="bg-white border border-slate-200 rounded-2xl py-12 text-center">
+        <div className="bg-white border border-red-200 rounded-2xl py-12 text-center px-4">
           <AlertCircle className="h-10 w-10 text-red-400 mx-auto mb-2" />
-          <p className="text-slate-700">לא ניתן לטעון את הבקשות</p>
+          <p className="text-red-700 font-medium">שגיאה בטעינת הבקשות</p>
+          <p className="text-slate-500 text-sm mt-1">{error}</p>
+          <button
+            onClick={load}
+            className="mt-3 inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium hover:bg-slate-50"
+          >
+            <RefreshCw className="w-3.5 h-3.5" /> נסה שוב
+          </button>
         </div>
       )}
 

@@ -6,8 +6,10 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Loader2, Globe2, Users, AlertCircle, ArrowLeft } from 'lucide-react';
+import { Loader2, Globe2, Users, AlertCircle, ArrowLeft, RefreshCw } from 'lucide-react';
 import { tenderApi, type Tender, type Bid } from '@/lib/api';
+import { mapApiError } from '@/lib/api/errors';
+import { Button } from '@/components/ui/button';
 import { useEnums } from '@/features/enums/EnumsContext';
 import { TableToolbar } from '@/components/table/TableToolbar';
 import { useTableState } from '@/components/table/useTableState';
@@ -33,14 +35,20 @@ export default function CorpTendersPage() {
   const [open, setOpen]     = useState<Tender[]>([]);
   const [bids, setBids]     = useState<Bid[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError]   = useState(false);
+  // R7 · error was `boolean` — see /contractor/tenders for the same
+  // change. Render the real mapped message + a retry.
+  const [error, setError]   = useState<string | null>(null);
 
-  useEffect(() => {
+  const load = useCallback(() => {
+    setLoading(true);
+    setError(null);
     Promise.all([tenderApi.listOpen(), tenderApi.myBids()])
       .then(([o, b]) => { setOpen(o); setBids(b); })
-      .catch(() => setError(true))
+      .catch((e) => setError(mapApiError(e)))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => { load(); }, [load]);
 
   // Open tenders this corp hasn't bid on yet (or only withdrawn).
   const biddableOpen = open.filter((t) => !t.my_bid || t.my_bid.status === 'withdrawn');
@@ -93,9 +101,13 @@ export default function CorpTendersPage() {
 
       {loading && <div className="flex justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-slate-400" /></div>}
       {error && !loading && (
-        <div className="bg-white border border-slate-200 rounded-2xl py-12 text-center">
+        <div className="bg-white border border-red-200 rounded-2xl py-12 text-center px-4">
           <AlertCircle className="h-10 w-10 text-red-400 mx-auto mb-2" />
-          <p className="text-slate-700">לא ניתן לטעון את הבקשות</p>
+          <p className="text-red-700 font-medium">שגיאה בטעינת הבקשות</p>
+          <p className="text-slate-500 text-sm mt-1">{error}</p>
+          <Button variant="outline" size="sm" onClick={load} className="mt-3">
+            <RefreshCw className="w-3.5 h-3.5" /> נסה שוב
+          </Button>
         </div>
       )}
 
