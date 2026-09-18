@@ -469,12 +469,36 @@ def public_stats():
 #      a global one for a flooring query
 #   2. sort_order (admin can pin)
 #   3. RAND() so a two-ad pool alternates
+def _serialize_sponsor_ad(item: dict) -> dict:
+    """Shared serialisation for sponsor_ads rows on the public endpoint.
+
+    MySQL JSON columns come back as strings depending on the driver;
+    the legacy path did this inline. R6 pulled it out so the slot-first
+    path and the RAND() fallback both round-trip the same JSON fields
+    identically.
+    """
+    for jkey in ("chips_he", "target_professions", "target_ad_types", "target_regions"):
+        v = item.get(jkey)
+        if isinstance(v, (bytes, bytearray)):
+            v = v.decode("utf-8")
+        if isinstance(v, str):
+            try:
+                item[jkey] = json.loads(v)
+            except Exception:
+                item[jkey] = None
+    # match_score is an internal ranking signal — no reason to ship
+    # it to the client.
+    item.pop("match_score", None)
+    return item
+
+
 @router.get("/public/sponsored")
 def get_sponsored_ads(
     profession: Optional[str] = None,
     ad_type:    Optional[str] = None,
     region:     Optional[str] = None,
     placement:  Optional[str] = None,
+    category:   Optional[str] = None,
     limit:      int = 2,
 ):
     # U7 §5 · placements gate. Contract per spec: NULL placements ≡
@@ -503,6 +527,50 @@ def get_sponsored_ads(
     conn = get_db()
     try:
         cur = conn.cursor()
+
+        # R6 · exclusive-slot resolution runs first. If a booked slot
+        # matches (category, placement, now within window), that ad is
+        # the ONLY thing served — the RAND() pool is skipped for this
+        # (category, placement) as long as the window is open. A slot
+        # tied to a specific category outranks a category-agnostic (NULL)
+        # slot; a booked one outranks an unbooked (sponsor_ad_id NULL).
+        # If nothing matches, we fall through to the legacy pool
+        # (backwards-safe: empty slot inventory = today's behavior).
+        if placement is not None:
+            cur.execute(
+                """SELECT s.sponsor_ad_id
+                     FROM sponsor_ads_slots s
+                    WHERE s.placement = %s
+                      AND s.sponsor_ad_id IS NOT NULL
+                      AND s.starts_at <= NOW()
+                      AND s.ends_at   >= NOW()
+                      AND (s.category_code = %s OR s.category_code IS NULL)
+                    ORDER BY (s.category_code IS NULL) ASC, s.starts_at DESC
+                    LIMIT 1""",
+                (placement, category),
+            )
+            slot_row = cur.fetchone()
+            if slot_row:
+                cur.execute(
+                    """SELECT
+                         id, advertiser_name,
+                         headline_he, body_he, chips_he,
+                         cta_label_he, cta_url,
+                         logo_url, brand_bg, brand_fg,
+                         target_professions, target_ad_types, target_regions
+                       FROM sponsor_ads
+                      WHERE id = %s AND active = TRUE
+                        AND (starts_at IS NULL OR starts_at <= NOW())
+                        AND (ends_at   IS NULL OR ends_at   >= NOW())""",
+                    (slot_row["sponsor_ad_id"],),
+                )
+                slot_ad = cur.fetchone()
+                if slot_ad:
+                    return {"results": [_serialize_sponsor_ad(dict(slot_ad))]}
+                # If the slot points to an inactive/expired sponsor_ads
+                # row, fall through to the legacy pool rather than
+                # returning nothing — F3 says empty spans hide, and the
+                # legacy pool preserves the not-empty guarantee.
         # MySQL 8 JSON_CONTAINS returns 1/0. Wrapping each in a
         # coalesced boolean lets us both filter (WHERE) and rank
         # (ORDER BY) with the same expressions.
@@ -567,25 +635,7 @@ def get_sponsored_ads(
         rows = cur.fetchall()
     finally:
         conn.close()
-    # Serialize — chips_he / target_* come back as strings (MySQL
-    # driver behaviour with JSON columns) so json.loads if str.
-    out = []
-    for r in rows:
-        item = dict(r)
-        for jkey in ("chips_he", "target_professions", "target_ad_types", "target_regions"):
-            v = item.get(jkey)
-            if isinstance(v, (bytes, bytearray)):
-                v = v.decode("utf-8")
-            if isinstance(v, str):
-                try:
-                    item[jkey] = json.loads(v)
-                except Exception:
-                    item[jkey] = None
-        # match_score is an internal ranking signal — no reason to
-        # ship it to the client.
-        item.pop("match_score", None)
-        out.append(item)
-    return {"results": out}
+    return {"results": [_serialize_sponsor_ad(dict(r)) for r in rows]}
 
 
 # ─── GET /ads/public/{ad_id} ────────────────────────────────────────────────

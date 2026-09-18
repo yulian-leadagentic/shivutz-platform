@@ -147,6 +147,24 @@ export interface DashOrgs {
   total: number;
 }
 
+// R6 · exclusive slot inventory row. `category_code` is null for
+// category-agnostic placements (home_banner / home_carousel today).
+// `sponsor_ad_id` null = the slot is on the shelf, not booked.
+export interface SponsorSlot {
+  id:               string;
+  placement:        string;
+  category_code:    string | null;
+  starts_at:        string;
+  ends_at:          string;
+  price_nis:        number;
+  sponsor_ad_id:    string | null;
+  note:             string | null;
+  advertiser_name:  string | null;   // joined from sponsor_ads when booked
+  headline_he:      string | null;
+  created_at:       string;
+  updated_at:       string;
+}
+
 export interface DashWorkers {
   available: number;
   assigned: number;
@@ -507,6 +525,51 @@ export const adminApi = {
     apiFetch<Lead[]>(`/admin/leads?handled=${handled}`),
   markLeadHandled: (id: string) =>
     apiFetch<void>(`/admin/leads/${id}/handled`, { method: 'PATCH' }),
+
+  // ── R6 · Sponsor slot inventory ─────────────────────────────────────────
+  //
+  // Yulian decided exclusive category slot per placement per window. The
+  // admin surface is bookkeeping only; the runtime resolution lives in
+  // ads.py (/public/sponsored preferring a live booked slot over the
+  // legacy RAND() pool).
+  listSponsorSlots: (params?: {
+    placement?:     string;
+    category_code?: string;   // "" → category-agnostic (home_*); undefined → any
+    booked?:        boolean;
+  }) => {
+    const qs = new URLSearchParams();
+    if (params?.placement)     qs.set('placement', params.placement);
+    if (params?.category_code !== undefined) qs.set('category_code', params.category_code);
+    if (params?.booked !== undefined) qs.set('booked', String(params.booked));
+    return apiFetch<SponsorSlot[]>(`/admin/sponsor-slots?${qs.toString()}`);
+  },
+  createSponsorSlot: (body: {
+    placement:     string;
+    category_code: string | null;
+    starts_at:     string;
+    ends_at:       string;
+    price_nis:     number;
+    sponsor_ad_id?: string | null;
+    note?:         string | null;
+  }) =>
+    apiFetch<SponsorSlot>('/admin/sponsor-slots', {
+      method: 'POST',
+      body:   JSON.stringify(body),
+    }),
+  updateSponsorSlot: (id: string, body: {
+    starts_at?:     string;
+    ends_at?:       string;
+    price_nis?:     number;
+    sponsor_ad_id?: string | null;
+    unbook?:        boolean;
+    note?:          string | null;
+  }) =>
+    apiFetch<SponsorSlot>(`/admin/sponsor-slots/${id}`, {
+      method: 'PATCH',
+      body:   JSON.stringify(body),
+    }),
+  deleteSponsorSlot: (id: string) =>
+    apiFetch<void>(`/admin/sponsor-slots/${id}`, { method: 'DELETE' }),
   reopenLead: (id: string) =>
     apiFetch<void>(`/admin/leads/${id}/reopen`, { method: 'PATCH' }),
   deleteLead: (id: string) =>
