@@ -94,7 +94,13 @@ const PORT = process.env.NOTIF_PORT || 3006;
   // corp who just paid a resurrected subscription doesn't get
   // hard-capped between the payment webhook landing and the
   // renewal-restore path in payment/subscriptions.py.
-  cron.schedule('0 9 * * *', () => {
+  //
+  // R11 · schedule TEMPORARILY set to every 2 minutes so the R11
+  // full-chain live verification can watch the scheduler fire on its
+  // own (spec §3 · "הקרון עצמו יורה — לא קריאה ידנית להנדלר"). Reverted
+  // to '0 9 * * *' in the follow-up commit once the run is captured
+  // in Railway logs.
+  cron.schedule('*/2 * * * *', () => {
     console.log('[cron] Running subscription renewal batch');
     runSubscriptionRenewalCron().catch(console.error);
   });

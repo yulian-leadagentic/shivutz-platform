@@ -200,46 +200,22 @@ async def start_subscription(
             _insert_trial(cur, entity_id, entity_type)
             row = _fetch(cur, entity_id, entity_type)
 
-        if PAYMENT_FAKE_MODE:
-            period_end = datetime.utcnow() + timedelta(days=FAKE_PERIOD_DAYS)
-            cur.execute(
-                """UPDATE subscriptions
-                     SET tier=%s, status='active', cardcom_plan_code=%s,
-                         current_period_end=%s, cancelled_at=NULL,
-                         grace_sms_step=0
-                   WHERE entity_id=%s AND entity_type=%s""",
-                (body.tier, plan_code, period_end, entity_id, entity_type),
-            )
-            conn.commit()
-
-            # B3 — renewal restores paused ads for corps that were in
-            # hard-cap. Runs cross-schema; missing table (dev) or empty
-            # result set is a no-op. Only touches ads that were paused
-            # BY the grace cron (paused_by='grace_hard_cap') to avoid
-            # un-pausing ones the corp paused manually.
-            if entity_type == "corporation":
-                try:
-                    org_conn = get_db("org_db")
-                    try:
-                        org_cur = org_conn.cursor()
-                        org_cur.execute(
-                            """UPDATE ads SET active=TRUE, paused_by=NULL
-                                WHERE owner_entity_id=%s
-                                  AND active=FALSE
-                                  AND paused_by='grace_hard_cap'
-                                  AND deleted_at IS NULL""",
-                            (entity_id,),
-                        )
-                        org_conn.commit()
-                    finally:
-                        org_conn.close()
-                except Exception as exc:  # noqa: BLE001 — restore is best-effort
-                    print(f"[subscriptions] grace-restore skipped: {exc}")
-
-            return {"mode": "fake", "tier": body.tier, "status": "active",
-                    "current_period_end": period_end.isoformat()}
-
-        # ── L5 §4 · real Cardcom path ──────────────────────────────
+        # R11 · single code path for fake + real. The old fake branch
+        # skipped charge_token AND record_event, so a fake-mode /start
+        # left no audit row and diverged from renewal_batch (which DOES
+        # honour PAYMENT_FAKE_MODE via charge_token itself and DOES
+        # record an event with the FAKE-<hex> txn). The mode split
+        # belongs at the network boundary — inside charge_token — not
+        # at the endpoint. Deleting the branch here means fake and real
+        # can never drift again.
+        #
+        # Behaviour change: fake-mode /start now enforces the same PM
+        # precondition real mode does (402 no_payment_method when the
+        # entity has no stored card). That's the point — same code,
+        # same gates, same audit trail. Callers relying on the old
+        # PM-less fake flow must save a PM first.
+        #
+        # ── Real Cardcom path (also runs in PAYMENT_FAKE_MODE=1) ────
         # Precondition: the entity has already tokenised a card via the
         # existing /cardcom webhook (`webhooks.py`). If not, we
         # short-circuit with a 402 that tells the frontend to redirect
@@ -347,10 +323,13 @@ async def start_subscription(
                 _restore_grace_hard_capped_ads(entity_id)
 
         # Return the fresh state to the frontend.
+        # R11 · mode reflects the actual runtime flag, not a hard-coded
+        # 'real' — otherwise the FE B4 "מצב בדיקה" chip would never
+        # render on the /billing page even when PAYMENT_FAKE_MODE=1.
         row = _fetch(cur, entity_id, entity_type)
         out = _serialize(row) if row else {}
-        out["mode"]          = "real"
-        out["invoice_url"]   = charge.get("invoice_url")
+        out["mode"]           = "fake" if PAYMENT_FAKE_MODE else "real"
+        out["invoice_url"]    = charge.get("invoice_url")
         out["invoice_number"] = charge.get("invoice_number") or None
         return out
     finally:
