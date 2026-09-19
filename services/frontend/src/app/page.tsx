@@ -45,7 +45,7 @@ import { searchApi, type SearchResponse, type AdSearchResult, type ContactReveal
 import { apiFetch, ApiError } from '@/lib/api/client';
 import { mapApiError } from '@/lib/api/errors';
 import { enumApi } from '@/lib/api/enums';
-import { isLoggedIn } from '@/lib/auth';
+import { isLoggedIn, getAccessToken, getEntityType } from '@/lib/auth';
 import { readPendingReveal, clearPendingReveal } from '@/features/prospect/state';
 import type { Profession } from '@/types';
 
@@ -212,6 +212,18 @@ function LandingPageInner() {
   // it's still waiting for data or if the target ad genuinely isn't
   // in the recent list.
   const [recentLoaded, setRecentLoaded] = useState(false);
+  // R12 §1 · viewer entity type steers three surfaces on the search
+  // page: the placeholder wording (1d), the ads-column empty state
+  // (1c), and whether the ads column renders at all (providers see
+  // only the marketplace section). Read once on mount from the JWT —
+  // null on SSR + anonymous, populated after hydration for authed.
+  const [entityType, setEntityType] = useState<string | null>(null);
+  useEffect(() => {
+    const t = getAccessToken();
+    setEntityType(t ? getEntityType(t) : null);
+  }, []);
+  const isProvider = entityType === 'service_provider';
+  const isCorp     = entityType === 'corporation';
 
   // L2 — structured filter chips alongside free-text. Selected values
   // get prepended to the LLM query on submit; the rewriter already
@@ -1002,7 +1014,17 @@ function LandingPageInner() {
                     onBlur={() => setInputFocused(false)}
                     // SP — placeholder-as-example: teaches the smart-query
                     // syntax in-context (better than "חפש").
-                    placeholder="נסה: 20 פועלים סינים במרכז"
+                    // R12 §1d · a worker-flavoured placeholder misleads a
+                    // corp or provider caller: corps sell workers, and
+                    // providers sell services — for both, the meaningful
+                    // search targets housing / transport / insurance /
+                    // equipment. F1 fixed the anon+contractor copy, so
+                    // don't touch it.
+                    placeholder={
+                      isCorp || isProvider
+                        ? 'חפש דיור, הסעות, ביטוח, ציוד'
+                        : 'נסה: 20 פועלים סינים במרכז'
+                    }
                     aria-label="חיפוש חכם — תיאור חופשי בעברית"
                     className="ai-field-input flex-1 min-w-0 h-11 text-base sm:text-lg outline-none placeholder:text-slate-400 bg-transparent"
                   />
@@ -1094,13 +1116,37 @@ function LandingPageInner() {
                   runSearch(nextQ);
                 }
 
-                const exact = resp.results.length;
-                const near  = resp.near_matches?.length ?? 0;
+                // R12 §1b · visible counter now sums the same three
+                // sources the SR-only status region does — a query like
+                // "קורס עברית" that lands only in marketplace_matches
+                // has to read "תוצאה אחת" in the readout, not "0
+                // תוצאות" next to a real card. The empty-state block
+                // downstream already gates on all three; the counter
+                // was the last surface still reading two of three.
+                const exact  = resp.results.length;
+                const near   = resp.near_matches?.length ?? 0;
+                const market = resp.marketplace_matches?.length ?? 0;
+                const total  = exact + near + market;
                 const countText = (() => {
-                  const exactPart = exact === 1 ? 'תוצאה אחת' : `${exact} תוצאות`;
-                  if (near === 0) return exactPart;
-                  const exactLabel = exact === 1 ? 'תוצאה אחת מדויקת' : `${exact} תוצאות מדויקות`;
-                  return `${exactLabel} · ${near} קרובות`;
+                  if (total === 0) return '0 תוצאות';
+                  // Single-source case: use the short "N תוצאות" form
+                  // whichever source it is — no need to spell out
+                  // "מדויקות" when there's nothing to disambiguate.
+                  const populated = [exact, near, market].filter((n) => n > 0).length;
+                  if (populated === 1) {
+                    return total === 1 ? 'תוצאה אחת' : `${total} תוצאות`;
+                  }
+                  const parts: string[] = [];
+                  if (exact > 0) {
+                    parts.push(exact === 1 ? 'תוצאה אחת מדויקת' : `${exact} תוצאות מדויקות`);
+                  }
+                  if (near > 0) {
+                    parts.push(`${near} קרובות`);
+                  }
+                  if (market > 0) {
+                    parts.push(market === 1 ? 'שירות אחד נלווה' : `${market} שירותים נלווים`);
+                  }
+                  return parts.join(' · ');
                 })();
                 return (
                   <div className="readout px-3 py-2 flex items-center flex-wrap gap-2 text-xs text-slate-800">
@@ -1542,7 +1588,14 @@ function LandingPageInner() {
                   {/* ── Ads block ─────────────────────────────────
                       One flex-item wrapper so its `order` toggles as
                       a unit. Inner spacing is back to space-y-4 so
-                      nothing inside changes visually. */}
+                      nothing inside changes visually.
+                      R12 §1c · providers never see this block. Not
+                      empty, not explained — a service_provider has
+                      no business on either side of the worker/housing
+                      inventory, so we don't paint a slot for them.
+                      Their total-miss fallback lives below the
+                      marketplace section. */}
+                  {!isProvider && (
                   <div className={
                     (resp?.primary_section === 'marketplace' ? 'order-2' : 'order-1') +
                     ' space-y-4'
@@ -1593,7 +1646,43 @@ function LandingPageInner() {
                     </div>
                   )}
 
-                  {resp
+                  {/* R12 §1c · CORP variant. Distinct from the amber
+                      no-results block because the reason is different
+                      — H12 restricts a corp to its own worker
+                      inventory, so "empty" here means "you're not
+                      allowed to see other corps' ads", not "no such
+                      ad exists". Renders whenever the corp's own
+                      worker/housing set is empty, INDEPENDENT of the
+                      marketplace section (which may still have
+                      relevant services alongside). The publish CTA
+                      turns the dead end into a productive next step:
+                      the corp is the party who lists workers, so a
+                      "no matching own ad" moment is the correct time
+                      to nudge one. */}
+                  {isCorp && resp
+                    && resp.results.length === 0
+                    && (!resp.near_matches || resp.near_matches.length === 0)
+                    && (
+                    <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 text-center shadow-sm">
+                      <p className="text-sm text-slate-700 mb-1">
+                        מודעות עובדים של תאגידים אחרים אינן מוצגות לתאגידים.
+                      </p>
+                      <p className="text-sm text-slate-700 mb-4">
+                        אלה המודעות שלך שתואמות לחיפוש — כרגע אין.
+                      </p>
+                      <Link
+                        href="/corporation/ads/new/worker"
+                        className="inline-flex items-center gap-2 rounded-lg bg-brand-600 hover:bg-brand-700 text-white font-semibold text-sm px-4 py-2 min-h-[44px] transition"
+                      >
+                        פרסמו מודעת עובדים חדשה
+                        <ArrowLeft className="w-4 h-4" aria-hidden="true" />
+                      </Link>
+                    </div>
+                  )}
+
+                  {/* Contractor / anonymous variant (isCorp gated so
+                      a corp caller never sees this copy — R12 §1c). */}
+                  {!isCorp && resp
                     && resp.results.length === 0
                     && (!resp.near_matches || resp.near_matches.length === 0)
                     // R5 §4 · when marketplace_matches has hits, the
@@ -1848,6 +1937,7 @@ function LandingPageInner() {
                     );
                   })()}
                   </div>
+                  )}
                   {/* ── /Ads block ────────────────────────────────*/}
 
                   {/* ── Marketplace matches (U6 §2) ───────────────
@@ -1870,8 +1960,18 @@ function LandingPageInner() {
                           the reader sees. Reads as "we don't have workers
                           matching your query but here's a service that
                           does" instead of an unlabelled results block
-                          next to a "0 results" counter. */}
-                      {resp.results.length === 0 && (!resp.near_matches || resp.near_matches.length === 0) && (
+                          next to a "0 results" counter.
+                          R12 §1c · suppress this preamble for corp and
+                          provider callers: for a corp the workers slot
+                          is empty because H12, not because nothing
+                          matches (the corp block above already says the
+                          right thing); for a provider the workers slot
+                          isn't rendered at all, so "לא נמצאו עובדים"
+                          would be about a section they can't see. */}
+                      {!isCorp && !isProvider
+                        && resp.results.length === 0
+                        && (!resp.near_matches || resp.near_matches.length === 0)
+                        && (
                         <p className="text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
                           לא נמצאו עובדים או דיור לחיפוש הזה. מצאנו התאמה בשירותים הנלווים.
                         </p>
@@ -1898,6 +1998,28 @@ function LandingPageInner() {
                         ))}
                       </div>
                     </section>
+                  )}
+
+                  {/* R12 §1c · provider fallback empty-state. A
+                      service_provider sees only the marketplace
+                      section; when it comes up empty too (no
+                      marketplace_matches), nothing else in the
+                      results column renders and the page reads as
+                      broken. This block is the "no matches" panel
+                      for that path — plain wording, no
+                      workers/housing framing, no publish CTA (a
+                      provider publishes on /marketplace, not on
+                      the worker inventory), and gated so it only
+                      appears once the search response has landed. */}
+                  {isProvider && resp
+                    && (!resp.marketplace_matches || resp.marketplace_matches.length === 0)
+                    && (
+                    <div className="order-3 bg-amber-50 border-2 border-amber-200 rounded-2xl p-8 text-center shadow-sm">
+                      <p className="text-lg font-bold text-amber-900 mb-2">לא נמצאו תוצאות לחיפוש</p>
+                      <p className="text-sm text-amber-800">
+                        נסה לנסח אחרת או לחפש שירות אחר.
+                      </p>
+                    </div>
                   )}
                 </div>
 
