@@ -94,7 +94,13 @@ const PORT = process.env.NOTIF_PORT || 3006;
   // corp who just paid a resurrected subscription doesn't get
   // hard-capped between the payment webhook landing and the
   // renewal-restore path in payment/subscriptions.py.
-  cron.schedule('0 9 * * *', () => {
+  //
+  // R11 · TEMP schedule '*/2 * * * *' so the three R9 regression
+  // scenarios (comped skip · no-PM skip · declined failure chain)
+  // can be captured via actual HTTP + scheduler, not in-process.
+  // Reverted to '0 9 * * *' in the follow-up commit after the
+  // runs land in cron_health.
+  cron.schedule('*/2 * * * *', () => {
     console.log('[cron] Running subscription renewal batch');
     runSubscriptionRenewalCron().catch(console.error);
   });

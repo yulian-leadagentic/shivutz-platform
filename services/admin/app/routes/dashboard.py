@@ -127,3 +127,53 @@ def get_alerts():
         return {"discrepancy_alerts": [], "sla_warnings": sla_warnings}
     finally:
         org_conn.close()
+
+
+# ── R11 follow-up · cron health ──────────────────────────────────────────
+#
+# Every cron that opts into the heartbeat pattern writes to
+# `payment_db.cron_health` after each attempt. This endpoint reads the
+# rows so the admin dashboard can render "N consecutive failures" as
+# an alert. Without this the URL-typo bug that hid the renewal cron's
+# 404 for months could not have been caught.
+
+@router.get("/cron-health")
+def get_cron_health():
+    """Return every cron_health row + a derived severity level.
+
+    severity:
+      - 'green'  · consecutive_failures = 0 and last_ok_at within 25h
+      - 'stale'  · consecutive_failures = 0 but no last_ok_at within 25h
+                   (the cron hasn't reported for over a day — could be
+                   config misfire like the '/payments/internal/…' typo)
+      - 'amber'  · consecutive_failures between 1 and 2
+      - 'red'    · consecutive_failures >= 3
+    """
+    pay_conn = get_db("payment_db")
+    try:
+        cur = pay_conn.cursor()
+        cur.execute(
+            """SELECT cron_name, last_run_at, last_ok_at, last_fail_at,
+                      last_error, consecutive_failures, updated_at,
+                      TIMESTAMPDIFF(HOUR, last_ok_at, NOW()) AS hours_since_ok
+                 FROM cron_health
+                ORDER BY consecutive_failures DESC, cron_name ASC"""
+        )
+        rows = cur.fetchall()
+    finally:
+        pay_conn.close()
+
+    out = []
+    for r in rows:
+        cf = int(r.get("consecutive_failures") or 0)
+        hrs_since_ok = r.get("hours_since_ok")
+        if cf >= 3:
+            severity = "red"
+        elif cf >= 1:
+            severity = "amber"
+        elif r.get("last_ok_at") and hrs_since_ok is not None and hrs_since_ok < 25:
+            severity = "green"
+        else:
+            severity = "stale"
+        out.append({**_serialize(r), "severity": severity})
+    return out

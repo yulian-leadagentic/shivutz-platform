@@ -29,10 +29,30 @@
 
 const PAYMENT_SVC = process.env.PAYMENT_SERVICE_URL || 'http://payment:3009';
 
+// R11 follow-up · every attempt writes to cron_health via a heartbeat
+// POST. That table is what the admin dashboard reads to render "N
+// consecutive failures" — the loud-failure surface the URL-typo bug
+// was hidden by not having.
+async function reportHeartbeat(secret, cronName, ok, errStr, resultObj) {
+  try {
+    await fetch(`${PAYMENT_SVC}/payments/subscriptions/internal/cron-heartbeat`, {
+      method:  'POST',
+      headers: { 'X-Internal-Secret': secret, 'content-type': 'application/json' },
+      body:    JSON.stringify({ cron_name: cronName, ok, error: errStr || null, result: resultObj || null }),
+    });
+  } catch (err) {
+    // Never let the heartbeat's own failure mask the underlying result.
+    console.error('[cron/renewal] heartbeat failed', err);
+  }
+}
+
 async function runSubscriptionRenewalCron() {
   const secret = process.env.INTERNAL_BATCH_SECRET;
   if (!secret) {
     console.warn('[cron/renewal] INTERNAL_BATCH_SECRET not set — skipping');
+    // No heartbeat here — without the secret we can't reach the endpoint
+    // anyway. This IS the misconfig case; the admin dashboard rendering
+    // 'no heartbeat ever recorded' is itself the signal.
     return { skipped: true };
   }
   try {
@@ -43,13 +63,17 @@ async function runSubscriptionRenewalCron() {
     });
     const body = await res.json().catch(() => ({}));
     if (!res.ok) {
+      const errStr = `HTTP ${res.status}: ${JSON.stringify(body).slice(0, 300)}`;
       console.error('[cron/renewal] batch failed', res.status, body);
+      await reportHeartbeat(secret, 'subscriptionRenewal', false, errStr, null);
       return { ok: false, status: res.status, body };
     }
     console.log('[cron/renewal] batch OK', body);
+    await reportHeartbeat(secret, 'subscriptionRenewal', true, null, body);
     return { ok: true, ...body };
   } catch (err) {
     console.error('[cron/renewal] batch threw', err);
+    await reportHeartbeat(secret, 'subscriptionRenewal', false, String(err), null);
     return { ok: false, error: String(err) };
   }
 }

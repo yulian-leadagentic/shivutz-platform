@@ -677,12 +677,78 @@ async def purchase_seats(
 #   * active subs with current_period_end due (first monthly renewal)
 #   * past_due subs whose next_attempt_at is due (retry #2, #3)
 
+# ─── POST /payments/subscriptions/internal/cron-heartbeat ────────────────────
+# R11 follow-up · loud-failure surface. The notification cron posts here
+# after every attempt to run renewal-batch (or any other cron that opts
+# in). Writes to cron_health so the admin dashboard can render "N
+# consecutive failures" instead of silently swallowing 404s the way the
+# renewal-batch URL bug did for months.
+
+class HeartbeatBody(BaseModel):
+    cron_name:  str
+    ok:         bool
+    error:      Optional[str] = None
+    result:     Optional[dict] = None
+
+
+@router.post("/internal/cron-heartbeat")
+async def cron_heartbeat(body: HeartbeatBody,
+                         x_internal_secret: Optional[str] = Header(default=None)):
+    import os
+    expected = os.getenv("INTERNAL_BATCH_SECRET", "")
+    if not expected or x_internal_secret != expected:
+        raise HTTPException(status_code=401, detail="unauthorized")
+
+    name = (body.cron_name or "").strip()
+    if not name or len(name) > 64:
+        raise HTTPException(status_code=400, detail="invalid_cron_name")
+
+    # Truncate long error messages so a runaway stack trace can't blow
+    # past the VARCHAR(500) column and 500 the endpoint. Same reason
+    # payment_events.outcome is bounded.
+    err = None
+    if body.error:
+        err = body.error if len(body.error) <= 500 else body.error[:497] + "..."
+
+    conn = get_db("payment_db")
+    try:
+        cur = conn.cursor()
+        if body.ok:
+            cur.execute(
+                """INSERT INTO cron_health
+                     (cron_name, last_run_at, last_ok_at, consecutive_failures, last_error)
+                   VALUES (%s, NOW(), NOW(), 0, NULL)
+                   ON DUPLICATE KEY UPDATE
+                     last_run_at=NOW(),
+                     last_ok_at=NOW(),
+                     consecutive_failures=0,
+                     last_error=NULL""",
+                (name,),
+            )
+        else:
+            cur.execute(
+                """INSERT INTO cron_health
+                     (cron_name, last_run_at, last_fail_at, consecutive_failures, last_error)
+                   VALUES (%s, NOW(), NOW(), 1, %s)
+                   ON DUPLICATE KEY UPDATE
+                     last_run_at=NOW(),
+                     last_fail_at=NOW(),
+                     consecutive_failures=consecutive_failures + 1,
+                     last_error=%s""",
+                (name, err, err),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+    return {"recorded": True, "cron_name": name, "ok": body.ok}
+
+
 @router.post("/internal/renewal-batch")
 async def renewal_batch(x_internal_secret: Optional[str] = Header(default=None)):
     # A shared-secret gate is enough for an internal endpoint. The
-    # gateway does NOT expose /payments/internal/*; only the
-    # notification service (RENEWAL_BATCH_SECRET set in Railway) can
-    # call this. Missing/mismatched secret = 401.
+    # gateway does NOT expose /payments/subscriptions/internal/*; only
+    # the notification service (INTERNAL_BATCH_SECRET set in Railway)
+    # can call this. Missing/mismatched secret = 401.
     import os
     expected = os.getenv("INTERNAL_BATCH_SECRET", "")
     if not expected or x_internal_secret != expected:

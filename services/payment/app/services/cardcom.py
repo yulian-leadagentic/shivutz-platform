@@ -246,6 +246,24 @@ async def charge_token(
     # Cardcom for real. Now it returns a synthetic result shaped like
     # the real one so upstream callers can't tell the difference.
     if PAYMENT_FAKE_MODE:
+        # R11 · fake-mode test hook. A token whose plaintext starts with
+        # 'TEST_DECLINE_' short-circuits to CardcomDeclinedError so the
+        # R9 "declined enters failure chain" regression can be exercised
+        # end-to-end without real Cardcom. Real Cardcom uses specific
+        # test card numbers for the same purpose (e.g. 4000-…-0002 →
+        # declined). This is the seam Yulian's R11 §0 pointed at: the
+        # network-boundary function owns the mode split, callers stay
+        # single-path.
+        if provider_token and provider_token.startswith("TEST_DECLINE_"):
+            logger.warning(
+                "[cardcom] FAKE decline deal=%s total=%.2f "
+                "(TEST_DECLINE_ token prefix — R9 declined-regression hook)",
+                deal_id, total,
+            )
+            raise CardcomDeclinedError(
+                "Test decline (PAYMENT_FAKE_MODE=1, TEST_DECLINE_ token)",
+                code="TEST_DECLINE",
+            )
         fake_txn = f"FAKE-{uuid.uuid4().hex[:16]}"
         logger.warning(
             "[cardcom] FAKE charge deal=%s total=%.2f "
