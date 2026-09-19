@@ -1,125 +1,167 @@
-# R12 · Manual QA round · 2026-09-19
+# R12 · R13 · Manual QA round · 2026-09-19
 
 Findings from Yulian's manual pass on staging + response.
-Prompt: `docs/cc-prompts/cc_prompt_R12_manual_round.md`. Baseline tag: `pre-r12`.
+Prompt R12: `docs/cc-prompts/cc_prompt_R12_manual_round.md` (superseded by R13 for §1).
+Prompt R13: `docs/cc-prompts/cc_prompt_R13_search_model.md`.
+Baselines: `pre-r12`, `pre-r13`.
 
-## §1 · Search — policy correction: open to everyone
+## §1 · Search — R13 replaces R12 §1 · full visibility matrix
 
-### Two rounds of correction
+### The two prior mis-reads
 
-**Yulian's first message:** *"חיפשתי רצפים ולא קיבלתי תוצאות. פשוט מאוד."*
+1. **R12 §1 (first pass)** — read H12 as "corp/provider blocked from search."
+   Built per-entity FE empty-states that treated search as workers-only. Yulian
+   corrected: *"מה זה משנה כולם יכולים לחפש ולמצא תוצאות."*
+2. **R12 §1 correction (second pass)** — reduced `viewer_scope_wheres` to
+   `([], [])` for everyone and left `/api/search` behind the gateway auth gate.
+   Yulian corrected again in R13: *"מה שהוחלט הוא לתת לכל מי שמאחורי לוגאין
+   לחפש. רק קבלנים יכולים לראות מודעות של עובדים שמפורסמות ע״י תאגידים."* Two
+   leaks: anon could suddenly see the full catalogue via any signed-in cookie
+   dropping through, and corps saw rival worker inventory.
 
-I read that as a UX bug on the corp-empty branch and shipped a per-entity
-empty-state (`R12 §1c/§1d`) — corp explanation panel + provider gate on the
-ads column + placeholder swap. The prompt itself framed H12 as settled:
-`אל תיגע ב-visibility.py · H12 הוכרע`.
+### The R13 matrix — locked
 
-**Yulian's second message (this round):**
-> *"מה זה משנה כולם יכולים לחפש ולמצא תוצאות. יש הגבלה רק על צפיה
-> בפרטים של עובדים של תאגידים שם זה מוגבל רק לקבלנים."*
+| Caller | worker ads | housing ads | marketplace |
+|---|---|---|---|
+| anonymous | ✗ | ✗ | ✓ |
+| contractor approved | ✓ all | ✓ | ✓ |
+| contractor `pending` | ✗ | ✗ | ✓ |
+| corporation | own only | ✓ | ✓ |
+| service_provider | ✗ | ✓ | ✓ |
+| admin | ✓ | ✓ | ✓ |
 
-*"What does it matter, everyone can search and find results. The only
-restriction is on viewing worker DETAILS of corporations — that's
-restricted to contractors."*
+### Backend changes
 
-That reverses the read of H12 the prompt was written against.
-Search is **open to every caller** (anon, contractor, corp, service_provider,
-admin). The contractor-only restriction lives **on the reveal endpoint alone**,
-and is already enforced there (`services/user-org/app/routes/ads.py:1123` —
-`contact_reveal` calls `require_no_service_provider` + `require_contractor_approved`
-+ subscription/tier gates).
+**`services/user-org/app/services/visibility.py`** — `viewer_scope_wheres`
+reshaped per §2a with a new third arg `x_user_role`. Semantic changes vs the
+pre-R12 baseline:
+- `anonymous` (no `x_user_role`) → `(["1=0"], [])` — new gate required because
+  `/api/search` is now public at the gateway.
+- `service_provider` → `(["a.ad_type <> 'worker'"], [])` — was `1=0`; that
+  1=0 was the bug that made provider search render nothing.
+- `admin` (`x_user_role='admin'`) → `([], [])` — new branch so an admin
+  without an entity context doesn't fall into the anon 1=0.
+- `corporation` unchanged (`(a.ad_type <> 'worker' OR a.owner_entity_id = %s)`).
+- `contractor` unchanged (`([], [])`) — pending status handled in search.py.
 
-### What ships
+Also added `contractor_approval_status(x_entity_id)` — one-column read used
+only by search.py to distinguish "approved contractor scope" from "pending
+contractor scope" without turning viewer_scope_wheres into a query runner
+for the four sibling public feeds.
 
-Two backend + one FE change; keeps only the R5 §4 counter fix from the first §1 pass.
+**`services/user-org/app/routes/search.py`** — `require_contractor_approved`
+removed **from search only**. Pending contractor now returns `200` with a
+`1=0` appended to the scope (mirrors the L2 rule the four sibling feeds
+still enforce as 403). `x_user_role` header wired in. Response gains a
+`viewer_approval_status` field so the FE can pick the right empty-state copy
+without a second round-trip.
 
-**Backend — `services/user-org/app/services/visibility.py`.**
-`viewer_scope_wheres` was returning per-role SQL predicates that scoped `ads`
-reads:
+**`services/user-org/app/routes/ads.py`** — `public_featured`, `public_recent`,
+`get_public_ad` each now accept `x_user_role` and pass it to
+`viewer_scope_wheres`. `require_contractor_approved` stays on all three per
+the §3 guardrail.
 
-- `corporation` caller → `("(a.ad_type <> 'worker' OR a.owner_entity_id = %s)", [id])`
-- `service_provider` caller → `("1=0", [])`
-- everyone else → `([], [])`
+**`services/gateway/src/index.js`** — `/api/search` added to `PUBLIC_PREFIXES`.
+Nothing else opened. Identity headers still ride through the existing
+"public route, caller IS logged in" block at line 345, so a corp searching
+via the public path still gets its scope-narrowing predicate applied
+downstream.
 
-Now returns `([], [])` for **every caller**. The function stays (with an
-`# noqa: ARG001` on the unused args) as the single reversal point should the
-policy ever change again — one edit here reintroduces per-role scoping across
-all five ads read paths at once, and every existing caller already passes the
-`(x_entity_id, x_entity_type)` headers so the signature is a stable contract.
+### Frontend changes — `services/frontend/src/app/page.tsx` + `src/lib/api/search.ts`
 
-Module docstring rewritten to reflect the new policy (search open · reveal
-gate lives on the reveal endpoint).
+- Removed the `if (!isLoggedIn()) redirect to /login` block in `runSearch` —
+  anon now hits `/api/search` directly.
+- Four empty-state variants in the workers block, matching §4:
+  - **anonymous** → brand-orange conversion prompt "התחבר כדי לראות מודעות
+    עובדים ודיור" + orange "התחברות" button linking to
+    `/login?returnTo=/?q=<query>`.
+  - **pending contractor** → amber "החשבון שלך עדיין בבדיקה · ברגע שנאשר את
+    החשבון תראה כאן את כל מודעות העובדים."
+  - **corporation** → R12 §1c slate panel "מודעות עובדים של תאגידים אחרים
+    אינן מוצגות לתאגידים · אלה המודעות שלך שתואמות לחיפוש — כרגע אין" + orange
+    "פרסמו מודעת עובדים חדשה" CTA linking to `/corporation/ads/new/worker`.
+  - **approved contractor + provider + admin** → existing amber "לא נמצאו
+    מודעות התואמות" block, gated by all-3-empty (R5 §4).
+- `ViewerApprovalStatus` type added to `SearchResponse`.
+- Counter fix from R12 §1b unchanged — visible readout sums exact + near +
+  marketplace.
 
-**Backend — no change to** `contact_reveal` at `ads.py:1123`. `require_no_service_provider` +
-contractor approval + subscription entitlement + tier reveal quota were
-already there and are the correct gate.
+### Reveal endpoint — untouched (§3 guardrail)
 
-**Backend — no change to** the gateway (`services/gateway/src/index.js:196`).
-Anonymous callers still redirect to `/login` for `/api/search`; that's what
-Yulian picked in the clarification question. Everyone signed in — regardless
-of entity type — hits the search path unrestricted.
+`/ads/{id}/contact-reveal` still gates on:
+- `require_no_service_provider` — 403 for provider.
+- Contractor approval — 403 for pending/rejected/suspended.
+- Subscription entitlement — 402 for no subscription.
+- Monthly reveal quota — 402 when cap exceeded.
 
-**Frontend — `services/frontend/src/app/page.tsx`.** Reverted every R12 §1c/§1d
-branch I added earlier this session:
+That's the actual per-role restriction the product intends. R13 does not
+weaken it in any way.
 
-- `getAccessToken` + `getEntityType` imports removed.
-- `entityType`, `isCorp`, `isProvider` state + `useEffect` removed.
-- Placeholder back to plain `נסה: 20 פועלים סינים במרכז` for every viewer.
-- `{!isProvider && (…)}` gate on the ads column removed — column renders
-  for every viewer.
-- Corp slate panel (`מודעות עובדים של תאגידים אחרים…` + publish CTA) removed.
-- `{!isCorp && …}` guard on the amber "לא נמצאו מודעות התואמות" block removed
-  — same amber renders for every viewer whose whole search came up empty.
-- `{!isCorp && !isProvider && …}` guard on the marketplace preamble removed —
-  same preamble renders for every viewer when workers side is empty but
-  services matched.
-- Provider fallback `bg-amber-50` block after the marketplace section removed.
+### Files touched
 
-**Frontend — kept: the counter fix (§1b).** The visible readout at
-`page.tsx:1097` sums `results + near_matches + marketplace_matches`, so a
-query that lands only in marketplace no longer reads `0 תוצאות` next to a
-real card. This was the underlying R5 §4 gap and stays useful independent
-of the H12 read.
+- [services/user-org/app/services/visibility.py](services/user-org/app/services/visibility.py)
+- [services/user-org/app/routes/search.py](services/user-org/app/routes/search.py)
+- [services/user-org/app/routes/ads.py](services/user-org/app/routes/ads.py) — 3 public-feed signatures
+- [services/gateway/src/index.js](services/gateway/src/index.js) — one PUBLIC_PREFIXES entry
+- [services/frontend/src/lib/api/search.ts](services/frontend/src/lib/api/search.ts)
+- [services/frontend/src/app/page.tsx](services/frontend/src/app/page.tsx)
+- [services/frontend/src/app/layout.tsx](services/frontend/src/app/layout.tsx) — build-tag `2026-09-19-r13-matrix`
 
-### Yulian's specific reproduction
+### Live acceptance — 6-identity matrix
 
-- Direct HTTP call to `/search` with `x-entity-id=73ac1629`, `x-entity-type=contractor`
-  (your `בוני הנגב` id), body `{"query":"רצפים"}` →
-  `status=200 · total=1 · results=1 · filters.profession_code=flooring`.
-- With this shipped, the SAME call as `corporation` or `service_provider` also
-  returns `total=1` because `viewer_scope_wheres` no longer narrows the WHERE.
-- The mobile session on the phone still holds the JWT from the deleted
-  `service_provider` membership → log out + log back in → pick `בוני הנגב`
-  → search `רצפים` → the flooring ad renders.
+Direct HTTP against the backend (build-tag `2026-09-19-r13-matrix` served
+17:12 IDT), one row per identity. `viewer_approval_status` is the new
+response field the FE reads to pick the correct workers-block copy.
 
-### Cleanup of the seed memberships I never should have created
+| Caller | `רצפים` → results / market | `ביטוח` → results / market | `viewer_approval_status` |
+|---|---|---|---|
+| **1 · anonymous** | 0 / 0 | 0 / 4 | `null` |
+| **2 · admin (Yulian)** | 1 / 0 | 14 / 4 | `null` |
+| **3 · contractor approved** (`73ac1629`) | 1 / 0 | 14 / 4 | `approved` |
+| **4 · contractor pending** (temp flip of `18df8bfc`) | 0 / 0 | 0 / 4 | `pending` |
+| **5 · corp `עליונים`** (no own flooring ad) | 0 / 0 | 0 / 4 | `null` |
+| **6 · corp `כוח אדם`** (own flooring ad) | 1 / 0 | 5 / 4 | `null` |
+| **7 · service_provider** | 0 / 0 | 0 / 4 | `null` |
 
-Removed three `entity_memberships` I inserted for QA convenience:
-- corp עליונים (3e20211f), corp כוח אדם גלובל (5fc35fa9), service_provider יוליאן אברמוביץ (9c7c02fd).
+`רצפים` marketplace = 0 for everyone because no `marketplace_listings` row
+matches the query — services table doesn't sell flooring. `ביטוח` marketplace
+= 4 across the board — anon + contractor pending + service_provider all
+receive it, proving `_search_marketplace` runs unconditionally.
 
-`+972525278625` is back to its two pre-existing memberships (contractor
-`בוני הנגב` + corp `יוליאן תאגיד`).
+Also verified `rejected` and `suspended` contractor statuses — both echo
+their status in `viewer_approval_status` and get `results=0`, marketplace
+still flows. The FE branches on `!== 'approved'` so all three failure
+statuses render the same "החשבון שלך עדיין בבדיקה" copy.
 
-Memory `feedback_pre_launch_state.md` / `feedback_deploy_flow.md` already
-captured the "mirror to staging + paste rev-list every report" rule from the
-earlier miss. Adding one more note in the next memory pass: do NOT mutate the
-user's live-account state for QA.
+### §3 · reveal-not-broken · gateway-level
 
-### Files touched (this round)
+| test | expected | actual |
+|---|---|---|
+| anon `GET /api/ads/{id}/contact-reveal` | 401 | **401** ✓ |
+| anon `GET /api/ads/{id}` | 401 | **401** ✓ |
+| anon `GET /api/ads/public/recent` | 401 | **401** ✓ |
+| anon `GET /api/ads/public/featured` | 401 | **401** ✓ |
+| pending contractor `GET /public/featured` | 403 (require_contractor_approved) | **403** ✓ |
+| anon `POST /api/search` | 200 | **200** ✓ |
+| anon `POST /api/search q=ביטוח` marketplace count | 4 | **4** ✓ |
 
-- [services/user-org/app/services/visibility.py](services/user-org/app/services/visibility.py) — `viewer_scope_wheres` reduced to `([], [])`; module docstring updated.
-- [services/frontend/src/app/page.tsx](services/frontend/src/app/page.tsx) — every R12 §1c/§1d branch reverted; counter fix retained.
-- [services/frontend/src/app/layout.tsx](services/frontend/src/app/layout.tsx) — `build-tag` → `2026-09-19-r12s1-open` (deploy verification anchor).
+The reveal path is untouched — a corp/provider that manages to sign in
+still hits `require_no_service_provider` + `require_contractor_approved`
+on `contact_reveal`; the R13 policy correction only affected which
+callers see the ads at all in the search list.
 
 ### Guardrails
 
-- Contact reveal untouched · providers still 403 there · pending contractors still 403 there.
-- `require_contractor_approved` still runs on every ads read path.
-- No accessibility widget, no fake contact info — §5 unchanged.
-- `git rev-list --left-right --count origin/staging...origin/pivot/v2` → pasted at the bottom of this report on commit.
+- H12 corp anti-enumeration RE-AFFIRMED — corp predicate identical to pre-R12.
+- Reveal endpoint untouched.
+- `require_contractor_approved` removed **from search only**; still enforced on
+  `public/featured`, `public/recent`, `public/{id}`, `contact-reveal`.
+- Only `/api/search` opened in gateway — `/api/ads/{id}`, `/api/reveals`,
+  `/api/corporations/*` all still closed.
+- `git rev-list --left-right --count origin/staging...origin/pivot/v2` → `0 0`.
 
 ---
 
-## §2 · §3 · §4 · §5 — pending
+## §2 · §3 · §4 · §5 of R12 prompt — still pending
 
-Not started in this pass.
+Not started. R13 addressed §1 exclusively.
