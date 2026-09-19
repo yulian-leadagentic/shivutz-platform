@@ -70,13 +70,10 @@ def viewer_scope_wheres(
     if x_user_role == "admin":
         return ([], [])
     if x_entity_type == "corporation" and x_entity_id:
-        # ⚠️ R16 §4 · TEMPORARY REGRESSION INJECTION · REVERT IMMEDIATELY
-        # This drops the H12 anti-enumeration guard for corporations,
-        # letting a corp see every worker ad (including foreign-owned).
-        # The R16 matrix suite must catch this and exit with named
-        # leaked ids on the `corporation · worker` row. Once proven,
-        # restore the four-line return above.
-        return ([], [])
+        return (
+            ["(a.ad_type <> 'worker' OR a.owner_entity_id = %s)"],
+            [x_entity_id],
+        )
     if x_entity_type == "service_provider":
         return (["a.ad_type <> 'worker'"], [])
     if x_entity_type == "contractor":
