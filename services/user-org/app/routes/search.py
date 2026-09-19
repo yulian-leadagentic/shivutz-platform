@@ -70,10 +70,12 @@ class SearchIn(BaseModel):
     query: str = Field(..., min_length=2, max_length=500)
 
 
-def _serialize_ad(row: dict) -> dict:
-    # Strip contact-sensitive fields. Owner id is kept so the frontend
-    # can call /ads/{id}/contact-reveal once the contractor decides
-    # to reach out (subscription gate fires there).
+def _serialize_ad(row: dict, *, viewer_can_see_owner: bool = False) -> dict:
+    # Strip contact-sensitive fields. Owner id is gated by
+    # `viewer_can_see_owner` per R15 §3d: an approved contractor + admin
+    # + the ad's own advertiser can see it (contractor's "my ad"
+    # detection depends on the field); anon / pending / provider / a
+    # corp browsing a foreign row do NOT.
     # L3 §2.1 — trust_level is a server-derived signal (verified /
     # registered / unverified) computed via a JOIN on corporations in
     # the search SQL below. NEVER add corp_name here — Yulian 10.09:
@@ -81,7 +83,6 @@ def _serialize_ad(row: dict) -> dict:
     # results would sell it for free.
     out = {
         "id":               row["id"],
-        "owner_entity_id":  row["owner_entity_id"],
         "ad_type":          row["ad_type"],
         "title_he":         row["title_he"],
         "body_he":          row["body_he"],
@@ -91,6 +92,10 @@ def _serialize_ad(row: dict) -> dict:
         "published_at":     row["published_at"].isoformat() if row.get("published_at") else None,
         "expires_at":       row["expires_at"].isoformat()   if row.get("expires_at")   else None,
     }
+    if viewer_can_see_owner:
+        # R15 §3d · gated. Emit only when the caller is entitled
+        # (contractor approved, admin, or the ad's own advertiser).
+        out["owner_entity_id"] = row["owner_entity_id"]
     if row["ad_type"] == "worker":
         out.update({
             "profession_code":       row["profession_code"],
@@ -185,20 +190,20 @@ def _build_where(
 #
 # The two branches never merge into one list — they have different
 # reveal models (workers are behind /contact-reveal + subscription
-# metering; marketplace has its own paywall on /marketplace/{id})
+# metering; marketplace has its own reveal on POST /api/marketplace/{id}/reveal, built in R15)
 # and different card layouts. Keeping the sections separate is the
 # whole point.
 
 
 def _serialize_marketplace_listing(row: dict) -> dict:
     """Slim projection matching the MarketplaceListing type on the
-    frontend. Contact_phone / contact_name deliberately omitted — the
-    marketplace has its own reveal endpoint on /api/marketplace and
-    the landing preview doesn't need to know it."""
+    frontend. R15 §3d · contact_phone, contact_name, corporation_name
+    and corporation_id are ALL omitted — the marketplace reveal
+    endpoint (POST /api/marketplace/{id}/reveal) is the only path
+    that returns them. is_corporation_verified is kept as an identity-
+    free trust signal, same shape as L3's trust_level on worker ads."""
     return {
         "id":              row["id"],
-        "corporation_id":  row["corporation_id"],
-        "corporation_name": row.get("corporation_name_he") or row.get("corporation_name_en"),
         "is_corporation_verified": bool(row.get("corp_verified_at")),
         "category":        row["category"],
         "subcategory":     row.get("subcategory"),
@@ -392,13 +397,28 @@ def search(
     finally:
         conn.close()
 
+    # R15 §3d · gate owner_entity_id in serialized ads. Approved
+    # contractors + admins may see it (contractor's "my ad" detection
+    # relies on it); a viewer who happens to be the ad's advertiser
+    # sees it on their own rows. anonymous / pending contractor /
+    # provider / a corp browsing a foreign row do not.
+    _viewer_role_all_ads = (
+        x_user_role == "admin"
+        or (x_entity_type == "contractor" and viewer_approval_status == "approved")
+    )
+    def _emit_ad(r):
+        owner_visible = _viewer_role_all_ads or (
+            bool(x_entity_id) and r.get("owner_entity_id") == x_entity_id
+        )
+        return _serialize_ad(r, viewer_can_see_owner=owner_visible)
+
     # Rerank only exact results — near_matches are already sorted by
     # the closest-to-target dimension (quantity DESC or the default
     # boosted+recency); running them through the LLM reranker would
     # cost real money to produce a worse order for a suggestive list.
-    serialised_exact = [_serialize_ad(r) for r in exact_rows]
+    serialised_exact = [_emit_ad(r) for r in exact_rows]
     reranked         = rerank(body.query, serialised_exact)
-    serialised_near  = [_serialize_ad(r) for r in near_rows]
+    serialised_near  = [_emit_ad(r) for r in near_rows]
 
     # U6 §2 — federated marketplace pass. Runs ALWAYS, on the raw
     # query text (query_rewriter's structured output is meaningless

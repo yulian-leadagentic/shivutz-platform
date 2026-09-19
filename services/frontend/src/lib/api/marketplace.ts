@@ -82,6 +82,19 @@ export const marketplaceApi = {
 
   remove: (id: string) =>
     apiFetch<void>(`/marketplace/${id}`, { method: 'DELETE' }),
+
+  // R15 §3c — POST /marketplace/{id}/reveal returns contact_phone,
+  // contact_name, corporation_name for a signed-in caller. Anon → 401,
+  // pending contractor → 403; approved contractor + corp + provider +
+  // admin → 200. The FE calls this when the visitor clicks "הצג
+  // פרטים" on the marketplace listing detail page.
+  reveal: (id: string) =>
+    apiFetch<{
+      listing_id:       string;
+      contact_phone:    string | null;
+      contact_name:     string | null;
+      corporation_name: string | null;
+    }>(`/marketplace/${id}/reveal`, { method: 'POST' }),
 };
 
 export const leadsApi = {

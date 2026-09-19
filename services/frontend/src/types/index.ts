@@ -250,9 +250,14 @@ export interface PaymentMethod {
   last_used_at: string | null;
 }
 
+// R15 §3a · corporation_id + corporation_name are no longer returned
+// by the public list/get endpoints — they ride POST /marketplace/{id}/reveal.
+// Kept as optional so the type still typechecks legacy consumers that
+// destructure them; a missing value now means "reveal me". Same story
+// for contact_phone / contact_name.
 export interface MarketplaceListing {
   id: string;
-  corporation_id: string;
+  corporation_id?: string;
   corporation_name?: string;
   is_corporation_verified?: boolean;
   category: 'housing' | 'equipment' | 'services' | 'other';

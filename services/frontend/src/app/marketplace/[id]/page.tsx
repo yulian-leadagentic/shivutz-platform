@@ -42,10 +42,45 @@ export default function ListingDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState('');
   const [copied, setCopied]   = useState(false);
+  // R15 §3c · reveal state. `revealed` holds the response of the
+  // POST /marketplace/{id}/reveal call once the viewer has clicked
+  // "הצג פרטים". `revealError` shows a plain message when the
+  // reveal call comes back 401/403.
+  const [revealing, setRevealing] = useState(false);
+  const [revealed, setRevealed]   = useState<{
+    contact_phone:    string | null;
+    contact_name:     string | null;
+    corporation_name: string | null;
+  } | null>(null);
+  const [revealError, setRevealError] = useState('');
 
   useEffect(() => {
     marketplaceApi.get(id).then(setListing).catch(() => setError('המודעה לא נמצאה')).finally(() => setLoading(false));
   }, [id]);
+
+  async function handleReveal() {
+    setRevealError('');
+    setRevealing(true);
+    try {
+      const r = await marketplaceApi.reveal(id);
+      setRevealed({
+        contact_phone:    r.contact_phone,
+        contact_name:     r.contact_name,
+        corporation_name: r.corporation_name,
+      });
+    } catch (e) {
+      // R15 §3c · 401 sends anon to login; 403 shows the "בחשבון בבדיקה" copy.
+      const err = e as { status?: number } | undefined;
+      if (err?.status === 401) {
+        const returnTo = window.location.pathname;
+        router.push(`/login?returnTo=${encodeURIComponent(returnTo)}`);
+        return;
+      }
+      setRevealError('החשבון שלך אינו מורשה לצפות בפרטי קשר. אנא ודא שהחשבון אושר.');
+    } finally {
+      setRevealing(false);
+    }
+  }
 
   function handleShare() {
     navigator.clipboard.writeText(window.location.href).then(() => {
@@ -229,7 +264,12 @@ export default function ListingDetailPage() {
           {/* Sidebar — contact card */}
           <div className="space-y-4">
             <div className="bg-white rounded-2xl border border-slate-200 shadow-card p-6 space-y-4 sticky top-20">
-              {/* Corporation info */}
+              {/* R15 §3a · corporation name rides the reveal endpoint —
+                  until the visitor clicks "הצג פרטים" they see only
+                  the identity-free trust badge. The Building2 icon is
+                  the placeholder art. `revealed.corporation_name` (or
+                  listing.corporation_name for the owner's own view)
+                  replaces the generic 'תאגיד' label after reveal. */}
               <div className="flex items-center gap-3">
                 <div className="h-10 w-10 rounded-xl bg-slate-100 flex items-center justify-center shrink-0">
                   <Building2 className="h-5 w-5 text-slate-400" />
@@ -237,12 +277,27 @@ export default function ListingDetailPage() {
                 <div>
                   <p className="text-xs text-slate-400 mb-0.5">פורסם על ידי</p>
                   <p className="text-sm font-semibold text-slate-900">
-                    {listing.corporation_name || 'תאגיד'}
+                    {revealed?.corporation_name || listing.corporation_name || 'תאגיד'}
                   </p>
+                  {listing.is_corporation_verified && (
+                    <p className="text-xs text-emerald-700 mt-0.5 inline-flex items-center gap-1">
+                      <CheckCircle2 className="w-3 h-3" />
+                      תאגיד מאומת
+                    </p>
+                  )}
                 </div>
               </div>
 
-              {(listing.contact_name || listing.contact_phone) && (
+              {/* R15 §3c · reveal flow. Three states:
+                  1. owner's own row (listing.contact_phone present) →
+                     show inline like before.
+                  2. viewer already revealed this session → show the
+                     `revealed` payload.
+                  3. visitor hasn't revealed → orange "הצג פרטים"
+                     button that POSTs /marketplace/{id}/reveal. 401
+                     redirects to /login with returnTo; 403 shows a
+                     "חשבון לא מאושר" message. */}
+              {(listing.contact_name || listing.contact_phone) ? (
                 <div className="border-t border-slate-100 pt-4 space-y-3">
                   {listing.contact_name && (
                     <div className="text-sm text-slate-700">
@@ -253,22 +308,47 @@ export default function ListingDetailPage() {
                   {listing.contact_phone && (
                     <a
                       href={`tel:${listing.contact_phone}`}
-                      className="flex items-center gap-2 bg-brand-600 hover:bg-brand-800 text-slate-900 text-sm font-semibold px-4 py-2.5 rounded-xl transition-colors"
+                      className="flex items-center gap-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition-colors min-h-[44px]"
                     >
                       <Phone className="h-4 w-4" />
                       <span dir="ltr">{listing.contact_phone}</span>
                     </a>
                   )}
                 </div>
-              )}
-
-              {!listing.contact_phone && (
-                <div className="text-center text-xs text-slate-400 py-2">
-                  פרטי קשר זמינים לחברים בפלטפורמה
-                  <br />
-                  <Link href="/login" className="text-brand-600 hover:text-brand-700 font-medium">
-                    התחבר לצפייה
-                  </Link>
+              ) : revealed ? (
+                <div className="border-t border-slate-100 pt-4 space-y-3">
+                  {revealed.contact_name && (
+                    <div className="text-sm text-slate-700">
+                      <span className="text-xs text-slate-400 block mb-0.5">איש קשר</span>
+                      {revealed.contact_name}
+                    </div>
+                  )}
+                  {revealed.contact_phone && (
+                    <a
+                      href={`tel:${revealed.contact_phone}`}
+                      className="flex items-center gap-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition-colors min-h-[44px]"
+                    >
+                      <Phone className="h-4 w-4" />
+                      <span dir="ltr">{revealed.contact_phone}</span>
+                    </a>
+                  )}
+                </div>
+              ) : (
+                <div className="border-t border-slate-100 pt-4 space-y-3">
+                  <button
+                    type="button"
+                    onClick={handleReveal}
+                    disabled={revealing}
+                    className="w-full flex items-center justify-center gap-2 bg-brand-600 hover:bg-brand-700 disabled:bg-brand-300 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition-colors min-h-[44px]"
+                  >
+                    {revealing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Phone className="h-4 w-4" />}
+                    הצג פרטי קשר
+                  </button>
+                  {revealError && (
+                    <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                      {revealError}
+                    </p>
+                  )}
                 </div>
               )}
 

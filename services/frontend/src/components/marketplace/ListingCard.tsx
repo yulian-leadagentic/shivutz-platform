@@ -108,9 +108,16 @@ export default function ListingCard({ listing }: { listing: MarketplaceListing }
           <span className="text-sm font-medium text-slate-600">מחיר למשא ומתן</span>
         )}
 
-        {/* Corporation footer */}
+        {/* Corporation footer — R15 §3a · corporation_name rides the
+            reveal endpoint on the detail page. The card only carries
+            the identity-free trust badge. The mine=true owner path
+            still gets corporation_name in the payload, so we render
+            it when present (their own listings still say who wrote
+            them). Anon+non-owner see just the badge. */}
         <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
-          <span className="text-xs text-slate-500 truncate">{listing.corporation_name}</span>
+          <span className="text-xs text-slate-500 truncate">
+            {listing.corporation_name || 'לחץ להצגת פרטים'}
+          </span>
           {listing.is_corporation_verified && (
             <span className="shrink-0 inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
               <CheckCircle2 className="h-2.5 w-2.5" />

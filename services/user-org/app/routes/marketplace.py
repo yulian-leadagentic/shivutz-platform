@@ -62,11 +62,75 @@ class LeadCreate(BaseModel):
     notes:     Optional[str] = None
 
 
-def _serialize(row: dict) -> dict:
-    result = {}
-    for k, v in row.items():
-        # JSON columns come back as strings from PyMySQL — parse so the
-        # frontend gets a real array. Defensively skip if already a list.
+# R15 §3a · Explicit ALLOW-LIST of the fields a marketplace listing
+# projects into a public response. Contact_phone, contact_name,
+# corporation_name and corporation_id are DELIBERATELY absent — they
+# ride the /reveal endpoint. is_corporation_verified is a boolean
+# trust signal with no identity in it (same shape as L3's trust_level
+# on worker ads), so it stays public.
+#
+# Never revert this to a pass-through. The pre-R15 code was
+# `for k, v in row.items(): result[k] = v` and it dripped every
+# marketplace advertiser's phone number to any anon curl for months.
+# A new column added tomorrow will drip the same way if the projection
+# is column-count based instead of an explicit list.
+_PUBLIC_LISTING_FIELDS = (
+    "id",
+    "category",
+    "subcategory",
+    "title",
+    "description",
+    "city",
+    "region",
+    "price",
+    "price_unit",
+    "capacity",
+    "is_furnished",
+    "available_from",
+    "images_json",
+    "status",
+    "created_at",
+    "updated_at",
+    "advertiser_entity_type",
+    # is_corporation_verified is computed by the caller from the
+    # LEFT-JOINed approval_status column (see list_listings and
+    # get_listing below) and appended to the projection after
+    # _serialize returns. It is NOT a raw column on the row.
+)
+
+# Extra fields exposed to the OWNER of a listing (see §3b) and to
+# admin. The reveal endpoint returns the same set for a paying viewer.
+_OWNER_LISTING_FIELDS = _PUBLIC_LISTING_FIELDS + (
+    "contact_phone",
+    "contact_name",
+)
+
+
+def _coerce(v):
+    """Type-normalize a single value: dates → ISO string, Decimal → float."""
+    if hasattr(v, "isoformat"):
+        return v.isoformat()
+    if isinstance(v, Decimal):
+        return float(v)
+    return v
+
+
+def _serialize(row: dict, *, include_owner_fields: bool = False) -> dict:
+    """Public-safe projection. ONLY the fields in
+    _PUBLIC_LISTING_FIELDS survive; everything else on the row is
+    dropped, including contact_phone / contact_name / corporation_id /
+    is_seed / subscription_id / advertiser_entity_id / deleted_at.
+
+    Callers that legitimately need the owner-only fields (the listing's
+    own advertiser hitting mine=true; admin; the reveal endpoint) pass
+    include_owner_fields=True to widen to _OWNER_LISTING_FIELDS.
+    """
+    fields = _OWNER_LISTING_FIELDS if include_owner_fields else _PUBLIC_LISTING_FIELDS
+    result: dict = {}
+    for k in fields:
+        if k not in row:
+            continue
+        v = row[k]
         if k == "images_json":
             if isinstance(v, str):
                 try:
@@ -75,14 +139,27 @@ def _serialize(row: dict) -> dict:
                     result[k] = []
             else:
                 result[k] = v or []
-            continue
-        if hasattr(v, 'isoformat'):
-            result[k] = v.isoformat()
-        elif isinstance(v, Decimal):
-            result[k] = float(v)
         else:
-            result[k] = v
+            result[k] = _coerce(v)
     return result
+
+
+def _caller_owns(row: dict, x_entity_id: Optional[str], x_entity_type: Optional[str]) -> bool:
+    """Whether the caller is the row's advertiser. Same test list_listings
+    uses under `mine=true`: match on advertiser_entity_(id|type) with the
+    corporation_id fallback for legacy corp rows written before U7."""
+    if not x_entity_id:
+        return False
+    et = (x_entity_type or "").lower()
+    # advertiser_entity_* is the new dimension covering all three types.
+    if row.get("advertiser_entity_id") == x_entity_id and (
+        not row.get("advertiser_entity_type") or row["advertiser_entity_type"] == et
+    ):
+        return True
+    # Legacy fallback — a pre-U7 corp row may only have corporation_id.
+    if et == "corporation" and row.get("corporation_id") == x_entity_id:
+        return True
+    return False
 
 
 # ── GET /marketplace ───────────────────────────────────────────────────────────
@@ -177,9 +254,19 @@ def list_listings(
         rows = cur.fetchall()
         result = []
         for row in rows:
-            r = _serialize(row)
-            r["corporation_name"] = r.pop("corporation_name_he") or r.pop("corporation_name_en") or ""
-            r["is_corporation_verified"] = r.pop("corporation_approval_status") == "approved"
+            # R15 §3b · a caller who is the row's advertiser gets the
+            # owner projection (contact fields included) so their own
+            # dashboard can still show what they wrote. mine=true is
+            # the natural entry point; a signed-in owner hitting the
+            # public list without mine=true would also see their own
+            # rows unmasked, which is fine — they wrote them.
+            include_owner = _caller_owns(row, x_entity_id or x_org_id, x_entity_type)
+            r = _serialize(row, include_owner_fields=include_owner)
+            # is_corporation_verified is a public trust signal (same
+            # shape as L3's trust_level on worker ads) — approved corp
+            # = ✓, anything else = ✗. Corporation name + id ride the
+            # reveal endpoint; only the boolean survives here.
+            r["is_corporation_verified"] = row.get("corporation_approval_status") == "approved"
             result.append(r)
         return result
     finally:
@@ -214,7 +301,12 @@ def list_public_categories():
 # ── GET /marketplace/:id ───────────────────────────────────────────────────────
 
 @router.get("/{listing_id}")
-def get_listing(listing_id: str):
+def get_listing(
+    listing_id: str,
+    x_entity_id:   Optional[str] = Header(default=None),
+    x_org_id:      Optional[str] = Header(default=None),
+    x_entity_type: Optional[str] = Header(default=None),
+):
     conn = get_db()
     try:
         cur = conn.cursor()
@@ -230,10 +322,95 @@ def get_listing(listing_id: str):
         row = cur.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Listing not found")
-        r = _serialize(row)
-        r["corporation_name"] = r.pop("corporation_name_he") or r.pop("corporation_name_en") or ""
-        r["is_corporation_verified"] = r.pop("corporation_approval_status") == "approved"
+        include_owner = _caller_owns(row, x_entity_id or x_org_id, x_entity_type)
+        r = _serialize(row, include_owner_fields=include_owner)
+        r["is_corporation_verified"] = row.get("corporation_approval_status") == "approved"
         return r
+    finally:
+        conn.close()
+
+
+# ── POST /marketplace/:id/reveal (R15 §3c) ────────────────────────────────────
+# Returns contact_phone, contact_name, corporation_name for a listing
+# to any signed-in caller EXCEPT a pending/rejected/suspended contractor.
+#
+# NOT metered — services provided to workers (housing, transport,
+# insurance, equipment) are not the priced-reveal channel; worker-ad
+# reveals are (contact_reveals with tier quotas). Gate-ing this behind
+# a subscription would kill the primary channel R13 opened up: a corp
+# looking for a bunk-house / an insurance policy for its workers is
+# exactly the audience whose search was opened.
+#
+# 🔴 SEMANTICS PENDING YULIAN APPROVAL — the eligibility rule above
+# ("every signed-in entity except pending contractor") is my proposal.
+# Marked here + in the R15 report + in bugs_manual_round_0919.md. Do
+# not tighten to a subscription gate without an explicit "אושר" line
+# in a follow-up prompt.
+
+@router.post("/{listing_id}/reveal")
+def reveal_listing_contact(
+    listing_id:    str,
+    x_entity_id:   Optional[str] = Header(default=None),
+    x_org_id:      Optional[str] = Header(default=None),
+    x_entity_type: Optional[str] = Header(default=None),
+):
+    # Anonymous is 401. There's no meaningful signal we could give an
+    # unauthenticated caller that wouldn't be a functional bypass of
+    # the same rule the /reveal endpoint on worker ads enforces.
+    caller_id = x_entity_id or x_org_id
+    caller_type = (x_entity_type or "").lower()
+    if not caller_id or not caller_type:
+        raise HTTPException(status_code=401, detail={"code": "auth_required"})
+
+    # A pending / rejected / suspended contractor is 403. Everyone else
+    # (approved contractor, corp, service_provider, admin) → 200.
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        if caller_type == "contractor":
+            cur.execute(
+                "SELECT approval_status FROM contractors WHERE id=%s AND deleted_at IS NULL",
+                (caller_id,),
+            )
+            crow = cur.fetchone()
+            if not crow or (
+                crow["approval_status"] if isinstance(crow, dict) else crow[0]
+            ) != "approved":
+                raise HTTPException(status_code=403, detail={"code": "entity_not_approved"})
+
+        # Fetch the listing + corp name in one shot. 404 if the listing
+        # is deleted / bogus id — same opacity as the reveal endpoint
+        # on worker ads.
+        cur.execute("""
+            SELECT ml.contact_phone, ml.contact_name,
+                   ml.advertiser_entity_id, ml.advertiser_entity_type,
+                   ml.corporation_id,
+                   c.company_name_he AS corporation_name_he,
+                   c.company_name    AS corporation_name_en
+              FROM marketplace_listings ml
+              LEFT JOIN corporations c ON ml.corporation_id = c.id
+             WHERE ml.id = %s AND ml.deleted_at IS NULL AND ml.status = 'active'
+        """, (listing_id,))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail={"code": "listing_not_found"})
+
+        # Audit — one row per (viewer, listing) pair, so a re-click
+        # collapses to the same row. See migration 086.
+        cur.execute("""
+            INSERT INTO marketplace_reveals (viewer_entity_id, viewer_entity_type, listing_id)
+                VALUES (%s, %s, %s)
+            ON DUPLICATE KEY UPDATE viewer_entity_id = viewer_entity_id""",
+            (caller_id, caller_type, listing_id),
+        )
+        conn.commit()
+
+        return {
+            "listing_id":       listing_id,
+            "contact_phone":    row.get("contact_phone"),
+            "contact_name":     row.get("contact_name"),
+            "corporation_name": row.get("corporation_name_he") or row.get("corporation_name_en"),
+        }
     finally:
         conn.close()
 
