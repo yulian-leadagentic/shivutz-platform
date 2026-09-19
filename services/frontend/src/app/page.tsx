@@ -45,7 +45,7 @@ import { searchApi, type SearchResponse, type AdSearchResult, type ContactReveal
 import { apiFetch, ApiError } from '@/lib/api/client';
 import { mapApiError } from '@/lib/api/errors';
 import { enumApi } from '@/lib/api/enums';
-import { isLoggedIn } from '@/lib/auth';
+import { isLoggedIn, getAccessToken, getEntityType } from '@/lib/auth';
 import { readPendingReveal, clearPendingReveal } from '@/features/prospect/state';
 import type { Profession } from '@/types';
 
@@ -212,6 +212,22 @@ function LandingPageInner() {
   // it's still waiting for data or if the target ad genuinely isn't
   // in the recent list.
   const [recentLoaded, setRecentLoaded] = useState(false);
+  // R13 §4 · which empty-state to show in the workers block depends
+  // on who the viewer is. Read once on mount from the JWT — null on
+  // SSR + anon, populated after hydration for authed. Approval status
+  // rides in on the search response's `viewer_approval_status`
+  // (backend-supplied), so we don't need a second round-trip.
+  const [entityType,  setEntityType]  = useState<string | null>(null);
+  const [authedTick,  setAuthedTick]  = useState(0);
+  useEffect(() => {
+    const t = getAccessToken();
+    setEntityType(t ? getEntityType(t) : null);
+    setAuthedTick((n) => n + 1);
+  }, []);
+  const authed     = isLoggedIn() && authedTick > 0;   // hydration-safe
+  const isAnon     = !authed;
+  const isCorp     = entityType === 'corporation';
+  const isProvider = entityType === 'service_provider';
 
   // L2 — structured filter chips alongside free-text. Selected values
   // get prepended to the LLM query on submit; the rewriter already
@@ -367,16 +383,12 @@ function LandingPageInner() {
       query = prefix + query;
     }
     if (query.length < 2) return;
-    // L2 §3 — anonymous callers can't hit /api/search any more
-    // (Yulian's 10.09 decision). Push them straight to /login with
-    // the query in the returnTo so H11's post-auth restore lands
-    // them back on their own search — same mechanism the reveal-
-    // return flow uses, no new plumbing needed.
-    if (!isLoggedIn()) {
-      const returnTo = `/?q=${encodeURIComponent(query)}`;
-      router.push(`/login?returnTo=${encodeURIComponent(returnTo)}`);
-      return;
-    }
+    // R13 §2c · anonymous callers now hit /api/search directly (the
+    // L2 §2 redirect is gone). Backend returns a scoped 200 with
+    // empty `results` and populated `marketplace_matches`; the empty
+    // workers block below shows the "Log in for full inventory"
+    // conversion prompt so the visitor sees a concrete reason to
+    // register right there on the results page.
     setQ(query);
     setAwaitingSubmit(false);   // SR — clear the post-transcript ring
     syncFiltersToUrl(fProf, fRegion, fOrigin);
@@ -1617,16 +1629,90 @@ function LandingPageInner() {
                     </div>
                   )}
 
-                  {resp
+                  {/* R13 §4 · anonymous conversion prompt. Sits where
+                      the amber "no results" would sit for a logged-in
+                      viewer. Renders whenever the workers side came
+                      up empty — regardless of marketplace state — so
+                      the reason ("log in to unlock") is stated on the
+                      results page and the visitor doesn't leave
+                      thinking the site simply has no worker inventory. */}
+                  {isAnon && resp
                     && resp.results.length === 0
                     && (!resp.near_matches || resp.near_matches.length === 0)
-                    // R5 §4 · when marketplace_matches has hits, the
-                    // amber "no results" block would read like a
-                    // system failure sitting next to a real result
-                    // card. Suppress it — the heading of the services
-                    // section IS the message. Only render the amber
-                    // when the whole search came up empty across
-                    // exact, near, AND services.
+                    && (
+                    <div className="bg-brand-50 border-2 border-brand-200 rounded-2xl p-6 text-center shadow-sm">
+                      <p className="text-base font-semibold text-slate-900 mb-3">
+                        התחבר כדי לראות מודעות עובדים ודיור
+                      </p>
+                      <Link
+                        href={`/login?returnTo=${encodeURIComponent(`/?q=${encodeURIComponent(q)}`)}`}
+                        className="inline-flex items-center gap-2 rounded-lg bg-brand-600 hover:bg-brand-700 text-white font-semibold text-sm px-4 py-2 min-h-[44px] transition"
+                      >
+                        התחברות
+                        <ArrowLeft className="w-4 h-4" aria-hidden="true" />
+                      </Link>
+                    </div>
+                  )}
+
+                  {/* R13 §4 · pending contractor. Backend applied its
+                      own 1=0 to the scope; the response echoes the
+                      approval status so we can show the account-status
+                      copy in-place instead of the amber "no matches". */}
+                  {!isAnon && entityType === 'contractor'
+                    && resp?.viewer_approval_status
+                    && resp.viewer_approval_status !== 'approved'
+                    && resp.results.length === 0
+                    && (!resp.near_matches || resp.near_matches.length === 0)
+                    && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-2xl p-6 text-center shadow-sm">
+                      <p className="text-base font-semibold text-amber-900 mb-1">החשבון שלך עדיין בבדיקה</p>
+                      <p className="text-sm text-amber-800">
+                        ברגע שנאשר את החשבון תראה כאן את כל מודעות העובדים.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* R13 §4 (from R12 §1c) · corp explanation. Renders
+                      whenever the corp's own worker + housing set is
+                      empty, INDEPENDENT of marketplace (the corp's
+                      "why don't I see rivals' workers" answer is H12
+                      anti-enumeration, not a match failure). Publish
+                      CTA turns the dead end into a productive next
+                      step: the corp is the party who lists workers. */}
+                  {isCorp && resp
+                    && resp.results.length === 0
+                    && (!resp.near_matches || resp.near_matches.length === 0)
+                    && (
+                    <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 text-center shadow-sm">
+                      <p className="text-sm text-slate-700 mb-1">
+                        מודעות עובדים של תאגידים אחרים אינן מוצגות לתאגידים.
+                      </p>
+                      <p className="text-sm text-slate-700 mb-4">
+                        אלה המודעות שלך שתואמות לחיפוש — כרגע אין.
+                      </p>
+                      <Link
+                        href="/corporation/ads/new/worker"
+                        className="inline-flex items-center gap-2 rounded-lg bg-brand-600 hover:bg-brand-700 text-white font-semibold text-sm px-4 py-2 min-h-[44px] transition"
+                      >
+                        פרסמו מודעת עובדים חדשה
+                        <ArrowLeft className="w-4 h-4" aria-hidden="true" />
+                      </Link>
+                    </div>
+                  )}
+
+                  {/* Default variant · approved contractor + provider
+                      + admin. Suppressed when the anon / pending /
+                      corp variant fired above, OR when marketplace
+                      has hits (per R5 §4 — same-search services
+                      section IS the message). */}
+                  {!isAnon
+                    && !isCorp
+                    && !(entityType === 'contractor'
+                         && resp?.viewer_approval_status
+                         && resp.viewer_approval_status !== 'approved')
+                    && resp
+                    && resp.results.length === 0
+                    && (!resp.near_matches || resp.near_matches.length === 0)
                     && (!resp.marketplace_matches || resp.marketplace_matches.length === 0)
                     && (() => {
                     // NM — when near_matches is populated the amber

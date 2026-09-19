@@ -193,12 +193,23 @@ const PUBLIC_PREFIXES = [
   '/api/auth/invite/validate',   // Invitation token check — Phase 4
   '/api/auth/invite/accept',     // Invitation acceptance — Phase 4
   '/api/enums',                  // profession/region enum lookups are public
-  // L2 §2 — `/api/search` was public; Yulian's 10.09 decision closed
-  // it. Anonymous visitors see the demo loop on hardcoded fixtures
-  // (see landing page.tsx), never on real inventory. Voice transcribe
-  // at /api/voice/transcribe stays public because it only does STT —
-  // the transcript is fed back into /api/search which now requires
-  // auth, so voice can't be used as a search bypass.
+  // R13 §2c · `/api/search` is public again — the L2 §2 close was
+  // enforcing a stricter rule than the product intended. Ads visibility
+  // now scopes at the SQL layer (see viewer_scope_wheres), which
+  // returns `1=0` for callers with no user role at all. Anon gets a
+  // 200 with `results: []` and populated `marketplace_matches` — a
+  // conversion prompt on the workers block sends them to /login, and
+  // the ads column stays empty because the SQL says so.
+  //
+  // NOTHING else on the ads namespace opens up. `/api/ads/{id}`,
+  // `/api/ads/public/{id}` and `/api/reveals` all stay behind auth
+  // + `require_contractor_approved` + `viewer_scope_wheres`.
+  //
+  // Identity headers still ride through — the block at :345 catches
+  // "public route, caller IS logged in" and calls `attachUserHeaders`,
+  // so a corp searching via /api/search gets its scope-narrowing
+  // predicate applied downstream.
+  '/api/search',
   // L2 §2 — `/api/ads/public` prefix was public (featured/recent/
   // stats/sponsored/{id}); featured/recent/{id} return real ad rows
   // and are correctly closed. `/stats` is numeric-only and safe.

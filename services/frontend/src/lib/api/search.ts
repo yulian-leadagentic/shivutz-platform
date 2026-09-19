@@ -48,14 +48,21 @@ export type RelaxedFilter = 'quantity' | 'origin_country' | 'region';
 // an empty list.
 export type SearchPrimarySection = 'ads' | 'marketplace';
 
+// R13 §2d · caller-side approval status the backend echoes on the
+// search response so the FE can pick the workers-block empty-state
+// copy (approved amber vs "החשבון שלך עדיין בבדיקה") without a
+// second round-trip. Non-contractor callers get null.
+export type ViewerApprovalStatus = 'approved' | 'pending' | 'rejected' | 'suspended' | null;
+
 export interface SearchResponse {
-  filters:              SearchFilters;
-  results:              AdSearchResult[];
-  total:                number;
-  near_matches?:        AdSearchResult[];
-  relaxed?:             RelaxedFilter | null;
-  marketplace_matches?: MarketplaceListing[];
-  primary_section?:     SearchPrimarySection;
+  filters:                 SearchFilters;
+  results:                 AdSearchResult[];
+  total:                   number;
+  near_matches?:           AdSearchResult[];
+  relaxed?:                RelaxedFilter | null;
+  marketplace_matches?:    MarketplaceListing[];
+  primary_section?:        SearchPrimarySection;
+  viewer_approval_status?: ViewerApprovalStatus;
 }
 
 export interface ContactReveal {

@@ -32,7 +32,11 @@ from pydantic import BaseModel, Field
 from app.db import get_db
 from app.services.query_rewriter import rewrite
 from app.services.query_reranker import rerank
-from app.services.visibility import require_contractor_approved, viewer_scope_wheres
+from app.services.visibility import (
+    contractor_approval_status,
+    require_contractor_approved,  # noqa: F401 · re-exported for other routes
+    viewer_scope_wheres,
+)
 from app.services.search_normalize import normalize_search_term
 
 router = APIRouter()
@@ -274,24 +278,37 @@ def search(
     body: SearchIn,
     x_entity_id:   Optional[str] = Header(default=None),
     x_entity_type: Optional[str] = Header(default=None),
+    x_user_role:   Optional[str] = Header(default=None),
 ):
-    # U3 · L2 — pending contractors get 403 with entity_not_approved.
-    # Frontend already maps this code to a "בבדיקה" screen (see
-    # services/frontend/src/lib/api/errors.ts:75), so no FE change.
-    # Chosen over the L2 spec's counts-only shape because the FE isn't
-    # built for a two-mode response — a 403 is a clean single-code
-    # signal, and matches the pattern the reveal endpoint has always
-    # used.
-    require_contractor_approved(x_entity_id, x_entity_type)
+    # R13 §2d — search is open to every caller (anon included; the
+    # gateway now lists /api/search in PUBLIC_PREFIXES). What varies
+    # by caller is the SQL scope on the ads table, not the endpoint
+    # gate. `viewer_scope_wheres` returns 1=0 for anon (worker +
+    # housing blocked), an ownership predicate for corp, ad_type<>
+    # 'worker' for provider, and an empty scope for contractor + admin.
+    # A pending contractor gets a second 1=0 appended below so the
+    # scope path matches the L2 gate other read paths still enforce
+    # via `require_contractor_approved`. Marketplace runs on its own
+    # rules (no scope arg) so every caller keeps seeing services.
 
     filters = rewrite(body.query)
 
-    # U3 · H12 — visibility rule imported from ONE place. Corp callers
-    # see only their own worker inventory; housing + contractors + anon
-    # + admin get an empty scope. Fragment is applied to both the exact
-    # pass and the NM near-match pass so a relaxed filter doesn't
-    # re-open the leak.
-    scope_extra = viewer_scope_wheres(x_entity_id, x_entity_type)
+    scope_extra = viewer_scope_wheres(x_entity_id, x_entity_type, x_user_role)
+
+    # R13 §2d · a contractor whose approval hasn't landed sees
+    # marketplace only. Mirror the L2 rule that the four sibling
+    # public feeds still enforce as a 403 in `require_contractor_approved`
+    # — same scoping outcome, delivered as a scoped 200 so the FE
+    # can render the "החשבון שלך עדיין בבדיקה" copy in the workers
+    # section instead of a red banner. `viewer_approval_status`
+    # rides in the response so the FE can pick the right empty-state
+    # copy without a second round-trip.
+    viewer_approval_status: Optional[str] = None
+    if x_entity_type == "contractor" and x_entity_id:
+        viewer_approval_status = contractor_approval_status(x_entity_id)
+        if viewer_approval_status != "approved":
+            wheres, params = scope_extra
+            scope_extra = (list(wheres) + ["1=0"], list(params))
 
     # -- Pass 1: exact ---------------------------------------------------
     exact_wheres, exact_params = _build_where(filters, scope_extra=scope_extra)
@@ -407,11 +424,15 @@ def search(
     primary_section = "marketplace" if marketplace_first else "ads"
 
     return {
-        "filters":             filters,
-        "results":             reranked,
-        "total":               len(reranked),
-        "near_matches":        serialised_near,
-        "relaxed":             relaxed_field,
-        "marketplace_matches": marketplace_matches,
-        "primary_section":     primary_section,
+        "filters":                 filters,
+        "results":                 reranked,
+        "total":                   len(reranked),
+        "near_matches":            serialised_near,
+        "relaxed":                 relaxed_field,
+        "marketplace_matches":     marketplace_matches,
+        "primary_section":         primary_section,
+        # R13 §2d · lets the FE pick the workers-block empty-state
+        # copy (approved amber vs "החשבון שלך עדיין בבדיקה") without
+        # a second round-trip. None for non-contractor callers.
+        "viewer_approval_status":  viewer_approval_status,
     }

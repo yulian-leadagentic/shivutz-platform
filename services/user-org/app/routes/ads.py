@@ -347,15 +347,21 @@ def public_featured(
     limit: int = 12,
     x_entity_id:   Optional[str] = Header(default=None),
     x_entity_type: Optional[str] = Header(default=None),
+    x_user_role:   Optional[str] = Header(default=None),
 ):
     """Boosted ads first, then most-recent active. Powers the landing
     carousel + trust bar.
 
     U3 · applies both visibility rules — H12 (corp callers only see
     their own worker rows) and L2 (pending contractors get 403). Rules
-    live in app.services.visibility; do NOT inline them here."""
+    live in app.services.visibility; do NOT inline them here.
+
+    R13 · admin passes via `x_user_role`; anonymous callers (no role
+    at all) get `1=0` from `viewer_scope_wheres` so worker + housing
+    ads are hidden here too (the marketplace-facing landing has its
+    own /marketplace endpoint that serves anon by design)."""
     require_contractor_approved(x_entity_id, x_entity_type)
-    scope_wheres, scope_params = viewer_scope_wheres(x_entity_id, x_entity_type)
+    scope_wheres, scope_params = viewer_scope_wheres(x_entity_id, x_entity_type, x_user_role)
 
     wheres = [
         "a.active=TRUE", "a.deleted_at IS NULL",
@@ -388,10 +394,11 @@ def public_recent(
     ad_type: Optional[str] = None,
     x_entity_id:   Optional[str] = Header(default=None),
     x_entity_type: Optional[str] = Header(default=None),
+    x_user_role:   Optional[str] = Header(default=None),
 ):
     """Most-recent active ads. Same U3 rules as /public/featured."""
     require_contractor_approved(x_entity_id, x_entity_type)
-    scope_wheres, scope_params = viewer_scope_wheres(x_entity_id, x_entity_type)
+    scope_wheres, scope_params = viewer_scope_wheres(x_entity_id, x_entity_type, x_user_role)
 
     wheres = [
         "a.active=TRUE", "a.deleted_at IS NULL",
@@ -673,13 +680,18 @@ def get_public_ad(
     ad_id: str,
     x_entity_id:   Optional[str] = Header(default=None),
     x_entity_type: Optional[str] = Header(default=None),
+    x_user_role:   Optional[str] = Header(default=None),
 ):
     """U3 · applies the same visibility rules as the list endpoints.
     A corp caller fetching a foreign corp's worker-ad id gets 404 (the
     row is filtered out of the WHERE, same as if the ad didn't exist)
-    — do NOT leak the "wrong owner" vs "no such ad" distinction."""
+    — do NOT leak the "wrong owner" vs "no such ad" distinction.
+
+    R13 · anonymous → 1=0 predicate → the row filters out even for a
+    correct id. That's the desired behaviour: anon can't inspect a
+    specific worker or housing ad by guessing its id."""
     require_contractor_approved(x_entity_id, x_entity_type)
-    scope_wheres, scope_params = viewer_scope_wheres(x_entity_id, x_entity_type)
+    scope_wheres, scope_params = viewer_scope_wheres(x_entity_id, x_entity_type, x_user_role)
 
     wheres = [
         "a.id = %s", "a.active = TRUE", "a.deleted_at IS NULL",
