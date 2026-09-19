@@ -17,7 +17,7 @@ export const metadata: Metadata = {
   // etag). Bump this on any deploy where the etag alone won't tell us
   // whether the rollout completed.
   other: {
-    'build-tag': '2026-08-09-a',
+    'build-tag': '2026-09-19-r12s1',
   },
   // Multi-size favicon set so browsers pick the sharpest bitmap for
   // the tab-bar / bookmarks / taskbar (16→48 covers most; 192/512
