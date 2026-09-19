@@ -190,6 +190,14 @@ def redact_body(body: Any) -> Any:
 
 # ─── Result table ────────────────────────────────────────────────────────────
 
+# R16 §1 · Row gains an explicit `skipped` axis so a SKIP no longer
+# aliases as PASS. Sections that need the loud-fail behaviour ("if you
+# didn't cover it, don't call the suite green") flip `matrix_critical=True`
+# on the Row — Runner.exit_code then returns 2 whenever any critical
+# row is skipped, distinct from a real FAIL. This wraps the R14 §1
+# claim that the matrix suite "exits non-zero if ANY row was skipped"
+# in actual code — until now, that claim had no implementation and
+# every SKIP in --suite matrix registered with ok=True.
 @dataclass
 class Row:
     section: str
@@ -198,14 +206,18 @@ class Row:
     actual:  str
     ok:      bool
     detail:  Optional[str] = None   # populated on FAIL only
+    skipped: bool = False           # R16 §1 — orthogonal to ok
+    matrix_critical: bool = False   # R16 §1 — SKIP here forces exit 2
 
 @dataclass
 class Runner:
     rows: List[Row] = field(default_factory=list)
 
     def add(self, section: str, check: str, expected: str, actual: str,
-            ok: bool, detail: Optional[str] = None) -> None:
-        self.rows.append(Row(section, check, expected, actual, ok, detail))
+            ok: bool, detail: Optional[str] = None,
+            *, skipped: bool = False, matrix_critical: bool = False) -> None:
+        self.rows.append(Row(section, check, expected, actual, ok, detail,
+                             skipped=skipped, matrix_critical=matrix_critical))
 
     def print_table(self) -> None:
         w_sec   = max(3, max(len(r.section)  for r in self.rows))
@@ -217,11 +229,13 @@ class Runner:
         print(fmt.format("§", "Check", "Expected", "Actual", "Result"))
         print("-" * (w_sec + w_check + w_exp + w_act + 20))
         for r in self.rows:
-            print(fmt.format(r.section, r.check, r.expected, r.actual,
-                             "PASS" if r.ok else "FAIL"))
+            verdict = "SKIP" if r.skipped else ("PASS" if r.ok else "FAIL")
+            print(fmt.format(r.section, r.check, r.expected, r.actual, verdict))
         print()
-        # Failure detail block — separate, easy to scroll to.
-        fails = [r for r in self.rows if not r.ok]
+        # Failure detail block — separate, easy to scroll to. Skipped
+        # rows print their `actual` as the reason (already rendered
+        # inline above) but not a body dump.
+        fails = [r for r in self.rows if not r.ok and not r.skipped]
         if fails:
             print("─── FAIL bodies ───")
             for r in fails:
@@ -229,12 +243,48 @@ class Runner:
                 if r.detail:
                     print(r.detail)
                 print()
-        n_pass = sum(1 for r in self.rows if r.ok)
-        n_fail = len(self.rows) - n_pass
-        print(f"── {n_pass} PASS · {n_fail} FAIL ──")
+        n_pass = sum(1 for r in self.rows if r.ok and not r.skipped)
+        n_fail = sum(1 for r in self.rows if not r.ok and not r.skipped)
+        n_skip = sum(1 for r in self.rows if r.skipped)
+
+        # R16 §1 · matrix-specific summary line so a partial run reads
+        # differently from a full one. Names WHAT was skipped so the
+        # operator can see the coverage gap without scrolling.
+        matrix_rows = [r for r in self.rows if r.matrix_critical]
+        if matrix_rows:
+            m_pass = sum(1 for r in matrix_rows if r.ok and not r.skipped)
+            m_fail = sum(1 for r in matrix_rows if not r.ok and not r.skipped)
+            m_skip = sum(1 for r in matrix_rows if r.skipped)
+            skip_reasons = sorted({
+                # a skip row's `actual` starts with 'SKIP · <reason>' by convention;
+                # keep only the <reason>.
+                (r.actual.split("·", 1)[1].strip() if "·" in r.actual else r.actual)
+                for r in matrix_rows if r.skipped
+            })
+            reasons_frag = f" ({', '.join(skip_reasons)})" if skip_reasons else ""
+            print(f"matrix: {m_pass} passed · {m_fail} failed · {m_skip} skipped{reasons_frag}")
+
+        print(f"── {n_pass} PASS · {n_fail} FAIL · {n_skip} SKIP ──")
+
+    def matrix_skipped_any(self) -> bool:
+        """R16 §1 · true when at least one matrix-critical row was skipped.
+        exit_code turns that into exit 2 (uncovered), distinct from 0
+        (all pass) and 1 (a real failure)."""
+        return any(r.skipped and r.matrix_critical for r in self.rows)
 
     def exit_code(self) -> int:
-        return 0 if all(r.ok for r in self.rows) else 1
+        # R16 §1 · three states, not two:
+        #   0 · every row passed and nothing critical was skipped
+        #   1 · at least one row failed (a real regression)
+        #   2 · a matrix-critical row was skipped (uncovered — the
+        #        harness didn't get to check what the operator wanted
+        #        it to check). A real FAIL always wins over an
+        #        uncovered SKIP, so 1 short-circuits ahead of 2.
+        if any((not r.ok) and (not r.skipped) for r in self.rows):
+            return 1
+        if self.matrix_skipped_any():
+            return 2
+        return 0
 
 
 # ─── DB helpers ──────────────────────────────────────────────────────────────
@@ -2212,30 +2262,46 @@ def _split_ids(body: Any) -> Tuple[List[str], List[str], int]:
     return (workers, housing, market)
 
 
-def _foreign_worker_sample(caller_entity_id: Optional[str]) -> Optional[Tuple[str, str, str]]:
-    """Return (ad_id, owner_entity_id, profession_code) of a worker ad
-    NOT owned by the caller. Used for the anti-enumeration assertion —
-    the caller queries with `profession_code`'s canonical Hebrew name
-    and we verify `ad_id` is absent from the response. Returns None
-    when staging has no foreign worker ad (matrix falls back to a
-    print instead of a check, since the assertion has nothing to bite)."""
+def _foreign_worker_sample(caller_entity_id: Optional[str], limit: int = 3
+                          ) -> List[Tuple[str, str, str, str]]:
+    """R16 §2 · Return up to `limit` (ad_id, owner_entity_id,
+    profession_code, profession_name_he) tuples of worker ads NOT
+    owned by the caller. The Hebrew `name_he` is what the anti-enum
+    probe sends as the query — the rewriter processes Hebrew, not
+    English enum codes. Sending `flooring` here (a bug the R14 §1
+    probe shipped with) rewrote to no profession and the query
+    matched no rows for any caller, making the absence assertion
+    tautologically true and the harness silently green.
+
+    Returns [] when staging has no foreign worker ad OR when a foreign
+    row has no matching professions.name_he — the caller treats both
+    as an ERROR, not a SKIP: without a probe query that can bite,
+    the anti-enum assertions are structurally invalid.
+
+    Multiple candidates so the caller can advance past a probe the
+    positive-control (approved contractor) can't see, per R16 §3."""
+    # Cross-schema JOIN: ads live in org_db, profession_types in worker_db.
+    # The enum table is authoritatively named `profession_types` on
+    # staging (was `professions` on paper in 001_initial_schema.sql,
+    # but the actual migration lands it in worker_db).
     conn = db("org_db")
     try:
-        row = rows_of(
+        rows = rows_of(
             conn,
-            """SELECT id, owner_entity_id, profession_code
-                 FROM ads
-                WHERE ad_type='worker' AND active=1 AND deleted_at IS NULL
-                  AND (owner_entity_id != %s OR %s IS NULL)
-                ORDER BY id ASC LIMIT 1""",
-            (caller_entity_id or "", caller_entity_id),
+            """SELECT a.id, a.owner_entity_id, a.profession_code, p.name_he
+                 FROM org_db.ads a
+                 JOIN worker_db.profession_types p
+                   ON p.code = a.profession_code COLLATE utf8mb4_0900_ai_ci
+                WHERE a.ad_type='worker' AND a.active=1 AND a.deleted_at IS NULL
+                  AND (a.owner_entity_id != %s OR %s IS NULL)
+                  AND p.name_he IS NOT NULL AND p.name_he <> ''
+                  AND p.is_active = 1
+                ORDER BY a.id ASC LIMIT %s""",
+            (caller_entity_id or "", caller_entity_id, limit),
         )
     finally:
         conn.close()
-    if not row:
-        return None
-    ad_id, owner, prof = row[0]
-    return (ad_id, owner, prof)
+    return [(r[0], r[1], r[2], r[3]) for r in rows]
 
 
 def _search(api: ApiClient, sess: Optional[Session], query: str) -> Tuple[int, Any, str]:
@@ -2296,13 +2362,19 @@ def test_r13_matrix(api: ApiClient, r: Runner,
     for role_key, sess, skip in identities:
         for content, query in R14_QUERIES:
             if skip is not None:
+                # R16 §1 · SKIPs on the matrix are matrix-critical:
+                # exit_code returns 2 (uncovered), not 0. `actual`
+                # keeps the "SKIP · <reason>" format so the summary
+                # line can pull the reason out.
                 r.add("R14/matrix", f"{role_key} · {content} ({query})",
-                      "matrix cell verified", f"SKIP · {skip}", True)
+                      "matrix cell verified", f"SKIP · {skip}",
+                      ok=True, skipped=True, matrix_critical=True)
                 continue
             sc, body, det = _search(api, sess, query)
             if sc != 200 or not isinstance(body, dict):
                 r.add("R14/matrix", f"{role_key} · {content} ({query})",
-                      "200 + JSON body", f"status={sc}", False, det)
+                      "200 + JSON body", f"status={sc}", False, det,
+                      matrix_critical=True)
                 continue
 
             workers, housing, market = _split_ids(body)
@@ -2351,44 +2423,91 @@ def test_r13_matrix(api: ApiClient, r: Runner,
                     actual = f"housing_ids={len(housing)}"
 
             r.add("R14/matrix", f"{role_key} · {content} ({query})",
-                  f"{expected}", actual, ok, det if not ok else None)
+                  f"{expected}", actual, ok, det if not ok else None,
+                  matrix_critical=True)
 
-    # ── Explicit anti-enumeration — the check that would have caught
-    #    R12 §1 (correction) at the moment I zeroed viewer_scope_wheres.
-    #    Corp searches for a foreign flooring ad's canonical name and
-    #    asserts the ad's id is NOT in results. Repeated for
-    #    anonymous (blocked by 1=0) and pending contractor (blocked
-    #    by same). Provider's `a.ad_type<>'worker'` scope also gets
-    #    hit here. Every failure names the ids that leaked.
-    foreign = _foreign_worker_sample(corp.entity_id)
-    if not foreign:
-        r.add("R14/anti-enum", "foreign worker ad exists for anti-enum probe",
-              "at least one non-caller worker ad", "SKIP · staging has none", True)
+    # ── R16 §2 + §3 · Explicit anti-enumeration.
+    # The probe query MUST be the profession's Hebrew name_he (the
+    # rewriter operates on Hebrew — sending 'flooring' as R14 §1
+    # shipped produces no profession filter and the search matches
+    # no rows, making the absence assertion tautologically true).
+    #
+    # And before the four absence assertions run, a POSITIVE CONTROL
+    # confirms that the query DOES return `ad_id` to the approved
+    # contractor (who sees the full catalogue). If the positive
+    # control fails, the four assertions below prove nothing — the
+    # probe is INVALID and the suite exits 2 with a PROBE INVALID
+    # row named. Multiple candidates so we can advance if the first
+    # one doesn't come back for the contractor.
+    candidates = _foreign_worker_sample(corp.entity_id, limit=3)
+    if not candidates:
+        # R16 §2 · a missing name_he JOIN is an ERROR, not a SKIP —
+        # without a Hebrew query the whole anti-enum block is worthless.
+        r.add("R14/anti-enum",
+              "probe candidate exists with professions.name_he",
+              "at least one foreign worker ad joined to a name_he row",
+              "ERROR · JOIN professions returned no candidates",
+              ok=False, matrix_critical=True)
     else:
-        ad_id, owner_id, prof = foreign
-        # Anti-enum applies only to callers whose scope MUST hide foreign
-        # worker ads. Approved contractor + admin see the full catalogue
-        # by design (R13 matrix rows 2 & 6) — probing them isn't a
-        # coverage gap, it's the matrix. The probe uses the profession
-        # code as the query so the rewriter extracts the enum and the
-        # search runs with ad_type=worker + profession_code=prof.
-        probe_targets: List[Tuple[str, Optional[Session]]] = [
-            ("corp",             corp),
-            ("anonymous",        None),
-            ("pending",          contractor_pending),
-        ]
-        if provider_session is not None:
-            probe_targets.append(("service_provider", provider_session))
-        for role_key, sess in probe_targets:
-            sc, body, det = _search(api, sess, prof)
-            workers, _, _ = _split_ids(body)
-            leaked = [w for w in workers if w == ad_id]
-            ok = not leaked
+        chosen_probe: Optional[Tuple[str, str, str, str]] = None
+        control_evidence = ""
+        for ad_id, owner_id, prof_code, name_he in candidates:
+            sc, body, det = _search(api, contractor_ok, name_he)
+            control_workers, _, _ = _split_ids(body)
+            if ad_id in control_workers:
+                chosen_probe = (ad_id, owner_id, prof_code, name_he)
+                control_evidence = (
+                    f"ad {ad_id[:8]} present in approved contractor's response for '{name_he}' "
+                    f"(profession_code={prof_code})"
+                )
+                break
+
+        if chosen_probe is None:
+            # R16 §3 · positive control failed for every candidate we
+            # tried. The absence assertions below would pass trivially,
+            # which is worthless. Exit 2 with a PROBE INVALID row that
+            # names both the query and why.
+            tried = ", ".join(f"{a[0][:8]} ({a[3]})" for a in candidates)
             r.add("R14/anti-enum",
-                  f"{role_key} · query '{prof}' — foreign ad {ad_id[:8]} (owner {owner_id[:8]}) absent",
-                  "not in response",
-                  "clean" if ok else f"LEAKED foreign ad {leaked}", ok,
-                  det if not ok else None)
+                  "PROBE INVALID · positive control (approved contractor sees ad) failed",
+                  "approved contractor sees the probe ad",
+                  f"none of the {len(candidates)} candidates came back for the "
+                  f"approved contractor — tried: {tried}. Absence assertions "
+                  f"would prove nothing.",
+                  ok=False, matrix_critical=True)
+        else:
+            ad_id, owner_id, prof_code, name_he = chosen_probe
+            r.add("R14/anti-enum",
+                  f"positive control · query='{name_he}' · approved contractor sees ad",
+                  "ad in response",
+                  control_evidence,
+                  ok=True, matrix_critical=True)
+
+            # Four absence assertions, each with the Hebrew query.
+            probe_targets: List[Tuple[str, Optional[Session]]] = [
+                ("corp",             corp),
+                ("anonymous",        None),
+                ("pending",          contractor_pending),
+            ]
+            if provider_session is not None:
+                probe_targets.append(("service_provider", provider_session))
+            else:
+                r.add("R14/anti-enum",
+                      f"service_provider · query='{name_he}'",
+                      "not in response",
+                      "SKIP · SERVICE_PROVIDER_PHONE not set",
+                      ok=True, skipped=True, matrix_critical=True)
+            for role_key, sess in probe_targets:
+                sc, body, det = _search(api, sess, name_he)
+                workers, _, _ = _split_ids(body)
+                leaked = [w for w in workers if w == ad_id]
+                ok = not leaked
+                r.add("R14/anti-enum",
+                      f"{role_key} · query='{name_he}' — foreign ad {ad_id[:8]} (owner {owner_id[:8]}) absent",
+                      "not in response",
+                      "clean" if ok else f"LEAKED foreign ad {leaked}", ok,
+                      det if not ok else None,
+                      matrix_critical=True)
 
     # ── 7 reveal-not-broken checks — the OTHER invariant R13 guarded ──
     #    Confirms that opening search at the gateway didn't accidentally
@@ -2445,10 +2564,13 @@ def test_r13_matrix(api: ApiClient, r: Runner,
         if provider_session is not None:
             sc, _, det = _reveal(provider_session)
             r.add("R14/reveal", "provider → contact-reveal", "403", str(sc),
-                  sc == 403, det if sc != 403 else None)
+                  sc == 403, det if sc != 403 else None,
+                  matrix_critical=True)
         else:
+            # R16 §1 · reveal-provider SKIP is also matrix-critical
             r.add("R14/reveal", "provider → contact-reveal",
-                  "403", "SKIP · SERVICE_PROVIDER_PHONE not set", True)
+                  "403", "SKIP · SERVICE_PROVIDER_PHONE not set",
+                  ok=True, skipped=True, matrix_critical=True)
 
         # 4. pending contractor reveal → 403
         sc, _, det = _reveal(contractor_pending)
