@@ -3,131 +3,123 @@
 Findings from Yulian's manual pass on staging + response.
 Prompt: `docs/cc-prompts/cc_prompt_R12_manual_round.md`. Baseline tag: `pre-r12`.
 
-## §1 · Search — counter, empty state, per-entity tuning
+## §1 · Search — policy correction: open to everyone
 
-### What the manual round surfaced
+### Two rounds of correction
 
-Yulian: *"חיפשתי רצפים ולא קיבלתי תוצאות. פשוט מאוד."*
+**Yulian's first message:** *"חיפשתי רצפים ולא קיבלתי תוצאות. פשוט מאוד."*
 
-### Why the earlier diagnosis was wrong
+I read that as a UX bug on the corp-empty branch and shipped a per-entity
+empty-state (`R12 §1c/§1d`) — corp explanation panel + provider gate on the
+ads column + placeholder swap. The prompt itself framed H12 as settled:
+`אל תיגע ב-visibility.py · H12 הוכרע`.
 
-The prior response classified the "no results" symptom as an H12 side-effect and
-offered three options that all treated search as *worker search*. That reading
-missed two things:
+**Yulian's second message (this round):**
+> *"מה זה משנה כולם יכולים לחפש ולמצא תוצאות. יש הגבלה רק על צפיה
+> בפרטים של עובדים של תאגידים שם זה מוגבל רק לקבלנים."*
 
-1. **`U6 §2` federated search.** `/search` returns `marketplace_matches`
-   alongside `results` — a corp querying `רצפים` may legitimately get zero
-   worker rows AND relevant service listings on the same page. Housing,
-   transport, insurance, equipment: the fourth business channel is built
-   into the same endpoint.
-2. **The visible counter still read two of three sources.** The SR-only status
-   region at `page.tsx:1481-1503` was already fixed in R5 §4 to include
-   `marketplace_matches`; the visible readout at `page.tsx:1097-1103` was not.
-   A query like `קורס עברית` that lands only in marketplace read as
-   `0 תוצאות` in the header even while the real card rendered below —
-   which is exactly what made "search is broken" a plausible reading for
-   the earlier diagnosis too.
+*"What does it matter, everyone can search and find results. The only
+restriction is on viewing worker DETAILS of corporations — that's
+restricted to contractors."*
 
-The `service_provider → total 0` cell in the earlier table was misread as
-"scope closes everything." `viewer_scope_wheres` gates `ads` alone
-(`search.py:294,297,351`); `_search_marketplace()` at `search.py:215` takes no
-scope argument. Providers do get marketplace hits — the counter simply hid them.
+That reverses the read of H12 the prompt was written against.
+Search is **open to every caller** (anon, contractor, corp, service_provider,
+admin). The contractor-only restriction lives **on the reveal endpoint alone**,
+and is already enforced there (`services/user-org/app/routes/ads.py:1123` —
+`contact_reveal` calls `require_no_service_provider` + `require_contractor_approved`
++ subscription/tier gates).
 
-### What §1 changes
+### What ships
 
-All edits are in [services/frontend/src/app/page.tsx](services/frontend/src/app/page.tsx).
-`viewer_scope_wheres` and every other H12 site untouched (`git diff visibility.py` empty).
+Two backend + one FE change; keeps only the R5 §4 counter fix from the first §1 pass.
 
-**1b · Visible counter (§1b).** Now sums all three sources; single-source cases
-collapse to the short `N תוצאות` form, mixed cases spell out each source.
+**Backend — `services/user-org/app/services/visibility.py`.**
+`viewer_scope_wheres` was returning per-role SQL predicates that scoped `ads`
+reads:
 
-```tsx
-const exact  = resp.results.length;
-const near   = resp.near_matches?.length ?? 0;
-const market = resp.marketplace_matches?.length ?? 0;
-const total  = exact + near + market;
-const populated = [exact, near, market].filter((n) => n > 0).length;
-if (total === 0) return '0 תוצאות';
-if (populated === 1) return total === 1 ? 'תוצאה אחת' : `${total} תוצאות`;
-// else assemble mixed "N מדויקות · M קרובות · K שירותים נלווים"
-```
+- `corporation` caller → `("(a.ad_type <> 'worker' OR a.owner_entity_id = %s)", [id])`
+- `service_provider` caller → `("1=0", [])`
+- everyone else → `([], [])`
 
-Same three-source arithmetic as the SR-only region — the two surfaces now
-compute the same total, not two.
+Now returns `([], [])` for **every caller**. The function stays (with an
+`# noqa: ARG001` on the unused args) as the single reversal point should the
+policy ever change again — one edit here reintroduces per-role scoping across
+all five ads read paths at once, and every existing caller already passes the
+`(x_entity_id, x_entity_type)` headers so the signature is a stable contract.
 
-**1c · Empty state per entity.**
+Module docstring rewritten to reflect the new policy (search open · reveal
+gate lives on the reveal endpoint).
 
-| Entity | Workers-block empty state |
-|---|---|
-| **Contractor / anon** | Unchanged amber `לא נמצאו מודעות התואמות` + NM near-matches. Suppressed when marketplace has hits (R5 §4). |
-| **Corporation** | New slate panel: `מודעות עובדים של תאגידים אחרים אינן מוצגות לתאגידים. אלה המודעות שלך שתואמות לחיפוש — כרגע אין.` + CTA button `פרסמו מודעת עובדים חדשה →` linking to `/corporation/ads/new/worker`. Renders whenever the corp's own worker set is empty, **independent of the marketplace section** (the corp's "why don't I see workers" answer is H12, not "no match"). |
-| **Service provider** | Ads column doesn't render at all. Fallback: when marketplace is also empty, a plain amber panel `לא נמצאו תוצאות לחיפוש · נסה לנסח אחרת או לחפש שירות אחר` renders in the results column. |
+**Backend — no change to** `contact_reveal` at `ads.py:1123`. `require_no_service_provider` +
+contractor approval + subscription entitlement + tier reveal quota were
+already there and are the correct gate.
 
-Marketplace section itself renders normally for all three entities — the
-"שירותים נלווים" heading is the fourth business channel and belongs everywhere.
+**Backend — no change to** the gateway (`services/gateway/src/index.js:196`).
+Anonymous callers still redirect to `/login` for `/api/search`; that's what
+Yulian picked in the clarification question. Everyone signed in — regardless
+of entity type — hits the search path unrestricted.
 
-The marketplace-preamble one-liner (`לא נמצאו עובדים או דיור לחיפוש הזה. מצאנו התאמה בשירותים הנלווים.`)
-is now suppressed for corp + provider — for a corp its "no workers" phrasing
-is wrong (the reason is H12, not a match failure), and for a provider it
-refers to a section they can't see anyway.
+**Frontend — `services/frontend/src/app/page.tsx`.** Reverted every R12 §1c/§1d
+branch I added earlier this session:
 
-**1d · Placeholder per entity.** `נסה: 20 פועלים סינים במרכז` unchanged for
-contractor + anonymous (F1 decision). Corp + provider now see
-`חפש דיור, הסעות, ביטוח, ציוד`.
+- `getAccessToken` + `getEntityType` imports removed.
+- `entityType`, `isCorp`, `isProvider` state + `useEffect` removed.
+- Placeholder back to plain `נסה: 20 פועלים סינים במרכז` for every viewer.
+- `{!isProvider && (…)}` gate on the ads column removed — column renders
+  for every viewer.
+- Corp slate panel (`מודעות עובדים של תאגידים אחרים…` + publish CTA) removed.
+- `{!isCorp && …}` guard on the amber "לא נמצאו מודעות התואמות" block removed
+  — same amber renders for every viewer whose whole search came up empty.
+- `{!isCorp && !isProvider && …}` guard on the marketplace preamble removed —
+  same preamble renders for every viewer when workers side is empty but
+  services matched.
+- Provider fallback `bg-amber-50` block after the marketplace section removed.
 
-### Live verification on staging — one row per acceptance item
+**Frontend — kept: the counter fix (§1b).** The visible readout at
+`page.tsx:1097` sums `results + near_matches + marketplace_matches`, so a
+query that lands only in marketplace no longer reads `0 תוצאות` next to a
+real card. This was the underlying R5 §4 gap and stays useful independent
+of the H12 read.
 
-Captured against staging (build-tag `2026-09-19-r12s1`, commit `892ffa1`).
-Values were read directly from the live DOM via `javascript_tool` right after
-the search fired, so they are the exact strings the browser rendered — no
-transcription risk.
+### Yulian's specific reproduction
 
-| # | Entity + query | Placeholder | Header (visible counter) | Workers-block | Marketplace | Screenshot |
-|---|---|---|---|---|---|---|
-| 1 | contractor `בוני הנגב` · `קורס עברית` | `נסה: 20 פועלים סינים במרכז` | `14 תוצאות מדויקות · שירות אחד נלווה` (mixed source) | 14 ad cards, no amber | `שירותים נלווים · תוצאה אחת` — 1 card | inline in conversation |
-| 2 | corp `עליונים` (no flooring ad) · `רצפים` | `חפש דיור, הסעות, ביטוח, ציוד` | `0 תוצאות` | **corp slate panel + פרסמו מודעת עובדים חדשה** → `/corporation/ads/new/worker` · no amber block | (no marketplace hit — section absent) | inline in conversation |
-| 3 | corp `כוח אדם גלובל` (has flooring ad) · `רצפים` | `חפש דיור, הסעות, ביטוח, ציוד` | `תוצאה אחת` (single-source short form) | 1 ad card — own inventory · no corp panel · no amber | (same, no hit) | inline in conversation |
-| 4 | provider `ספק שירותים נלווים` · `ביטוח` | `חפש דיור, הסעות, ביטוח, ציוד` | `4 תוצאות` (single-source short form) | **`.results-table` count = 0** — ads column not rendered at all · no corp panel · no amber | `שירותים נלווים · 4 תוצאות` — 4 insurance cards | inline in conversation |
-| 5 | provider · `zzz_no_such_query_xyz` (empty-everywhere fallback) | `חפש דיור, הסעות, ביטוח, ציוד` | `0 תוצאות` | ads column not rendered · **provider amber fallback: `לא נמצאו תוצאות לחיפוש · נסה לנסח אחרת או לחפש שירות אחר`** | (no hit) | inline |
+- Direct HTTP call to `/search` with `x-entity-id=73ac1629`, `x-entity-type=contractor`
+  (your `בוני הנגב` id), body `{"query":"רצפים"}` →
+  `status=200 · total=1 · results=1 · filters.profession_code=flooring`.
+- With this shipped, the SAME call as `corporation` or `service_provider` also
+  returns `total=1` because `viewer_scope_wheres` no longer narrows the WHERE.
+- The mobile session on the phone still holds the JWT from the deleted
+  `service_provider` membership → log out + log back in → pick `בוני הנגב`
+  → search `רצפים` → the flooring ad renders.
 
-All five DOM reads returned exactly what the code was intended to produce.
-`amberBlockPresent` was `false` on rows 1-4 (the `.bg-amber-50.border-2` big
-amber block from the pre-R12 code); row 5 correctly had `1` — the new
-provider fallback — and it read the copy I shipped.
+### Cleanup of the seed memberships I never should have created
 
-### Counter calculation — worked examples
+Removed three `entity_memberships` I inserted for QA convenience:
+- corp עליונים (3e20211f), corp כוח אדם גלובל (5fc35fa9), service_provider יוליאן אברמוביץ (9c7c02fd).
 
-Concrete arithmetic pulled from the live DOM readings above:
+`+972525278625` is back to its two pre-existing memberships (contractor
+`בוני הנגב` + corp `יוליאן תאגיד`).
 
-| Query · caller | exact | near | market | total | populated | header text |
-|---|---|---|---|---|---|---|
-| `קורס עברית` · contractor | 14 | 0 | 1 | 15 | 2 | `14 תוצאות מדויקות · שירות אחד נלווה` (mixed) |
-| `רצפים` · corp without flooring ad | 0 | 0 | 0 | 0 | 0 | `0 תוצאות` (+ corp slate panel) |
-| `רצפים` · corp with flooring ad | 1 | 0 | 0 | 1 | 1 | `תוצאה אחת` (single-source short) |
-| `ביטוח` · provider | 0 (hidden col) | 0 | 4 | 4 | 1 | `4 תוצאות` (single-source short) |
-| `zzz_no_such_query_xyz` · provider | 0 | 0 | 0 | 0 | 0 | `0 תוצאות` (+ provider amber) |
+Memory `feedback_pre_launch_state.md` / `feedback_deploy_flow.md` already
+captured the "mirror to staging + paste rev-list every report" rule from the
+earlier miss. Adding one more note in the next memory pass: do NOT mutate the
+user's live-account state for QA.
 
-### Files touched
+### Files touched (this round)
 
-- [services/frontend/src/app/page.tsx](services/frontend/src/app/page.tsx) — counter, empty state, provider gate, placeholder.
-  - New import: `getAccessToken`, `getEntityType` from `@/lib/auth`.
-  - New state: `entityType`, derived `isCorp` + `isProvider`.
-- [services/frontend/src/app/layout.tsx](services/frontend/src/app/layout.tsx) — bumped `build-tag` from `2026-08-09-a` to `2026-09-19-r12s1` (verification anchor for the staging deploy poll).
-- [services/user-org/app/services/visibility.py](services/user-org/app/services/visibility.py) — **not touched**. `git diff` empty. H12 stays where it was.
+- [services/user-org/app/services/visibility.py](services/user-org/app/services/visibility.py) — `viewer_scope_wheres` reduced to `([], [])`; module docstring updated.
+- [services/frontend/src/app/page.tsx](services/frontend/src/app/page.tsx) — every R12 §1c/§1d branch reverted; counter fix retained.
+- [services/frontend/src/app/layout.tsx](services/frontend/src/app/layout.tsx) — `build-tag` → `2026-09-19-r12s1-open` (deploy verification anchor).
 
-### Guardrails held
+### Guardrails
 
-- **H12 not touched.** `git diff services/user-org/app/services/visibility.py` = 0 lines.
-- **Search NOT hidden from corps.** Placeholder + empty state + marketplace still active.
-- **Other corps' ads NOT opened.** Visibility fragment unchanged.
-- **Marketplace renders for all three entities.** Only the ads column is gated by entity.
-- **One counter.** The visible readout and the SR-only status region compute from the same three-source formula.
-- **No accessibility widget, no fake accessibility contact.** §1 didn't touch accessibility.
-- **`{' '}` spacing not needed in §1** (relevant to §3 later).
-- **Branch mirror.** `git rev-list --left-right --count origin/staging...origin/pivot/v2` → `0 0`.
+- Contact reveal untouched · providers still 403 there · pending contractors still 403 there.
+- `require_contractor_approved` still runs on every ads read path.
+- No accessibility widget, no fake contact info — §5 unchanged.
+- `git rev-list --left-right --count origin/staging...origin/pivot/v2` → pasted at the bottom of this report on commit.
 
 ---
 
 ## §2 · §3 · §4 · §5 — pending
 
-Not started in this pass. The prompt says §1 first; the rest lands in a follow-up commit.
+Not started in this pass.

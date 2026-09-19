@@ -8,24 +8,32 @@ Five entry points read from the `ads` table:
   4. GET  /ads/public/recent              (routes/ads.py)
   5. GET  /ads/public/featured            (routes/ads.py)
 
-Two rules apply to all of them:
+R12 · 2026-09-19 policy correction (Yulian).
 
-  H12 · corporations see only their own worker inventory. A rival
-        corp must NOT be able to enumerate worker ads via any of the
-        five paths. Housing stays shared for everyone. Contractors +
-        anonymous callers + admins see the full worker catalogue.
+  Search is OPEN. Every caller — anonymous, contractor, corp,
+  service_provider, admin — sees the full worker + housing catalogue
+  on all read paths above. The earlier H12 rule ("corporations see
+  only their own worker inventory · service_provider gets 1=0") was
+  a misreading; the ONLY per-role restriction the product intends is
+  on **revealing contact details** of corp-owned worker ads, which
+  is contractors-only and is enforced independently on the reveal
+  endpoint itself (ads.py:@router.get("/{ad_id}/contact-reveal"),
+  where require_no_service_provider + require_contractor_approved +
+  subscription/tier gates already live).
+
+  `viewer_scope_wheres` therefore returns an empty scope for every
+  caller. The function is kept (rather than deleted at every call
+  site) as the single reversal point should the rule ever change
+  again — one edit here reintroduces per-role scoping across all
+  five read paths at once, and every existing caller passes
+  (x_entity_id, x_entity_type) headers so the signature stays useful.
 
   L2  · pending / rejected / suspended contractors do not get full
-        ad content. Approved contractors, corps, anon, and admin all
-        pass. Enforced by returning 403 with the same code the reveal
-        endpoint already uses (`entity_not_approved` / `_rejected` /
-        `_suspended`) so the frontend's existing error mapping picks
-        it up unchanged (services/frontend/src/lib/api/errors.ts:75).
-
-These two helpers are the single source of truth. If the rule shifts,
-edit here and every entry point picks it up. Do NOT inline the rule
-at a call site — S1 + S2 found 5 separate H12 leaks caused by exactly
-that (the rule lived in one place and a new entry-point forgot it).
+        ad content. Enforced by `require_contractor_approved` below,
+        returning 403 with the code the reveal endpoint already uses
+        (`entity_not_approved` / `_rejected` / `_suspended`) so the
+        frontend's existing error mapping picks it up unchanged
+        (services/frontend/src/lib/api/errors.ts:75).
 
 `GET /ads/public/sponsored` is intentionally excluded — it reads a
 different table (`sponsor_ads`) that is public by design (paid brand
@@ -39,48 +47,23 @@ from app.db import get_db
 
 
 def viewer_scope_wheres(
-    x_entity_id: Optional[str],
-    x_entity_type: Optional[str],
+    x_entity_id: Optional[str],  # noqa: ARG001 · kept for the reversal-point contract
+    x_entity_type: Optional[str],  # noqa: ARG001
 ) -> Tuple[List[str], List[object]]:
-    """H12 · SQL WHERE fragments + params to AND into any `ads` query.
+    """R12 · no-op after the search-open policy correction.
 
-    Contract:
-      corporation caller       →  ["(a.ad_type <> 'worker' OR a.owner_entity_id = %s)"], [id]
-      service_provider caller  →  ["1=0"], []          (U7 §3 · zero ads visible)
-      contractor / anon / admin →  ([], [])
+    Contract: returns `([], [])` for every caller — anon, contractor,
+    corp, service_provider, admin — so all five ads read paths (search
+    + 4 public feeds + the direct-fetch endpoint) render the full
+    catalogue.
 
-    The predicate is deliberately worded so housing rows pass
-    unconditionally (a.ad_type='housing' → left side true → row kept)
-    and worker rows only pass when owned by the caller. This is the
-    ONE place the H12 rule lives; if you find yourself writing it
-    inline anywhere else, stop and import from here instead.
-
-    U7 §3 · service_provider is a third entity type that publishes
-    on `marketplace_listings` only. It has no worker ads, no housing
-    ads of its own, and MUST NOT see other entities' ads at all —
-    a provider is a service seller; letting one enumerate corp
-    workers or contractor housing would defeat the whole point of
-    the visibility gate for a caller who signed up with zero
-    registry verification. So we hand back the always-false clause
-    for provider callers rather than an unbounded scope.
-
-    The `a.` alias is required — every caller uses `FROM ads a`. If a
-    caller uses a different alias, rename in the SQL layer (do NOT
-    fork this helper).
+    The function stays as the single reversal point (see module
+    docstring). Do NOT re-add per-role WHERE fragments at call sites;
+    edit here so the rule change is visible across all five paths at
+    once. `require_no_service_provider` still gates non-search
+    endpoints where a provider legitimately doesn't belong; that's
+    orthogonal to the read-visibility question this helper answers.
     """
-    if x_entity_type == "corporation" and x_entity_id:
-        return (
-            ["(a.ad_type <> 'worker' OR a.owner_entity_id = %s)"],
-            [x_entity_id],
-        )
-    if x_entity_type == "service_provider":
-        # 1=0 is deliberate: an unbounded LIMIT still executes but
-        # returns 0 rows, which is exactly the shape /search and the
-        # public feeds expect. Callers that route around the SQL and
-        # do their own list build (only ads.py:1052 today) should
-        # ALSO call require_no_service_provider() as a belt-and-braces
-        # check — see below.
-        return (["1=0"], [])
     return ([], [])
 
 
