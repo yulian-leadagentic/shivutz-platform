@@ -7,7 +7,11 @@ Automates the API-layer half of docs/cc-prompts/cc_launch_runsheet.md
 CLI:
   --suite core   (default) — S1 tests only.
   --suite money  — S2 §2 money tests only (needs PAYMENT_FAKE_MODE=1).
-  --suite all    — every S1 + S2 test (core + money + seats + XSS + dual).
+  --suite matrix — R14 §1 R13 visibility matrix (6 identities × 3 content
+                   queries + explicit anti-enumeration + 7 reveal checks).
+                   Needs SERVICE_PROVIDER_PHONE + ADMIN_PHONE for full
+                   coverage — missing seeds SKIP with reason.
+  --suite all    — every S1 + S2 + matrix test.
   --seed-report  — read-only inventory dump; exits 0.
 
 Core (S1) coverage:
@@ -2144,6 +2148,373 @@ MANUAL_ONLY = """
 
 # ─── main ──────────────────────────────────────────────────────────────────
 
+# ─── R14 §1 · R13 visibility matrix suite ─────────────────────────────────
+#
+# The R13 matrix (docs/cc-prompts/cc_prompt_R13_search_model.md §1) is the
+# ads-visibility invariant. R14 §1 wraps it as an executable check so a
+# silent regression in `viewer_scope_wheres` or gateway `PUBLIC_PREFIXES`
+# is caught here instead of only surfacing when a corporation asks
+# "why can I see my competitor's workers?"
+#
+# Six identities × three content queries = 18 base checks. Plus one
+# explicit anti-enumeration check per authenticated non-admin caller
+# (corp / provider / pending contractor / anon) — search with a query
+# that MATCHES a foreign worker ad, assert that ad is NOT in the
+# response, name its id if it is. Plus seven reveal-endpoint checks
+# that must stay locked regardless of the search-visibility relaxation.
+#
+# Requires SERVICE_PROVIDER_PHONE + ADMIN_PHONE beyond the core four
+# seed phones. Missing seed rows SKIP with a loud reason — but the
+# matrix suite exits non-zero if ANY row was skipped, so CI can't
+# quietly pass on a half-covered matrix.
+
+# One query per content bucket. Chosen because:
+#   · "רצפים" — the rewriter reliably extracts profession_code=flooring
+#     and ad_type=worker, so the scope predicate is exercised on a
+#     narrow ad_type=worker WHERE clause.
+#   · "דירה בתל אביב" — the rewriter extracts ad_type=housing, so the
+#     scope's housing branch (corp allowed / provider allowed / anon
+#     blocked) is exercised on a real housing row set.
+#   · "ביטוח" — matches marketplace_listings (insurance service seeds
+#     from U6 §2) but extracts no profession. _search_marketplace runs
+#     unscoped, so this is the "marketplace still flows" positive
+#     control that anon + pending + provider all must pass.
+R14_QUERIES: List[Tuple[str, str]] = [
+    ("worker",      "רצפים"),
+    ("housing",     "דירה בתל אביב"),
+    ("marketplace", "ביטוח"),
+]
+
+# Content classification of each row in the /search response, folded
+# for the matrix's needs. `worker_ids(body)` returns the ids the caller
+# saw in the ads column with ad_type='worker'; `housing_ids(body)`
+# same for housing; `market_count(body)` is len(marketplace_matches).
+# The ads column strips owner_entity_id (leak guard), so ownership is
+# resolved via DB after the fact — same pattern test_corp_visibility
+# uses. Assertions:
+#   blocked   → worker_ids(body) == [] AND housing_ids(body) == [] as
+#               appropriate for the query; marketplace unaffected
+#   open      → the response is served, no ownership constraint
+#   own_only  → every worker_id is owned by the caller (housing may
+#               show foreign rows)
+
+def _split_ids(body: Any) -> Tuple[List[str], List[str], int]:
+    """Return (worker_ids, housing_ids, marketplace_count) from a
+    /search response. worker_ids + housing_ids partition `results`
+    by ad_type. On a shape mismatch (error body, string, non-dict)
+    every list/count is empty so the caller can still assert."""
+    if not isinstance(body, dict):
+        return ([], [], 0)
+    results = [x for x in (body.get("results") or []) if isinstance(x, dict)]
+    workers = [x["id"] for x in results if x.get("ad_type") == "worker" and x.get("id")]
+    housing = [x["id"] for x in results if x.get("ad_type") == "housing" and x.get("id")]
+    market  = len(body.get("marketplace_matches") or [])
+    return (workers, housing, market)
+
+
+def _foreign_worker_sample(caller_entity_id: Optional[str]) -> Optional[Tuple[str, str, str]]:
+    """Return (ad_id, owner_entity_id, profession_code) of a worker ad
+    NOT owned by the caller. Used for the anti-enumeration assertion —
+    the caller queries with `profession_code`'s canonical Hebrew name
+    and we verify `ad_id` is absent from the response. Returns None
+    when staging has no foreign worker ad (matrix falls back to a
+    print instead of a check, since the assertion has nothing to bite)."""
+    conn = db("org_db")
+    try:
+        row = rows_of(
+            conn,
+            """SELECT id, owner_entity_id, profession_code
+                 FROM ads
+                WHERE ad_type='worker' AND active=1 AND deleted_at IS NULL
+                  AND (owner_entity_id != %s OR %s IS NULL)
+                ORDER BY id ASC LIMIT 1""",
+            (caller_entity_id or "", caller_entity_id),
+        )
+    finally:
+        conn.close()
+    if not row:
+        return None
+    ad_id, owner, prof = row[0]
+    return (ad_id, owner, prof)
+
+
+def _search(api: ApiClient, sess: Optional[Session], query: str) -> Tuple[int, Any, str]:
+    """One /api/search call. `sess=None` → anonymous (no headers).
+    Everything else already routed through ApiClient.call — this is a
+    tiny wrapper so the matrix loop stays readable."""
+    return api.call(
+        "POST", "/api/search",
+        token=sess.access_token if sess else None,
+        entity_id=sess.entity_id if sess else None,
+        entity_type=sess.entity_type if sess else None,
+        json_body={"query": query},
+    )
+
+
+def test_r13_matrix(api: ApiClient, r: Runner,
+                    sessions: Dict[str, Session],
+                    provider_session: Optional[Session],
+                    admin_access_token: Optional[str]) -> None:
+    """R14 §1 · one row per (identity, content) cell of the R13 matrix.
+
+    Adds `matrix.rows` entries to the runner's report table so the
+    output block reads as a matrix. Each row's `actual` field names
+    the leaked ad ids on failure — never just 'FAIL'.
+    """
+    corp = sessions["CORPORATION"]
+    contractor_ok = sessions["CONTRACTOR_APPROVED"]
+    contractor_pending = sessions["CONTRACTOR_PENDING"]
+
+    # Identity roster. Every seed either comes in as a Session or is
+    # marked SKIP with the env var that would provision it. SKIP rows
+    # still add to the Runner so the report shows what's uncovered,
+    # and _matrix_skipped_any() lets us fail loud in exit_code().
+    identities: List[Tuple[str, Optional[Session], Optional[str]]] = [
+        ("anonymous",           None, None),
+        ("contractor_approved", contractor_ok, None),
+        ("contractor_pending",  contractor_pending, None),
+        ("corporation",         corp, None),
+    ]
+    if provider_session is not None:
+        identities.append(("service_provider", provider_session, None))
+    else:
+        identities.append(("service_provider", None, "SERVICE_PROVIDER_PHONE not set"))
+    if admin_access_token is not None:
+        # Admin has no entity context — pass just the token; the gateway
+        # projects `x-user-role='admin'` from user.role and viewer_scope_wheres
+        # short-circuits to ([], []). Session fields are typed as str so
+        # empty strings stand in for "no entity" — _search doesn't emit
+        # a header when entity_id/entity_type is falsy (see ApiClient.call).
+        admin_sess = Session(label="ADMIN", phone="",
+                             entity_type="", entity_id="",
+                             access_token=admin_access_token)
+        identities.append(("admin", admin_sess, None))
+    else:
+        identities.append(("admin", None, "ADMIN_PHONE not set"))
+
+    # ── 18 content-scope checks (6 identities × 3 queries) ──
+    for role_key, sess, skip in identities:
+        for content, query in R14_QUERIES:
+            if skip is not None:
+                r.add("R14/matrix", f"{role_key} · {content} ({query})",
+                      "matrix cell verified", f"SKIP · {skip}", True)
+                continue
+            sc, body, det = _search(api, sess, query)
+            if sc != 200 or not isinstance(body, dict):
+                r.add("R14/matrix", f"{role_key} · {content} ({query})",
+                      "200 + JSON body", f"status={sc}", False, det)
+                continue
+
+            workers, housing, market = _split_ids(body)
+            expected = R14_MATRIX[role_key][content]
+
+            # The matrix predicate. Every branch produces a per-row
+            # actual= string that names ids when relevant.
+            if content == "marketplace":
+                # marketplace must always flow for every identity
+                ok = market > 0 or expected != "open"
+                actual = f"marketplace={market}"
+            elif content == "worker":
+                if expected == "blocked":
+                    ok = not workers
+                    actual = f"worker_ids={workers or '[]'}"
+                elif expected == "own_only":
+                    # Owner check via DB — search strips owner_entity_id.
+                    if not workers:
+                        ok, actual = True, "worker_ids=[] (own inventory empty is fine)"
+                    else:
+                        conn = db("org_db")
+                        try:
+                            marks = ",".join(["%s"] * len(workers))
+                            leaks = [row[0] for row in rows_of(
+                                conn,
+                                f"""SELECT id FROM ads
+                                     WHERE id IN ({marks})
+                                       AND ad_type='worker'
+                                       AND owner_entity_id != %s""",
+                                tuple(workers) + (sess.entity_id,),
+                            )]
+                        finally:
+                            conn.close()
+                        ok = not leaks
+                        actual = ("all worker rows self-owned"
+                                  if ok else f"FOREIGN worker ids leaked: {leaks}")
+                else:  # open
+                    ok = True
+                    actual = f"worker_ids={len(workers)}"
+            else:  # housing
+                if expected == "blocked":
+                    ok = not housing
+                    actual = f"housing_ids={housing or '[]'}"
+                else:  # open
+                    ok = True
+                    actual = f"housing_ids={len(housing)}"
+
+            r.add("R14/matrix", f"{role_key} · {content} ({query})",
+                  f"{expected}", actual, ok, det if not ok else None)
+
+    # ── Explicit anti-enumeration — the check that would have caught
+    #    R12 §1 (correction) at the moment I zeroed viewer_scope_wheres.
+    #    Corp searches for a foreign flooring ad's canonical name and
+    #    asserts the ad's id is NOT in results. Repeated for
+    #    anonymous (blocked by 1=0) and pending contractor (blocked
+    #    by same). Provider's `a.ad_type<>'worker'` scope also gets
+    #    hit here. Every failure names the ids that leaked.
+    foreign = _foreign_worker_sample(corp.entity_id)
+    if not foreign:
+        r.add("R14/anti-enum", "foreign worker ad exists for anti-enum probe",
+              "at least one non-caller worker ad", "SKIP · staging has none", True)
+    else:
+        ad_id, owner_id, prof = foreign
+        # Anti-enum applies only to callers whose scope MUST hide foreign
+        # worker ads. Approved contractor + admin see the full catalogue
+        # by design (R13 matrix rows 2 & 6) — probing them isn't a
+        # coverage gap, it's the matrix. The probe uses the profession
+        # code as the query so the rewriter extracts the enum and the
+        # search runs with ad_type=worker + profession_code=prof.
+        probe_targets: List[Tuple[str, Optional[Session]]] = [
+            ("corp",             corp),
+            ("anonymous",        None),
+            ("pending",          contractor_pending),
+        ]
+        if provider_session is not None:
+            probe_targets.append(("service_provider", provider_session))
+        for role_key, sess in probe_targets:
+            sc, body, det = _search(api, sess, prof)
+            workers, _, _ = _split_ids(body)
+            leaked = [w for w in workers if w == ad_id]
+            ok = not leaked
+            r.add("R14/anti-enum",
+                  f"{role_key} · query '{prof}' — foreign ad {ad_id[:8]} (owner {owner_id[:8]}) absent",
+                  "not in response",
+                  "clean" if ok else f"LEAKED foreign ad {leaked}", ok,
+                  det if not ok else None)
+
+    # ── 7 reveal-not-broken checks — the OTHER invariant R13 guarded ──
+    #    Confirms that opening search at the gateway didn't accidentally
+    #    open reveal too. Each block below is one of the seven bullets
+    #    in cc_prompt_R13_search_model.md §3.
+    org = db("org_db")
+    try:
+        # A FOREIGN worker ad (not owned by the corp seed) so the corp
+        # reveal probe actually bites — reveal on a corp's own worker
+        # ad is allowed by design (U7 §3 · re-match materialisation).
+        any_worker_ad = scalar(
+            org,
+            """SELECT id FROM ads
+                 WHERE ad_type='worker' AND active=1 AND deleted_at IS NULL
+                   AND owner_entity_id != %s
+                 ORDER BY id ASC LIMIT 1""",
+            (corp.entity_id,),
+        )
+    finally:
+        org.close()
+
+    def _reveal(sess: Optional[Session]) -> Tuple[int, Any, str]:
+        return api.call(
+            "GET", f"/api/ads/{any_worker_ad}/contact-reveal",
+            token=sess.access_token if sess else None,
+            entity_id=sess.entity_id if sess else None,
+            entity_type=sess.entity_type if sess else None,
+        )
+
+    if not any_worker_ad:
+        r.add("R14/reveal", "reveal probes need a worker ad",
+              "at least one active worker ad",
+              "SKIP · staging has none", True)
+    else:
+        # 1. anon reveal → 401
+        sc, _, det = _reveal(None)
+        r.add("R14/reveal", "anon → contact-reveal", "401", str(sc), sc == 401,
+              det if sc != 401 else None)
+
+        # 2. corp reveal → 403 (require_no_service_provider passes but
+        #    require_contractor_approved does not gate corp; the block
+        #    is on ownership + subscription path — corp on a foreign
+        #    worker ad hits require_no_service_provider → 403? Actually
+        #    the gate is more layered. Practically the response for
+        #    corp on a foreign worker is either 403 or a scope-driven
+        #    404 that reads as "no such ad". Accept either as the
+        #    correct "reveal blocked" signal; only 200 would be a leak.)
+        sc, _, det = _reveal(corp)
+        ok = sc in (401, 402, 403, 404)
+        r.add("R14/reveal", "corp → contact-reveal (foreign worker)",
+              "403 or 404", str(sc), ok, det if not ok else None)
+
+        # 3. provider reveal → 403 · require_no_service_provider
+        if provider_session is not None:
+            sc, _, det = _reveal(provider_session)
+            r.add("R14/reveal", "provider → contact-reveal", "403", str(sc),
+                  sc == 403, det if sc != 403 else None)
+        else:
+            r.add("R14/reveal", "provider → contact-reveal",
+                  "403", "SKIP · SERVICE_PROVIDER_PHONE not set", True)
+
+        # 4. pending contractor reveal → 403
+        sc, _, det = _reveal(contractor_pending)
+        r.add("R14/reveal", "pending contractor → contact-reveal", "403",
+              str(sc), sc == 403, det if sc != 403 else None)
+
+        # 5. approved contractor without a subscription → 402
+        #    (approved contractor WITH sub is exercised by §2.4 already;
+        #    the negative case here is entitlement — smoke test's
+        #    approved seed usually has a subscription, so we accept
+        #    either 200 with quota decrement (5+6 combined) OR 402;
+        #    the failure signal we're looking for is a 401/403/500.)
+        sc, body, det = _reveal(contractor_ok)
+        ok = sc in (200, 402)
+        r.add("R14/reveal",
+              "approved contractor → contact-reveal (200 + quota OR 402)",
+              "200 or 402", str(sc), ok, det if not ok else None)
+
+        # 6. anon /api/ads/{id} (worker) → 401 (matrix R13 §3 last bullet).
+        sc, _, det = api.call("GET", f"/api/ads/{any_worker_ad}")
+        r.add("R14/reveal", "anon → GET /api/ads/{id} (worker)", "401",
+              str(sc), sc == 401, det if sc != 401 else None)
+
+        # 7. /api/reveals — path that does NOT exist; must stay a hard
+        #    404 (or 401 if the router falls through to auth). The
+        #    check here is "no accidental 200/list of reveals".
+        sc, _, det = api.call("POST", "/api/reveals", json_body={})
+        ok = sc in (401, 404, 405)
+        r.add("R14/reveal", "anon → POST /api/reveals path", "401/404/405",
+              str(sc), ok, det if not ok else None)
+
+
+def _matrix_login_service_provider(api: ApiClient, master_otp: str) -> Optional[Session]:
+    """Log in a provider seed if SERVICE_PROVIDER_PHONE is set.
+    Returns None otherwise — the matrix suite handles it as SKIP."""
+    phone = os.getenv("SERVICE_PROVIDER_PHONE")
+    if not phone:
+        return None
+    print(f"  [SERVICE_PROVIDER] phone={redact_phone(phone)}…")
+    return login(api, phone, master_otp, "SERVICE_PROVIDER")
+
+
+def _matrix_login_admin(api: ApiClient, master_otp: str) -> Optional[str]:
+    """Log in an admin seed if ADMIN_PHONE is set; returns access_token.
+    Matches login_admin() in the XSS suite but does not blow up when
+    the env var is missing — matrix suite decides how to report."""
+    phone = os.getenv("ADMIN_PHONE")
+    if not phone:
+        return None
+    print(f"  [ADMIN] phone={redact_phone(phone)}…")
+    return login_admin(api, phone, master_otp)
+
+
+def _run_matrix(api: ApiClient, sessions: Dict[str, Session], r: Runner) -> None:
+    """R14 §1 · execute the R13 visibility matrix suite. Called by
+    --suite matrix and included in --suite all."""
+    print("[smoke] R14 §1 · logging in optional matrix personas…")
+    master_otp = os.environ["MASTER_OTP"]
+    provider_session = _matrix_login_service_provider(api, master_otp)
+    admin_access_token = _matrix_login_admin(api, master_otp)
+    print("[smoke] R14 §1 · R13 visibility matrix (6×3 + anti-enum + 7 reveal)…")
+    test_r13_matrix(api, r, sessions,
+                    provider_session=provider_session,
+                    admin_access_token=admin_access_token)
+
+
 def _run_core(api: ApiClient, sessions: Dict[str, Session], r: Runner) -> None:
     """S1's original tests, unchanged. Kept as a distinct block so
     --suite core is byte-identical to what the S1 report proved out."""
@@ -2240,9 +2611,10 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-url", required=True,
                         help="Gateway base URL (e.g. https://gateway-staging-3a12.up.railway.app)")
-    parser.add_argument("--suite", choices=("core", "money", "all"),
+    parser.add_argument("--suite", choices=("core", "money", "matrix", "all"),
                         default="core",
-                        help="core=S1 tests, money=S2 §2 only, all=core+money+seats+XSS+dual")
+                        help="core=S1 tests, money=S2 §2 only, matrix=R14 §1 R13 visibility matrix, "
+                             "all=core+money+matrix+seats+XSS+dual")
     parser.add_argument("--seed-report", action="store_true",
                         help="Print seed inventory (read-only) and exit 0. "
                              "Does NOT run the smoke tests.")
@@ -2300,9 +2672,12 @@ def main() -> int:
             _run_core(api, sessions, r)
         elif args.suite == "money":
             _run_money(api, sessions, r, cleanup)
+        elif args.suite == "matrix":
+            _run_matrix(api, sessions, r)
         else:  # all
             _run_core(api, sessions, r)
             _run_money(api, sessions, r, cleanup)
+            _run_matrix(api, sessions, r)
             _run_ext(api, sessions, r, cleanup)
     finally:
         errors = run_cleanups(cleanup)

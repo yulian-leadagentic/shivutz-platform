@@ -183,8 +183,9 @@ Required env vars (never commit real values; keep them in your shell):
 | `CARDCOM_WEBHOOK_SECRET`    | money, all | signed webhook auth |
 | `INTERNAL_BATCH_SECRET`     | money, all | shared secret for `/payments/subscriptions/internal/renewal-batch` |
 | `PAYMENT_SERVICE_URL`       | money, all | e.g. `http://payment.railway.internal:3009` |
-| `ADMIN_PHONE`               | all | admin user's phone (`users.role='admin'`) — for the XSS PATCH test |
+| `ADMIN_PHONE`               | all, matrix | admin user's phone (`users.role='admin'`) — XSS PATCH + R14 matrix admin row |
 | `USER_ORG_SERVICE_URL`      | all | e.g. `http://user-org.railway.internal:3002` — for the dual-entry direct-service check |
+| `SERVICE_PROVIDER_PHONE`    | matrix, all | seed service_provider phone (`service_providers.is_seed=1`) — R14 §1 matrix provider row; SKIPs when unset |
 
 First-time setup on a new environment:
 
