@@ -1,4 +1,118 @@
-# R12 · R13 · Manual QA round · 2026-09-19
+# R12 · R13 · R14 · R15 · Manual QA round · 2026-09-19
+
+## R15 · P0 · marketplace contact-details leak sealed
+
+Anon curl of `/api/marketplace` was returning `contact_phone`, `contact_name`,
+`corporation_name` and `corporation_id` for every listing. Curl of the exact
+same endpoint, BEFORE vs AFTER the fix:
+
+```
+BEFORE — first row:
+  contact_phone:            '+97200000116'
+  contact_name:             'מוקד הרשמה'
+  corporation_name:         'א.א פסגת העבודה בע~מ'
+  corporation_name_en:      'א.א פסגת העבודה בע~מ'
+  corporation_id:           'e2a613be-42eb-421d-aa74-1e66bb4998cf'
+  is_corporation_verified:  True
+
+AFTER — first row:
+  contact_phone:            (absent)
+  contact_name:             (absent)
+  corporation_name:         (absent)
+  corporation_id:           (absent)
+  corporation_name_he:      (absent)
+  corporation_name_en:      (absent)
+  is_corporation_verified:  True     ← trust signal stays
+```
+
+Same shape on `GET /api/marketplace/{id}`. Full field list on the anon
+response is now:
+`advertiser_entity_type, available_from, capacity, category, city,
+created_at, description, id, images_json, is_corporation_verified,
+is_furnished, price, price_unit, region, status, subcategory, title,
+updated_at`.
+
+### §3a · allow-list, not blacklist — proven
+
+Temporarily added `r15_temp_secret VARCHAR(64)` to `marketplace_listings`
+with value `LEAK_SENTINEL_R15`, curled `/api/marketplace` and `/api/marketplace/{id}`:
+
+```
+anon list · 'r15_temp_secret' in body:    False
+anon list · 'LEAK_SENTINEL_R15' in body:  False
+anon /{id} · 'r15_temp_secret' in body:   False
+anon /{id} · 'LEAK_SENTINEL_R15' in body: False
+column removed · allowlist proven
+```
+
+A new column added tomorrow will NOT drip.
+
+### §3c · reveal endpoint gate
+
+```
+[PASS] anonymous              status=401
+[PASS] contractor_approved    status=200
+[PASS] contractor_pending     status=403
+[PASS] corporation            status=200
+[PASS] service_provider       status=200
+```
+
+Audit rows written to `marketplace_reveals`:
+```
+contractor        viewer=73ac1629 listing=1dd865f5 at=2026-09-19 19:23:14
+corporation       viewer=9294d2f4 listing=1dd865f5 at=2026-09-19 19:23:14
+service_provider  viewer=9c7c02fd listing=1dd865f5 at=2026-09-19 19:23:14
+```
+
+🔴 **SEMANTICS PENDING YULIAN APPROVAL** — the "every signed-in entity except
+pending contractor" rule is my proposal. Marked in code (docstring on the
+reveal endpoint) and here. Do not tighten to a subscription gate without
+an explicit "אושר" in a follow-up prompt.
+
+### §3d · search response cleanup
+
+- `_serialize_marketplace_listing` in `search.py` now omits `corporation_name`
+  and `corporation_id`; `is_corporation_verified` stays.
+- `_serialize_ad` gates `owner_entity_id` — emits only for approved contractor,
+  admin, or the ad's own advertiser.
+- False comment at `search.py:195` claiming "the marketplace has its own reveal
+  endpoint on /api/marketplace" — the endpoint that had never been built —
+  replaced with "built in R15". That comment is what let this bug survive
+  three review rounds.
+
+### §3e · admin marketplace screens
+
+`/admin/marketplace` manages categories + tiers only; it never calls the
+listing list/get endpoints. Verified by grep (no `marketplaceApi.list` /
+`.get` from the admin surface). Not broken.
+
+### Regression — R13 matrix ALL PASS after R15
+
+Re-ran the R14 §1 inline suite against staging build
+`2026-09-19-r15-marketplace-leak`:
+- 18/18 matrix cells PASS
+- 4/4 anti-enum probes PASS
+- 7/7 reveal-not-broken PASS
+
+### Files touched (R15)
+
+- [db/migrations/086_marketplace_reveals.sql](db/migrations/086_marketplace_reveals.sql) — new audit table
+- [services/user-org/app/routes/marketplace.py](services/user-org/app/routes/marketplace.py) — allowlist + reveal endpoint
+- [services/user-org/app/routes/search.py](services/user-org/app/routes/search.py) — marketplace serializer trimmed + owner_entity_id gated + false comment fixed
+- [services/frontend/src/lib/api/marketplace.ts](services/frontend/src/lib/api/marketplace.ts) — `.reveal(id)` client
+- [services/frontend/src/types/index.ts](services/frontend/src/types/index.ts) — `corporation_id` now optional
+- [services/frontend/src/app/marketplace/[id]/page.tsx](services/frontend/src/app/marketplace/[id]/page.tsx) — three-state contact card
+- [services/frontend/src/components/marketplace/ListingCard.tsx](services/frontend/src/components/marketplace/ListingCard.tsx) — falls back to "לחץ להצגת פרטים"
+- [services/frontend/src/app/layout.tsx](services/frontend/src/app/layout.tsx) — build-tag `2026-09-19-r15-marketplace-leak`
+
+Commit `55a2e80` on both `pivot/v2` and `staging`.
+Migration `086_marketplace_reveals.sql` applied to staging DB inline.
+
+`git rev-list --left-right --count origin/staging...origin/pivot/v2` → **`0 0`**.
+
+---
+
+# R12 · R13 · R14 · earlier findings
 
 Findings from Yulian's manual pass on staging + response.
 Prompt R12: `docs/cc-prompts/cc_prompt_R12_manual_round.md` (superseded by R13 for §1).
