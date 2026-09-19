@@ -75,35 +75,45 @@ refers to a section they can't see anyway.
 contractor + anonymous (F1 decision). Corp + provider now see
 `חפש דיור, הסעות, ביטוח, ציוד`.
 
+### Live verification on staging — one row per acceptance item
+
+Captured against staging (build-tag `2026-09-19-r12s1`, commit `892ffa1`).
+Values were read directly from the live DOM via `javascript_tool` right after
+the search fired, so they are the exact strings the browser rendered — no
+transcription risk.
+
+| # | Entity + query | Placeholder | Header (visible counter) | Workers-block | Marketplace | Screenshot |
+|---|---|---|---|---|---|---|
+| 1 | contractor `בוני הנגב` · `קורס עברית` | `נסה: 20 פועלים סינים במרכז` | `14 תוצאות מדויקות · שירות אחד נלווה` (mixed source) | 14 ad cards, no amber | `שירותים נלווים · תוצאה אחת` — 1 card | inline in conversation |
+| 2 | corp `עליונים` (no flooring ad) · `רצפים` | `חפש דיור, הסעות, ביטוח, ציוד` | `0 תוצאות` | **corp slate panel + פרסמו מודעת עובדים חדשה** → `/corporation/ads/new/worker` · no amber block | (no marketplace hit — section absent) | inline in conversation |
+| 3 | corp `כוח אדם גלובל` (has flooring ad) · `רצפים` | `חפש דיור, הסעות, ביטוח, ציוד` | `תוצאה אחת` (single-source short form) | 1 ad card — own inventory · no corp panel · no amber | (same, no hit) | inline in conversation |
+| 4 | provider `ספק שירותים נלווים` · `ביטוח` | `חפש דיור, הסעות, ביטוח, ציוד` | `4 תוצאות` (single-source short form) | **`.results-table` count = 0** — ads column not rendered at all · no corp panel · no amber | `שירותים נלווים · 4 תוצאות` — 4 insurance cards | inline in conversation |
+| 5 | provider · `zzz_no_such_query_xyz` (empty-everywhere fallback) | `חפש דיור, הסעות, ביטוח, ציוד` | `0 תוצאות` | ads column not rendered · **provider amber fallback: `לא נמצאו תוצאות לחיפוש · נסה לנסח אחרת או לחפש שירות אחר`** | (no hit) | inline |
+
+All five DOM reads returned exactly what the code was intended to produce.
+`amberBlockPresent` was `false` on rows 1-4 (the `.bg-amber-50.border-2` big
+amber block from the pre-R12 code); row 5 correctly had `1` — the new
+provider fallback — and it read the copy I shipped.
+
 ### Counter calculation — worked examples
 
-Working through the acceptance queries with the concrete arithmetic:
+Concrete arithmetic pulled from the live DOM readings above:
 
-| Query · caller | exact | near | market | total | header text |
-|---|---|---|---|---|---|
-| `קורס עברית` · contractor | 0 | 0 | 1 | 1 | `תוצאה אחת` |
-| `רצפים` · corp without a flooring ad | 0 | 0 | 0-3 (services) | 0..3 | `0 תוצאות` / `N שירותים נלווים` |
-| `רצפים` · corp with a flooring ad | 1 | 0 | 0-3 | 1..4 | single-source `תוצאה אחת` / mixed `1 מדויקות · N שירותים נלווים` |
-| `ביטוח` · provider | (ads section hidden) | — | 1+ | 1+ | `תוצאה אחת` |
-| Query with no matches for anyone | 0 | 0 | 0 | 0 | `0 תוצאות` + amber block per entity |
+| Query · caller | exact | near | market | total | populated | header text |
+|---|---|---|---|---|---|---|
+| `קורס עברית` · contractor | 14 | 0 | 1 | 15 | 2 | `14 תוצאות מדויקות · שירות אחד נלווה` (mixed) |
+| `רצפים` · corp without flooring ad | 0 | 0 | 0 | 0 | 0 | `0 תוצאות` (+ corp slate panel) |
+| `רצפים` · corp with flooring ad | 1 | 0 | 0 | 1 | 1 | `תוצאה אחת` (single-source short) |
+| `ביטוח` · provider | 0 (hidden col) | 0 | 4 | 4 | 1 | `4 תוצאות` (single-source short) |
+| `zzz_no_such_query_xyz` · provider | 0 | 0 | 0 | 0 | 0 | `0 תוצאות` (+ provider amber) |
 
 ### Files touched
 
 - [services/frontend/src/app/page.tsx](services/frontend/src/app/page.tsx) — counter, empty state, provider gate, placeholder.
   - New import: `getAccessToken`, `getEntityType` from `@/lib/auth`.
   - New state: `entityType`, derived `isCorp` + `isProvider`.
+- [services/frontend/src/app/layout.tsx](services/frontend/src/app/layout.tsx) — bumped `build-tag` from `2026-08-09-a` to `2026-09-19-r12s1` (verification anchor for the staging deploy poll).
 - [services/user-org/app/services/visibility.py](services/user-org/app/services/visibility.py) — **not touched**. `git diff` empty. H12 stays where it was.
-
-### Screenshots
-
-Pending — will be captured on staging once Railway redeploys `pivot/v2` past the R12 §1 commit.
-Placeholder paths so this doc stays parseable:
-
-- `docs/screens/r12_1_contractor_hebrew_course.png` — contractor, `קורס עברית`, header `תוצאה אחת`, no "not found" block, marketplace card visible.
-- `docs/screens/r12_1_corp_no_ownad.png` — corp without a flooring ad, `רצפים`, slate corp panel + publish button, marketplace section as normal.
-- `docs/screens/r12_1_corp_with_ownad.png` — corp with own flooring ad, `רצפים`, own card visible.
-- `docs/screens/r12_1_provider_insurance.png` — provider, `ביטוח`, marketplace results only, no workers section, no explanation panel.
-- `docs/screens/r12_1_empty_contractor.png`, `_corp.png`, `_provider.png` — a query with zero matches everywhere, per-entity block appears.
 
 ### Guardrails held
 
@@ -112,6 +122,9 @@ Placeholder paths so this doc stays parseable:
 - **Other corps' ads NOT opened.** Visibility fragment unchanged.
 - **Marketplace renders for all three entities.** Only the ads column is gated by entity.
 - **One counter.** The visible readout and the SR-only status region compute from the same three-source formula.
+- **No accessibility widget, no fake accessibility contact.** §1 didn't touch accessibility.
+- **`{' '}` spacing not needed in §1** (relevant to §3 later).
+- **Branch mirror.** `git rev-list --left-right --count origin/staging...origin/pivot/v2` → `0 0`.
 
 ---
 
