@@ -12,10 +12,17 @@ important ways:
      lands with status='active' and can publish immediately. The trust
      badge on their listings is derived from `status` at read time.
 
-  3. Free. No `marketplace_subscriptions` row is created here. The
-     POST /marketplace endpoint has a `service_provider` bypass that
-     skips the subscription/slot check the way corp+housing does.
-     So there's no tier / category / expiry to seed at registration.
+  3. Register-time `marketplace_subscriptions` row (R10 §1). The
+     provider picks a paid tier for their `primary_category` at
+     signup; the row is snapshotted here (slot_count, duration_days,
+     price_nis all frozen) so admin tier edits later don't
+     retroactively change what this provider bought.
+     R10 §2 · when site_settings.launch_promo_end is in the future
+     the row is written with price_paid=0 + promo_note+expires_at=
+     launch_promo_end (the real tier price still shows in
+     price_nis as the anchor — displaying "free" alone would collapse
+     price memory). Once launch_promo_end passes, new signups get
+     the standard price/expires_at pair.
 
 Duplicate business_number → 409 (same shape as corporation).
 Duplicate contact_phone with an active provider → 409.
@@ -50,7 +57,17 @@ class ProviderCreate(BaseModel):
     # client can't seed a bogus code. Association only — the provider
     # can still publish listings in other categories.
     primary_category: str
-    email: Optional[EmailStr] = None
+    # R10 §1 · tier the provider chose from the plan picker (the paid
+    # tiers for `primary_category`, excluding any price_nis=0 admin
+    # slots — the picker filters those out). Snapshotted onto
+    # marketplace_subscriptions so an admin tier edit later doesn't
+    # retroactively change what this provider bought.
+    subscription_tier_id: str
+    # R10 §5 · email required. Yulian's decisions doc §5 upgraded it
+    # from optional so the welcome email actually has a destination.
+    # EmailStr validates syntax; the send layer's allowlist gates
+    # domain (staging: @example.com and @tagidai.com only).
+    email: EmailStr
     city: Optional[str] = None
     region: Optional[str] = None
     website: Optional[str] = None
@@ -117,6 +134,58 @@ async def register_provider(data: ProviderCreate):
                 "code":    "unknown_category",
                 "message": "הקטגוריה שנבחרה אינה זמינה",
             })
+
+        # R10 §1 · validate subscription_tier_id BEFORE any writes.
+        # Must belong to primary_category, is_active, and price_nis > 0
+        # (price_nis=0 tiers are admin-only overrides; the picker
+        # doesn't show them so a client can't request one).
+        cur.execute(
+            """SELECT id, category_code, name_he, slot_count, duration_days,
+                      price_nis, is_active
+                 FROM marketplace_subscription_tiers WHERE id = %s""",
+            (data.subscription_tier_id,),
+        )
+        tier = cur.fetchone()
+        if not tier:
+            raise HTTPException(status_code=400, detail={
+                "code":    "unknown_tier",
+                "message": "המסלול שנבחר אינו זמין",
+            })
+        if not tier["is_active"]:
+            raise HTTPException(status_code=410, detail={
+                "code":    "tier_inactive",
+                "message": "המסלול שנבחר אינו פעיל יותר",
+            })
+        if tier["category_code"] != cat:
+            raise HTTPException(status_code=400, detail={
+                "code":    "tier_category_mismatch",
+                "message": "המסלול לא תואם לקטגוריה שנבחרה",
+            })
+        if not tier["price_nis"] or float(tier["price_nis"]) <= 0:
+            raise HTTPException(status_code=400, detail={
+                "code":    "tier_price_invalid",
+                "message": "לא ניתן להירשם למסלול בעלות 0",
+            })
+
+        # R10 §2 · look up the launch promo end date from
+        # site_settings so the INSERT below can decide between
+        # promo-priced (price_paid=0 + promo_note + expires_at=
+        # launch_promo_end) and full-price paths. Missing/malformed
+        # value → no promo applies (fail closed on the "we're giving
+        # away free service" side).
+        cur.execute(
+            "SELECT setting_val FROM site_settings WHERE setting_key='launch_promo_end' LIMIT 1"
+        )
+        promo_row = cur.fetchone()
+        promo_end = None
+        if promo_row and promo_row.get("setting_val"):
+            try:
+                promo_end = datetime.strptime(
+                    promo_row["setting_val"], "%Y-%m-%d"
+                )
+            except (ValueError, TypeError):
+                promo_end = None
+        promo_active = promo_end is not None and promo_end > datetime.utcnow()
         cur.execute(
             """SELECT id, name FROM service_providers
                 WHERE business_number = %s
@@ -250,6 +319,55 @@ async def register_provider(data: ProviderCreate):
                VALUES (%s, %s, 'service_provider', %s, 'owner', NOW(), TRUE)""",
             (str(uuid.uuid4()), user["id"], provider_id),
         )
+
+        # R10 §1 + §2 · marketplace_subscriptions row for the picked
+        # tier. Under the launch promo (until site_settings.
+        # launch_promo_end) the row records price_paid=0 +
+        # promo_note='launch_free_promo' and rides the promo_end
+        # date; the real tier price stays visible in price_nis (the
+        # snapshot column) so we can audit "what was the sticker
+        # price at the time" a year from now. After the promo the
+        # row uses the full tier price + DATE_ADD(NOW, duration_days).
+        #
+        # Duration under promo can far exceed tier.duration_days —
+        # e.g. a 30-day tier picked in October runs until 31.12 for
+        # free. The renewal batch sees expires_at as the ONLY
+        # authority for when the sub lapses, so this is intentional.
+        sub_id = str(uuid.uuid4())
+        if promo_active:
+            cur.execute(
+                """INSERT INTO marketplace_subscriptions
+                       (id, advertiser_entity_type, advertiser_entity_id,
+                        category_code, tier_id, slot_count, duration_days,
+                        price_nis, promo_note,
+                        expires_at, auto_renew, status, cardcom_token_ref)
+                   VALUES (%s, 'service_provider', %s, %s, %s, %s, %s,
+                           %s, 'launch_free_promo',
+                           %s, TRUE, 'active', NULL)""",
+                (
+                    sub_id, provider_id,
+                    cat, tier["id"], tier["slot_count"], tier["duration_days"],
+                    tier["price_nis"], promo_end,
+                ),
+            )
+        else:
+            cur.execute(
+                """INSERT INTO marketplace_subscriptions
+                       (id, advertiser_entity_type, advertiser_entity_id,
+                        category_code, tier_id, slot_count, duration_days,
+                        price_nis, promo_note,
+                        expires_at, auto_renew, status, cardcom_token_ref)
+                   VALUES (%s, 'service_provider', %s, %s, %s, %s, %s,
+                           %s, NULL,
+                           DATE_ADD(NOW(), INTERVAL %s DAY),
+                           TRUE, 'active', NULL)""",
+                (
+                    sub_id, provider_id,
+                    cat, tier["id"], tier["slot_count"], tier["duration_days"],
+                    tier["price_nis"],
+                    tier["duration_days"],
+                ),
+            )
         conn.commit()
 
         # R10 §3 · providers auto-activate (status='active' at :211),
@@ -269,12 +387,38 @@ async def register_provider(data: ProviderCreate):
         )
         cat_row = cur.fetchone()
         category_name = cat_row["name_he"] if cat_row and cat_row.get("name_he") else cat
+        plan_name = tier.get("name_he") or "מסלול בסיסי"
         await publish_event("org.activated", {
             "org_id":         provider_id,
             "org_name":       name,
             "org_type":       "service_provider",
             "category_code":  cat,
             "category_name":  category_name,
+            "plan_name":      plan_name,
+        })
+
+        # R10 §5 · welcome email to the provider themselves. Different
+        # event key (provider.welcome) with its own template (091);
+        # handlers.js sends to `data.email` only, not the admins.
+        # {promo_block} is computed in the handler because it depends
+        # on site_settings.launch_promo_end at send time — sending a
+        # promo blurb whose date already passed would be worse than
+        # sending none.
+        frontend_url = os.getenv("FRONTEND_URL", "https://staging.buildupai.net")
+        cta_url = f"{frontend_url}/provider/marketplace/new?category={cat}"
+        await publish_event("provider.welcome", {
+            "recipient_email": data.email,
+            "contact_name":    data.contact_name,
+            "business_name":   name,
+            "plan_name":       plan_name,
+            "category_name":   category_name,
+            "category_code":   cat,
+            "cta_url":         cta_url,
+            # promo_end_iso lets the handler decide whether to render
+            # the "free until X" block without another DB round-trip.
+            # ISO date so downstream comparison is unambiguous;
+            # `null` means "no promo active" and the block collapses.
+            "promo_end_iso":   promo_end.strftime("%Y-%m-%d") if promo_active else None,
         })
 
         return {

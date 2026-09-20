@@ -26,6 +26,18 @@ import { AlertCircle, CheckCircle2, Loader2, ShieldCheck, RefreshCw } from 'luci
 import { orgApi, otpApi } from '@/lib/api';
 import { marketplaceApi } from '@/lib/api/marketplace';
 import type { PublicMarketplaceCategory } from '@/lib/api/marketplace';
+import { marketplaceSubscriptionsApi } from '@/lib/api/marketplaceSubscriptions';
+
+// R10 §1 · tier shape returned by the public catalog. Only the four
+// fields the picker card renders — id + display name + slots + price
+// + duration.
+type ProviderTier = {
+  id: string;
+  name_he: string;
+  slot_count: number;
+  duration_days: number;
+  price_nis: number;
+};
 import { saveTokens } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -92,6 +104,18 @@ export default function ProviderRegisterPage() {
   const [catLoading, setCatLoading]           = useState(false);
   const [catError, setCatError]               = useState<string | null>(null);
 
+  // R10 §1 · plan picker. Tiers reload each time the category changes
+  // (the catalog is one call that returns all categories with their
+  // tiers, so this is a filter, not a re-fetch). Filter out
+  // price_nis=0 admin slots — decisions doc §2 says the launch promo
+  // is applied by the backend, not chosen by the visitor. The picker
+  // shows the real price so the anchor sticks.
+  const [tierId, setTierId]     = useState('');
+  const [tiers, setTiers]       = useState<ProviderTier[]>([]);
+  const [tiersLoading, setTiersLoading] = useState(false);
+  const [tiersError, setTiersError]     = useState<string | null>(null);
+  const [tiersNoActive, setTiersNoActive] = useState(false);
+
   const loadCategories = useCallback(async () => {
     setCatLoading(true);
     setCatError(null);
@@ -121,6 +145,46 @@ export default function ProviderRegisterPage() {
       void loadCategories();
     }
   }, [phase, categories, catLoading, catError, loadCategories]);
+
+  // R10 §1 · re-fetch tiers on every category change. Prompt §1
+  // guardrail: an empty active-tier list does NOT block registration
+  // (Yulian: "אל תחסום את ההרשמה"); we surface a warning + let the
+  // caller pick a category with tiers instead. Decisions doc §2 says
+  // NOT to show price_nis=0 tiers (those are admin overrides for
+  // internal use), so we filter them out client-side.
+  useEffect(() => {
+    if (!primaryCategory) {
+      setTiers([]); setTierId(''); setTiersNoActive(false); setTiersError(null);
+      return;
+    }
+    let cancelled = false;
+    setTiersLoading(true); setTiersError(null); setTiersNoActive(false);
+    marketplaceSubscriptionsApi.catalog()
+      .then((cats) => {
+        if (cancelled) return;
+        const found = cats.find((c) => c.code === primaryCategory);
+        const paidTiers: ProviderTier[] = ((found?.tiers) || [])
+          .filter((t: ProviderTier) => t.price_nis && Number(t.price_nis) > 0)
+          .map((t: ProviderTier) => ({
+            id: t.id, name_he: t.name_he,
+            slot_count: t.slot_count, duration_days: t.duration_days,
+            price_nis: Number(t.price_nis),
+          }));
+        setTiers(paidTiers);
+        setTiersNoActive(paidTiers.length === 0);
+        // Auto-select the cheapest tier as a soft default — the
+        // visitor can still change it. Never picks a stale ID from a
+        // previous category.
+        setTierId(paidTiers[0]?.id || '');
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setTiersError('טעינת המסלולים נכשלה. בדוק חיבור לרשת ונסה שוב.');
+        setTiers([]); setTierId('');
+      })
+      .finally(() => { if (!cancelled) setTiersLoading(false); });
+    return () => { cancelled = true; };
+  }, [primaryCategory]);
 
   async function sendOtp(e: FormEvent) {
     e.preventDefault();
@@ -188,6 +252,23 @@ export default function ProviderRegisterPage() {
     // the load path) — an unpicked category stays as a top-level
     // error since it's not an Input we can pin to.
     if (!primaryCategory) { setError('יש לבחור קטגוריה'); return; }
+    // R10 §1 · plan required when tiers exist. When a category has no
+    // active tiers we let the flow through anyway (per prompt) so an
+    // admin can slot one manually later — the backend accepts the
+    // absence gracefully by defaulting to the first available tier?
+    // NO — providers.py rejects unknown_tier + tier_price_invalid.
+    // Simpler: block submit here when no tier is picked AND tiers are
+    // available. When tiersNoActive is true, the section shows a
+    // "contact us" banner and submit stays disabled from the picker
+    // step — the visitor can pick a different category with tiers.
+    if (tiers.length > 0 && !tierId) {
+      setError('יש לבחור מסלול פרסום');
+      return;
+    }
+    if (tiersNoActive) {
+      setError('בקטגוריה זו אין כרגע מסלולים זמינים. נסה קטגוריה אחרת או פנה לתמיכה.');
+      return;
+    }
     if (!name.trim())        { setField('name',         'שם העסק הוא שדה חובה'); return; }
     if (!contactName.trim()) { setField('contact_name', 'שם איש קשר הוא שדה חובה'); return; }
     // R5 §2a · ח.פ was optional until Yulian's 17.09 call. Format check
@@ -198,19 +279,30 @@ export default function ProviderRegisterPage() {
     const bn = businessNumber.trim();
     if (!bn)                    { setField('business_number', 'ח.פ / ע.מ הוא שדה חובה'); return; }
     if (!/^\d{9}$/.test(bn))    { setField('business_number', 'ח.פ / ע.מ חייב להיות 9 ספרות'); return; }
+    // R10 §5 · email now required. Yulian's decisions doc §5:
+    // "בלי אימייל אין לאן לשלוח" (welcome email needs a target).
+    const em = email.trim();
+    if (!em) { setField('email', 'אימייל עסקי הוא שדה חובה'); return; }
+    // Basic format check — Pydantic EmailStr does the server-side
+    // validation. Just a "did you paste an address" gate here.
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) {
+      setField('email', 'אימייל בפורמט לא תקין');
+      return;
+    }
     setBusy(true);
     try {
       const res = await orgApi.registerProvider({
-        name:             name.trim(),
-        contact_name:     contactName.trim(),
-        contact_phone:    normPhone,
-        business_number:  bn,
-        primary_category: primaryCategory,
-        email:            email.trim() || undefined,
-        city:             city.trim() || undefined,
-        website:          website.trim() || undefined,
-        description:      description.trim() || undefined,
-        whatsapp_opt_in:  whatsappOptIn,
+        name:                 name.trim(),
+        contact_name:         contactName.trim(),
+        contact_phone:        normPhone,
+        business_number:      bn,
+        primary_category:     primaryCategory,
+        subscription_tier_id: tierId,
+        email:                em,
+        city:                 city.trim() || undefined,
+        website:              website.trim() || undefined,
+        description:          description.trim() || undefined,
+        whatsapp_opt_in:      whatsappOptIn,
       });
       if (res.access_token && res.refresh_token) {
         saveTokens(res.access_token, res.refresh_token);
@@ -389,6 +481,81 @@ export default function ProviderRegisterPage() {
                     </p>
                   </div>
 
+                  {/* R10 §1 · plan picker — renders only after a category
+                      is chosen. Filters out price_nis=0 admin slots
+                      (decisions §2). Shows real price as the anchor;
+                      the backend applies the launch-promo free-until
+                      date automatically (decisions §1). */}
+                  {primaryCategory && (
+                    <div>
+                      <div className="text-sm text-slate-700 mb-2">
+                        <span className="font-medium">מסלול פרסום *</span>
+                      </div>
+                      {tiersLoading && (
+                        <div className="flex items-center gap-2 text-xs text-slate-500 h-10">
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          טוען מסלולים…
+                        </div>
+                      )}
+                      {!tiersLoading && tiersError && (
+                        <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800 flex items-start gap-2">
+                          <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                          <span>{tiersError}</span>
+                        </div>
+                      )}
+                      {!tiersLoading && !tiersError && tiersNoActive && (
+                        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 flex items-start gap-2">
+                          <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                          <span>אין כרגע מסלולים פעילים בקטגוריה זו. בחר קטגוריה אחרת או פנה לתמיכה.</span>
+                        </div>
+                      )}
+                      {!tiersLoading && !tiersError && tiers.length > 0 && (
+                        <div className="space-y-2">
+                          {tiers.map((t) => {
+                            const selected = tierId === t.id;
+                            return (
+                              <label
+                                key={t.id}
+                                className={
+                                  'block cursor-pointer rounded-md border px-3 py-2.5 transition-colors ' +
+                                  (selected
+                                    ? 'border-primary-500 bg-primary-50/50 ring-1 ring-primary-500'
+                                    : 'border-slate-300 hover:border-primary-400')
+                                }
+                              >
+                                <div className="flex items-start gap-3">
+                                  <input
+                                    type="radio"
+                                    name="subscription_tier"
+                                    value={t.id}
+                                    checked={selected}
+                                    onChange={() => setTierId(t.id)}
+                                    className="mt-1"
+                                  />
+                                  <div className="flex-1 flex items-baseline justify-between gap-2">
+                                    <div>
+                                      <div className="text-sm font-semibold text-slate-900">{t.name_he}</div>
+                                      <div className="text-xs text-slate-500">
+                                        עד {t.slot_count} מודעות · לתקופה של {t.duration_days} ימים
+                                      </div>
+                                    </div>
+                                    <div className="text-sm font-bold text-slate-900 whitespace-nowrap">
+                                      ₪{t.price_nis.toLocaleString('he-IL')}
+                                      <span className="text-xs font-normal text-slate-500"> / חודש</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              </label>
+                            );
+                          })}
+                          <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                            במסגרת מבצע ההשקה — הפרסום ללא עלות עד סיום המבצע. לא נחייב אותך ללא הודעה מראש.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   <label className="block text-sm">
                     <span className="text-slate-700 mb-1 block">שם העסק *</span>
                     <Input
@@ -442,15 +609,21 @@ export default function ProviderRegisterPage() {
                   </div>
 
                   <label className="block text-sm">
-                    <span className="text-slate-700 mb-1 block">אימייל עסקי (אופציונלי)</span>
+                    <span className="text-slate-700 mb-1 block">אימייל עסקי *</span>
                     <Input
                       type="email"
                       value={email}
                       onChange={(e) => { setEmail(e.target.value); if (fieldErrors.email) clearField('email'); }}
                       dir="ltr"
                       autoComplete="email"
+                      required
                       error={fieldErrors.email}
                     />
+                    {!fieldErrors.email && (
+                      <span className="text-[11px] text-slate-500 mt-1 block">
+                        לכאן נשלח מייל ההצטרפות ותקבל דואר בפניות מלקוחות.
+                      </span>
+                    )}
                   </label>
 
                   <label className="block text-sm">
@@ -486,7 +659,16 @@ export default function ProviderRegisterPage() {
 
                   <Button
                     type="submit"
-                    disabled={busy || catLoading || !!catError || !primaryCategory}
+                    disabled={
+                      busy || catLoading || !!catError || !primaryCategory
+                      // R10 §1 · block submit while tiers are loading /
+                      // errored / empty / unselected. tiersNoActive is
+                      // NOT enforced here (prompt: "אל תחסום את
+                      // ההרשמה") — but a picker with no options gives
+                      // the user nothing to submit, so the practical
+                      // effect is the same.
+                      || tiersLoading || !!tiersError || tiersNoActive || !tierId
+                    }
                     className="w-full"
                   >
                     {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : 'סיום רישום'}

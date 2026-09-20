@@ -189,12 +189,15 @@ async function handle(routingKey, payload, sendEmail) {
       // fan-out shape as `org.registered` so a fresh env with only
       // ADMIN_EMAIL still surfaces the event.
       //
-      // Text follows the decisions doc §3 wording exactly, minus the
-      // plan-name segment which is not yet in the payload (R10 §1
-      // will add it once the register flow creates the
-      // marketplace_subscriptions row and picks a tier). Once §1
-      // lands, add `· מסלול ${payload.plan_name}` between the org
-      // name and the category segment.
+      // R10 §3 SMS wording per decisions doc:
+      //   "ספק שירותים נלווים חדש נרשם והופעל — {business_name}
+      //    · מסלול {plan_name} · {category}"
+      // Both plan and category are optional in the payload so an
+      // older publisher (before §1 landed) still emits a legible
+      // ping — the segments collapse when absent.
+      const planSegment = payload.plan_name
+        ? ` · מסלול ${payload.plan_name}`
+        : '';
       const categorySegment = payload.category_name
         ? ` · קטגוריה ${payload.category_name}`
         : '';
@@ -215,7 +218,7 @@ async function handle(routingKey, payload, sendEmail) {
         if (admin.phone) {
           await sendSmsInternal(
             admin.phone,
-            `${firstName}, ספק שירותים נלווים חדש נרשם והופעל — ${payload.org_name}${categorySegment}\n${entityLink}`,
+            `${firstName}, ספק שירותים נלווים חדש נרשם והופעל — ${payload.org_name}${planSegment}${categorySegment}\n${entityLink}`,
           );
         }
         if (admin.email) {
@@ -227,6 +230,58 @@ async function handle(routingKey, payload, sendEmail) {
           });
         }
       }
+      break;
+    }
+
+    case 'provider.welcome': {
+      // R10 §5 · welcome email to the freshly-registered provider.
+      // Unlike `org.activated` (admin ping) this goes to the
+      // provider's OWN address — nothing SMS, just the email. The
+      // template (migration 091) has {{promo_block}} as a
+      // pre-computed HTML fragment, not a template loop, so any
+      // logic about whether to show the launch-promo blurb sits
+      // HERE — cheaper than teaching the mustache renderer about
+      // dates.
+      //
+      // 🔴 Decisions doc §4 · in non-production environments the
+      // send layer's EMAIL_ALLOWLIST_DOMAINS gate refuses anything
+      // outside example.com / tagidai.com. This handler doesn't
+      // second-guess that — if the address is real we let the send
+      // path decide. The fake seed provider (@example.com) will
+      // pass; a real registrant's real address on staging will be
+      // rejected downstream (safety, per decisions doc).
+      if (!payload.recipient_email) {
+        console.warn('[handlers] provider.welcome missing recipient_email — skipped');
+        break;
+      }
+
+      // Render the promo block. Empty when no promo is active OR
+      // when the date has passed — the template renders the block
+      // between the plan line and "מה עכשיו", so an empty string
+      // just leaves them adjacent (no orphan spacing).
+      let promoBlock = '';
+      if (payload.promo_end_iso) {
+        const promoEnd = new Date(payload.promo_end_iso);
+        if (!isNaN(promoEnd.getTime()) && promoEnd > new Date()) {
+          const promoDateHe = promoEnd.toLocaleDateString('he-IL');
+          promoBlock = (
+            '<p style="color: #334155; font-size: 14px; line-height: 1.7; margin: 0 0 16px; ' +
+            'padding: 12px 14px; background: #fff7ed; border-inline-start: 3px solid #F78203; border-radius: 6px;">' +
+            'במסגרת מבצע ההשקה, הפרסום שלך ללא עלות עד ' + promoDateHe + '. ' +
+            'לא נחייב אותך ללא הודעה מראש.' +
+            '</p>'
+          );
+        }
+      }
+
+      await sendEmail('provider.welcome', payload.recipient_email, null, {
+        contact_name:  payload.contact_name  || '',
+        business_name: payload.business_name || '',
+        plan_name:     payload.plan_name     || '',
+        category_name: payload.category_name || '',
+        cta_url:       payload.cta_url       || FRONTEND_URL,
+        promo_block:   promoBlock,
+      });
       break;
     }
 
