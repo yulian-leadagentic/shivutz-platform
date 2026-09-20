@@ -132,7 +132,19 @@ async function handle(routingKey, payload, sendEmail) {
       // doesn't sit unattended in the approval queue. SMS for instant
       // attention + email for archival. Includes a deep link to the
       // /admin/approvals screen so the admin can triage in one click.
-      const orgTypeLabel = payload.org_type === 'contractor' ? 'קבלן' : 'תאגיד';
+      //
+      // R10 §3 · orgTypeLabel now handles all three entity types (was
+      // a two-value ternary that mapped anything non-contractor to
+      // 'תאגיד', including service_provider — that was the "תאגיד
+      // חדש" text Yulian got on a provider signup). service_provider
+      // is defensive here: providers.py now routes them to
+      // `org.activated` below and never publishes `org.registered`,
+      // but if a stale payload somehow lands on this handler the
+      // label must still read correctly.
+      const orgTypeLabel =
+        payload.org_type === 'contractor'      ? 'קבלן'    :
+        payload.org_type === 'service_provider' ? 'ספק שירותים' :
+                                                  'תאגיד';
       const adminLink    = `${FRONTEND_URL}/admin/approvals`;
       const admins       = await listAdminUsers();
 
@@ -164,6 +176,54 @@ async function handle(routingKey, payload, sendEmail) {
             org_type_label: orgTypeLabel,
             admin_link:     adminLink,
             contact_name:   admin.full_name || '',
+          });
+        }
+      }
+      break;
+    }
+
+    case 'org.activated': {
+      // R10 §3 · service_provider signup — nothing to approve, admin
+      // gets an informational ping with a link to the entity card
+      // (not the approvals queue, since this org isn't in it). Same
+      // fan-out shape as `org.registered` so a fresh env with only
+      // ADMIN_EMAIL still surfaces the event.
+      //
+      // Text follows the decisions doc §3 wording exactly, minus the
+      // plan-name segment which is not yet in the payload (R10 §1
+      // will add it once the register flow creates the
+      // marketplace_subscriptions row and picks a tier). Once §1
+      // lands, add `· מסלול ${payload.plan_name}` between the org
+      // name and the category segment.
+      const categorySegment = payload.category_name
+        ? ` · קטגוריה ${payload.category_name}`
+        : '';
+      const entityLink = `${FRONTEND_URL}/admin/orgs/${payload.org_id}`;
+      const admins     = await listAdminUsers();
+
+      if (admins.length === 0) {
+        await sendEmail('org.activated', ADMIN_EMAIL, null, {
+          org_name:      payload.org_name,
+          category_name: payload.category_name || '',
+          entity_link:   entityLink,
+        });
+        break;
+      }
+
+      for (const admin of admins) {
+        const firstName = (admin.full_name || '').split(' ')[0] || 'שלום';
+        if (admin.phone) {
+          await sendSmsInternal(
+            admin.phone,
+            `${firstName}, ספק שירותים נלווים חדש נרשם והופעל — ${payload.org_name}${categorySegment}\n${entityLink}`,
+          );
+        }
+        if (admin.email) {
+          await sendEmail('org.activated', admin.email, admin.id, {
+            org_name:      payload.org_name,
+            category_name: payload.category_name || '',
+            entity_link:   entityLink,
+            contact_name:  admin.full_name || '',
           });
         }
       }

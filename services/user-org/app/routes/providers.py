@@ -252,12 +252,29 @@ async def register_provider(data: ProviderCreate):
         )
         conn.commit()
 
-        # Notification fan-out — new provider signup, same event name
-        # the admin dashboard already listens for.
-        await publish_event("org.registered", {
-            "org_id":   provider_id,
-            "org_name": name,
-            "org_type": "service_provider",
+        # R10 §3 · providers auto-activate (status='active' at :211),
+        # so "pending approval" is the wrong story to tell an admin —
+        # the notification has to say "just activated, FYI" without
+        # approve/reject buttons that would do nothing. New event
+        # `org.activated` is the informational counterpart to
+        # `org.registered`; handlers.js dispatches it to a separate
+        # SMS/email template with no CTA.
+        #
+        # Category display name looked up here (cheap, on the same
+        # connection) so the notification service doesn't need to
+        # reach back into org_db just to render one string.
+        cur.execute(
+            "SELECT name_he FROM marketplace_categories WHERE code=%s AND is_active=TRUE",
+            (cat,),
+        )
+        cat_row = cur.fetchone()
+        category_name = cat_row["name_he"] if cat_row and cat_row.get("name_he") else cat
+        await publish_event("org.activated", {
+            "org_id":         provider_id,
+            "org_name":       name,
+            "org_type":       "service_provider",
+            "category_code":  cat,
+            "category_name":  category_name,
         })
 
         return {
