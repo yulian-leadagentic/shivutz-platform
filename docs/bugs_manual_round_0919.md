@@ -112,6 +112,68 @@ Migration `086_marketplace_reveals.sql` applied to staging DB inline.
 
 ---
 
+## R16 · test-integrity fixes so the R14 §1 matrix suite proves what it claims
+
+Prompt: `docs/cc-prompts/cc_prompt_R16_matrix_integrity.md`.
+Baseline: `pre-r16`. Commits: `45e9ac2` (fixes), `0d2117e` (regression injection · reverted), `b482111` (restoration).
+
+Three defects the R14 §1 suite shipped with, each of which would let a broken build pass silently:
+
+### §1 · Runner had no exit-code path for SKIP
+
+Every `SKIP` row registered with `ok=True`. `exit_code()` returned 0 whenever every row was ok. A run without `SERVICE_PROVIDER_PHONE` exited green while covering only 5/6 identities. Fix: added `skipped` + `matrix_critical` axes on `Row`; `exit_code()` now 3-state — `0` all-clean, `1` real fail, `2` matrix-critical row skipped. Every matrix cell + anti-enum absence assertion + reveal-403 check is flagged `matrix_critical=True`. Summary line prints `matrix: X passed · Y failed · Z skipped (<reasons>)`.
+
+Demo (inline, all 4 states):
+
+| scenario | rows | exit | expected |
+|---|---|---|---|
+| A — 2 pass, no skips | 2 pass | 0 | 0 ✓ |
+| B — add matrix-critical SKIP | 2 pass + 1 SKIP | 2 | 2 ✓ |
+| C — add real FAIL | 2 pass + 1 SKIP + 1 FAIL | 1 | 1 ✓ (fail short-circuits) |
+| D — non-matrix SKIP only | 1 pass + 1 non-critical SKIP | 0 | 0 ✓ |
+
+### §2 · Anti-enum probe sent English enum, not Hebrew
+
+`_foreign_worker_sample()` returned `profession_code='flooring'` and the probe search sent that string. The rewriter processes Hebrew — `flooring` produced no profession filter, the search matched no rows for any caller, and the four absence assertions passed tautologically. Fix: JOIN `worker_db.profession_types` (cross-schema, `COLLATE utf8mb4_0900_ai_ci` bridging the `utf8mb4_unicode_ci` ads collation) and use `name_he` as the query.
+
+Actual query on the wire: `POST /search {"query":"אינסטלציה"}` (plumbing, Hebrew). Returns ad `0a603cdf-d188-48a2-bb26-134dd2e9595a` for the approved contractor.
+
+### §3 · No positive control before the four absence assertions
+
+If the Hebrew query returned zero rows for everyone, absence would pass and prove nothing. Fix: try each candidate as the approved contractor first; the first one that DOES come back becomes the probe. If none surface, exit 2 with `PROBE INVALID · positive control failed` and the tried-list.
+
+Positive-control row now in every run:
+`[PASS] contractor_approved (control) 'אינסטלציה' — ad 0a603cdf in response · positive control passed`
+
+### §4 · Failure demo — the harness catches a real leak
+
+Flipped `services/user-org/app/services/visibility.py::viewer_scope_wheres` corp branch to `return ([], [])` (commit `0d2117e`), dual-pushed, waited for staging redeploy. Matrix output:
+
+```
+[FAIL] corporation  worker       expected=own_only · FOREIGN worker ids leaked:
+                                 ['d90ffa12-faac-46dc-8fae-4a2bc8b05a87']
+[FAIL] corporation  'אינסטלציה'  LEAKED foreign ad
+                                 ['0a603cdf-d188-48a2-bb26-134dd2e9595a']
+                                 (owner 92ab3bc3)
+SUMMARY: 21 pass · 2 fail · 0 skip · exit=1
+```
+
+Both leaked ad ids named. Both the 18-cell matrix AND the anti-enum probe caught it. Positive control still passed (query is valid). No other identity false-positived. Restored `visibility.py` (`b482111`), redeployed, matrix returned to:
+
+```
+SUMMARY: 23 pass · 0 fail · 0 skip · exit=0
+```
+
+### Files touched (R16)
+
+- [scripts/smoke_test.py](scripts/smoke_test.py) — Runner 3-state, matrix_critical, Hebrew probe, positive control (+190 −68)
+
+Server code untouched apart from the temporary flip that has been reverted.
+
+`git rev-list --left-right --count origin/staging...origin/pivot/v2` → **`0 0`**.
+
+---
+
 # R12 · R13 · R14 · earlier findings
 
 Findings from Yulian's manual pass on staging + response.
