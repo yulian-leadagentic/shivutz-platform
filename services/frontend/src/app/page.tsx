@@ -75,6 +75,36 @@ const CHIPS: Chip[] = [
 ];
 const INLINE_AD_EVERY = 5;
 
+// R18 §3 · one list, two consumers.
+// The "we understood" banner at :1652 and the "hasFilter" gate at
+// :1759 both need to answer the same question: "did the rewriter
+// extract ANYTHING from the query?". Two independent field lists
+// would drift the moment the rewriter grows a new dimension —
+// so both places read from this one constant. Any new rewriter
+// output that should count as "understood" gets appended here.
+type ResponseFilters = {
+  profession_code?: string | null;
+  ad_type?:         string | null;
+  region?:          string | null;
+  origin_country?:  string | null;
+  quantity?:        number | null;
+};
+const EXTRACTED_FILTER_KEYS = [
+  'profession_code',
+  'ad_type',
+  'region',
+  'origin_country',
+  'quantity',
+] as const satisfies ReadonlyArray<keyof ResponseFilters>;
+
+function anyFilterExtracted(f: ResponseFilters | null | undefined): boolean {
+  if (!f) return false;
+  return EXTRACTED_FILTER_KEYS.some((k) => {
+    const v = f[k];
+    return v !== null && v !== undefined && v !== '';
+  });
+}
+
 // Tier code → Hebrew display, mirrors the /billing plans map so the
 // reveal-quota / expired-subscription modal reads naturally instead of
 // showing raw enum strings.
@@ -1641,24 +1671,77 @@ function LandingPageInner() {
                       results. See the readout block near the
                       </form> above. */}
 
-                  {/* F1 §3b — admission banner. When the rewriter
-                      failed to pin down a profession BUT results
-                      exist, tell the user explicitly instead of
-                      pretending the full-catalog list is a filtered
-                      answer. Only appears when there ARE results —
-                      the empty-results path is NM territory (§3b
-                      rule "אל תיגע"). aria-live matches the visible
-                      copy so SR users hear the same admission. */}
-                  {resp && resp.results.length > 0 && !resp.filters.profession_code && (
-                    <div
-                      role="status"
-                      aria-live="polite"
-                      className="text-xs text-slate-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 flex items-start gap-2"
-                    >
-                      <Sparkles className="w-3.5 h-3.5 mt-0.5 text-amber-700 shrink-0" aria-hidden="true" />
-                      <span>לא זיהינו מקצוע מסוים — מציג את כל ההיצע, לפי סדר התאמה</span>
-                    </div>
-                  )}
+                  {/* R18 · Two-mode understanding banner.
+                      Mode A (positive, neutral colour): the rewriter
+                      extracted at least one field — praise it, don't
+                      apologise. Text is BUILT from the fields actually
+                      present, so a rewriter that grows a new dimension
+                      just shows up without a code change here.
+                      Mode B (fallback, amber): nothing was extracted
+                      AND we still have results — same admission the
+                      old F1 §3b banner made, kept as-is for the
+                      random-string case.
+                      Both modes render ONLY when results exist. The
+                      empty-results path is NM territory
+                      (R12 §3b rule "אל תיגע").
+                      aria-live matches the visible copy so SR users
+                      hear the same text. */}
+                  {resp && resp.results.length > 0 && (() => {
+                    const f = resp.filters;
+                    const extracted = anyFilterExtracted(f);
+                    if (!extracted) {
+                      // Mode B · legacy amber "we understood nothing".
+                      return (
+                        <div
+                          role="status"
+                          aria-live="polite"
+                          className="text-xs text-slate-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 flex items-start gap-2"
+                        >
+                          <Sparkles className="w-3.5 h-3.5 mt-0.5 text-amber-700 shrink-0" aria-hidden="true" />
+                          <span>לא זיהינו מקצוע מסוים — מציג את כל ההיצע, לפי סדר התאמה</span>
+                        </div>
+                      );
+                    }
+                    // Mode A · positive confirmation. Message shape:
+                    //   ad_type extracted alone → "זיהינו שאתה מחפש
+                    //     דיור לעובדים" / "…עובדים" (per Yulian's
+                    //     wording spec)
+                    //   any other combo → "זיהינו: <label1> · <label2>"
+                    // ad_type is translated via a small map (NEVER the
+                    // enum code — R12 §1c "flooring vs רצפים" bug).
+                    // profession/origin/region use labelFor + the
+                    // existing enum stores.
+                    const adTypeLabel =
+                      f.ad_type === 'housing' ? 'דיור לעובדים' :
+                      f.ad_type === 'worker'  ? 'עובדים'       :
+                      null;
+                    const parts: string[] = [];
+                    if (f.profession_code)  parts.push(labelFor(professions, f.profession_code));
+                    if (f.origin_country)   parts.push(labelFor(origins,     f.origin_country));
+                    if (f.region)           parts.push(labelFor(regions,     f.region));
+                    if (f.quantity)         parts.push(String(f.quantity));
+
+                    let message: string;
+                    if (parts.length === 0 && adTypeLabel) {
+                      // ad_type-only case → Yulian's spec wording:
+                      // "היה צריך להיות כתוב זיהינו שאתה מחפש מגורים
+                      //  לעובדים".
+                      message = `זיהינו שאתה מחפש ${adTypeLabel}`;
+                    } else {
+                      const prefix = adTypeLabel ? `${adTypeLabel} · ` : '';
+                      message = `זיהינו: ${prefix}${parts.join(' · ')}`;
+                    }
+                    return (
+                      <div
+                        role="status"
+                        aria-live="polite"
+                        className="text-xs text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 flex items-start gap-2"
+                      >
+                        <Sparkles className="w-3.5 h-3.5 mt-0.5 text-brand-600 shrink-0" aria-hidden="true" />
+                        <span>{message}</span>
+                      </div>
+                    );
+                  })()}
 
                   {/* R13 §4 · anonymous conversion prompt. Sits where
                       the amber "no results" would sit for a logged-in
@@ -1756,12 +1839,14 @@ function LandingPageInner() {
                     // an unfiltered no-match the previous copy said
                     // "נסה להסיר סינון" without a filter to remove —
                     // dead advice.
-                    const hasFilter = !!(
-                      resp.filters.profession_code ||
-                      resp.filters.origin_country ||
-                      resp.filters.region ||
-                      resp.filters.quantity
-                    );
+                    //
+                    // R18 §3a · uses anyFilterExtracted (which reads
+                    // EXTRACTED_FILTER_KEYS) so this stays in sync
+                    // with the understanding-banner above. Previously
+                    // this list omitted ad_type — the "no results for
+                    // מיטות" case would offer "remove a filter" even
+                    // though ad_type=housing was the only filter set.
+                    const hasFilter = anyFilterExtracted(resp.filters);
                     return (
                     <div className="bg-amber-50 border-2 border-amber-200 rounded-2xl p-8 text-center shadow-sm">
                       <p className="text-lg font-bold text-amber-900 mb-2">לא נמצאו מודעות התואמות</p>
