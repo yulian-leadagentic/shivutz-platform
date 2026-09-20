@@ -40,21 +40,32 @@ export default function NewListingPage() {
   // when absent. Validated when categories load — if the passed
   // code isn't in the active catalog the useEffect below drops us
   // to the first available.
-  const hintedCategory = searchParams?.get('category') || null;
+  //
+  // R10 §4 · additional prefill from /register/provider hand-off:
+  // ?category + ?business_name + ?contact_name + ?contact_phone
+  // (+ optional ?email, ?city). Whoever just typed their phone
+  // number thirty seconds ago in the register OTP screen should
+  // NOT be asked for it again on the very next page. All prefill
+  // fields are still editable — this is a first-draft convenience,
+  // not a lock.
+  const hintedCategory     = searchParams?.get('category')      || null;
+  const hintedContactName  = searchParams?.get('contact_name')  || '';
+  const hintedContactPhone = searchParams?.get('contact_phone') || '';
+  const hintedCity         = searchParams?.get('city')          || '';
 
   const [form, setForm] = useState({
     category:      hintedCategory || 'housing',
     title:         '',
     description:   '',
-    city:          '',
+    city:          hintedCity,
     region:        '',
     price:         '',
     price_unit:    'per_month',
     capacity:      '',
     is_furnished:  false,
     available_from:'',
-    contact_phone: '',
-    contact_name:  '',
+    contact_phone: hintedContactPhone,
+    contact_name:  hintedContactName,
   });
   const [images, setImages]  = useState<string[]>([]);
   const [saving, setSaving]  = useState(false);

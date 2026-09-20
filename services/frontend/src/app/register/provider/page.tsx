@@ -216,12 +216,28 @@ export default function ProviderRegisterPage() {
         saveTokens(res.access_token, res.refresh_token);
       }
       setPhase('done');
-      // R5 §1 · a fresh provider has exactly one entity (this one).
-      // Sending them to /select-entity to pick from a list of one is
-      // pure friction, and the old fallback into /contractor/dashboard
-      // is what created the "אין לך חשבון קבלן" screen Yulian saw.
-      // Land them directly on their own dashboard.
-      setTimeout(() => router.push('/provider/dashboard'), 1200);
+      // R10 §4 · land directly on the ad-creation page, not the
+      // dashboard. Yulian: "לאחר הרישום המשתמש צריך לעבור למסך יצירת
+      // המודעה שלו". Category slug + prefill values (business name,
+      // contact name, phone, email) ride along as query params so
+      // /provider/marketplace/new can pre-fill without a second
+      // API round-trip. The register endpoint returned the tokens
+      // we saved above, so the new-ad page loads authenticated
+      // against this provider entity.
+      //
+      // Prefill URL-encodes each value so a business name with
+      // Hebrew or `&` characters lands intact. New-ad page unpacks
+      // via useSearchParams() and applies as initial values on the
+      // corresponding fields.
+      const qs = new URLSearchParams({
+        category:      primaryCategory,
+        business_name: name.trim(),
+        contact_name:  contactName.trim(),
+        contact_phone: normPhone,
+      });
+      if (email.trim()) qs.set('email', email.trim());
+      if (city.trim())  qs.set('city',  city.trim());
+      setTimeout(() => router.push(`/provider/marketplace/new?${qs.toString()}`), 1200);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'הרישום נכשל';
       routeServerError(msg);
