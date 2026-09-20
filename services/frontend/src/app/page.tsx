@@ -38,6 +38,8 @@ import { InlineSponsoredAd } from '@/features/advertising/InlineSponsoredAd';
 import { RevealModal, type RevealBlock } from '@/features/advertising/RevealModal';
 import { RoleRegisterPicker } from '@/features/advertising/RoleRegisterPicker';
 import { VoiceInputButton } from '@/features/voice/VoiceInputButton';
+import { useAdImpression } from '@/hooks/useAdImpression';
+import { postAdEvent } from '@/lib/adEvents';
 import { FeaturedAdsCarousel } from '@/features/advertising/FeaturedAdsCarousel';
 import { HomeSponsorBanner, HomeSponsorCarousel } from '@/features/advertising/MarketplaceSponsors';
 import { LandingTrustBar } from '@/features/advertising/LandingTrustBar';
@@ -2184,8 +2186,27 @@ function SponsorSlot({ ad }: { ad: SponsorAd }) {
   const brandBg = ad.brand_bg ?? '#1e293b';   // slate-800 fallback
   const brandFg = ad.brand_fg ?? '#ffffff';
   const hasCta  = !!ad.cta_url;
+  // R6 §1a · impression fires once when this slot is ≥50% visible
+  // for ≥1s. Placement 'inline' identifies where in the layout the
+  // ad appeared for the admin stats screen.
+  const observeRef = useAdImpression({ targetId: ad.id, placement: 'inline' });
+  // R6 §1c · click-through fires via sendBeacon inside postAdEvent
+  // — the navigation the anchor starts doesn't stop the request.
+  // Only real CTAs (cta_url present) get instrumented; NULL CTA
+  // renders as a decorative label and there is no click event to
+  // record.
+  const handleClick = () => {
+    if (!hasCta) return;
+    postAdEvent({
+      event_type:  'ad_click',
+      target_type: 'sponsor_ad',
+      target_id:   ad.id,
+      placement:   'inline',
+    });
+  };
   return (
     <li
+      ref={observeRef}
       role="presentation"
       className="sponsor-slot"
       aria-label={`מודעה מאת ${ad.advertiser_name}`}
@@ -2210,6 +2231,7 @@ function SponsorSlot({ ad }: { ad: SponsorAd }) {
       <div className="sponsor-slot__cta-wrap">
         {hasCta ? (
           <a href={ad.cta_url!} target="_blank" rel="noopener nofollow sponsored"
+             onClick={handleClick}
              className="sponsor-slot__cta"
              style={{ background: brandBg, color: brandFg }}>
             {ad.cta_label_he}

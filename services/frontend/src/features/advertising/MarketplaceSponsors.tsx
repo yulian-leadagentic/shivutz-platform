@@ -24,6 +24,19 @@
  */
 import { useEffect, useState } from 'react';
 import { apiFetch } from '@/lib/api/client';
+import { useAdImpression } from '@/hooks/useAdImpression';
+import { postAdEvent, type AdPlacement } from '@/lib/adEvents';
+
+// R6 §1a · translate placement strings the backend uses into the
+// terser 'placement' enum on promo_events.metadata_json. The
+// original strings are longer than we want to store per row, and
+// the enum keeps admin-stats filtering readable.
+function placementBucket(raw: string): AdPlacement {
+  if (raw.startsWith('marketplace')) return 'marketplace';
+  if (raw.includes('carousel'))      return 'carousel';
+  if (raw.includes('banner'))        return 'featured';
+  return 'inline';
+}
 
 interface SponsorAd {
   id:              string;
@@ -57,12 +70,25 @@ function SponsorBanner({ placement, label }: { placement: string; label?: string
     fetchSponsored(placement, 1).then((rows) => setAd(rows[0] ?? null));
   }, [placement]);
 
+  // R6 §1a · one impression per (ad, page load) when this banner is
+  // ≥50% visible for ≥1s. The hook returns early when targetId is
+  // undefined (fetch still pending) and re-registers when the ad
+  // arrives.
+  const observeRef = useAdImpression({ targetId: ad?.id, placement: placementBucket(placement) });
+
   if (!ad) return null;
   const bg = ad.brand_bg ?? '#1e293b';
   const fg = ad.brand_fg ?? '#ffffff';
+  const handleClick = () => {
+    if (!ad.cta_url) return;
+    postAdEvent({
+      event_type: 'ad_click', target_type: 'sponsor_ad',
+      target_id: ad.id, placement: placementBucket(placement),
+    });
+  };
 
   return (
-    <div className="mb-6">
+    <div ref={observeRef} className="mb-6">
       <div className="text-[10px] uppercase tracking-wide text-slate-400 mb-1">
         {label ?? 'מודעה ממומנת'}
       </div>
@@ -84,6 +110,7 @@ function SponsorBanner({ placement, label }: { placement: string; label?: string
             href={ad.cta_url}
             target="_blank"
             rel="noopener noreferrer sponsored"
+            onClick={handleClick}
             className="shrink-0 inline-flex items-center bg-white/95 hover:bg-white text-slate-900 text-sm font-semibold px-4 py-2 rounded-lg transition-colors"
           >
             {ad.cta_label_he}
@@ -105,6 +132,7 @@ function SponsorCarousel({ placement, label }: { placement: string; label?: stri
   }, [placement]);
 
   if (ads.length === 0) return null;
+  const bucket = placementBucket(placement);
 
   return (
     <div className="mb-6">
@@ -113,7 +141,7 @@ function SponsorCarousel({ placement, label }: { placement: string; label?: stri
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
         {ads.map((ad) => (
-          <CarouselCard key={ad.id} ad={ad} />
+          <CarouselCard key={ad.id} ad={ad} placement={bucket} />
         ))}
       </div>
     </div>
@@ -128,11 +156,24 @@ export function MarketplaceSponsorCarousel() { return <SponsorCarousel placement
 export function HomeSponsorBanner()          { return <SponsorBanner   placement="home_banner"          />; }
 export function HomeSponsorCarousel()        { return <SponsorCarousel placement="home_carousel"        />; }
 
-function CarouselCard({ ad }: { ad: SponsorAd }) {
+function CarouselCard({ ad, placement }: { ad: SponsorAd; placement: AdPlacement }) {
   const bg = ad.brand_bg ?? '#0f172a';
   const fg = ad.brand_fg ?? '#ffffff';
+  // R6 §1a · per-card impression. Each carousel slide is its own
+  // observed element — a card that never scrolls into view (e.g.
+  // slides 3-4 on mobile where only 1-2 fit above the fold) does
+  // NOT count. §1a: "מודעה שנשלפה ולא נראתה — אין impression".
+  const observeRef = useAdImpression({ targetId: ad.id, placement });
+  const handleClick = () => {
+    if (!ad.cta_url) return;
+    postAdEvent({
+      event_type: 'ad_click', target_type: 'sponsor_ad',
+      target_id: ad.id, placement,
+    });
+  };
   return (
     <div
+      ref={observeRef}
       className="rounded-xl p-4 shadow-sm flex flex-col h-full"
       style={{ backgroundColor: bg, color: fg }}
     >
@@ -154,6 +195,7 @@ function CarouselCard({ ad }: { ad: SponsorAd }) {
           href={ad.cta_url}
           target="_blank"
           rel="noopener noreferrer sponsored"
+          onClick={handleClick}
           className="mt-3 inline-flex items-center justify-center bg-white/95 hover:bg-white text-slate-900 text-xs font-semibold px-3 py-1.5 rounded-md transition-colors"
         >
           {ad.cta_label_he}
