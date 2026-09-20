@@ -6,10 +6,11 @@
 // this second layer because it's the only one with a bundled file
 // to fall back to.
 //
-// §2b · coordinator section is rendered ONLY if we have a name AND
-// (a phone OR an email). The rule ships client-side by wrapping the
-// rendered body so the standard doc content still shows even when
-// site_settings hasn't been populated.
+// R14 §2 · coordinator block now lives INSIDE section 4 of the doc
+// (via a {{a11y_coordinator_block}} placeholder in body_md, filled
+// by legal-render.ts from site_settings). Same completeness rule:
+// name AND (phone OR email) — anything less produces an empty
+// substitution so section 4 renders without half a contact.
 
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
@@ -64,15 +65,20 @@ export default async function AccessibilityPage() {
     title  = 'הצהרת נגישות';
   }
 
-  const html = renderLegalMarkdown(bodyMd);
-
-  // §2b · coordinator section is conditional on having a contact
-  // method beyond a name. NULL/empty phone AND email → the block
-  // is omitted so the reader isn't shown half a contact.
+  // R14 §2 · build the coordinator markdown block from site_settings.
+  // Emits a small markdown table so section 4 lands with the same
+  // list-under-heading feel as the rest of the declaration. Whole
+  // block is empty when incomplete — the placeholder in body_md then
+  // collapses to nothing, and section 4 renders without half a
+  // contact. The `tel:` and `mailto:` schemes are both in
+  // legal-render.ts's ALLOWED_URI_REGEXP so the anchors survive
+  // sanitisation.
   const cName  = settings.a11y_coordinator_name?.trim() || null;
   const cPhone = settings.a11y_coordinator_phone?.trim() || null;
   const cEmail = settings.a11y_coordinator_email?.trim() || null;
-  const showCoord = cName && (cPhone || cEmail);
+  const coordBlock = buildCoordinatorMarkdown(cName, cPhone, cEmail);
+
+  const html = renderLegalMarkdown(bodyMd, { a11y_coordinator_block: coordBlock });
 
   return (
     <main dir="rtl" className="max-w-3xl mx-auto px-4 py-10 space-y-6 text-slate-800 leading-relaxed">
@@ -91,21 +97,42 @@ export default async function AccessibilityPage() {
         className="legal-content prose prose-slate max-w-none"
         dangerouslySetInnerHTML={{ __html: html }}
       />
-      {showCoord && (
-        <section className="space-y-3 border-t border-slate-200 pt-6">
-          <h2 className="text-xl font-semibold text-slate-900">רכז הנגישות</h2>
-          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 grid grid-cols-1 sm:grid-cols-[8rem_1fr] gap-y-1 gap-x-3 text-sm">
-            <div className="font-semibold">שם</div><div>{cName}</div>
-            {cPhone && (<><div className="font-semibold">טלפון</div>
-              <div><a href={`tel:${cPhone}`} dir="ltr" className="text-brand-700 hover:underline">{cPhone}</a></div></>)}
-            {cEmail && (<><div className="font-semibold">דוא&quot;ל</div>
-              <div><a href={`mailto:${cEmail}`} className="text-brand-700 hover:underline">{cEmail}</a></div></>)}
-          </div>
-        </section>
-      )}
       <div className="pt-4">
         <Link href="/" className="text-sm text-slate-500 hover:text-slate-800">← חזרה לדף הבית</Link>
       </div>
     </main>
   );
+}
+
+// R14 §2 · Coordinator block builder — returns markdown embedded in
+// section 4 via the {{a11y_coordinator_block}} placeholder. Returns
+// '' whenever name is missing or both phone AND email are missing,
+// so an incomplete row in site_settings never surfaces to visitors.
+// Phone rendered LTR so a Hebrew RTL document doesn't mangle the
+// digits; email uses plain mailto. Both anchor schemes are in the
+// legal-render.ts sanitiser allow-list.
+function buildCoordinatorMarkdown(
+  name: string | null,
+  phone: string | null,
+  email: string | null,
+): string {
+  if (!name) return '';
+  if (!phone && !email) return '';
+  const lines: string[] = ['**רכז הנגישות**', ''];
+  lines.push(`- **שם:** ${name}`);
+  if (phone) {
+    // strip non-digits for the tel: URI so `052-527-8625` clicks
+    // through as `tel:0525278625` on iOS + Android without the dash
+    // confusing a legacy dialler. The `‪ ... ‬` bidi
+    // isolate wraps the visible digits in an LRE block so the phone
+    // stays visually LTR inside the surrounding RTL sentence — no
+    // <span dir="ltr"> needed (span isn't in legal-render.ts's
+    // ALLOWED_TAGS allow-list, so a raw span would render as text).
+    const telDigits = phone.replace(/\D/g, '');
+    lines.push(`- **טלפון:** [‪${phone}‬](tel:${telDigits})`);
+  }
+  if (email) {
+    lines.push(`- **דוא"ל:** [${email}](mailto:${email})`);
+  }
+  return lines.join('\n');
 }

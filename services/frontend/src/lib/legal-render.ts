@@ -49,11 +49,46 @@ const ALLOWED_TAGS = [
 
 const ALLOWED_ATTR = ['href', 'title', 'target', 'rel'];
 
+/** R14 §2 · substitute {{key}} placeholders in `source` with the
+ *  markdown chunks in `substitutions` BEFORE handing off to
+ *  markdown-it. This is where the legal-content pipeline lets an
+ *  editor put a `{{a11y_coordinator_block}}` inside section 4 and
+ *  have it filled from site_settings at render time — the two
+ *  sanitisation layers still apply because the substituted chunks
+ *  are treated as markdown, not HTML.
+ *
+ *  Keys are looked up case-sensitively and must be `[a-z0-9_]+`. A
+ *  key missing from `substitutions`, or one whose value is empty,
+ *  is replaced with the empty string — the paragraph break that
+ *  precedes it in the markdown still stands, so the surrounding
+ *  section renders without a hole and without the literal
+ *  `{{name}}` leaking to the visitor. */
+function applySubstitutions(
+  source: string,
+  substitutions: Record<string, string>,
+): string {
+  return source.replace(/\{\{([a-z0-9_]+)\}\}/g, (_m, key: string) => {
+    const val = substitutions[key];
+    return val ?? '';
+  });
+}
+
 /** Render Markdown to sanitized HTML. Safe to inject via
  *  dangerouslySetInnerHTML — the two layers together mean untrusted
- *  admin input cannot execute JS in the visitor's browser. */
-export function renderLegalMarkdown(source: string): string {
-  const raw = md.render(source);
+ *  admin input cannot execute JS in the visitor's browser.
+ *
+ *  `substitutions` (R14 §2) is an optional map of `{{placeholder}}`
+ *  → markdown chunk applied before parsing. Callers pass their own
+ *  key set (e.g. accessibility page passes a coordinator block
+ *  built from site_settings). Placeholders whose key isn't in the
+ *  map render as empty string, so a NULL setting produces no
+ *  visible artifact. */
+export function renderLegalMarkdown(
+  source: string,
+  substitutions: Record<string, string> = {},
+): string {
+  const substituted = applySubstitutions(source, substitutions);
+  const raw = md.render(substituted);
   return DOMPurify.sanitize(raw, {
     ALLOWED_TAGS,
     ALLOWED_ATTR,
