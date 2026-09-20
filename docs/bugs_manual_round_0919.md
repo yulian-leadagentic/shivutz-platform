@@ -112,6 +112,92 @@ Migration `086_marketplace_reveals.sql` applied to staging DB inline.
 
 ---
 
+## R14 §2 · accessibility coordinator contact block inside section 4
+
+Prompt: `docs/cc-prompts/cc_prompt_R14_matrix_a11y.md`. Values Yulian confirmed 19.09.
+Baseline: `pre-r14`. Commits: `d97e870` (§2), `b9f7b49` (§3).
+
+### §2 · Section 4 now tells the visitor WHERE to write, not just WHAT
+
+Section 4 of the declaration listed what info to include in an accessibility complaint but not who to send it to — a regulator would read that as "the mandatory statement is present but the mandatory response channel is empty". Fixed by:
+
+- migration 087 — filled the two NULL `site_settings` rows Yulian confirmed (`a11y_coordinator_phone='052-527-8625'`, `a11y_coordinator_email='temp@gmail.com'`; name was already seeded to `יוליאן אברמוביץ׳`). Also appended `{{a11y_coordinator_block}}` to section 4's body_md right after the "בתוך 60 ימים" sentence, guarded by `NOT LIKE '%{{a11y…'` so re-runs are no-ops.
+- [services/frontend/src/lib/legal-render.ts](services/frontend/src/lib/legal-render.ts) — new optional `substitutions: Record<string,string>` parameter. `{{[a-z0-9_]+}}` placeholders are replaced BEFORE markdown parsing; missing/empty keys collapse to '' so a NULL setting never leaks as literal `{{name}}`. Same two sanitisation layers (markdown-it `html:false` + DOMPurify) still apply because the substituted text goes through the pipeline as markdown.
+- [services/frontend/src/app/accessibility/page.tsx](services/frontend/src/app/accessibility/page.tsx) — dropped the standalone `<section>` below the article. New `buildCoordinatorMarkdown(name,phone,email)` returns `''` when name missing OR both contact fields missing. Phone rendered as `[‪052-527-8625‬](tel:0525278625)` — the LRE/PDF pair keeps the digits LTR inside the surrounding RTL flow without a `<span dir="ltr">` (span isn't in ALLOWED_TAGS).
+
+Live proof (`https://staging.buildupai.net/accessibility`):
+
+```html
+<p><strong>רכז הנגישות</strong></p>
+<ul>
+  <li><strong>שם:</strong> יוליאן אברמוביץ׳</li>
+  <li><strong>טלפון:</strong> <a href="tel:0525278625">‪052-527-8625‬</a></li>
+  <li><strong>דוא"ל:</strong> <a href="mailto:temp@gmail.com">temp@gmail.com</a></li>
+</ul>
+```
+
+`legal_documents.slug='accessibility'` row: `version=2`, `is_draft=FALSE`, `updated_by='migration_087'`.
+
+**Reported to Yulian, not for CC:** `temp@gmail.com` is a temporary address. The declaration commits to responding within 60 days — a mailbox nobody reads makes that commitment empty. Swap before 14.10 via `/admin/legal → Settings`.
+
+---
+
+## R14 §3 · four R12 leftovers (§2 · §3 · §4 · §5)
+
+### R12 §3 · Space before the AI badge in the landing h1
+
+[services/frontend/src/app/page.tsx:946-948](services/frontend/src/app/page.tsx#L946). JSX collapses whitespace between text and an element on separate lines to nothing — `פלטפורמת ה\n<span>AI</span>` rendered as `פלטפורמתהAI`. Added `{' '}` before the span (the "after" side already had it). Real space character, so a screen reader reads it too — padding on the badge would only fix pixels. Live: h1 innerText now `"פלטפורמת ה AI לקבלנים ותאגידי כוח אדם"`.
+
+### R12 §4 · "איך זה עובד" text link under the search bar on mobile
+
+Diagnosis (`grep איך זה עובד`): link existed only in `LandingNav.tsx:96-100/215-220` (desktop bar + mobile drawer) and `LandingFooter.tsx:38` (below-the-fold). A visitor on mobile at 390px who didn't understand what the site does bounced before opening the burger.
+
+Added a small centered `<Link href="/how-it-works">` right under the search form (`page.tsx` between form close and readout). Hidden once a search runs so it doesn't sit between input and results. Verified on 375×812:
+- desktop nav link: `top:0, width:0, inViewport:false` (hidden under burger, correct)
+- new link: `top:226, width:95, inViewport:true` (visible without scroll or menu)
+- footer link: `top:3622` (below fold)
+
+### R12 §5 · Persistent accessibility icon on every page
+
+New client component [services/frontend/src/components/a11y/AccessibilityFab.tsx](services/frontend/src/components/a11y/AccessibilityFab.tsx), mounted once in [layout.tsx](services/frontend/src/app/layout.tsx) inside `<body>` alongside AuthProvider. Fixed bottom-end (bottom-LEFT in RTL, opposite corner to `LiveActivityFeed`'s bottom-start), 44×44 tap target (WCAG 2.5.5), `env(safe-area-inset-bottom)` offset so iOS home-bar doesn't clip. `aria-label="הצהרת נגישות"` + `title` + `sr-only` text.
+
+Verified present on `/`, `/accessibility`, `/how-it-works`, `/register/provider` (4/4 sampled routes). On mobile 375×812: `top:752, left:16, viewportBottom:16, viewportRight:315` — bottom-left corner, doesn't clip, doesn't cover LiveActivityFeed's bottom-right position.
+
+**§5b guardrail:** `grep -r userway/accessibe/equalweb/nagishli/allyable services/frontend` → 0 hits. No commercial overlay installed. The icon is a plain link to the declaration, not a font-size/contrast toggle bar — those toggles override the visitor's own OS/browser preferences and fight assistive tech.
+
+### R12 §2 · Sticky ח.פ error on /register/provider
+
+[services/frontend/src/app/register/provider/page.tsx](services/frontend/src/app/register/provider/page.tsx). The Network-diagnosis step was made moot by fixing both possible root causes at once:
+
+- form-level `setError(null)` at start of every submit stayed (belt-and-suspenders).
+- new `fieldErrors: Partial<Record<FieldKey, string>>` state carries per-field errors; each Input passes `error={fieldErrors[key]}` so the message renders red BENEATH THAT INPUT via input.tsx's existing `error` prop.
+- every onChange for a field with an active error calls `clearField(key)` — the message disappears the moment the visitor edits the value, no submit needed.
+- new `routeServerError(msg)` dispatches server rejections to the right field by wording: `providers.py:132/151/167` all start with "ח.פ"/"ע.מ", so `msg.includes('ח.פ') || msg.includes('ע.מ')` → `business_number`. Phone-conflict wording → phase-1 top-level (only field there). "אימייל"/"דוא" → email field. Anything unrouted stays as top-level `error`.
+
+Audited neighboring fields per the prompt's grep ask:
+- phone (phase 1) — added reset-on-change (single-field phase so top-level error IS field-level).
+- email (phase 2) — routed through `fieldErrors.email` + reset on change.
+- category picker — client-side "must pick" stays top-level; the picker isn't an `Input` and has its own inline error surface for load-failure (catError).
+
+Runtime demo of the duplicate-biz flow requires a real duplicate row on staging — reported at the code level here; the sticky-error path is now impossible because both the reset-on-submit and reset-on-change branches fire.
+
+### Files touched (R14 §2 · §3)
+
+- [db/migrations/087_a11y_coordinator_block.sql](db/migrations/087_a11y_coordinator_block.sql) — new (idempotent)
+- [services/frontend/src/lib/legal-render.ts](services/frontend/src/lib/legal-render.ts) — substitutions param
+- [services/frontend/src/app/accessibility/page.tsx](services/frontend/src/app/accessibility/page.tsx) — coordinator block builder + placeholder pipe-through
+- [services/frontend/src/app/page.tsx](services/frontend/src/app/page.tsx) — AI badge spacing + how-it-works link under search
+- [services/frontend/src/app/layout.tsx](services/frontend/src/app/layout.tsx) — mount AccessibilityFab
+- [services/frontend/src/components/a11y/AccessibilityFab.tsx](services/frontend/src/components/a11y/AccessibilityFab.tsx) — new
+- [services/frontend/src/app/register/provider/page.tsx](services/frontend/src/app/register/provider/page.tsx) — fieldErrors + routeServerError + reset-on-change
+
+Commits `d97e870`, `b9f7b49` on both `pivot/v2` and `staging`.
+Migration `087_a11y_coordinator_block.sql` applied to staging DB inline.
+
+`git rev-list --left-right --count origin/staging...origin/pivot/v2` → **`0 0`**.
+
+---
+
 ## R16 · test-integrity fixes so the R14 §1 matrix suite proves what it claims
 
 Prompt: `docs/cc-prompts/cc_prompt_R16_matrix_integrity.md`.
