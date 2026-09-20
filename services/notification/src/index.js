@@ -35,6 +35,20 @@ app.get('/readyz', async (_, res) => {
   }
 });
 
+// R19 §2b · reflect the FREE_LAUNCH_UNTIL env value so the consistency
+// suite can compare it against the three other holders of the same
+// date (site_settings.launch_promo_end · payment's env · frontend's
+// NEXT_PUBLIC_*). No secrets — only the date, only the fields the
+// smoke test needs. `null` means the env var is unset — which is
+// itself a legitimate answer (and a suite-failing one, per §2b).
+app.get('/config/promo', (_, res) => {
+  const raw = (process.env.FREE_LAUNCH_UNTIL || '').trim();
+  res.json({
+    service:            'notification',
+    free_launch_until:  raw || null,
+  });
+});
+
 app.use('/', notifRoutes);
 
 const PORT = process.env.NOTIF_PORT || 3006;

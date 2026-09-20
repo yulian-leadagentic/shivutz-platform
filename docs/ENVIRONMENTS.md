@@ -151,6 +151,37 @@ Verify with `railway variables --service user-org | grep FRONTEND_URL` (repeat f
 
 Comma-separated list of domain suffixes; the notification service refuses to email any address outside the list when `NODE_ENV != 'production'`. Default when unset: `example.com,tagidai.com`. Block reasons land in `notification_log.status='blocked_by_allowlist'`. Never enforce in prod — real users need real mail.
 
+### `FREE_LAUNCH_UNTIL` — the launch-promo date, in FOUR places (R19)
+
+The launch-promo end date must be identical across **four holders**; drift here means the customer sees "free" while payment charges them. R19's `--suite core` fails loudly if any drift.
+
+  - `site_settings.launch_promo_end`  — DB (org_db). Yulian edits via `/admin/legal → Settings`. Decides whether register-time `marketplace_subscriptions.price_paid=0` (providers.py).
+  - `FREE_LAUNCH_UNTIL`  — env var on **`payment`**. Decides whether `_free_launch_active()` (cardcom.py) short-circuits the actual charge/capture. 🔴 **If unset, `payment` charges even though `user-org` marked the row free.**
+  - `FREE_LAUNCH_UNTIL`  — env var on **`notification`**. Branches the welcome-email copy.
+  - `NEXT_PUBLIC_FREE_LAUNCH_UNTIL`  — env var on **`frontend`**. Renders `FreeLaunchBanner`. 🔴 **Baked at build time (NEXT_PUBLIC_*), so a Railway env change alone does nothing — a fresh frontend deploy is required.**
+
+Current value: `2026-12-31` (from R10 decisions doc §1).
+
+Each of the three services exposes the value at `/config/promo` (payment, notification) and `/api/config/promo` (frontend) so the smoke suite can compare without needing Railway API access. The DB value is read directly.
+
+Verify with:
+
+```bash
+railway variables --service payment       | grep FREE_LAUNCH_UNTIL
+railway variables --service notification  | grep FREE_LAUNCH_UNTIL
+railway variables --service frontend      | grep NEXT_PUBLIC_FREE_LAUNCH_UNTIL
+```
+
+Or the read-side proof (once services are live):
+
+```bash
+curl -s https://staging.buildupai.net/api/config/promo
+curl -s https://staging-payment.<railway>.app/config/promo
+curl -s https://staging-notification.<railway>.app/config/promo
+```
+
+The `--suite core` smoke check does exactly the above four reads and reports "PASS" only when every value matches; a `null` from any endpoint (i.e. env var unset) is a FAILURE, not a skip.
+
 ### Known constraints
 
 - Vonage account is shared with prod — staging tests count against the same budget. Switch to `SMS_PROVIDER=stub` on staging auth + notification if you want fully free SMS.

@@ -1223,6 +1223,88 @@ def test_money(r: Runner) -> None:
         pay.close()
 
 
+def test_promo_consistency(r: Runner) -> None:
+    """R19 §2b · four holders of the launch-promo date must all agree.
+
+    Reads:
+      1. site_settings.launch_promo_end        (org_db)
+      2. FREE_LAUNCH_UNTIL                     (payment /config/promo)
+      3. FREE_LAUNCH_UNTIL                     (notification /config/promo)
+      4. NEXT_PUBLIC_FREE_LAUNCH_UNTIL         (frontend /api/config/promo)
+
+    Passes only when ALL FOUR match. Any missing/unset value is a
+    FAILURE (not skip) per §2b's "ערך חסר הוא כישלון, לא דילוג" rule.
+    Failure output NAMES all four so the operator knows which service
+    holds which value.
+
+    Runs from inside the user-org container so it can reach the other
+    services on their internal hostnames (payment:3009 etc.).
+    """
+    import urllib.request, urllib.error, json as _json
+
+    def _fetch(url: str) -> Optional[str]:
+        try:
+            with urllib.request.urlopen(url, timeout=5) as resp:
+                body = _json.loads(resp.read().decode())
+            return body.get("free_launch_until")
+        except (urllib.error.URLError, urllib.error.HTTPError,
+                ValueError, OSError):
+            return None
+
+    # 1. DB — site_settings.launch_promo_end
+    conn = db("org_db")
+    try:
+        db_val = scalar(
+            conn,
+            "SELECT setting_val FROM site_settings WHERE setting_key='launch_promo_end' LIMIT 1",
+        )
+    finally:
+        conn.close()
+
+    # 2-4. HTTP endpoints inside the internal network
+    pay_url  = os.environ.get("PAYMENT_SERVICE_URL",      "http://payment:3009").rstrip("/") + "/config/promo"
+    notif_url = os.environ.get("NOTIFICATION_SERVICE_URL", "http://notification:3006").rstrip("/") + "/config/promo"
+    fe_url    = os.environ.get("FRONTEND_SERVICE_URL",     "http://frontend:3000").rstrip("/") + "/api/config/promo"
+
+    pay_val   = _fetch(pay_url)
+    notif_val = _fetch(notif_url)
+    fe_val    = _fetch(fe_url)
+
+    values = {
+        "site_settings.launch_promo_end": db_val,
+        "payment FREE_LAUNCH_UNTIL":      pay_val,
+        "notification FREE_LAUNCH_UNTIL": notif_val,
+        "frontend NEXT_PUBLIC_FREE_LAUNCH_UNTIL": fe_val,
+    }
+
+    # Any None / empty = failure (§2b: missing IS the failure).
+    missing = [k for k, v in values.items() if not v]
+    if missing:
+        summary = " · ".join(f"{k}={v!r}" for k, v in values.items())
+        r.add("R19", "promo date consistency across 4 sources",
+              "all four set and identical",
+              f"MISSING: {', '.join(missing)}",
+              False,
+              f"Four values: {summary}")
+        return
+
+    # All four present — compare.
+    unique = set(values.values())
+    if len(unique) == 1:
+        r.add("R19", "promo date consistency across 4 sources",
+              "all four set and identical",
+              f"all four = {next(iter(unique))!r}",
+              True)
+    else:
+        summary = " · ".join(f"{k}={v!r}" for k, v in values.items())
+        r.add("R19", "promo date consistency across 4 sources",
+              "all four set and identical",
+              f"DRIFT: {summary}",
+              False,
+              f"Four values disagree — align them all to the same date. "
+              f"Distinct values: {sorted(unique)}")
+
+
 # ═══ S2 EXTENSIONS ══════════════════════════════════════════════════════════
 # Everything below is loaded only when --suite is `money` or `all`. The
 # split lets --suite core stay identical to S1 so a regression in the S2
@@ -2674,6 +2756,8 @@ def _run_core(api: ApiClient, sessions: Dict[str, Session], r: Runner) -> None:
                  sess_contractor=sessions["CONTRACTOR_APPROVED"])
     print("[smoke] §2.7 money guardrails…")
     test_money(r)
+    print("[smoke] R19 §2b promo-date consistency (4 sources)…")
+    test_promo_consistency(r)
 
 
 def _run_money(api: ApiClient, sessions: Dict[str, Session], r: Runner,

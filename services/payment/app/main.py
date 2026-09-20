@@ -76,6 +76,24 @@ def readyz():
         raise HTTPException(status_code=503, detail=f"db_unreachable: {e}")
 
 
+# R19 §2b · reflect FREE_LAUNCH_UNTIL so the consistency suite can
+# compare against the three other holders (site_settings.
+# launch_promo_end · notification's env · frontend's NEXT_PUBLIC_*).
+# The value is the ONLY field returned — no secrets. `null` = env
+# var unset, which is itself a legitimate answer and one that fails
+# the consistency check per §2b's "missing = failure, not skip"
+# rule. This is the same value cardcom.py reads at startup, echoed
+# verbatim so a mismatched suite tells us "payment says X, notification
+# says Y" without needing to inspect Railway.
+@app.get("/config/promo")
+def config_promo():
+    from app.services.cardcom import FREE_LAUNCH_UNTIL
+    return {
+        "service":           "payment",
+        "free_launch_until": FREE_LAUNCH_UNTIL,
+    }
+
+
 # Gateway strips `/api` from every request before proxying (see
 # services/gateway/src/index.js: pathRewrite). So /api/payments/foo arrives
 # here as /payments/foo — every router under the payment service must be
