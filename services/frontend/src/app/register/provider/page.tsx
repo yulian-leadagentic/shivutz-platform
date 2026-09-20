@@ -38,11 +38,36 @@ import { checkIsraeliPhone } from '@/lib/phone';
 
 type Phase = 'phone' | 'otp' | 'form' | 'done';
 
+// R12 §2 · fieldErrors carries the sticky-error fix. The bug was:
+// user submits, server returns "ח.פ כבר רשום…", user edits the ח.פ
+// field to try a different number → old error stays visible until
+// the next submit. Root cause: error lived at form-level and only
+// reset inside submit(). Two fixes together:
+//   · errors that belong to a field render via the Input's `error`
+//     prop (input.tsx:6,86-88), so they sit next to that field
+//     instead of at the top of the form.
+//   · every field-level onChange clears its own key — the error
+//     disappears the moment the user starts fixing the value that
+//     caused it. Reset-on-submit stays as a belt-and-suspenders.
+// FIELDS is the closed set of keys used in phase 2; adding a
+// field-level error for something outside it should extend FIELDS
+// and pipe it through Input the same way.
+type FieldKey = 'business_number' | 'name' | 'contact_name' | 'email';
+
 export default function ProviderRegisterPage() {
   const router = useRouter();
   const [phase, setPhase]     = useState<Phase>('phone');
   const [busy, setBusy]       = useState(false);
   const [error, setError]     = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<FieldKey, string>>>({});
+
+  // Two tiny helpers, no library. `setField` writes; `clearField`
+  // wipes one key. Wrapped so field onChange handlers can call
+  // `clearField('business_number')` without pulling in an
+  // immutability lib for a five-key object.
+  const setField    = (key: FieldKey, msg: string) => setFieldErrors((s) => ({ ...s, [key]: msg }));
+  const clearField  = (key: FieldKey) => setFieldErrors((s) => { const { [key]: _, ...rest } = s; return rest; });
+  const resetErrors = () => { setError(null); setFieldErrors({}); };
 
   // Phase 1 · phone
   const [phone, setPhone]     = useState('');
@@ -99,7 +124,7 @@ export default function ProviderRegisterPage() {
 
   async function sendOtp(e: FormEvent) {
     e.preventDefault();
-    setError(null);
+    resetErrors();
     const check = checkIsraeliPhone(phone);
     if (!check.valid || !check.normalized) {
       setError(check.message || 'מספר טלפון לא תקין');
@@ -120,7 +145,7 @@ export default function ProviderRegisterPage() {
 
   async function verifyOtp(e: FormEvent) {
     e.preventDefault();
-    setError(null);
+    resetErrors();
     if (!/^\d{6}$/.test(code)) {
       setError('קוד לא תקין — 6 ספרות');
       return;
@@ -141,23 +166,38 @@ export default function ProviderRegisterPage() {
     }
   }
 
+  // R12 §2 · route a server-side rejection to the field it belongs to
+  // when the wording gives it away — the wording is the provider
+  // service's own copy (providers.py:132-197: "ספק שירות עם ח.פ...",
+  // "מספר טלפון זה כבר רשום..."). Anything we can't map falls back
+  // to the top-level `error` so the visitor still sees the reason.
+  function routeServerError(msg: string) {
+    if (msg.includes('ח.פ') || msg.includes('ע.מ')) return setField('business_number', msg);
+    if (msg.includes('טלפון')) return setError(msg);   // phase 1 anyway; no field-level surface here
+    if (msg.includes('אימייל') || msg.includes('דוא'))  return setField('email', msg);
+    setError(msg);
+  }
+
   async function submit(e: FormEvent) {
     e.preventDefault();
-    setError(null);
+    resetErrors();
     // R5 §2b · category first. Yulian: "התהליך צריך להיות שאני בוחר
     // קודם קטגוריה" — the field sits first in the form and blocks
     // submit until picked.
-    if (!primaryCategory) return setError('יש לבחור קטגוריה');
-    if (!name.trim()) return setError('שם העסק הוא שדה חובה');
-    if (!contactName.trim()) return setError('שם איש קשר הוא שדה חובה');
+    // Category picker has its own inline error surface (catError from
+    // the load path) — an unpicked category stays as a top-level
+    // error since it's not an Input we can pin to.
+    if (!primaryCategory) { setError('יש לבחור קטגוריה'); return; }
+    if (!name.trim())        { setField('name',         'שם העסק הוא שדה חובה'); return; }
+    if (!contactName.trim()) { setField('contact_name', 'שם איש קשר הוא שדה חובה'); return; }
     // R5 §2a · ח.פ was optional until Yulian's 17.09 call. Format check
     // only (9 digits) — providers aren't in ראשם החברות so we
     // deliberately don't cross-check a registry; that's the whole point
     // of the service_provider entity type. Server-side validation in
     // providers.py is the source of truth; client is convenience.
     const bn = businessNumber.trim();
-    if (!bn) return setError('ח.פ / ע.מ הוא שדה חובה');
-    if (!/^\d{9}$/.test(bn)) return setError('ח.פ / ע.מ חייב להיות 9 ספרות');
+    if (!bn)                    { setField('business_number', 'ח.פ / ע.מ הוא שדה חובה'); return; }
+    if (!/^\d{9}$/.test(bn))    { setField('business_number', 'ח.פ / ע.מ חייב להיות 9 ספרות'); return; }
     setBusy(true);
     try {
       const res = await orgApi.registerProvider({
@@ -184,7 +224,7 @@ export default function ProviderRegisterPage() {
       setTimeout(() => router.push('/provider/dashboard'), 1200);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'הרישום נכשל';
-      setError(msg);
+      routeServerError(msg);
     } finally {
       setBusy(false);
     }
@@ -224,7 +264,14 @@ export default function ProviderRegisterPage() {
                       dir="ltr"
                       placeholder="050-1234567"
                       value={phone}
-                      onChange={(e) => setPhone(e.target.value)}
+                      // R12 §2 · same reset-on-change pattern as the
+                      // biz field. Phase-1 has only one input so
+                      // top-level `error` IS the field-level one;
+                      // clearing it on change keeps the pattern
+                      // consistent — the visitor doesn't watch a
+                      // stale "invalid phone" message hang there
+                      // while they type digits into the field.
+                      onChange={(e) => { setPhone(e.target.value); if (error) setError(null); }}
                       required
                     />
                   </label>
@@ -330,8 +377,9 @@ export default function ProviderRegisterPage() {
                     <span className="text-slate-700 mb-1 block">שם העסק *</span>
                     <Input
                       value={name}
-                      onChange={(e) => setName(e.target.value)}
+                      onChange={(e) => { setName(e.target.value); if (fieldErrors.name) clearField('name'); }}
                       required
+                      error={fieldErrors.name}
                     />
                   </label>
 
@@ -339,9 +387,10 @@ export default function ProviderRegisterPage() {
                     <span className="text-slate-700 mb-1 block">שם איש קשר *</span>
                     <Input
                       value={contactName}
-                      onChange={(e) => setContactName(e.target.value)}
+                      onChange={(e) => { setContactName(e.target.value); if (fieldErrors.contact_name) clearField('contact_name'); }}
                       autoComplete="name"
                       required
+                      error={fieldErrors.contact_name}
                     />
                   </label>
 
@@ -350,12 +399,21 @@ export default function ProviderRegisterPage() {
                       <span className="text-slate-700 mb-1 block">ח.פ / ע.מ *</span>
                       <Input
                         value={businessNumber}
-                        onChange={(e) => setBizNumber(e.target.value.replace(/\D/g, '').slice(0, 9))}
+                        // R12 §2 · onChange clears the sticky "already
+                        // registered" error the moment the visitor edits
+                        // this field, without waiting for the next
+                        // submit. The Input renders `error` beneath the
+                        // input in red — no top-level banner needed.
+                        onChange={(e) => {
+                          setBizNumber(e.target.value.replace(/\D/g, '').slice(0, 9));
+                          if (fieldErrors.business_number) clearField('business_number');
+                        }}
                         dir="ltr"
                         inputMode="numeric"
                         pattern="\d{9}"
                         maxLength={9}
                         required
+                        error={fieldErrors.business_number}
                       />
                     </label>
                     <label className="block text-sm">
@@ -372,9 +430,10 @@ export default function ProviderRegisterPage() {
                     <Input
                       type="email"
                       value={email}
-                      onChange={(e) => setEmail(e.target.value)}
+                      onChange={(e) => { setEmail(e.target.value); if (fieldErrors.email) clearField('email'); }}
                       dir="ltr"
                       autoComplete="email"
+                      error={fieldErrors.email}
                     />
                   </label>
 

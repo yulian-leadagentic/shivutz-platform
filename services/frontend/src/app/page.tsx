@@ -943,7 +943,14 @@ function LandingPageInner() {
             className="mt-16 bg-white border-b border-slate-200 px-4 pt-2 pb-3 sm:pt-3 sm:pb-4 text-center"
           >
             <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900 leading-tight">
-              פלטפורמת ה
+              {/* R12 §3 · explicit {' '} on BOTH sides of the AI badge.
+                  JSX collapses whitespace between text and an
+                  element on separate lines to nothing, so before this
+                  fix "ה" glued to the badge frame. `{' '}` is a real
+                  space character in the text stream, so a screen
+                  reader also reads it — a `padding` on the badge
+                  would only fix the visual, not the read-aloud. */}
+              פלטפורמת ה{' '}
               <span className="ai-mark ai-mark--hl" dir="ltr">AI</span>
               {' '}לקבלנים ותאגידי כוח אדם
             </h1>
@@ -1073,6 +1080,28 @@ function LandingPageInner() {
                   <span>חפש</span>
                 </button>
               </form>
+
+              {/* R12 §4 · text link to /how-it-works right under the
+                  search bar. Before this, the link only existed in
+                  LandingNav (hidden inside the mobile burger) and
+                  the footer — a visitor on mobile at 390px who
+                  didn't understand what the site does would bounce
+                  before opening the menu. Kept small + secondary so
+                  it does not compete with the search field (F1
+                  ruled that search is the primary landing action).
+                  Hidden once a search has run so it doesn't sit
+                  between the input and the results. */}
+              {!resp && (
+                <div className="mt-2 mb-1 flex justify-center">
+                  <Link
+                    href="/how-it-works"
+                    className="text-xs text-slate-500 hover:text-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 rounded px-2 py-1 inline-flex items-center gap-1"
+                  >
+                    <span>איך זה עובד?</span>
+                    <ArrowLeft className="w-3 h-3" aria-hidden="true" />
+                  </Link>
+                </div>
+              )}
 
               {/* F2 v2 §5.2 — readout ('הבנתי:' tags) sits directly
                   under the form as one visual surface. Sticky-bar

@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import { Heebo } from 'next/font/google';
 import { AuthProvider } from '@/lib/AuthContext';
 import { EnumsProvider } from '@/features/enums/EnumsContext';
+import AccessibilityFab from '@/components/a11y/AccessibilityFab';
 import './globals.css';
 
 const heebo = Heebo({ subsets: ['hebrew', 'latin'], variable: '--font-heebo' });
@@ -63,6 +64,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <AuthProvider>
           <EnumsProvider>{children}</EnumsProvider>
         </AuthProvider>
+        {/* R12 §5 · persistent accessibility icon — appears on every
+            page including admin/dashboards/register, per the
+            regulation "הצהרת הנגישות חייבת להיות נגישה מכל עמוד".
+            Placed after AuthProvider so any auth-guarded fetches
+            still gate the children, not this link. */}
+        <AccessibilityFab />
       </body>
     </html>
   );
