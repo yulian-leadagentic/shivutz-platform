@@ -100,6 +100,37 @@ a11y_coordinator_phone  =  0525278625        (ללא שינוי)
 a11y_coordinator_name   =  יוליאן אברמוביץ׳   (ללא שינוי)
 ```
 
+## 🔴 5a · זה כבר נכתב לסטייג׳ינג — וצריך מיגרציה חדשה
+
+**`087_a11y_coordinator_block.sql:37` כבר כתב `temp@gmail.com` לתוך `site_settings`, והוא כבר בענף.**
+
+```sql
+UPDATE site_settings
+   SET setting_val = 'temp@gmail.com'
+ WHERE setting_key = 'a11y_coordinator_email'
+   AND (setting_val IS NULL OR setting_val = '');
+```
+
+> 🔴 **כלומר ההצהרה הציבורית מפנה כרגע לתיבה של אדם זר.**
+
+**שתי מלכודות:**
+
+1. 🔴 **אל תערוך את `087`.** היא כבר רצה. **מיגרציה שרצה היא היסטוריה, לא טיוטה**
+2. 🔴 **והתנאי `AND setting_val IS NULL` אומר שהרצה חוזרת של `087` לא תתקן כלום** — השדה כבר לא `NULL`. **תיקון ״להריץ שוב״ ייראה כאילו עבד ולא יעשה דבר**
+
+**Do: `088_a11y_coordinator_email_fix.sql`** — `UPDATE` ללא תנאי ה-`NULL`, **מותנה במפורש בערך הישן:**
+
+```sql
+UPDATE site_settings
+   SET setting_val = 'accessibility@tagidai.com'
+ WHERE setting_key = 'a11y_coordinator_email'
+   AND setting_val = 'temp@gmail.com';
+```
+
+**ודא בסטייג׳ינג ב-`SELECT` שהערך השתנה בפועל, ושההצהרה מציגה את החדש.** הדבק את שניהם.
+
+---
+
 🔴 **שער לפני שזה עולה:** **ודא שהתיבה קיימת ומקבלת דואר.** שלח אליה ודווח שהגיעה.
 
 **אם היא לא קיימת — עצור, דווח, והשאר את השדה `NULL`.** לפי R14 §2, שדה ריק → הבלוק לא מרונדר.
@@ -176,6 +207,9 @@ TagidAI
 - [ ] `orgTypeLabel` תוקן בכל ה-publishers. `grep` — הדבק
 - [ ] **כל כתובות הזרע `@example.com`.** `SELECT` — הדבק
 - [ ] 🔴 **אפס מופעים של `temp@gmail.com` בקוד ובזרעים.** `grep` — הדבק
+- [ ] 🔴 **`088` נכתבה. `087` לא נגעת בה.** הדבק את שתיהן
+- [ ] 🔴 **`SELECT setting_val` אחרי `088` → `accessibility@tagidai.com`.** הדבק
+- [ ] **ההצהרה בדפדפן מציגה את הכתובת החדשה.** צילום של סעיף 4
 - [ ] **`accessibility@tagidai.com` — התיבה קיימת ומקבלת.** דווח שהגיע
 - [ ] **מייל הברוכים-הבאים נשלח לספק זרע.** צילום של המייל כפי שהתקבל
 - [ ] 🔴 **`{cta_url}` נלחץ ונוחת על `/provider/marketplace/new` עם הקטגוריה מלאה.** צילום
