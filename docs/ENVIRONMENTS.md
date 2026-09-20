@@ -133,6 +133,24 @@ Push to `staging` to deploy. No manual redeploy needed; Railway auto-deploys on 
 - JWT secrets, TOKEN_ENCRYPTION_KEY, CARDCOM_WEBHOOK_SECRET — fresh, distinct from prod
 - Vonage credentials shared with prod (cost concern is small for staging volume)
 
+### `FRONTEND_URL` — must be set on THREE services (R17)
+
+`FRONTEND_URL` is the base URL used to build every SMS/email deep link (welcome email `cta_url`, admin invite links, tender/verify reminders). It must be set explicitly on Railway for each of:
+
+  - `user-org`    — consumed by `providers.py` (welcome email) and `contractors.py` (verify link)
+  - `admin`       — consumed by `users.py` (admin invite email)
+  - `notification` — consumed by `handlers.js` and every cron in `src/cron/*.js`
+
+**Staging**: `FRONTEND_URL=https://staging.tagidai.com` (whichever staging origin is live).
+**Production**: `FRONTEND_URL=https://www.tagidai.com`.
+**Missing**: the code defaults to `https://www.tagidai.com` — safe (prod domain) but not right for staging. R17 aligned the default across all four call-sites; before R17 one branch (providers.py) defaulted to `https://staging.buildupai.net` (the legacy staging subdomain of the abandoned domain) and the welcome email `cta_url` would have led paying providers to a dead page.
+
+Verify with `railway variables --service user-org | grep FRONTEND_URL` (repeat for admin, notification).
+
+### `EMAIL_ALLOWLIST_DOMAINS` — non-prod safety gate (R10 §0/§4)
+
+Comma-separated list of domain suffixes; the notification service refuses to email any address outside the list when `NODE_ENV != 'production'`. Default when unset: `example.com,tagidai.com`. Block reasons land in `notification_log.status='blocked_by_allowlist'`. Never enforce in prod — real users need real mail.
+
 ### Known constraints
 
 - Vonage account is shared with prod — staging tests count against the same budget. Switch to `SMS_PROVIDER=stub` on staging auth + notification if you want fully free SMS.

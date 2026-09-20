@@ -11,7 +11,14 @@ export function AdSidebar({
   title = 'מקום פרסום זמין',
   body  = 'פרסום ממוקד לקהל שמחפש עובדים ודיור בישראל.',
   cta   = 'לפרטים',
-  href  = 'mailto:ads@buildupai.net?subject=%D7%A4%D7%A8%D7%A1%D7%95%D7%9D%20%D7%91%D7%A1%D7%99%D7%99%D7%93%D7%91%D7%A8',
+  // R17 §2 · was 'ads@buildupai.net' — a mailbox on the abandoned
+  // domain, so every self-serve advertiser inquiry sent from the
+  // "פרסום כאן" placeholder was dropping into a black hole. Swapped
+  // to `ads@tagidai.com` (🔴 לאישור Yulian — Yulian to confirm the
+  // mailbox exists / is watched before launch; if not, revert to
+  // NULL and hide the CTA rather than send a real lead to a
+  // non-existent inbox). Subject encoded as before ('פרסום בסיידבר').
+  href  = 'mailto:ads@tagidai.com?subject=%D7%A4%D7%A8%D7%A1%D7%95%D7%9D%20%D7%91%D7%A1%D7%99%D7%99%D7%93%D7%91%D7%A8',
 }: {
   title?: string;
   body?:  string;

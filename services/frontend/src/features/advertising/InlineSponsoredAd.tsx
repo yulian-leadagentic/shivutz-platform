@@ -10,7 +10,13 @@ import { Megaphone } from 'lucide-react';
 export function InlineSponsoredAd({
   title = 'מקום פרסום זמין',
   body  = 'מודעתך תופיע כאן כאשר קבלנים ותאגידים מחפשים בפלטפורמה.',
-  href  = 'mailto:ads@buildupai.net?subject=%D7%A4%D7%A8%D7%A1%D7%95%D7%9D%20%D7%91%D7%AA%D7%95%D7%A6%D7%90%D7%95%D7%AA%20%D7%97%D7%99%D7%A4%D7%95%D7%A9',
+  // R17 §2 · was 'ads@buildupai.net' — mailbox on the abandoned
+  // domain, every inquiry from the "פרסום כאן" placeholder was
+  // dropping. Swapped to `ads@tagidai.com` (🔴 לאישור Yulian). If
+  // the mailbox doesn't exist / isn't monitored, revert to NULL
+  // and hide the CTA rather than route real leads to a black hole.
+  // Subject encoded as before ('פרסום בתוצאות חיפוש').
+  href  = 'mailto:ads@tagidai.com?subject=%D7%A4%D7%A8%D7%A1%D7%95%D7%9D%20%D7%91%D7%AA%D7%95%D7%A6%D7%90%D7%95%D7%AA%20%D7%97%D7%99%D7%A4%D7%95%D7%A9',
 }: {
   title?: string;
   body?:  string;

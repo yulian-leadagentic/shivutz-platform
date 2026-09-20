@@ -404,7 +404,15 @@ async def register_provider(data: ProviderCreate):
         # on site_settings.launch_promo_end at send time — sending a
         # promo blurb whose date already passed would be worse than
         # sending none.
-        frontend_url = os.getenv("FRONTEND_URL", "https://staging.buildupai.net")
+        # R17 §1 · Default matches the other three services (admin,
+        # user-org/contractors, notification) — 'https://www.tagidai.com'.
+        # The previous default here was 'https://staging.buildupai.net',
+        # a legacy staging subdomain on the abandoned domain — the R10
+        # §6 welcome-email `cta_url` was built from it, so any prod
+        # deploy that missed setting FRONTEND_URL would land the paying
+        # provider on a dead domain. Same wording as handlers.js:10
+        # which flagged the risk explicitly.
+        frontend_url = os.getenv("FRONTEND_URL", "https://www.tagidai.com")
         cta_url = f"{frontend_url}/provider/marketplace/new?category={cat}"
         await publish_event("provider.welcome", {
             "recipient_email": data.email,
