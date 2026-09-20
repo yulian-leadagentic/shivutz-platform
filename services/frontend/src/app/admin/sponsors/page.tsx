@@ -703,11 +703,87 @@ function CreativeUploader({ creativeUrl, creativeW, creativeH, placements, onCha
                  onChange={e => e.target.files?.[0] && upload(e.target.files[0])} />
         </label>
       ) : (
-        <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-          Cloudinary לא מוגדר בשרת. הדבק כתובת תמונה ידנית.
-        </div>
+        <ManualUrlEntry onPick={onChange} setErr={setErr} />
       )}
       {err && <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{err}</div>}
+    </div>
+  );
+}
+
+// Fallback when the Cloudinary signed-upload endpoint isn't
+// configured on this env — the amber-only stub used to say "paste
+// URL manually" without providing any input, which caught Yulian on
+// the first real ad. This lets the operator host the JPG anywhere
+// and paste the URL; we auto-detect the natural width/height by
+// loading the image off-screen so they don't have to type numbers.
+function ManualUrlEntry({ onPick, setErr }: {
+  onPick: (url: string, w: number, h: number) => void;
+  setErr: (m: string | null) => void;
+}) {
+  const [url, setUrl]   = useState('');
+  const [busy, setBusy] = useState(false);
+
+  async function commit() {
+    setErr(null);
+    const trimmed = url.trim();
+    if (!trimmed) return setErr('הדבק כתובת תמונה');
+    if (!/^https?:\/\//i.test(trimmed)) return setErr('הכתובת חייבת להתחיל ב-http:// או https://');
+    // Same jpg/png/webp gate as the drag-drop path — SVG stays out.
+    // A URL without an extension (Cloudinary transforms, signed
+    // links) is allowed on trust; the server never renders SVG
+    // regardless because the client only writes to `creative_url`
+    // which the sponsor slot renders through <img object-contain>.
+    if (/\.svg(\?|$)/i.test(trimmed)) return setErr('SVG לא נתמך');
+
+    setBusy(true);
+    try {
+      const dims = await new Promise<{ w: number; h: number }>((resolve, reject) => {
+        const img = new Image();
+        img.onload  = () => resolve({ w: img.naturalWidth, h: img.naturalHeight });
+        img.onerror = () => reject(new Error('טעינת התמונה נכשלה — בדוק שהכתובת נגישה'));
+        img.src = trimmed;
+      });
+      if (!dims.w || !dims.h) throw new Error('לא הצלחתי לזהות מידות של התמונה');
+      onPick(trimmed, dims.w, dims.h);
+      setUrl('');
+    } catch (e) {
+      setErr((e as Error).message ?? 'שגיאה בהוספה');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 flex items-start gap-2">
+        <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+        <span>
+          העלאה מהמחשב תופעל כשמנהל השרת יגדיר Cloudinary
+          (<code>CLOUDINARY_CLOUD_NAME</code>/<code>API_KEY</code>/<code>API_SECRET</code>).
+          בינתיים הדבק כתובת של תמונה מארחת (Cloudinary web · S3 · ImgBB).
+        </span>
+      </div>
+      <div className="flex gap-2">
+        <input
+          type="url"
+          value={url}
+          onChange={e => setUrl(e.target.value)}
+          placeholder="https://res.cloudinary.com/..."
+          className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm"
+        />
+        <button
+          type="button"
+          onClick={commit}
+          disabled={busy || !url.trim()}
+          className="bg-brand-600 hover:bg-brand-800 text-white text-xs font-semibold px-3 py-2 rounded-lg disabled:bg-slate-300 inline-flex items-center gap-1 whitespace-nowrap"
+        >
+          {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+          הוסף
+        </button>
+      </div>
+      <p className="text-[11px] text-slate-500">
+        מומלץ 1200×628 (באנר) או 1080×1080 (קרוסלה). המידות ייקלטו אוטומטית מהתמונה.
+      </p>
     </div>
   );
 }
