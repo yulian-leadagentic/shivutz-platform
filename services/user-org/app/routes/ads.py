@@ -495,6 +495,15 @@ _PUBLIC_SPONSOR_AD_COLS = frozenset({
     "cta_label_he", "cta_url",
     "logo_url", "brand_bg", "brand_fg",
     "target_professions", "target_ad_types", "target_regions",
+    # R20 §3 · finished-creative model. When `creative_url` is
+    # present, the client renders the image and ignores the
+    # headline/body/chips model. `creative_w`/`creative_h` feed the
+    # aspect-ratio box that prevents layout shift while the image
+    # loads. Adding these three to the allow-list is the only server
+    # change §3 needs — the query already SELECTs * off sponsor_ads
+    # in the RAND path; the slot-first path's explicit SELECT list
+    # gets the three appended below.
+    "creative_url", "creative_w", "creative_h",
     # NOT included (kept out of the public feed even if added to
     # sponsor_ads later): price_nis, billing_*, advertiser_contact_*,
     # placements (internal targeting, not for the client). Bring them
@@ -594,7 +603,8 @@ def get_sponsored_ads(
                          id, advertiser_name,
                          headline_he, body_he, chips_he,
                          cta_label_he, cta_url,
-                         logo_url, brand_bg, brand_fg,
+                         logo_url, creative_url, creative_w, creative_h,
+                         brand_bg, brand_fg,
                          target_professions, target_ad_types, target_regions
                        FROM sponsor_ads
                       WHERE id = %s AND active = TRUE
@@ -618,7 +628,8 @@ def get_sponsored_ads(
               id, advertiser_name,
               headline_he, body_he, chips_he,
               cta_label_he, cta_url,
-              logo_url, brand_bg, brand_fg,
+              logo_url, creative_url, creative_w, creative_h,
+              brand_bg, brand_fg,
               target_professions, target_ad_types, target_regions,
               /* targeting-score: how many axes matched a concrete
                  value (not NULL). Higher = more specific. */

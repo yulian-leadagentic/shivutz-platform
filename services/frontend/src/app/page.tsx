@@ -2253,6 +2253,11 @@ interface SponsorAd {
   cta_label_he: string;
   cta_url: string | null;
   logo_url: string | null;
+  // R20 §3 · finished-creative branch (client renders the JPG when
+  // set; ignores headline/body/chips).
+  creative_url: string | null;
+  creative_w: number | null;
+  creative_h: number | null;
   brand_bg: string | null;
   brand_fg: string | null;
   target_professions: string[] | null;
@@ -2289,6 +2294,51 @@ function SponsorSlot({ ad }: { ad: SponsorAd }) {
       placement:   'inline',
     });
   };
+  // R20 §3 · finished-creative branch. When creative_url is set the
+  // ad is one image (bizi disclaimer, Kobi Ram photo — real-money
+  // categories). The whole slot becomes the anchor so the click
+  // instrument fires on the image itself; object-contain keeps the
+  // legal disclaimer at the bottom from cropping even if the aspect
+  // ratio ends up slightly off.
+  if (ad.creative_url) {
+    const aspectStyle = ad.creative_w && ad.creative_h
+      ? { aspectRatio: `${ad.creative_w} / ${ad.creative_h}` }
+      : { aspectRatio: '1200 / 628' };
+    const inner = (
+      <img
+        src={ad.creative_url}
+        alt={ad.advertiser_name}
+        className="w-full h-full object-contain block"
+        loading="lazy"
+      />
+    );
+    return (
+      <li
+        ref={observeRef}
+        role="presentation"
+        className="sponsor-slot sponsor-slot--creative"
+        aria-label={`מודעה מאת ${ad.advertiser_name}`}
+      >
+        <span className="sponsor-slot__badge">מודעה</span>
+        <div
+          className="w-full rounded-xl overflow-hidden"
+          style={{ ...aspectStyle, backgroundColor: brandBg }}
+        >
+          {hasCta ? (
+            <a
+              href={ad.cta_url!}
+              target="_blank"
+              rel="noopener nofollow sponsored"
+              onClick={handleClick}
+              className="block w-full h-full"
+            >
+              {inner}
+            </a>
+          ) : inner}
+        </div>
+      </li>
+    );
+  }
   return (
     <li
       ref={observeRef}

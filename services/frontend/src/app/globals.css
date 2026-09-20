@@ -907,3 +907,25 @@ body {
   }
   .sponsor-slot__cta { width: 100%; min-height: 40px; }
 }
+
+/* R20 §1 · scrollbar hide for the mobile sponsor carousel strip.
+   Firefox honours `scrollbar-width: none`; WebKit needs the
+   ::-webkit-scrollbar block. The peek at the card edge is the
+   affordance — a visible scrollbar is redundant and ugly on the
+   over-content strip. Applied ONLY to .sponsor-carousel-scroll so
+   the global page scrollbar (globals.css:64+) still shows. */
+.sponsor-carousel-scroll {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.sponsor-carousel-scroll::-webkit-scrollbar {
+  display: none;
+}
+/* R20 §1 · prefers-reduced-motion turns snap-scroll from smooth to
+   instant. Scroll-snap itself stays — jumping to the next card is
+   still useful; only the animation is muted. */
+@media (prefers-reduced-motion: reduce) {
+  .sponsor-carousel-scroll {
+    scroll-behavior: auto;
+  }
+}
