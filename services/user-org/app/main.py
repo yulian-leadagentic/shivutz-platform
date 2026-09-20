@@ -1,6 +1,6 @@
 import os
 from fastapi import FastAPI, HTTPException
-from app.routes import contractors, corporations, providers, users, admin_approvals, marketplace, marketplace_admin, marketplace_subscriptions, marketplace_uploads, support, membership_requests, uploads, ads, search, reveals, legal
+from app.routes import contractors, corporations, providers, users, admin_approvals, marketplace, marketplace_admin, marketplace_subscriptions, marketplace_uploads, support, membership_requests, uploads, ads, search, reveals, legal, events
 from app.db import get_db, init_db
 from app.errors import register_error_handlers
 
@@ -68,4 +68,9 @@ app.include_router(reveals.router, prefix="", tags=["reveals"])
 # privacy be reachable without a login. Gateway must include /api/legal
 # in PUBLIC_PREFIXES.
 app.include_router(legal.router, prefix="", tags=["legal"])
+# R6 §1b + §4 · promo_events. POST /events is public (anon must be
+# able to record ad impressions), GET /admin/sponsor-stats is admin.
+# Gateway maps /api/events → user-org and adds /api/events to
+# PUBLIC_PREFIXES for the POST path.
+app.include_router(events.router, prefix="", tags=["events"])
 # deploy probe — 2026-05-29 (boot runs migrations 031 + 032 on staging)

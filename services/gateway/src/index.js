@@ -170,6 +170,7 @@ const services = {
   '/api/support-tickets': process.env.USER_ORG_SERVICE_URL    || 'http://user-org:3002',
   '/api/membership-requests': process.env.USER_ORG_SERVICE_URL || 'http://user-org:3002',
   '/api/ads':           process.env.USER_ORG_SERVICE_URL      || 'http://user-org:3002',
+  '/api/events':        process.env.USER_ORG_SERVICE_URL      || 'http://user-org:3002',
   '/api/search':        process.env.USER_ORG_SERVICE_URL      || 'http://user-org:3002',
   // L10 shipped the /legal/{slug} + /legal/settings routes on user-org
   // and added /api/legal to PUBLIC_PREFIXES, but forgot to add the
@@ -251,6 +252,15 @@ const PUBLIC_METHOD_ROUTES = {
   '/api/organizations/corporations': new Set(['POST']),         // self-registration
   '/api/organizations/corporations/lookup': new Set(['POST']),  // pre-registration registry lookup (gated by recent OTP)
   '/api/organizations/providers/register': new Set(['POST']),   // U7 · provider self-registration (OTP-gated in auth)
+  // R6 §1b · POST /api/events records ad impressions/clicks/inquiries.
+  // Public POST only — a not-logged-in browser looking at the landing
+  // sees sponsor cards and their impressions have to count. The rate
+  // limiter + target_id validity check in the handler are the
+  // security boundary (the gateway used to gate on JWT, now that gate
+  // moves inside the endpoint). GET /api/events/admin/sponsor-stats
+  // stays behind the standard JWT + x_user_role='admin' handler
+  // check — NOT included here so admin JWT flows the normal path.
+  '/api/events': new Set(['POST']),
 };
 
 // Public only for specific HTTP methods matched by prefix (prefix → allowed methods)

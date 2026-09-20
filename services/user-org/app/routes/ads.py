@@ -476,27 +476,58 @@ def public_stats():
 #      a global one for a flooring query
 #   2. sort_order (admin can pin)
 #   3. RAND() so a two-ad pool alternates
+# R6 §2 · Allow-list of sponsor_ads columns safe for the public
+# `/ads/public/sponsored` endpoint. Rewritten from pass-through
+# BEFORE R6 §3's tempting price/billing/contact columns land — R15
+# taught us what happens when a new column drops into a pass-through
+# serializer (contact_phone leaked). Same shape as _PUBLIC_AD_COLS
+# (ads.py:322) so both public feeds follow the same pattern.
+#
+# When you add a new column to sponsor_ads and want it to reach the
+# public /sponsored payload, add its name here — and think about it
+# before you do. Match this list to the SELECT list of both queries
+# in get_sponsored_ads() (:562-572 and :585-603). Removing a name is
+# safe (payload key disappears); adding one exposes it publicly.
+_PUBLIC_SPONSOR_AD_COLS = frozenset({
+    "id",
+    "advertiser_name",       # display-only; no phone/email/business_id
+    "headline_he", "body_he", "chips_he",
+    "cta_label_he", "cta_url",
+    "logo_url", "brand_bg", "brand_fg",
+    "target_professions", "target_ad_types", "target_regions",
+    # NOT included (kept out of the public feed even if added to
+    # sponsor_ads later): price_nis, billing_*, advertiser_contact_*,
+    # placements (internal targeting, not for the client). Bring them
+    # up for review before adding to this set.
+})
+
+
 def _serialize_sponsor_ad(item: dict) -> dict:
-    """Shared serialisation for sponsor_ads rows on the public endpoint.
+    """Public serialiser for sponsor_ads rows on `/ads/public/sponsored`.
+
+    R6 §2 · allow-list. Keys not in _PUBLIC_SPONSOR_AD_COLS are
+    dropped, so a new sponsor_ads column added for billing or
+    price never leaks by default. Contrast with R15 §3a where a
+    pass-through serialiser leaked contact_phone the moment the
+    column was added — the exact scenario this list is written to
+    prevent for the next round of sponsor_ads columns.
 
     MySQL JSON columns come back as strings depending on the driver;
-    the legacy path did this inline. R6 pulled it out so the slot-first
-    path and the RAND() fallback both round-trip the same JSON fields
-    identically.
+    the legacy path did this inline. Kept inside this function so
+    both the slot-first path and the RAND() fallback round-trip the
+    same JSON fields identically.
     """
+    out = {k: v for k, v in item.items() if k in _PUBLIC_SPONSOR_AD_COLS}
     for jkey in ("chips_he", "target_professions", "target_ad_types", "target_regions"):
-        v = item.get(jkey)
+        v = out.get(jkey)
         if isinstance(v, (bytes, bytearray)):
             v = v.decode("utf-8")
         if isinstance(v, str):
             try:
-                item[jkey] = json.loads(v)
+                out[jkey] = json.loads(v)
             except Exception:
-                item[jkey] = None
-    # match_score is an internal ranking signal — no reason to ship
-    # it to the client.
-    item.pop("match_score", None)
-    return item
+                out[jkey] = None
+    return out
 
 
 @router.get("/public/sponsored")
