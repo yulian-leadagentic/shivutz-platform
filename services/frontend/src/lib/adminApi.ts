@@ -147,6 +147,43 @@ export interface DashOrgs {
   total: number;
 }
 
+// R21 · sponsor_ads row shape (admin CRUD).
+//
+// Empty semantics — this is where advertisers get tripped up:
+//   * target_professions / target_ad_types / target_regions NULL ≡
+//     "no targeting on this axis, everyone sees it" (069:46-49).
+//   * placements NULL ≡ search_inline ONLY, NOT all placements
+//     (078:29). A booked carousel ad without placements set will
+//     never appear in a carousel.
+//   * creative_url + creative_w + creative_h move as a trio; the
+//     backend enforces the invariant (sponsors.py:_validate_creative).
+export interface SponsorAd {
+  id:                 string;
+  advertiser_name:    string;
+  headline_he:        string;
+  body_he:            string | null;
+  chips_he:           string[] | null;
+  cta_label_he:       string;
+  cta_url:            string | null;
+  logo_url:           string | null;
+  creative_url:       string | null;
+  creative_w:         number | null;
+  creative_h:         number | null;
+  brand_bg:           string | null;
+  brand_fg:           string | null;
+  target_professions: string[] | null;
+  target_ad_types:    string[] | null;
+  target_regions:     string[] | null;
+  placements:         string[] | null;
+  active:             boolean;
+  starts_at:          string | null;
+  ends_at:            string | null;
+  sort_order:         number;
+  is_seed:            boolean;
+  created_at:         string;
+  updated_at:         string;
+}
+
 // R6 · exclusive slot inventory row. `category_code` is null for
 // category-agnostic placements (home_banner / home_carousel today).
 // `sponsor_ad_id` null = the slot is on the shelf, not booked.
@@ -570,6 +607,34 @@ export const adminApi = {
     }),
   deleteSponsorSlot: (id: string) =>
     apiFetch<void>(`/admin/sponsor-slots/${id}`, { method: 'DELETE' }),
+
+  // ── R21 · Sponsor ad CRUD ────────────────────────────────────────────
+  //
+  // Before R21 no admin surface existed for `sponsor_ads` — every row
+  // was born in a migration. This closes the gap. The runtime read
+  // path in user-org (`/api/ads/public/sponsored`) is unchanged.
+  listSponsors: (params?: { active?: boolean; placement?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.active !== undefined)   qs.set('active', String(params.active));
+    if (params?.placement)              qs.set('placement', params.placement);
+    return apiFetch<SponsorAd[]>(`/admin/sponsors${qs.toString() ? '?' + qs : ''}`);
+  },
+  getSponsor: (id: string) => apiFetch<SponsorAd>(`/admin/sponsors/${id}`),
+  createSponsor: (body: Partial<SponsorAd>) =>
+    apiFetch<SponsorAd>('/admin/sponsors', {
+      method: 'POST',
+      body:   JSON.stringify(body),
+    }),
+  updateSponsor: (id: string, body: Partial<SponsorAd> & {
+    clear_creative?: boolean;
+    clear_dates?:    boolean;
+  }) =>
+    apiFetch<SponsorAd>(`/admin/sponsors/${id}`, {
+      method: 'PATCH',
+      body:   JSON.stringify(body),
+    }),
+  deleteSponsor: (id: string) =>
+    apiFetch<void>(`/admin/sponsors/${id}`, { method: 'DELETE' }),
   reopenLead: (id: string) =>
     apiFetch<void>(`/admin/leads/${id}/reopen`, { method: 'PATCH' }),
   deleteLead: (id: string) =>

@@ -22,6 +22,7 @@ const NAV = [
   { href: '/admin/approvals',          label: 'אישורים',             icon: ClipboardCheck, badge: true },
   { href: '/admin/orgs',               label: 'תאגידים וקבלנים',     icon: Building2 },
   { href: '/admin/ads',                label: 'מודעות',              icon: Megaphone },
+  { href: '/admin/sponsors',           label: 'חסויות',              icon: Megaphone },
   { href: '/admin/subscriptions',      label: 'מנויים',              icon: CreditCard },
   { href: '/admin/subscription-plans', label: 'מסלולי מנוי',         icon: Sliders },
   { href: '/admin/gov-corps-registry', label: 'רשימת תאגידים מורשים', icon: FileCheck },

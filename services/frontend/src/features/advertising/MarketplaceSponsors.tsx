@@ -186,7 +186,23 @@ function SponsorBanner({ placement, label }: { placement: string; label?: string
 function SponsorCarousel({ placement, label }: { placement: string; label?: string }) {
   const [ads, setAds] = useState<SponsorAd[]>([]);
   useEffect(() => {
-    fetchSponsored(placement, 4).then(setAds);
+    // R21 §3 · admin-editable ceiling via site_settings.sponsor_carousel_limit.
+    // Default 4 (matches migration 092 seed). Server clamps to 12 in
+    // ads.py:565 regardless of what the setting says.
+    let cancelled = false;
+    (async () => {
+      let limit = 4;
+      try {
+        const s = await fetch('/api/legal/settings')
+          .then(r => (r.ok ? r.json() : null));
+        const raw = s?.sponsor_carousel_limit;
+        const parsed = raw != null ? parseInt(String(raw), 10) : NaN;
+        if (Number.isFinite(parsed) && parsed > 0) limit = parsed;
+      } catch { /* fall back to 4 */ }
+      const rows = await fetchSponsored(placement, limit);
+      if (!cancelled) setAds(rows);
+    })();
+    return () => { cancelled = true; };
   }, [placement]);
 
   if (ads.length === 0) return null;

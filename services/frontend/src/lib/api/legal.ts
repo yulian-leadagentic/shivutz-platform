@@ -26,7 +26,10 @@ export type SiteSettings = Partial<Record<
   | 'support_email'
   | 'a11y_coordinator_name'
   | 'a11y_coordinator_phone'
-  | 'a11y_coordinator_email',
+  | 'a11y_coordinator_email'
+  // R21 §3 · number stored as string, parsed on the client.
+  // Ceiling of 12 lives in ads.py:565 (server-side clamp).
+  | 'sponsor_carousel_limit',
   string | null
 >>;
 

@@ -1,5 +1,5 @@
 from fastapi import FastAPI, HTTPException
-from app.routes import dashboard, enums, approvals, registration_log, settings, users, leads, support, gov_corp_list, org_summary, notifications_test, ads as admin_ads, subscriptions as admin_subs, subscription_plans as admin_plans, legal as admin_legal, sponsor_slots as admin_sponsor_slots
+from app.routes import dashboard, enums, approvals, registration_log, settings, users, leads, support, gov_corp_list, org_summary, notifications_test, ads as admin_ads, subscriptions as admin_subs, subscription_plans as admin_plans, legal as admin_legal, sponsor_slots as admin_sponsor_slots, sponsors as admin_sponsors
 from app.db import get_db, init_db
 from app.errors import register_error_handlers
 
@@ -54,3 +54,6 @@ app.include_router(admin_plans.router,        prefix="/admin",  tags=["admin-sub
 app.include_router(admin_legal.router,        prefix="/admin",  tags=["admin-legal"])
 # R6 · sponsor_ads_slots CRUD — exclusive category slot inventory.
 app.include_router(admin_sponsor_slots.router, prefix="/admin", tags=["admin-sponsor-slots"])
+# R21 · sponsor_ads CRUD — the ad creative itself. Before R21 the only
+# way to insert into sponsor_ads was a migration.
+app.include_router(admin_sponsors.router,      prefix="/admin", tags=["admin-sponsors"])
