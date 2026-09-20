@@ -116,6 +116,26 @@ def _trial_days_for(cur, entity_type: str, tier: str = "basic") -> int:
 
 def _insert_trial(cur, entity_id: str, entity_type: str) -> dict:
     sub_id = str(uuid.uuid4())
+
+    # R10 §6 · service_provider has no trial and no recurring charge
+    # (base account is free forever; providers pay for ad inventory
+    # via marketplace_subscriptions instead). Insert as `active` with
+    # NULL periods so the renewal-batch's
+    # `current_period_end <= now` filter skips them — nothing to
+    # charge, nothing to expire. The seat gate still works because
+    # subscription_limits.tier_limits() reads subscription_plans by
+    # (entity_type='service_provider', tier='basic') and pulls
+    # included_users=5 + extra_user_price_nis=50 from migration 089.
+    if entity_type == "service_provider":
+        cur.execute(
+            """INSERT INTO subscriptions
+                 (id, entity_id, entity_type, tier, status,
+                  trial_ends_at, grace_ends_at, current_period_end)
+               VALUES (%s, %s, %s, 'basic', 'active', NULL, NULL, NULL)""",
+            (sub_id, entity_id, entity_type),
+        )
+        return _fetch(cur, entity_id, entity_type)
+
     trial_days = _trial_days_for(cur, entity_type, "basic")
     trial_ends = datetime.utcnow() + timedelta(days=trial_days)
     grace_ends = trial_ends + timedelta(days=GRACE_DAYS)

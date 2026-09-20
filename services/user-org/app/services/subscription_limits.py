@@ -35,6 +35,15 @@ _FALLBACK = {
         "advanced": {"max_users": 6,    "included_users": 6,  "extra_user_price_nis": None, "reveals_per_month": None, "active_ads": 15, "can_boost": True},
         "pro":      {"max_users": 12,   "included_users": 12, "extra_user_price_nis": None, "reveals_per_month": None, "active_ads": None, "can_boost": True},
     },
+    # R10 §6 · service_provider — one tier for now. Mirrors migration
+    # 089 exactly so a fresh DB (row missing) still sees the same
+    # numbers. max_users=None + extra_user_price_nis=50 = R4's seat
+    # gate returns 402 seat_upgrade_required once in_use exceeds 5;
+    # the same purchase flow the contractor uses then applies, at
+    # the ₪50 price Yulian locked in decisions-doc §2.
+    "service_provider": {
+        "basic":    {"max_users": None, "included_users": 5, "extra_user_price_nis": 50,   "reveals_per_month": None, "active_ads": None, "can_boost": False},
+    },
 }
 
 
