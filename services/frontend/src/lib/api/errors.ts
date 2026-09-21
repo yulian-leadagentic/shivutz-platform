@@ -337,6 +337,26 @@ function normalize(err: unknown): ApiErrorPayload {
     if (o.detail && typeof o.detail === 'object' && !Array.isArray(o.detail)) {
       return { ...(o.detail as ApiErrorPayload), ...(o as ApiErrorPayload) };
     }
+    // R25 §2 · FastAPI's HTTPException(detail="corp_only") — a bare
+    // STRING detail (as opposed to a dict or an array). Without this
+    // branch it fell through as { detail: "corp_only" } with no
+    // `error` / `code`, so mapApiError's code lookup missed it and
+    // the customer saw "קרתה תקלה" (or the raw code, when a caller
+    // rendered `.cause.detail` directly). Treating the string as a
+    // machine code lets the existing CODE_TO_HE map render the
+    // proper Hebrew for corp_only, admin_only, forbidden, and any
+    // other bare-string detail the backends throw. Kept the message
+    // key populated for the mapApiError step-3 fallback.
+    if (typeof o.detail === 'string') {
+      const s = o.detail.trim();
+      // Only claim it as a code if the shape looks like one
+      // (snake_case, ASCII, no spaces) — otherwise it's a
+      // human-readable sentence, treat as message.
+      if (/^[a-z][a-z0-9_.:-]*$/i.test(s) && !s.includes(' ')) {
+        return { ...(o as ApiErrorPayload), error: s };
+      }
+      return { ...(o as ApiErrorPayload), message: s };
+    }
     return o as ApiErrorPayload;
   }
   return {};

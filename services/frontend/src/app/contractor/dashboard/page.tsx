@@ -99,7 +99,14 @@ export default function ContractorDashboardPage() {
 
   // Trial countdown comes from the subscription row (authoritative).
   // Reveal counts remain best-effort from the usage endpoint.
-  const trialDays = daysUntil(sub?.trial_ends_at ?? null);
+  // R25 §1c · trialDays is meaningful ONLY while status === 'trialing'.
+  // Before this gate the dashboard kept computing days-until on an
+  // active sub's trial_ends_at (which stays in the past forever after
+  // conversion) and rendered "נותרו 0 ימים לניסיון" next to a
+  // "פעיל" pill — the exact contradiction R25 §1c flagged.
+  const trialDays = sub?.status === 'trialing'
+    ? daysUntil(sub?.trial_ends_at ?? null)
+    : null;
   const revealsUsed  = usage?.usage.reveals_this_month ?? 0;
   const revealsLimit = usage?.limits.reveals_per_month;
 

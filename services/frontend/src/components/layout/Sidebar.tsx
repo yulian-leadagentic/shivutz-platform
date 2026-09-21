@@ -6,7 +6,7 @@ import Logo from '@/components/Logo';
 import { usePathname, useRouter } from 'next/navigation';
 import {
   Home, LayoutDashboard, Handshake,
-  LogOut, Plus, Users, FileText, MessageCircle, Search, CreditCard, Globe2,
+  LogOut, Plus, Users, FileText, MessageCircle, CreditCard, Globe2,
 } from 'lucide-react';
 import { clearTokens, getAccessToken, decodeJwtPayload } from '@/lib/auth';
 import { cn } from '@/lib/utils';
@@ -31,9 +31,15 @@ interface NavItem {
 // flow (contractor requests specific foreign workers, corps bid, admin
 // approves). Domestic immediate-availability flows through the public
 // search on / instead.
+// R25 §5b · removed 'חיפוש' → '/' because 'דף הבית' → '/' is already
+// rendered as the first sidebar item below. Two labels for one URL
+// duplicated the click surface and confused which item was "active".
+// The landing page IS the search page; the home icon is the search
+// entry now. If Yulian later wants a discoverable search-specific
+// route (a saved-searches page, or a jumpto), add it under its own
+// href — do NOT restore two items pointing at `/`.
 const CONTRACTOR_NAV: NavItem[] = [
   { label: 'לוח בקרה',                 href: '/contractor/dashboard', icon: LayoutDashboard },
-  { label: 'חיפוש',                    href: '/',                     icon: Search },
   { label: 'בקשות ייבוא עובדים מחו״ל', href: '/contractor/tenders',   icon: Globe2 },
   { label: 'מסמכים',                   href: '/contractor/documents', icon: FileText },
   { label: 'חשבון ומנוי',              href: '/billing',              icon: CreditCard },

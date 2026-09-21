@@ -31,10 +31,18 @@ import { useAuth } from '@/lib/AuthContext';
 // Contractor tiers — no "active ads" (contractors don't publish).
 // Numbers here are the seed defaults; admin can edit them via
 // /admin/subscription-plans and the live limits render below.
+// R25 §1a + §1b · features + price are HINTS only. When usage.limits
+// is loaded from /ads/usage we render the CURRENT tier's real numbers
+// from subscription_plans (max_users, reveals_per_month,
+// monthly_price_nis) instead of these strings. Other tiers still show
+// the hint text until a public plans-catalog endpoint exists. Old
+// hint 'עד 3 משתמשים' on the advanced tier was invented — no such
+// row in subscription_plans; 071 seeds max_users=20 across all
+// contractor tiers. Corrected to the actual seed value.
 const CONTRACTOR_TIERS: { code: SubscriptionTier; title: string; tagline: string; price: number | null; features: string[] }[] = [
-  { code: 'basic',    title: 'בסיסי',   tagline: 'התחלה קלה',              price: null, features: ['משתמש אחד',          'עד 10 חשיפות פרטי קשר בחודש']  },
-  { code: 'advanced', title: 'מתקדם',   tagline: 'לצוותים בקצב עבודה',    price: null, features: ['עד 3 משתמשים',        'עד 40 חשיפות בחודש']            },
-  { code: 'pro',      title: 'פרו',     tagline: 'לפעילות רחבה',          price: null, features: ['עד 10 משתמשים',       'עד 120 חשיפות בחודש']           },
+  { code: 'basic',    title: 'בסיסי',   tagline: 'התחלה קלה',              price: null, features: ['5 משתמשים כלולים · עד 20',  'עד 10 חשיפות פרטי קשר בחודש']  },
+  { code: 'advanced', title: 'מתקדם',   tagline: 'לצוותים בקצב עבודה',    price: null, features: ['5 משתמשים כלולים · עד 20',  'עד 40 חשיפות בחודש']            },
+  { code: 'pro',      title: 'פרו',     tagline: 'לפעילות רחבה',          price: null, features: ['5 משתמשים כלולים · עד 20',  'עד 120 חשיפות בחודש']           },
 ];
 const CORP_TIERS: { code: SubscriptionTier; title: string; tagline: string; price: number; features: string[] }[] = [
   { code: 'basic',    title: 'בסיסי',   tagline: 'התחלה זריזה',      price: 80,  features: ['3 משתמשים', '3 מודעות פעילות במקביל', 'פרסום עד 30 יום'] },
@@ -64,7 +72,7 @@ function daysUntil(iso: string | null): number | null {
 }
 
 export default function BillingPage() {
-  const { entityId, entityType } = useAuth();
+  const { entityId, entityType, userId } = useAuth();
   const isContractor = entityType === 'contractor';
   const TIERS = isContractor ? CONTRACTOR_TIERS : CORP_TIERS;
 
@@ -216,13 +224,16 @@ export default function BillingPage() {
         </Link>
         <div className="flex items-baseline gap-2 flex-wrap">
           <h1 className="text-2xl font-bold text-slate-900">חשבון ומנוי</h1>
-          {/* B4 — payment-service mode chip. Only shown while the
-              backend runs in fake mode; hides itself once Cardcom
-              recurring is live. */}
+          {/* R25 §1d · payment-service mode chip. Only rendered when
+              the backend explicitly reports payment_mode === 'fake'
+              (server-gated by PAYMENT_FAKE_MODE) — self-hides in
+              production. Tooltip text softened to plain-language
+              "test environment" instead of the previous dev-jargon
+              copy that read as a Cardcom outage. */}
           {(sub as unknown as { payment_mode?: string })?.payment_mode === 'fake' && (
             <span
               className="text-[10px] font-bold uppercase tracking-wider rounded-full border border-amber-300 bg-amber-50 text-amber-700 px-2 py-0.5"
-              title="חיוב מדומה — Cardcom האמיתי עדיין לא מחובר. כל 'תשלום' עובר להצלחה מיידית."
+              title="סביבת בדיקות — התשלומים לא באמת נגבים."
             >
               מצב בדיקה
             </span>
@@ -378,24 +389,34 @@ export default function BillingPage() {
             <p className="text-sm text-slate-500">עדיין לא הוספת משתמשים</p>
           ) : (
             <ul className="divide-y divide-slate-100">
-              {members.map((m) => (
+              {members.map((m) => {
+                // R25 §1e · account owner can't remove themselves. The
+                // 'הסר' button on the current user's own row was a
+                // footgun — server would refuse (last-owner guard),
+                // but the customer-side experience was "click, wait,
+                // Hebrew error". Disable the button visibly + label.
+                const isSelf = m.user_id != null && m.user_id === userId;
+                return (
                 <li key={m.membership_id} className="py-2 flex items-center gap-3">
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-slate-900 truncate">
                       {m.full_name || ((m.invited_first_name || '') + ' ' + (m.invited_last_name || '')).trim() || m.phone || '—'}
+                      {isSelf && <span className="text-[10px] font-normal text-slate-400 ms-1.5">(אתה)</span>}
                     </p>
                     <p className="text-xs text-slate-500"><span dir="ltr">{m.phone || '—'}</span>{m.pending ? ' · ממתין' : ''}</p>
                   </div>
                   <button
                     type="button"
-                    onClick={() => removeMember(m)}
-                    disabled={busyMem === m.membership_id}
-                    className="inline-flex items-center gap-1 text-xs text-red-700 hover:bg-red-50 px-2 py-1 rounded disabled:opacity-50"
+                    onClick={() => !isSelf && removeMember(m)}
+                    disabled={isSelf || busyMem === m.membership_id}
+                    title={isSelf ? 'בעל החשבון אינו יכול להסיר את עצמו' : undefined}
+                    className="inline-flex items-center gap-1 text-xs text-red-700 hover:bg-red-50 px-2 py-1 rounded disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
                   >
                     <Trash2 className="w-3.5 h-3.5" /> הסר
                   </button>
                 </li>
-              ))}
+                );
+              })}
             </ul>
           )}
 
@@ -483,12 +504,26 @@ export default function BillingPage() {
                 )}
               </div>
               <p className="text-xs text-slate-500">{t.tagline}</p>
-              {t.price != null && (
-                <p className="text-lg font-extrabold text-slate-900">
-                  ₪{t.price}
-                  <span className="text-xs font-medium text-slate-500 ms-1">/ חודש · חידוש אוטומטי</span>
-                </p>
-              )}
+              {/* R25 §1a · price is read from subscription_plans via
+                  /ads/usage (monthly_price_nis for the CURRENT tier
+                  only — other tiers' prices arrive from a public
+                  catalog endpoint that doesn't exist yet). For those
+                  we render the static hint if it's set. The old
+                  price:null contractor tiers used to render NOTHING
+                  on the card — customer had no idea what upgrade
+                  cost. */}
+              {(() => {
+                const usageLimits = usage?.limits as unknown as { monthly_price_nis?: number | null } | undefined;
+                const dynamicPrice = isCurrent ? usageLimits?.monthly_price_nis ?? null : null;
+                const displayPrice = dynamicPrice ?? t.price ?? null;
+                if (displayPrice == null) return null;
+                return (
+                  <p className="text-lg font-extrabold text-slate-900">
+                    ₪{displayPrice}
+                    <span className="text-xs font-medium text-slate-500 ms-1">/ חודש · חידוש אוטומטי</span>
+                  </p>
+                );
+              })()}
               <ul className="text-sm text-slate-700 space-y-1.5 flex-grow">
                 {t.features.map((f) => (
                   <li key={f} className="flex items-start gap-2">
@@ -496,6 +531,16 @@ export default function BillingPage() {
                     <span>{f}</span>
                   </li>
                 ))}
+                {/* R25 §1a · extra_user_price_nis surfaces on the
+                    CURRENT tier when the plan sells extra seats.
+                    Customer sees "₪80 למשתמש נוסף" so adding a
+                    teammate has a known cost. */}
+                {isCurrent && usage?.limits?.extra_user_price_nis != null && (
+                  <li className="flex items-start gap-2">
+                    <Check className="w-4 h-4 text-emerald-600 mt-0.5 shrink-0" />
+                    <span>₪{usage.limits.extra_user_price_nis} למשתמש נוסף</span>
+                  </li>
+                )}
               </ul>
               <button
                 type="button"

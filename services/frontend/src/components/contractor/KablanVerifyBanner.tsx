@@ -101,9 +101,15 @@ export function KablanVerifyBanner() {
     <div className="mb-4 flex items-start gap-3 rounded-lg border border-brand-300 bg-brand-50 px-4 py-3 text-brand-900">
       <ShieldCheck className="h-5 w-5 mt-0.5 shrink-0 text-brand-600" />
       <div className="flex-1 text-sm leading-relaxed">
-        <p className="font-semibold">השלם אימות מול רשם הקבלנים</p>
+        <p className="font-semibold">שדרג את הפרופיל עם אימות פנקס הקבלנים</p>
         <p>
-          הזן את מספר הרישיון שלך לאימות מול פנקס הקבלנים — שלב חיוני לפני צפייה בפרטי תאגיד.{' '}
+          {/* R25 §4 · was 'שלב חיוני לפני צפייה בפרטי תאגיד' — contradicted
+              the approval card + the fact that approved contractors
+              already reveal freely. Rewritten as an upgrade prompt so
+              the banner matches reality (the profile IS approved,
+              this step is a badge that gives faster onboarding + the
+              verified label, not a gate). */}
+          חשבונך כבר אושר. אימות מספר הרישיון מוסיף תג ״מאומת מול הפנקס״ ומקצר את הבדיקה בעסקאות עתידיות.{' '}
           <Link href="/contractor/verify-kablan" className="underline font-medium">
             אמת עכשיו ←
           </Link>

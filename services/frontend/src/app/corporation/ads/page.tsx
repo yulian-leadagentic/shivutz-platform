@@ -103,7 +103,11 @@ function CorporationAdsPageInner() {
       <header className="flex items-baseline justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">המודעות שלי</h1>
-          <p className="text-sm text-slate-500">פרסום זמינות עובדים, ובהמשך גם דיור (שלב 4)</p>
+          {/* R25 §5a · was 'ובהמשך גם דיור (שלב 4)' — 'שלב 4' is
+              internal plan-language that means nothing to the customer.
+              Housing publishing is on the roadmap but the customer
+              only needs to know it's coming, not the sprint name. */}
+          <p className="text-sm text-slate-500">פרסום זמינות עובדים · פרסום דיור בקרוב</p>
         </div>
         <Link
           href="/corporation/ads/new"

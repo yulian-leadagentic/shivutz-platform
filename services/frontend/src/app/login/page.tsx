@@ -396,12 +396,13 @@ function LoginPageInner() {
               </div>
             )}
             {/* ── SMS (primary) ─────────────────────────────────────────── */}
-            {/* action="#" + button type="button": defense in depth.
-                If preventDefault loses a race against native form
-                submission, the form posts to "#" instead of /login?
-                — so the page doesn't full-reload and lose state
-                (which is what was sending the user back to the
-                phone entry on every click). */}
+            {/* R25 §5c · Enter must submit. The button is now
+                type="submit" so mobile keyboards' "search/go" key
+                fires the form's onSubmit — same handler the click
+                path calls. Kept action="#" so if preventDefault
+                ever loses a race the form posts to "#" and the page
+                doesn't full-reload. The old workaround was
+                type="button" + onClick which broke Enter submission. */}
             {mode === 'sms' && otpPhase === 'phone' && (
               <form
                 action="#"
@@ -417,6 +418,7 @@ function LoginPageInner() {
                   label="מספר טלפון נייד"
                   type="tel"
                   inputMode="tel"
+                  enterKeyHint="go"
                   name="phone"
                   placeholder="050-0000000"
                   value={phone}
@@ -430,11 +432,10 @@ function LoginPageInner() {
                   <ErrorBlock error={error} />
                 </div>
                 <Button
-                  type="button"
+                  type="submit"
                   size="lg"
                   disabled={loading}
                   className="w-full"
-                  onClick={() => handleSendOtp()}
                 >
                   {loading
                     ? <><Loader2 className="h-4 w-4 animate-spin" /><span>שולח…</span></>
@@ -470,12 +471,12 @@ function LoginPageInner() {
                   className="text-center text-xl tracking-widest"
                 />
                 <ErrorBlock error={error} />
+                {/* R25 §5c · Enter submits the OTP form. */}
                 <Button
-                  type="button"
+                  type="submit"
                   size="lg"
                   disabled={loading}
                   className="w-full"
-                  onClick={() => handleOtpLogin()}
                 >
                   {loading
                     ? <><Loader2 className="h-4 w-4 animate-spin" /><span>מאמת…</span></>
@@ -518,12 +519,12 @@ function LoginPageInner() {
                   dir="ltr"
                 />
                 <ErrorBlock error={error} />
+                {/* R25 §5c · Enter submits the email/password form. */}
                 <Button
-                  type="button"
+                  type="submit"
                   size="lg"
                   disabled={loading}
                   className="w-full mt-1"
-                  onClick={() => handleEmailLogin()}
                 >
                   {loading
                     ? <><Loader2 className="h-4 w-4 animate-spin" /><span>מתחבר...</span></>
