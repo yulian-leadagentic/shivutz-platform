@@ -141,6 +141,35 @@ marketplace_uploads.py:35  CLOUDINARY_FOLDER_BASE     ברירת מחדל shivut
 
 ⚠️ **יוצא דופן אחד:** **מודעה עם `creative_url` — הקישור חובה גם בעריכה.** תמונה לחיצה בלי יעד היא מודעה מתה, ו-R20 §3c הפך את כל התמונה לקישור.
 
+## 2d · ₪450 ו-₪650 אושרו — 🔴 ואל תיגע ב-`071`
+
+**Yulian, 21.09: מאושר.** שני המחירים סופיים.
+
+**`071_subscription_plans_seats.sql:42,47` מסמנים אותם `לאישור Yulian`.**
+
+🔴 **אל תערוך את `071`. היא כבר רצה.**
+
+**בדקתי את `scripts/run_migrations.py:131-134`:**
+
+```python
+if prev_sha != sha:
+    print(f"[migrations] WARNING: {f.name} content changed since last apply ...")
+skipped_count += 1
+continue
+```
+
+> **שינוי תו אחד — גם בהערה — משנה את ה-sha, והרצת המיגרציות תדפיס WARNING בכל פריסה מכאן והלאה. לנצח.**
+> 🔴 **וזה גרוע מרעש: זו אזהרה שאמורה להתריע שמישהו ערך מיגרציה שכבר רצה. אם היא דולקת תמיד — היא כבר לא מתריעה על כלום.**
+
+**זה אותו כלל שקבענו פעמיים בסבבים האחרונים:** R8 §1 — *״מיגרציה שרצה היא היסטוריה, לא טיוטה״*; R10 §5a — *״אל תערוך את `087`״*.
+**וההערה ב-`071` הייתה נכונה כשנכתבה. היא תיעוד של מה שהיה, לא של מה שיש.**
+
+**Do — תעד את ההכרעה בקובץ חי:**
+
+- **`docs/ENVIRONMENTS.md`** (או `docs/pricing.md` אם תעדיף) — **טבלת שלושת המסלולים:** ₪300 / ₪450 / ₪650 · `included_users=5` · `extra_user_price_nis` 80 לקבלן ו-50 לספק
+- **שורה אחת:** `אושר ע״י Yulian 21.09.2026. ההערה "לאישור Yulian" ב-071 היא היסטורית — המיגרציה כבר רצה ואין לערוך אותה.`
+- 🔴 **`git diff db/migrations/` חייב להיות ריק בסוף הסבב**
+
 ---
 
 # §3 · מה לא בסבב הזה
@@ -166,6 +195,8 @@ marketplace_uploads.py:35  CLOUDINARY_FOLDER_BASE     ברירת מחדל shivut
 - [ ] **`.env.example:99` → `tagidai.com`.** הדבק
 - [ ] **`CLOUDINARY_FOLDER_BASE` פעיל ומתועד בשני הקבצים.** הדבק
 - [ ] **הטופס: `cta_url` חובה ביצירה, לא בעריכה, חובה עם `creative_url`.** שלושה צילומים
+- [ ] **טבלת התמחור מתועדת בקובץ חי.** הדבק
+- [ ] 🔴 **`git diff db/migrations/` ריק.** הדבק
 - [ ] `--suite all` · `--suite matrix` · `npm run build` · `npm test`
 - [ ] 🔴 `git rev-list --left-right --count origin/staging...origin/pivot/v2` → **`0 0`. הדבק**
 
@@ -187,5 +218,7 @@ marketplace_uploads.py:35  CLOUDINARY_FOLDER_BASE     ברירת מחדל shivut
 🔴 **אל תתקן תוך כדי.** רשום והמשך.
 
 🔴 **צילום גם כשעובר.** הצילומים הם התוצר.
+
+🔴 **אל תערוך אף קובץ ב-`db/migrations/`.** הן רצו. הן היסטוריה.
 
 🔴 **`git add` לפי שם קובץ. לעולם לא `-A`.** **וכולל `docs/cc-prompts/*.md`.**
