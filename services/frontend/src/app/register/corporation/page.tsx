@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { HomeLink } from '@/components/HomeLink';
 import Logo from '@/components/Logo';
+import { ConsentLine } from '@/components/register/ConsentLine';
 import { readProspect, clearProspect } from '@/features/prospect/state';
 // RT — reveal→register funnel resilience. See docs/cc-prompts/
 // cc_prompt_return_to_reveal.md §4. Mirrors register/contractor's
@@ -454,6 +455,8 @@ function RegisterCorporationInner() {
                 <Button type="submit" disabled={loading} className="w-full">
                   {loading ? <><Loader2 className="h-4 w-4 animate-spin" /> שולח קוד…</> : 'שלח קוד אימות'}
                 </Button>
+                {/* R24 §5b · consent line — first commit point of the flow. */}
+                <ConsentLine />
                 <p className="text-center text-sm text-slate-600">
                   יש לך חשבון?{' '}
                   <Link href="/login" className="text-brand-600 hover:underline">כניסה</Link>

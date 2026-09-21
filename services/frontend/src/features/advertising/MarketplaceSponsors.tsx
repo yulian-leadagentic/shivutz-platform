@@ -183,8 +183,28 @@ function SponsorBanner({ placement, label }: { placement: string; label?: string
   );
 }
 
+// R23 §1 / R24 §1 · viewport hook — returns undefined during SSR + first
+// render so the two-branch fallback below matches the server HTML; on
+// mount it flips to true/false and only ONE branch renders its cards
+// into the DOM. This kills the accessibility-tree double-count that
+// R23/R24 flagged (Chrome AX tree, and read_page, include display:none
+// nodes; visually one branch was hidden but the cards were still in
+// the tree twice).
+function useIsMobile(breakpointPx = 640): boolean | undefined {
+  const [isMobile, setIsMobile] = useState<boolean | undefined>(undefined);
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width: ${breakpointPx - 1}px)`);
+    const apply = () => setIsMobile(mq.matches);
+    apply();
+    mq.addEventListener('change', apply);
+    return () => mq.removeEventListener('change', apply);
+  }, [breakpointPx]);
+  return isMobile;
+}
+
 function SponsorCarousel({ placement, label }: { placement: string; label?: string }) {
   const [ads, setAds] = useState<SponsorAd[]>([]);
+  const isMobile = useIsMobile();
   useEffect(() => {
     // R21 §3 · admin-editable ceiling via site_settings.sponsor_carousel_limit.
     // Default 4 (matches migration 092 seed). Server clamps to 12 in
@@ -207,6 +227,14 @@ function SponsorCarousel({ placement, label }: { placement: string; label?: stri
 
   if (ads.length === 0) return null;
   const bucket = placementBucket(placement);
+  // Post-hydration branch selection. Before mount (isMobile === undefined)
+  // both branches render with tailwind sm:hidden / hidden sm:grid so the
+  // server HTML matches the visible-at-first-paint layout at every width.
+  // After mount, only the branch matching the current viewport gets its
+  // cards mapped in — the other renders an empty placeholder that also
+  // matches SSR CSS gates so hydration stays quiet.
+  const renderMobile  = isMobile === undefined || isMobile === true;
+  const renderDesktop = isMobile === undefined || isMobile === false;
 
   return (
     <div className="mb-6">
@@ -231,7 +259,7 @@ function SponsorCarousel({ placement, label }: { placement: string; label?: stri
           aria-label={label ?? 'שירותים ממומנים'}
           className="sponsor-carousel-scroll flex overflow-x-auto snap-x snap-mandatory gap-3 pb-1"
         >
-          {ads.map((ad) => (
+          {renderMobile && ads.map((ad) => (
             <div
               key={ad.id}
               className="snap-start shrink-0"
@@ -243,7 +271,7 @@ function SponsorCarousel({ placement, label }: { placement: string; label?: stri
         </div>
       </div>
       <div className="hidden sm:grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-        {ads.map((ad) => (
+        {renderDesktop && ads.map((ad) => (
           <CarouselCard key={ad.id} ad={ad} placement={bucket} />
         ))}
       </div>

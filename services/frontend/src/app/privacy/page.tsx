@@ -24,7 +24,10 @@ export default async function PrivacyPage() {
   const doc = await legalApi.doc('privacy');
   if (!doc) return notFound();
   const html = renderLegalMarkdown(doc.body_md);
-  const stamp = fmtDate(doc.effective_at ?? doc.updated_at);
+  // R24 §4b · label says "עודכן לאחרונה" — use updated_at, not
+  // effective_at (which is a manual authorship date that often
+  // lags edits). Same fix as accessibility/page.tsx.
+  const stamp = fmtDate(doc.updated_at);
   return (
     <main dir="rtl" className="max-w-3xl mx-auto px-4 py-10 space-y-6 text-slate-800 leading-relaxed">
       <header>

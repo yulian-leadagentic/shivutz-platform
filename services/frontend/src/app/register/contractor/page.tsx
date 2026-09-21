@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { HomeLink } from '@/components/HomeLink';
 import Logo from '@/components/Logo';
+import { ConsentLine } from '@/components/register/ConsentLine';
 import { readProspect, clearProspect } from '@/features/prospect/state';
 import {
   writeReturnTo, clearReturnTo, resolveDestination, sanitizeReturnTo,
@@ -582,6 +583,9 @@ function RegisterContractorInner() {
                 <Button type="submit" disabled={loading} className="w-full">
                   {loading ? <><Loader2 className="h-4 w-4 animate-spin" /> שולח קוד…</> : 'שלח קוד אימות'}
                 </Button>
+                {/* R24 §5b · consent line — first commit point of the
+                    flow is where consent is meaningful. */}
+                <ConsentLine />
                 {/* The "יש לך חשבון? כניסה" link was removed — the user
                     is already inside the registration flow; the link
                     only created confusion for first-time prospects. If

@@ -190,9 +190,13 @@ function MarketplacePageInner() {
           </form>
           <div className="hidden sm:flex items-center gap-3">
             <Link href="/login" className="text-sm text-slate-600 hover:text-slate-900">כניסה</Link>
-            <Link href="/register/corporation">
-              <Button size="sm">פרסם מודעה</Button>
-            </Link>
+            {/* R24 §5c · Button asChild to avoid <button> inside <a>
+                (invalid HTML that some screen readers double-announce).
+                The Slot pattern hands the Button's classes to the
+                Link's <a>, so styling and keyboard behavior stay. */}
+            <Button size="sm" asChild>
+              <Link href="/register/corporation">פרסם מודעה</Link>
+            </Button>
           </div>
         </div>
       </nav>

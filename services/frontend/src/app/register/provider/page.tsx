@@ -46,6 +46,7 @@ import {
 } from '@/components/ui/card';
 import { HomeLink } from '@/components/HomeLink';
 import Logo from '@/components/Logo';
+import { ConsentLine } from '@/components/register/ConsentLine';
 import { checkIsraeliPhone } from '@/lib/phone';
 
 type Phase = 'phone' | 'otp' | 'form' | 'done';
@@ -348,6 +349,19 @@ export default function ProviderRegisterPage() {
           <Card>
             <CardHeader className="pb-4">
               <CardTitle className="text-2xl">רישום ספק שירות</CardTitle>
+              {/* R24 §5a · match the step-count indicator that contractor
+                  (register/contractor/page.tsx:544) and corp
+                  (register/corporation/page.tsx:417) already show.
+                  Provider is a 2-step flow: identity (phone + OTP is
+                  one step) → business form. 'done' is the confirmation
+                  page and doesn't need a step number. */}
+              <CardDescription className="text-center">
+                {phase === 'done'
+                  ? 'הרישום הושלם'
+                  : phase === 'form'
+                    ? 'שלב 2 מתוך 2'
+                    : 'שלב 1 מתוך 2'}
+              </CardDescription>
               <CardDescription>
                 שירותים נלווים, הובלות, ביטוח, ציוד, קורסים — פתחו עמוד ספק
                 ופרסמו לקהל הקבלנים והתאגידים בפלטפורמה. הרישום חינם.
@@ -386,6 +400,8 @@ export default function ProviderRegisterPage() {
                   <Button type="submit" disabled={busy} className="w-full">
                     {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : 'שליחת קוד אימות'}
                   </Button>
+                  {/* R24 §5b · consent line — first commit point of the flow. */}
+                  <ConsentLine />
                   <p className="text-xs text-slate-500 text-center">
                     יש לך כבר חשבון?{' '}
                     <Link href="/login" className="text-primary-600 hover:underline">

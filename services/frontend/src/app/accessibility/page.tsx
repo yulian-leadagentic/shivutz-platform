@@ -54,7 +54,14 @@ export default async function AccessibilityPage() {
 
   if (doc) {
     bodyMd = doc.body_md;
-    stamp  = fmtDate(doc.effective_at ?? doc.updated_at);
+    // R24 §4b · the label reads "עודכן לאחרונה" — that is
+    // updated_at (edit time), not effective_at (a separate legal
+    // authorship concept that gets set manually and often lags
+    // behind edits). Previously we preferred effective_at, which
+    // is why the accessibility page kept saying 12.09 after the
+    // R14 §2 rewrite on 20.09. If Yulian later wants a separate
+    // "בתוקף מ־" line, add it distinctly — don't repurpose this.
+    stamp  = fmtDate(doc.updated_at);
     title  = doc.title_he;
     isDraft = doc.is_draft;
   } else {
