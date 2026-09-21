@@ -182,6 +182,29 @@ curl -s https://staging-notification.<railway>.app/config/promo
 
 The `--suite core` smoke check does exactly the above four reads and reports "PASS" only when every value matches; a `null` from any endpoint (i.e. env var unset) is a FAILURE, not a skip.
 
+### `CLOUDINARY_UPLOAD_FOLDER` + `CLOUDINARY_FOLDER_BASE` — TWO folder vars, TWO upload paths (R22 §2b)
+
+Cloudinary sees ONE account across both envs; the folder path is the only isolation between staging test uploads and prod user uploads. The trap: there are **two** distinct upload endpoints, each with its own folder env var — setting only one leaves the other on its hard-coded default and your isolation is half-real.
+
+| Env var | Upload endpoint | Default when unset | What lands in it |
+|---|---|---|---|
+| `CLOUDINARY_UPLOAD_FOLDER` | `services/user-org/app/routes/uploads.py` → `/uploads/cloudinary-signature` | `tagidai/ads` | Sponsor-ad creatives, housing photos, entity documents |
+| `CLOUDINARY_FOLDER_BASE`   | `services/user-org/app/routes/marketplace_uploads.py` → `/marketplace/uploads/signature` | `shivutz/marketplace` | Marketplace listing images (per-advertiser sub-folder appended automatically) |
+
+Set **both** on `user-org` in each env. Staging prefix them with `staging/`; prod use the plain names. `.env.example` documents both together in the R19 §3 Cloudinary folder block.
+
+### Sponsor / marketplace pricing (R22 §2d)
+
+Yulian approved 21.09.2026. Final for the three plans in `subscription_plans`:
+
+| Plan tier | `price_nis` | `included_users` | `extra_user_price_nis` |
+|---|---:|---:|---:|
+| Contractor basic  | 300 | 5 | 80 |
+| Contractor tier_2 | 450 | 5 | 80 |
+| Provider          | 650 | 5 | 50 |
+
+🔴 **Migration `071_subscription_plans_seats.sql:42,47` still carries the comment `לאישור Yulian`. Do not edit it.** The migration has already run — `scripts/run_migrations.py:131-134` prints a `WARNING` on every future deploy if the sha changes, and a warning that always fires is a warning that no longer catches anything. This doc is the live source of truth for the numbers; the migration is history.
+
 ### Known constraints
 
 - Vonage account is shared with prod — staging tests count against the same budget. Switch to `SMS_PROVIDER=stub` on staging auth + notification if you want fully free SMS.

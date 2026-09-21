@@ -373,7 +373,19 @@ function AdEditor({
     if (!f.advertiser_name.trim()) return setErr('שם מפרסם חובה');
     if (!f.headline_he.trim())     return setErr('כותרת חובה');
     if (!f.cta_label_he.trim())    return setErr('תווית קריאה לפעולה חובה');
-    if (!f.cta_url.trim())         return setErr('קישור CTA חובה (R20 §3c)');
+    // R22 §2c · cta_url is required ONLY on create + always when a
+    // creative_url is attached (a clickable image with no destination
+    // is a dead ad, R20 §3c). Backend already ships this asymmetry
+    // (sponsors.py:193 vs :281) — the form now mirrors it so old
+    // decorative-label seed rows (069/078) can be re-saved without
+    // being forced to acquire a URL they never had.
+    const isCreate = !initial;
+    const hasCreative = f.creative_url.trim() !== '';
+    if (!f.cta_url.trim() && (isCreate || hasCreative)) {
+      return setErr(hasCreative
+        ? 'מודעה עם תמונה חייבת קישור CTA (R20 §3c)'
+        : 'קישור CTA חובה ביצירה (R20 §3c)');
+    }
 
     const creativeSet = [f.creative_url, f.creative_w, f.creative_h].filter(x => x.trim() !== '');
     if (creativeSet.length > 0 && creativeSet.length !== 3) {
@@ -385,7 +397,7 @@ function AdEditor({
       headline_he:     f.headline_he.trim(),
       body_he:         f.body_he.trim() || null,
       cta_label_he:    f.cta_label_he.trim(),
-      cta_url:         f.cta_url.trim(),
+      cta_url:         f.cta_url.trim() || null,
       logo_url:        f.logo_url.trim() || null,
       creative_url:    f.creative_url.trim() || null,
       creative_w:      f.creative_w ? parseInt(f.creative_w, 10) : null,
@@ -441,8 +453,22 @@ function AdEditor({
             <TextField label="כותרת *"     value={f.headline_he}     onChange={v => set('headline_he', v)} />
             <TextField label="גוף (רשות)"   value={f.body_he}         onChange={v => set('body_he', v)} />
             <TextField label="תווית CTA *" value={f.cta_label_he}    onChange={v => set('cta_label_he', v)} />
-            <TextField label="קישור CTA *" value={f.cta_url} onChange={v => set('cta_url', v)}
-                       hint="הקישור לאתר המפרסם — נדרש (R20 §3c)." />
+            <TextField
+              label={
+                !initial || f.creative_url
+                  ? 'קישור CTA *'
+                  : 'קישור CTA'
+              }
+              value={f.cta_url}
+              onChange={v => set('cta_url', v)}
+              hint={
+                !initial
+                  ? 'הקישור לאתר המפרסם — חובה ביצירה (R20 §3c).'
+                  : f.creative_url
+                    ? 'חובה כשיש תמונה — אחרת התמונה לחיצה בלי יעד.'
+                    : 'רשות בעריכת מודעה קיימת בלי תמונה.'
+              }
+            />
           </fieldset>
 
           {/* creative */}
