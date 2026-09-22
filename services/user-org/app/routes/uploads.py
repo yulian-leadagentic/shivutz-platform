@@ -34,7 +34,26 @@ UPLOAD_DIR    = os.getenv("UPLOAD_DIR", "/app/uploads")
 
 
 @router.get("/cloudinary-signature")
-def cloudinary_signature():
+def cloudinary_signature(
+    x_user_role: Optional[str] = Header(default=None),
+    x_user_id:   Optional[str] = Header(default=None),
+):
+    # R30 §17 · signing endpoint returns time-limited upload
+    # credentials for Cloudinary. Without a role check, any
+    # authenticated user (contractor / corp / provider) could hit
+    # it and consume Cloudinary quota indefinitely — the endpoint
+    # doesn't take an entity context so the standard require_
+    # entity_access chain never fires. Admin only.
+    #
+    # 401 (unauthenticated) is thrown by the gateway before we get
+    # here; a 403 here means "logged in, not admin". The frontend
+    # differentiates 401 vs 403 vs 501 (see admin/sponsors page.tsx
+    # sigReason discriminator).
+    if not x_user_id:
+        raise HTTPException(status_code=401, detail={"code": "unauthorized"})
+    if x_user_role != "admin":
+        raise HTTPException(status_code=403, detail={"code": "admin_only"})
+
     cloud   = os.getenv("CLOUDINARY_CLOUD_NAME")
     api_key = os.getenv("CLOUDINARY_API_KEY")
     secret  = os.getenv("CLOUDINARY_API_SECRET")

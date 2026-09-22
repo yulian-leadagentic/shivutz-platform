@@ -6,13 +6,21 @@
 // this table at request time so changes go live without a redeploy.
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { Loader2, Save, Infinity as InfIcon } from 'lucide-react';
 import { apiFetch } from '@/lib/api/client';
 import { ENTITY_TYPE_HE, TIER_HE_SHORT } from '@/lib/labels';
 
+// R30 §20a · Yulian filed on 22.09: "אני רואה רק קבלן ותאגיד".
+// migration 089 seeded a service_provider row and the API returns
+// it — the frontend just filtered it out with a hardcoded [
+// 'contractor', 'corporation' ] literal below. Extend the type +
+// derive the grouping from the data (see §20a Do: "הקיבוץ ייגזר
+// מהערכים שחזרו מהשרת, לא ממערך קשיח" — otherwise the next entity
+// type disappears the same way).
 interface Plan {
   id:                     string;
-  entity_type:            'contractor' | 'corporation';
+  entity_type:            'contractor' | 'corporation' | 'service_provider';
   tier:                   'basic' | 'advanced' | 'pro';
   max_users:              number | null;
   // L4 — new fields split off from max_users. included_users = seats
@@ -131,10 +139,13 @@ export default function SubscriptionPlansPage() {
     finally { setBusy(null); }
   }
 
-  const grouped = {
-    contractor:  plans.filter((p) => p.entity_type === 'contractor'),
-    corporation: plans.filter((p) => p.entity_type === 'corporation'),
-  };
+  // R30 §20a · derive the grouping FROM THE DATA. A hard-coded
+  // [contractor, corporation] literal was silently dropping the
+  // service_provider row from migration 089.
+  const entityTypesInOrder = Array.from(new Set(plans.map(p => p.entity_type)));
+  const grouped: Record<string, Plan[]> = Object.fromEntries(
+    entityTypesInOrder.map(et => [et, plans.filter(p => p.entity_type === et)]),
+  );
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 space-y-6">
@@ -150,9 +161,19 @@ export default function SubscriptionPlansPage() {
       {loading ? (
         <div className="text-center py-16"><Loader2 className="w-6 h-6 animate-spin mx-auto text-slate-400" /></div>
       ) : (
-        (['contractor', 'corporation'] as const).map((et) => (
+        entityTypesInOrder.map((et) => (
           <section key={et} className="space-y-3">
-            <h2 className="text-base font-bold text-slate-800">{ENTITY_LABEL[et]}</h2>
+            <h2 className="text-base font-bold text-slate-800">{ENTITY_LABEL[et] ?? et}</h2>
+            {/* R30 §20b · pointer row: the ancillary-services plans
+                (₪149 / ₪399) and the sponsor pricing live on other
+                admin screens. Say so, so nobody re-hunts them here. */}
+            {et === 'service_provider' && (
+              <p className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                מסלולי השירותים הנלווים (₪149 / ₪399) מנוהלים ב-<Link href="/admin/marketplace" className="text-brand-700 hover:underline">קטגוריות שירותים נלווים</Link>.
+                מחירי הפרסום בסלוטים מנוהלים ב-<Link href="/admin/sponsors" className="text-brand-700 hover:underline">חסויות</Link>.
+                כאן קובעים רק את מחיר המושב הנוסף לצוות הספק.
+              </p>
+            )}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
               {grouped[et].map((p) => {
                 const d = drafts[p.id];

@@ -443,9 +443,21 @@ function AdEditor({
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/50 flex items-start justify-center p-4 overflow-y-auto" onClick={onCancel}>
-      <div className="bg-white rounded-2xl w-full max-w-3xl my-8 shadow-xl" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between p-4 border-b border-slate-200 sticky top-0 bg-white rounded-t-2xl">
+    // R30 §18 · overlay is now `overflow-hidden` and `items-center`
+    // (was `overflow-y-auto` + `items-start`). The old overlay was
+    // the scroll container, which broke `sticky top-0` on the header:
+    // sticky glues to the nearest scrolling ancestor, and here that
+    // was the overlay, so the header snapped to y=0 of the VIEWPORT
+    // — 16px above the card's rounded corner and OUTSIDE the card's
+    // p-4 zone. That's the 16px offset + the "fields drawing over the
+    // header" that Yulian screenshotted.
+    <div className="fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-4 overflow-hidden" onClick={onCancel}>
+      {/* R30 §18 · card is now the scroll container (`max-h-[90vh]
+          overflow-y-auto`) so sticky glues to the CARD, not the
+          overlay. z-10 on the header gives it its own stacking
+          context so following form fields never paint over it. */}
+      <div className="bg-white rounded-2xl w-full max-w-3xl shadow-xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-4 border-b border-slate-200 sticky top-0 z-10 bg-white rounded-t-2xl">
           <h3 className="text-base font-semibold">
             {initial ? 'עריכת מודעה' : 'מודעה חדשה'}
           </h3>
@@ -643,34 +655,71 @@ function CreativeUploader({ creativeUrl, creativeW, creativeH, placements, onCha
   placements:  string[];
   onChange: (url: string | null, w: number | null, h: number | null) => void;
 }) {
-  const [sig, setSig]     = useState<CloudinarySig | null>(null);
-  const [checked, setChk] = useState(false);
+  const [sig, setSig]         = useState<CloudinarySig | null>(null);
+  const [checked, setChk]     = useState(false);
+  // R30 §17 · replace the swallowed catch with an explicit reason
+  // code so the UI can tell the admin what actually failed. The old
+  // `.catch(() => setSig(null))` masked 401/403/500/network as the
+  // single "לא מוגדר" message — that's the "misleading Cloudinary"
+  // Yulian filed. Reason surfaces on the disabled-uploader label.
+  //   'not_configured'  → env vars missing (501)
+  //   'unauthorized'    → 401/403 gateway / handler auth
+  //   'error'           → anything else
+  const [sigReason, setSigReason] = useState<'ok' | 'not_configured' | 'unauthorized' | 'error' | null>(null);
   const [busy, setBusy]   = useState(false);
   const [err, setErr]     = useState<string | null>(null);
   const fileRef           = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     apiFetch<CloudinarySig>('/uploads/cloudinary-signature')
-      .then(setSig).catch(() => setSig(null))
+      .then((s) => { setSig(s); setSigReason('ok'); })
+      .catch((e) => {
+        setSig(null);
+        // apiFetch throws an Error whose message begins with the
+        // status when the response was HTTP-erroring. Cheapest way
+        // to discriminate without reworking the client.
+        const msg = String((e as Error)?.message ?? '');
+        if (/\b501\b/.test(msg) || /not_configured/.test(msg))     setSigReason('not_configured');
+        else if (/\b401\b/.test(msg) || /\b403\b/.test(msg))       setSigReason('unauthorized');
+        else                                                       setSigReason('error');
+      })
       .finally(() => setChk(true));
   }, []);
 
-  const expectsBanner = placements.some(p => p === 'marketplace_banner' || p === 'home_banner');
-  const expectsCard   = placements.some(p => p === 'marketplace_carousel' || p === 'home_carousel');
-  const hint = expectsBanner && expectsCard
-    ? 'המודעה משמשת גם בבאנר (1200×628) וגם בקרוסלה (1080×1080). בחר אחד ותכין נכס נפרד לשני.'
-    : expectsBanner
-      ? 'מומלץ 1200×628 (יחס באנר).'
-      : expectsCard
-        ? 'מומלץ 1080×1080 (יחס ריבועי).'
-        : 'ריק (חיפוש בלבד) — כל יחס יעבוד; רצוי 1080×1080.';
+  // R30 §17b · hints come from the SIZES catalog that R29 §2 enforces,
+  // not hard-coded 1200×628 / 1080×1080. Those two shapes don't exist
+  // in the catalog (R29 §2 rejects them at save time), so an admin
+  // preparing an asset to spec would upload a rejected file.
+  // Map from placement → the approved (width, height) — mirrored from
+  // services/admin/app/services/sponsor_sizes.py SIZES table.
+  const SIZES: Record<string, [number, number]> = {
+    home_leaderboard:     [1200, 150],
+    home_billboard:       [1200, 250],
+    home_banner:          [1200, 250],
+    marketplace_banner:   [1200, 250],
+    marketplace_carousel: [640, 360],
+    home_carousel:        [640, 360],
+    search_inline:        [240, 240],
+    logo_wall:            [240, 120],
+    side_rail:            [300, 600],
+  };
+  const specs = placements.map(p => SIZES[p]).filter(Boolean) as [number, number][];
+  const hint = specs.length === 0
+    ? 'לא נבחר סלוט. בחר placements בטופס כדי לראות את המידות הנדרשות.'
+    : specs.length === 1
+      ? `מידה נדרשת: ${specs[0][0]}×${specs[0][1]}.`
+      : `מידות נדרשות: ${specs.map(([w,h]) => `${w}×${h}`).join(' · ')} — נכס נפרד לכל סלוט (הכלל של R29 §2).`;
 
   async function upload(file: File) {
     setErr(null);
     // Client-side gate: jpg/png/webp, no svg (spec §2a).
     const ok = ['image/jpeg','image/png','image/webp'].includes(file.type);
     if (!ok) return setErr('רק JPG / PNG / WebP. SVG לא נתמך.');
-    if (!sig) return setErr('Cloudinary לא מוגדר. הדבק כתובת ידנית.');
+    if (!sig) return setErr(
+      sigReason === 'unauthorized' ? 'אין הרשאה לחתימת ההעלאה. התחבר מחדש ונסה שוב.'
+      : sigReason === 'not_configured' ? 'Cloudinary לא מוגדר בשרת. הדבק כתובת ידנית.'
+      : 'שגיאה בקבלת חתימה. הדבק כתובת ידנית.'
+    );
     setBusy(true);
     try {
       const form = new FormData();
@@ -738,7 +787,25 @@ function CreativeUploader({ creativeUrl, creativeW, creativeH, placements, onCha
                  onChange={e => e.target.files?.[0] && upload(e.target.files[0])} />
         </label>
       ) : (
-        <ManualUrlEntry onPick={onChange} setErr={setErr} />
+        <>
+          {/* R30 §17 · discriminate the reason instead of the one
+              misleading "Cloudinary not configured" message. */}
+          <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 flex items-start gap-2">
+            <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+            <span>
+              {sigReason === 'not_configured' && (
+                <>העלאה מהמחשב תופעל כשמנהל השרת יגדיר Cloudinary (<code>CLOUDINARY_CLOUD_NAME</code>/<code>API_KEY</code>/<code>API_SECRET</code>). בינתיים הדבק כתובת תמונה.</>
+              )}
+              {sigReason === 'unauthorized' && (
+                <>אין הרשאה לחתימה על העלאה, או שפג תוקף החיבור. התנתק והתחבר מחדש, ואם התקלה חוזרת — Cloudinary מוגדר אבל הנתיב נחסם ברמת הגייטוויי; דווח.</>
+              )}
+              {(sigReason === 'error' || !sigReason) && (
+                <>שגיאה זמנית בקבלת חתימה. נסה שוב, ואם התקלה חוזרת השתמש בהדבקת כתובת.</>
+              )}
+            </span>
+          </div>
+          <ManualUrlEntry onPick={onChange} setErr={setErr} />
+        </>
       )}
       {err && <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{err}</div>}
     </div>
@@ -790,14 +857,6 @@ function ManualUrlEntry({ onPick, setErr }: {
 
   return (
     <div className="space-y-2">
-      <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 flex items-start gap-2">
-        <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-        <span>
-          העלאה מהמחשב תופעל כשמנהל השרת יגדיר Cloudinary
-          (<code>CLOUDINARY_CLOUD_NAME</code>/<code>API_KEY</code>/<code>API_SECRET</code>).
-          בינתיים הדבק כתובת של תמונה מארחת (Cloudinary web · S3 · ImgBB).
-        </span>
-      </div>
       <div className="flex gap-2">
         <input
           type="url"

@@ -78,12 +78,16 @@ export const SUBSCRIPTION_STATUS_HE_SHORT: Record<string, string> = {
   comped:    'פעיל · ללא חיוב',
 };
 
-// Entity type. `service_provider` reserved for U7 — every existing
-// UI still branches on 'contractor'/'corporation' only.
+// Entity type. `service_provider` reserved for U7; `provider` is the
+// short form used by the route segment (/provider/…) and by
+// RoleGuard's `expect="provider"` prop. Both must resolve to the
+// same Hebrew label or RoleGuard's banner renders the raw English
+// code — the §11a bug Yulian caught on /provider/marketplace/new.
 export const ENTITY_TYPE_HE: Record<string, string> = {
   contractor:       'קבלן',
   corporation:      'תאגיד',
   service_provider: 'ספק שירותים',
+  provider:         'ספק שירותים',
 };
 
 // General-purpose "look up in map, fall back to the raw code, fall

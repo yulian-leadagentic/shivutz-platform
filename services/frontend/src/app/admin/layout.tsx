@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import Logo from '@/components/Logo';
-import { Home, LayoutDashboard, ClipboardCheck, Building2, LogOut, PhoneCall, Users, Inbox, Flag, MessageCircle, FileCheck, Megaphone, CreditCard, Bell, Sliders } from 'lucide-react';
+import { Home, LayoutDashboard, ClipboardCheck, Building2, LogOut, PhoneCall, Users, Inbox, Flag, MessageCircle, FileCheck, Megaphone, CreditCard, Bell, Sliders, Tag, FileText, Gavel } from 'lucide-react';
 import { clearTokens } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 import MobileNavDrawer from '@/components/layout/MobileNavDrawer';
@@ -17,21 +17,38 @@ import RoleGuard from '@/components/layout/RoleGuard';
 // old model. New: /admin/ads (moderation) + /admin/subscriptions (tier
 // mgmt). Registration approvals (kept per decision Q-a) live in
 // /admin/approvals and /admin/orgs.
+// R30 §21 · three admin screens existed on disk but had no menu
+// entry: /admin/marketplace, /admin/tenders, /admin/legal.
+// Result: whoever didn't know the URL by heart couldn't get to
+// them — exactly Yulian's report on §20 when he went looking for
+// the ancillary-services subscription plans and couldn't find
+// them. Labels marked "לאישור Yulian" in the R30 spec; three
+// short strings, adjust if wording needs to change.
+//
+// R30 §19 · also renamed two existing entries so their labels
+// describe WHAT you do there instead of both starting with
+// "פניות" and sounding identical:
+//   'פניות ובקשות'       → 'לידים — השאירו פרטים'   (/admin/leads)
+//   'פניות שירות לקוחות' → 'תמיכה ותקלות'          (/admin/support)
+// Routes / tables / API untouched — display-layer rename only.
 const NAV = [
-  { href: '/admin/dashboard',          label: 'לוח בקרה',           icon: LayoutDashboard },
-  { href: '/admin/approvals',          label: 'אישורים',             icon: ClipboardCheck, badge: true },
-  { href: '/admin/orgs',               label: 'תאגידים וקבלנים',     icon: Building2 },
-  { href: '/admin/ads',                label: 'מודעות',              icon: Megaphone },
-  { href: '/admin/sponsors',           label: 'חסויות',              icon: Megaphone },
-  { href: '/admin/subscriptions',      label: 'מנויים',              icon: CreditCard },
-  { href: '/admin/subscription-plans', label: 'מסלולי מנוי',         icon: Sliders },
-  { href: '/admin/gov-corps-registry', label: 'רשימת תאגידים מורשים', icon: FileCheck },
-  { href: '/admin/users',              label: 'משתמשים',             icon: Users },
-  { href: '/admin/leads',              label: 'פניות ובקשות',         icon: Inbox },
-  { href: '/admin/support',            label: 'פניות שירות לקוחות',   icon: MessageCircle },
-  { href: '/admin/origins',            label: 'ארצות מוצא',           icon: Flag },
-  { href: '/admin/registration-log',   label: 'לוג רישומים',          icon: PhoneCall },
-  { href: '/admin/notifications-test', label: 'בדיקת הודעות',         icon: Bell },
+  { href: '/admin/dashboard',          label: 'לוח בקרה',                 icon: LayoutDashboard },
+  { href: '/admin/approvals',          label: 'אישורים',                  icon: ClipboardCheck, badge: true },
+  { href: '/admin/orgs',               label: 'תאגידים וקבלנים',          icon: Building2 },
+  { href: '/admin/ads',                label: 'מודעות',                   icon: Megaphone },
+  { href: '/admin/sponsors',           label: 'חסויות',                   icon: Megaphone },
+  { href: '/admin/subscriptions',      label: 'מנויים',                   icon: CreditCard },
+  { href: '/admin/subscription-plans', label: 'מסלולי מנוי',              icon: Sliders },
+  { href: '/admin/marketplace',        label: 'קטגוריות שירותים נלווים',   icon: Tag },
+  { href: '/admin/tenders',            label: 'בקשות הצעות',              icon: Gavel },
+  { href: '/admin/legal',              label: 'מסמכים משפטיים',           icon: FileText },
+  { href: '/admin/gov-corps-registry', label: 'רשימת תאגידים מורשים',     icon: FileCheck },
+  { href: '/admin/users',              label: 'משתמשים',                  icon: Users },
+  { href: '/admin/leads',              label: 'לידים — השאירו פרטים',     icon: Inbox },
+  { href: '/admin/support',            label: 'תמיכה ותקלות',             icon: MessageCircle },
+  { href: '/admin/origins',            label: 'ארצות מוצא',               icon: Flag },
+  { href: '/admin/registration-log',   label: 'לוג רישומים',              icon: PhoneCall },
+  { href: '/admin/notifications-test', label: 'בדיקת הודעות',             icon: Bell },
 ];
 
 /**
