@@ -1012,6 +1012,60 @@ function LandingPageInner() {
                 gets 4px more wrapper padding → 68px, under the 72px
                 ceiling. */}
             <div className="max-w-5xl mx-auto px-3 sm:px-4 py-1 sm:py-1.5">
+              {/* R28 §3 · ancillary-services chip row.
+                  One row above the search form. Label + 6 chips. Click
+                  fills the input (does NOT run) and re-focuses the
+                  caret at the end so the visitor sees the word land
+                  and understands they can type similar things
+                  themselves. Rendered ONLY on the pre-search state
+                  (no `resp`, no active loading) — after search the
+                  screen is about results, not discovery.
+                  Mobile: `flex-nowrap overflow-x-auto` — I tried
+                  regular wrap at 390px and it grew to 6 rows and
+                  pushed the search box below the fold. A single
+                  scrollable row keeps search high.
+                  label≠query mapping: the user-facing chip labels
+                  match seed data as of 22.09; the query strings are
+                  the stems that hit the current _search_marketplace
+                  best. Once R28 §2 stemming is proven the two
+                  columns can collapse. */}
+              {!resp && !loading && (
+                <div
+                  className="mb-2 flex flex-nowrap overflow-x-auto sm:flex-wrap sm:justify-center items-center gap-1.5 text-xs -mx-3 px-3 sm:mx-0 sm:px-0"
+                  role="group"
+                  aria-label="הצעות לשירותים נלווים"
+                >
+                  <span className="shrink-0 text-[11px] text-slate-500">
+                    ניתן לחפש גם שירותים נלווים כגון:
+                  </span>
+                  {[
+                    { label: 'ביטוח',           query: 'ביטוח' },
+                    { label: 'הסעות',           query: 'הסע' },
+                    { label: 'דיור לעובדים',    query: 'מגורים' },
+                    { label: 'ציוד וכלי עבודה', query: 'כלי' },
+                    { label: 'פיגומים',         query: 'פיגומים' },
+                    { label: 'קורסים והסמכות',  query: 'קורס' },
+                  ].map((chip) => (
+                    <button
+                      key={chip.label}
+                      type="button"
+                      className="shrink-0 inline-flex items-center gap-1 rounded-full border border-brand-300 bg-white text-slate-800 px-2.5 py-1 hover:bg-brand-50 hover:border-brand-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+                      onClick={() => {
+                        cancelTyping();
+                        setQ(chip.query);
+                        const el = searchInputRef.current;
+                        if (el) {
+                          el.focus();
+                          const len = chip.query.length;
+                          try { el.setSelectionRange(len, len); } catch { /* ignore */ }
+                        }
+                      }}
+                    >
+                      {chip.label}
+                    </button>
+                  ))}
+                </div>
+              )}
               <form
                 onSubmit={(e) => { e.preventDefault(); cancelTyping(); runSearch(); }}
                 className={`ai-search-form flex items-center gap-2 sm:gap-3 rounded-xl border-2 border-slate-200 bg-white px-2 sm:px-3 py-1 focus-within:border-brand-600 focus-within:ring-2 focus-within:ring-brand-200 transition-colors motion-reduce:transition-none ${(resp || (demoView && !searchError && !loading)) ? 'is-joined' : ''}`}
@@ -1173,35 +1227,37 @@ function LandingPageInner() {
                   runSearch(nextQ);
                 }
 
-                // R12 §1b · visible counter now sums the same three
-                // sources the SR-only status region does — a query like
-                // "קורס עברית" that lands only in marketplace_matches
-                // has to read "תוצאה אחת" in the readout, not "0
-                // תוצאות" next to a real card. The empty-state block
-                // downstream already gates on all three; the counter
-                // was the last surface still reading two of three.
+                // R28 §1 · near_matches are NOT results. They're an
+                // "if you relax filter X" fallback we surface UNDER
+                // the exact-results header so the customer can decide
+                // whether the relaxation is acceptable. Counting them
+                // into "תוצאות מודעות" is what produced "14 תוצאות"
+                // next to a `total: 0` server response — the exact
+                // shape Yulian caught.
+                // Rule this rebuild locks in: the top-line counter
+                // reads (exact + marketplace) only. Near stays out of
+                // the summary; it gets its own labelled row lower.
                 const exact  = resp.results.length;
                 const near   = resp.near_matches?.length ?? 0;
                 const market = resp.marketplace_matches?.length ?? 0;
-                const total  = exact + near + market;
+                const mainTotal = exact + market;
                 const countText = (() => {
-                  if (total === 0) return '0 תוצאות';
-                  // Single-source case: use the short "N תוצאות" form
-                  // whichever source it is — no need to spell out
-                  // "מדויקות" when there's nothing to disambiguate.
-                  const populated = [exact, near, market].filter((n) => n > 0).length;
-                  if (populated === 1) {
-                    return total === 1 ? 'תוצאה אחת' : `${total} תוצאות`;
-                  }
+                  if (mainTotal === 0 && near === 0) return '0 תוצאות';
                   const parts: string[] = [];
                   if (exact > 0) {
-                    parts.push(exact === 1 ? 'תוצאה אחת מדויקת' : `${exact} תוצאות מדויקות`);
-                  }
-                  if (near > 0) {
-                    parts.push(`${near} קרובות`);
+                    parts.push(exact === 1 ? 'מודעה אחת' : `${exact} מודעות`);
+                  } else if (market > 0 || near > 0) {
+                    // R28 §1 · "יש תוצאות, הן פשוט לא מודעות עובדים" —
+                    // spell out the zero on the ads side so the
+                    // customer sees WHY the marketplace/near sections
+                    // are what's on screen.
+                    parts.push('0 מודעות');
                   }
                   if (market > 0) {
                     parts.push(market === 1 ? 'שירות אחד נלווה' : `${market} שירותים נלווים`);
+                  }
+                  if (near > 0) {
+                    parts.push(`${near} קרובות`);
                   }
                   return parts.join(' · ');
                 })();
@@ -1581,27 +1637,29 @@ function LandingPageInner() {
                 ? `שגיאה בחיפוש: ${searchError}`
                 : resp
                   ? (() => {
-                      // R5 §4 · counter now includes marketplace_matches
-                      // so a query like "קורס עברית" (which lands only
-                      // in the services section) reads "תוצאה אחת",
-                      // not "0 תוצאות". Yulian: "יש תוצאות ולא נמצאו
-                      // מודעות באותו מסך" was the counter and the
-                      // amber block reading off two of the three
-                      // possible sources.
+                      // R28 §1 · same rule as the readout counter above.
+                      // near_matches are labelled separately and do NOT
+                      // count as results. mainTotal===0 + marketplace>0
+                      // must never render as "no results" — the
+                      // customer HAS what they searched for, just not
+                      // as a worker ad. Empty state ONLY when every
+                      // source is genuinely zero.
                       const exact  = resp.results.length;
                       const near   = resp.near_matches?.length ?? 0;
                       const market = resp.marketplace_matches?.length ?? 0;
-                      const total  = exact + near + market;
-                      if (total === 0) return 'לא נמצאו מודעות התואמות לחיפוש';
+                      const mainTotal = exact + market;
+                      if (mainTotal === 0 && near === 0) return 'לא נמצאו תוצאות התואמות לחיפוש';
                       const parts: string[] = [];
                       if (exact > 0) {
-                        parts.push(exact === 1 ? 'תוצאה אחת מדויקת' : `${exact} תוצאות מדויקות`);
-                      }
-                      if (near > 0) {
-                        parts.push(near === 1 ? 'תוצאה אחת קרובה' : `${near} תוצאות קרובות`);
+                        parts.push(exact === 1 ? 'מודעה אחת' : `${exact} מודעות`);
+                      } else if (market > 0 || near > 0) {
+                        parts.push('0 מודעות');
                       }
                       if (market > 0) {
                         parts.push(market === 1 ? 'שירות אחד נלווה' : `${market} שירותים נלווים`);
+                      }
+                      if (near > 0) {
+                        parts.push(near === 1 ? 'תוצאה אחת קרובה' : `${near} תוצאות קרובות`);
                       }
                       return parts.join(' · ');
                     })()
