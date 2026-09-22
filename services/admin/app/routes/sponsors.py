@@ -28,6 +28,10 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field, HttpUrl
 
 from app.db import get_db
+from app.services.sponsor_sizes import (
+    check_creative_dimensions,
+    DimensionRejection,
+)
 
 router = APIRouter()
 
@@ -215,10 +219,27 @@ def _validate_dates(starts_at, ends_at):
         )
 
 
-def _validate_creative(url, w, h):
+def _validate_creative(url, w, h, placements: Optional[list[str]] = None):
     """If any of the three creative fields is set, all three must be.
     Prevents a "url but no aspect ratio" state that would render the
     image without a CLS-safe aspect wrapper on the client.
+
+    R29 §2 addition — when `placements` names one of the known ad
+    slots, the (w, h) pair is validated against the approved SIZES
+    table (services/admin/app/services/sponsor_sizes.py) with ±3%
+    aspect tolerance. Rejection surfaces as HTTP 400 with a Hebrew
+    message that names both the required and the received dimensions
+    so the admin knows what to re-upload.
+
+    NOTE — this legacy fallback field on `sponsor_ads` (creative_url
+    + creative_w/_h) is one image for all placements. R29 §1 adds a
+    per-placement per-breakpoint `sponsor_creatives` table that will
+    take over for slots that need distinct assets (leaderboard vs
+    carousel, desktop vs mobile). The legacy field validates against
+    the FIRST known placement in the ad's `placements` list — good
+    enough to catch the 1037×609 shape that started this whole
+    thread, and NOT enough for real per-slot enforcement. Follow-up
+    round wires the sponsor_creatives upload path proper.
     """
     provided = [x for x in (url, w, h) if x is not None]
     if provided and len(provided) != 3:
@@ -226,13 +247,28 @@ def _validate_creative(url, w, h):
             status_code=400,
             detail="creative_url_requires_width_and_height",
         )
+    # R29 §2 · dimension enforcement (partial — see docstring).
+    if url and w and h and placements:
+        for placement in placements:
+            try:
+                check_creative_dimensions(placement, "desktop", int(w), int(h))
+            except DimensionRejection as e:
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "code":    e.code,
+                        "message": e.message_he,
+                        **e.extra,
+                        "placement": placement,
+                    },
+                )
 
 
 @router.post("/sponsors", status_code=201)
 def create_sponsor(body: SponsorCreate):
     _validate_placements(body.placements)
     _validate_dates(body.starts_at, body.ends_at)
-    _validate_creative(body.creative_url, body.creative_w, body.creative_h)
+    _validate_creative(body.creative_url, body.creative_w, body.creative_h, body.placements)
 
     new_id = str(uuid.uuid4())
     conn = get_db("org_db")
@@ -327,7 +363,29 @@ def update_sponsor(ad_id: str, body: SponsorPatch):
             new_url = row["creative_url"] if body.creative_url is None else body.creative_url
             new_w   = row["creative_w"]   if body.creative_w   is None else body.creative_w
             new_h   = row["creative_h"]   if body.creative_h   is None else body.creative_h
-        _validate_creative(new_url, new_w, new_h)
+        # R29 §2 · aspect check on the update path, WITH grandfathering.
+        # The rule from R29 §2: "האכיפה חלה על העלאות חדשות בלבד" —
+        # existing rows keep rendering; only new uploads get bounced.
+        # Fire the dimension check only when the request actually
+        # touched the dimensions (either creative_w or creative_h is
+        # present in the incoming body) OR when creative_url itself
+        # is being set/replaced. Metadata-only edits (CTA label, dates,
+        # active flag) leave the creative alone and never invoke the
+        # new SIZES gate. `body.placements` still takes precedence
+        # when picking which slot to validate against; falls back to
+        # the row's current stored placements otherwise.
+        creative_touched = (
+            body.creative_url is not None
+            or body.creative_w   is not None
+            or body.creative_h   is not None
+            or body.clear_creative
+        )
+        effective_placements = body.placements if body.placements is not None else _parse_json_list(row.get("placements"))
+        if creative_touched:
+            _validate_creative(new_url, new_w, new_h, effective_placements)
+        else:
+            # Trio invariant still enforced for safety, without SIZES.
+            _validate_creative(new_url, new_w, new_h, None)
 
         sets: list[str] = []
         params: list[object] = []
