@@ -28,7 +28,11 @@ const STEPS = [
     label: 'שואלים בעברית',
     icon: MessageSquare,
     body:
-      'מקלידים או מדברים בעברית טבעית. אין טופס למלא, אין הרשמה — כל מה שצריך זו שאלה אחת.',
+      // R26 §3 variant D · Yulian 22.09.2026 — the broken promise
+      // was 'אין הרשמה' alone; step 3 in this page already says
+      // registration is only needed to reveal contact details, so
+      // loading the pitch with a caveat is redundant. Two-word delete.
+      'מקלידים או מדברים בעברית טבעית. אין טופס למלא — כל מה שצריך זו שאלה אחת.',
     detail:
       'המערכת מזהה מה חיפשת גם כשהניסוח לא סטנדרטי. אפשר לומר "אני צריך רתכים מסין באזור המרכז" או "5 בנאים לפרויקט בדרום עם ניסיון של שנתיים לפחות" — הכל מובן.',
   },
@@ -140,7 +144,11 @@ export default function HowItWorksPage() {
           </li>
           <li className="flex items-start gap-2">
             <CheckCircle2 className="h-4 w-4 text-emerald-600 mt-1 shrink-0" />
-            <span>המנוי כולל מספר חשיפות בחודש — הגלישה במודעות עצמה תמיד חינם.</span>
+            {/* R26 §3 variant B · Yulian 22.09.2026 — reframes the
+                price model as browse-free/pay-to-reveal instead of
+                the confusing 'browsing always free' line that
+                contradicted anon's login CTA on worker/housing ads. */}
+            <span>אחרי ההתחברות, גלישה במודעות היא ללא עלות. המנוי נחוץ רק כדי לחשוף פרטי קשר של תאגידים ומעסיקים.</span>
           </li>
           <li className="flex items-start gap-2">
             <CheckCircle2 className="h-4 w-4 text-emerald-600 mt-1 shrink-0" />
@@ -235,7 +243,11 @@ export default function HowItWorksPage() {
           </li>
           <li className="flex items-start gap-2">
             <CheckCircle2 className="h-4 w-4 text-emerald-600 mt-1 shrink-0" />
-            <span>הצפייה חופשית לגמרי — כמו שאר המודעות בפלטפורמה.</span>
+            {/* R26 §3 variant C · Yulian 22.09.2026 — dropped the
+                'כמו שאר המודעות' tail because it was misleading
+                (worker/housing DO require login). Kept in the
+                services-nלווים section where free-view IS true. */}
+            <span>הצפייה בשירותים נלווים חופשית לגמרי.</span>
           </li>
           <li className="flex items-start gap-2">
             <CheckCircle2 className="h-4 w-4 text-emerald-600 mt-1 shrink-0" />
