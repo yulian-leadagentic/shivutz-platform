@@ -543,32 +543,15 @@ _PUBLIC_SPONSOR_AD_COLS = frozenset({
 })
 
 
-# R29 §3 · render mode computation is imported from the admin package
-# (the SIZES catalog is admin-owned; user-org just consumes the read
-# helpers). Falls back to a stub when the admin package isn't importable
-# (test environments, isolated user-org deploys) — the stub returns
-# render_mode="creative" for anything with a creative_url, matching the
-# pre-R29 behaviour so nothing breaks.
-try:
-    from app.services.sponsor_sizes import is_wide_strip, creative_matches_slot  # type: ignore
-except ImportError:  # pragma: no cover — user-org can't reach admin pkg in some layouts
-    try:
-        # Same file lives at services/admin/app/services/sponsor_sizes.py.
-        # Both services deploy from the same monorepo so the path is
-        # stable. If your local layout differs, add a symlink instead of
-        # editing this — the catalog stays one source of truth.
-        import os
-        import sys
-        _HERE = os.path.dirname(os.path.abspath(__file__))
-        _ADMIN_SVC = os.path.abspath(os.path.join(_HERE, "..", "..", "..", "..", "admin"))
-        if _ADMIN_SVC not in sys.path:
-            sys.path.insert(0, _ADMIN_SVC)
-        from app.services.sponsor_sizes import is_wide_strip, creative_matches_slot  # type: ignore
-    except ImportError:
-        def is_wide_strip(_placement):  # type: ignore
-            return False
-        def creative_matches_slot(_p, _bp, _w, _h):  # type: ignore
-            return True   # legacy — trust the caller
+# R29 §3 · render-mode helpers live in a user-org-local copy of the
+# admin sponsor_sizes catalog. Railway isolates each service's file
+# tree, so a cross-service import from user-org into admin returns
+# ImportError at runtime — the previous "try admin, fall back to
+# stub" arrangement silently degraded to render_mode="creative" for
+# every wide-strip slot, which is exactly the R28 §4 bug this
+# section closes. Duplication is intentional; the module docstring
+# in the local copy carries the "keep in sync" comment.
+from app.services.sponsor_sizes import is_wide_strip, creative_matches_slot
 
 
 def _pick_render_mode(row: dict, placement: Optional[str]) -> str:
