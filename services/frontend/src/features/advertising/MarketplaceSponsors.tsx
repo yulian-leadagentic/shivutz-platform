@@ -609,17 +609,31 @@ function SponsorSideRail({ aboveFold = true }: { aboveFold?: boolean } = {}) {
   // side_rail should live in. `top: SIDE_RAIL_TOP_PX` clears the
   // whole search zone at every state — see the constant's doc.
   // z-30 sits below modals AND below the sticky search bar (also
-  // z-40), so the search input can never be covered even if the
-  // rail's top ever ends up too high.
+  // z-40), so the search input can never be covered.
+  //
+  // Height rule (fixes the "cut off at bottom" Yulian caught on a
+  // 900px-tall viewport where top-480 + height-600 = 1080 > viewport):
+  //   * creative branch — locked to 600px so the image renders at
+  //     its 300×600 slot aspect (matches the SIZES catalog entry).
+  //   * composite branch — natural content height (~240-300px for
+  //     the seed row's headline + body + CTA). NO fixed height so
+  //     short viewports don't clip the bottom.
+  //   * BOTH branches capped by maxHeight = 100vh − top − 16px
+  //     bottom margin, so even a 600px creative on a 900px screen
+  //     gets scaled down (its aspect wrapper handles the shrink)
+  //     rather than running off-screen.
+  const isCreative = mode === 'creative' && !!ad.creative_url;
   return (
     <aside
       ref={observeRef}
       className="hidden fixed left-4 z-30"
       style={{
         display: wide ? 'block' : 'none',
-        top: SIDE_RAIL_TOP_PX,
-        width: 300,
-        height: 600,
+        top:       SIDE_RAIL_TOP_PX,
+        width:     300,
+        ...(isCreative ? { height: 600 } : {}),
+        maxHeight: `calc(100vh - ${SIDE_RAIL_TOP_PX + 16}px)`,
+        overflow:  'hidden',
       }}
       aria-label="מודעה ממומנת · צד"
     >
