@@ -84,7 +84,12 @@ async def register_provider(data: ProviderCreate):
     contract corporations use). Auth service `POST /auth/register`
     guards on `check-recent-otp` internally — no direct OTP check here.
     """
-    name = (data.name or "").strip() or data.contact_name.strip()
+    # R26 §2c v2 · same safe whitespace normalisation contractors +
+    # corporations got. Trim + collapse double spaces; NO reject
+    # regex. Providers store their business name in `name` (not
+    # company_name_he), but the same "missing space before suffix"
+    # typo shape applies.
+    name = " ".join(((data.name or "").strip() or data.contact_name.strip()).split()).strip()
     if not name:
         raise HTTPException(status_code=400, detail="name_required")
     if not data.contact_phone.strip():

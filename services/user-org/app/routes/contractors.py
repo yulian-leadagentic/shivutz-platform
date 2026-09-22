@@ -237,6 +237,15 @@ async def register_contractor(
     prefill = lookup.get("prefill") or {}
     company_name_he = prefill.get("company_name_he") or data.company_name_he
     company_name = data.company_name or company_name_he
+    # R26 §2c v2 · same safe whitespace normalisation as corporations.py.
+    # Yulian pointed out the row that started this thread —
+    # "בוני הנגבבע\"מ" — is on contractors, not corporations. Trim +
+    # collapse doubles; NO reject regex (per R26 §2c: 'בע"מ' is one
+    # of many valid suffixes).
+    if company_name_he:
+        company_name_he = " ".join(company_name_he.split()).strip()
+    if company_name:
+        company_name = " ".join(company_name.split()).strip()
 
     # quick_lookup already exposes ica status as gov_company_status; derive the
     # active flag from it without re-hitting the registry.
