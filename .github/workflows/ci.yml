@@ -84,3 +84,15 @@ jobs:
       # ostensibly-safe file has bitten better projects than ours.
       - name: No real secrets in .env.example
         run: node scripts/check-env-example-secrets.mjs
+      # R29 §3 · sponsor_sizes catalog parity — admin (write side)
+      # and user-org (read side) each carry a copy of the catalog
+      # because Railway builds each service in isolation. This job
+      # imports BOTH files and diffs SIZES + _WIDE_STRIP_PLACEMENTS
+      # + _ASPECT_TOLERANCE (plus the sha256 constants) so drift
+      # never merges. Runtime guards in each file are defence-
+      # in-depth; this is the fail-fast gate Yulian preferred.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: sponsor_sizes catalog parity
+        run: python scripts/check-sponsor-sizes-parity.py

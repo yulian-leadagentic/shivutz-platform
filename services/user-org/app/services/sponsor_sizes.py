@@ -86,14 +86,25 @@ def creative_matches_slot(
     return abs(got_ratio - spec_ratio) / spec_ratio <= _ASPECT_TOLERANCE
 
 
-# R29 §3 · drift guard for the mirrored catalog. See the sibling
-# comment in services/admin/app/services/sponsor_sizes.py for the
-# full procedure. Short version: SIZES / _WIDE_STRIP_PLACEMENTS /
-# _ASPECT_TOLERANCE are duplicated across two files because Railway
-# builds each service from its own subtree; every module import
-# recomputes the hash and compares to the constant below; a mismatch
-# crashes the service at startup so CI (or Railway health checks)
-# catch the drift instead of shipping a silently-broken read side.
+# R29 §3 · drift guard for the mirrored catalog.
+#
+# BLAST-RADIUS RULE — this is user-org (the read side). Editing SIZES
+# / _WIDE_STRIP_PLACEMENTS here without updating the admin copy is a
+# real defect, but it is a COSMETIC defect: a sponsor banner renders
+# at the wrong shape. user-org also serves search, marketplace,
+# registration, and contact reveals. A HARD crash here would take the
+# whole product down for an ad-sizing typo. So this file DEGRADES to
+# a loud logger.error() and keeps going — the service starts, the ads
+# render whatever the local catalog says, and ops sees the ERROR in
+# the log stream.
+#
+# The write side (services/admin/app/services/sponsor_sizes.py) still
+# crashes hard on drift — same catch-early rule at the ENFORCEMENT
+# boundary — and a dedicated CI test at scripts/check-sponsor-sizes-parity.py
+# imports both files and blocks the merge if the two catalogs disagree,
+# so drift never reaches Railway at all under normal operation.
+# Together: CI = fail-fast; admin = fail-fast at runtime; user-org =
+# survive and log. That is the belt-and-braces Yulian asked for.
 _CANONICAL_CATALOG_HASH = "945707de90c1f4fdb9e3192b0c58e9913cec9aebb391b8ad2027ebaa3c565098"
 
 
@@ -114,14 +125,17 @@ def _catalog_hash() -> str:
 
 _actual_hash = _catalog_hash()
 if _actual_hash != _CANONICAL_CATALOG_HASH:
-    raise RuntimeError(
-        "sponsor_sizes catalog drift detected in services/user-org.\n"
-        f"  computed: {_actual_hash}\n"
-        f"  expected: {_CANONICAL_CATALOG_HASH}\n"
-        "Either revert your SIZES edit OR update _CANONICAL_CATALOG_HASH "
-        "in BOTH services/admin/app/services/sponsor_sizes.py AND "
-        "services/user-org/app/services/sponsor_sizes.py (with matching "
-        "SIZES bodies)."
+    # NOT `raise` — see BLAST-RADIUS RULE above. Log loudly and continue.
+    import logging
+    logging.getLogger(__name__).error(
+        "sponsor_sizes catalog drift detected in services/user-org "
+        "(cosmetic; render mode picks may disagree with the admin "
+        "write-side check until parity is restored). "
+        "computed=%s expected=%s. "
+        "Fix by editing services/admin/app/services/sponsor_sizes.py + "
+        "services/user-org/app/services/sponsor_sizes.py in lockstep "
+        "and updating _CANONICAL_CATALOG_HASH in both.",
+        _actual_hash, _CANONICAL_CATALOG_HASH,
     )
 
 
