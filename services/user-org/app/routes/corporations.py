@@ -272,6 +272,18 @@ async def register_corporation(
 
     company_name_he = ica_fields.get("company_name_he") or data.company_name_he
     company_name = data.company_name or company_name_he
+    # R26 §2c · SAFE whitespace normalisation only — trim + collapse
+    # double spaces. Deliberately NO regex reject of any suffix pattern
+    # (per R26 §2c: 'בע״מ' is one of many valid Hebrew company
+    # suffixes; a reject regex would refuse valid registrations for
+    # amutot/shutafuyot/Ltd/name-ends-in-a-letter-before-suffix). If
+    # a name arrives without a space before 'בע״מ' the admin sees a
+    # non-blocking hint on the org page and can correct it; nothing
+    # bounces the customer here.
+    if company_name_he:
+        company_name_he = " ".join(company_name_he.split()).strip()
+    if company_name:
+        company_name = " ".join(company_name.split()).strip()
     initial_tier = "tier_1" if (registry["ica_found"] and company_active) else "tier_0"
 
     # ── Cross-check against the רשות האוכלוסין annual list ──────────

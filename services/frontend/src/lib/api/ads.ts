@@ -93,8 +93,28 @@ export interface UsageResponse {
   };
 }
 
+// R26 §1b · one row per seeded tier for the caller's entity_type.
+// Shape matches all_tier_limits() in
+// services/user-org/app/services/subscription_limits.py — the tier
+// name plus the same columns the /ads/usage.limits object carries
+// for a single tier. monthly_price_nis is nullable: when a tier is
+// missing from subscription_plans the row simply isn't in the list,
+// and the billing card renders "מחיר לא זמין" + disabled button.
+export interface PlanRow {
+  tier:                 'basic' | 'advanced' | 'pro';
+  max_users:            number | null;
+  included_users:       number | null;
+  extra_user_price_nis: number | null;
+  reveals_per_month:    number | null;
+  active_ads:           number | null;
+  max_ad_lifetime_days: number | null;
+  monthly_price_nis:    number | null;
+  can_boost:            boolean;
+}
+
 export const adApi = {
   usage:  ()                          => apiFetch<UsageResponse>('/ads/usage'),
+  plans:  ()                          => apiFetch<{ tiers: PlanRow[] }>('/ads/plans'),
   list:   ()                          => apiFetch<AdRow[]>('/ads/mine'),
   get:    (id: string)                => apiFetch<AdRow>(`/ads/${id}`),
   create: (body: AdCreateInput)       => apiFetch<AdRow>('/ads',           { method: 'POST',   body: JSON.stringify(body) }),

@@ -17,7 +17,7 @@ import {
   type SubscriptionRow,
   type SubscriptionTier,
 } from '@/lib/api/payments';
-import { adApi, type UsageResponse } from '@/lib/api/ads';
+import { adApi, type UsageResponse, type PlanRow } from '@/lib/api/ads';
 import { memberApi, type TeamMember } from '@/lib/api/members';
 import { ApiError } from '@/lib/api/client';
 import { mapApiError } from '@/lib/api/errors';
@@ -31,23 +31,21 @@ import { useAuth } from '@/lib/AuthContext';
 // Contractor tiers — no "active ads" (contractors don't publish).
 // Numbers here are the seed defaults; admin can edit them via
 // /admin/subscription-plans and the live limits render below.
-// R25 §1a + §1b · features + price are HINTS only. When usage.limits
-// is loaded from /ads/usage we render the CURRENT tier's real numbers
-// from subscription_plans (max_users, reveals_per_month,
-// monthly_price_nis) instead of these strings. Other tiers still show
-// the hint text until a public plans-catalog endpoint exists. Old
-// hint 'עד 3 משתמשים' on the advanced tier was invented — no such
-// row in subscription_plans; 071 seeds max_users=20 across all
-// contractor tiers. Corrected to the actual seed value.
-const CONTRACTOR_TIERS: { code: SubscriptionTier; title: string; tagline: string; price: number | null; features: string[] }[] = [
-  { code: 'basic',    title: 'בסיסי',   tagline: 'התחלה קלה',              price: null, features: ['5 משתמשים כלולים · עד 20',  'עד 10 חשיפות פרטי קשר בחודש']  },
-  { code: 'advanced', title: 'מתקדם',   tagline: 'לצוותים בקצב עבודה',    price: null, features: ['5 משתמשים כלולים · עד 20',  'עד 40 חשיפות בחודש']            },
-  { code: 'pro',      title: 'פרו',     tagline: 'לפעילות רחבה',          price: null, features: ['5 משתמשים כלולים · עד 20',  'עד 120 חשיפות בחודש']           },
+// R26 §1d · only names + taglines here. Every number (price, seats,
+// reveals, ad lifetime) is read from the /ads/plans catalog at
+// render time — see PLANS_META below and the plan-card loop far
+// below. If /ads/plans doesn't have a row for a tier (fresh DB,
+// unseeded plan), the card renders "מחיר לא זמין" + disabled button
+// per R26 §1c — never a hardcoded ₪.
+const CONTRACTOR_TIERS: { code: SubscriptionTier; title: string; tagline: string }[] = [
+  { code: 'basic',    title: 'בסיסי',   tagline: 'התחלה קלה' },
+  { code: 'advanced', title: 'מתקדם',   tagline: 'לצוותים בקצב עבודה' },
+  { code: 'pro',      title: 'פרו',     tagline: 'לפעילות רחבה' },
 ];
-const CORP_TIERS: { code: SubscriptionTier; title: string; tagline: string; price: number; features: string[] }[] = [
-  { code: 'basic',    title: 'בסיסי',   tagline: 'התחלה זריזה',      price: 80,  features: ['3 משתמשים', '3 מודעות פעילות במקביל', 'פרסום עד 30 יום'] },
-  { code: 'advanced', title: 'מתקדם',   tagline: 'לתאגידים פעילים',  price: 140, features: ['6 משתמשים', '6 מודעות פעילות במקביל', 'פרסום עד 90 יום · קידום'] },
-  { code: 'pro',      title: 'פרו',     tagline: 'ללא הגבלות',        price: 170, features: ['12 משתמשים', '12 מודעות פעילות', 'פרסום ללא הגבלה · קידום'] },
+const CORP_TIERS: { code: SubscriptionTier; title: string; tagline: string }[] = [
+  { code: 'basic',    title: 'בסיסי',   tagline: 'התחלה זריזה' },
+  { code: 'advanced', title: 'מתקדם',   tagline: 'לתאגידים פעילים' },
+  { code: 'pro',      title: 'פרו',     tagline: 'ללא הגבלות' },
 ];
 
 const TIER_ORDER: Record<SubscriptionTier, number> = { basic: 1, advanced: 2, pro: 3 };
@@ -78,6 +76,12 @@ export default function BillingPage() {
 
   const [sub, setSub]         = useState<SubscriptionRow | null>(null);
   const [usage, setUsage]     = useState<UsageResponse | null>(null);
+  // R26 §1b · full tier catalog for the current entity_type. Each
+  // plan card reads its numbers from here (price, included_users,
+  // max_users, extra_user_price_nis). A tier that isn't in the DB
+  // is absent from `plans` and its card renders "מחיר לא זמין"
+  // + disabled button per R26 §1c.
+  const [plans, setPlans]     = useState<PlanRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyTier, setBusy]   = useState<SubscriptionTier | null>(null);
   const [error, setError]     = useState<string>('');
@@ -103,12 +107,14 @@ export default function BillingPage() {
     setError('');
     setNoSub(false);
     try {
-      const [row, u] = await Promise.all([
+      const [row, u, p] = await Promise.all([
         subscriptionApi.me(),
         adApi.usage().catch(() => null),  // don't hard-fail if usage endpoint is down
+        adApi.plans().catch(() => ({ tiers: [] as PlanRow[] })),  // catalog is nice-to-have too
       ]);
       setSub(row);
       setUsage(u);
+      setPlans(p.tiers);
       if (isContractor && entityId) {
         memberApi.list('contractors', entityId)
           .then(setMembers)
@@ -296,12 +302,22 @@ export default function BillingPage() {
                 <span className="inline-block w-24 h-8 rounded-md bg-slate-100 animate-pulse" aria-label="טוען" />
               ))}
             </h2>
-            {currentTier && 'price' in currentTier && currentTier.price != null && (
-              <p className="text-lg font-bold text-slate-700">
-                ₪{currentTier.price}
-                <span className="text-xs font-medium text-slate-500 ms-1">/ חודש · חידוש אוטומטי</span>
-              </p>
-            )}
+            {/* R26 §1d · hero price reads from /ads/plans catalog for
+                the current tier (same source the plan cards use). No
+                more hardcoded price on the tier meta. Missing row =
+                the hero simply omits the price line — the disabled
+                upgrade path on the cards below already communicates
+                'no catalog'. */}
+            {sub && (() => {
+              const heroPrice = plans.find(p => p.tier === sub.tier)?.monthly_price_nis;
+              if (heroPrice == null) return null;
+              return (
+                <p className="text-lg font-bold text-slate-700">
+                  ₪{heroPrice}
+                  <span className="text-xs font-medium text-slate-500 ms-1">/ חודש · חידוש אוטומטי</span>
+                </p>
+              );
+            })()}
           </div>
 
           {trialDays !== null && (
@@ -479,12 +495,17 @@ export default function BillingPage() {
         {TIERS.map((t) => {
           const currentOrder  = sub ? (TIER_ORDER[sub.tier] ?? 0) : 0;
           const targetOrder   = TIER_ORDER[t.code];
-          // Highlight current tier for both trialing + active so it's
-          // marked from day 0, not only after conversion.
-          // R9 §5 · comped tier is highlighted the same way active/trialing is.
           const isCurrent     = sub?.tier === t.code && (sub?.status === 'active' || sub?.status === 'trialing' || sub?.status === 'comped');
           const isUpgrade     = !isCurrent && targetOrder > currentOrder;
           const isDowngrade   = !isCurrent && targetOrder < currentOrder;
+          // R26 §1b/c/d · card numbers come from the /ads/plans catalog.
+          // No row = tier isn't seeded on this env → priceMissing branch.
+          // Row with monthly_price_nis === null = same branch (fallback
+          // path from subscription_limits.tier_limits when the DB row
+          // is absent; _FALLBACK doesn't carry a price by design).
+          const plan          = plans.find(p => p.tier === t.code);
+          const price         = plan?.monthly_price_nis ?? null;
+          const priceMissing  = price == null;
           return (
             <div
               key={t.code}
@@ -504,51 +525,69 @@ export default function BillingPage() {
                 )}
               </div>
               <p className="text-xs text-slate-500">{t.tagline}</p>
-              {/* R25 §1a · price is read from subscription_plans via
-                  /ads/usage (monthly_price_nis for the CURRENT tier
-                  only — other tiers' prices arrive from a public
-                  catalog endpoint that doesn't exist yet). For those
-                  we render the static hint if it's set. The old
-                  price:null contractor tiers used to render NOTHING
-                  on the card — customer had no idea what upgrade
-                  cost. */}
-              {(() => {
-                const usageLimits = usage?.limits as unknown as { monthly_price_nis?: number | null } | undefined;
-                const dynamicPrice = isCurrent ? usageLimits?.monthly_price_nis ?? null : null;
-                const displayPrice = dynamicPrice ?? t.price ?? null;
-                if (displayPrice == null) return null;
-                return (
-                  <p className="text-lg font-extrabold text-slate-900">
-                    ₪{displayPrice}
-                    <span className="text-xs font-medium text-slate-500 ms-1">/ חודש · חידוש אוטומטי</span>
-                  </p>
-                );
-              })()}
+              {/* R26 §1c · price OR the 'not available' notice, never
+                  a blank line. When priceMissing the upgrade button
+                  is disabled too — a card without a price cannot be
+                  purchased, and rendering a live button next to
+                  no-price is the exact "click and be surprised" bug
+                  R26 exists to prevent. */}
+              {priceMissing ? (
+                <p className="text-sm text-slate-500 italic">
+                  מחיר לא זמין
+                  <span className="text-xs font-normal text-slate-400 ms-1">· פנה לתמיכה</span>
+                </p>
+              ) : (
+                <p className="text-lg font-extrabold text-slate-900">
+                  ₪{price}
+                  <span className="text-xs font-medium text-slate-500 ms-1">/ חודש · חידוש אוטומטי</span>
+                </p>
+              )}
+              {/* R26 §1d · features from the catalog row. included_users
+                  / max_users renders as "N כלולים · עד M" (R25 §1b
+                  wording, now data-driven). reveals_per_month varies
+                  by tier so it belongs here too. active_ads only for
+                  corporations (that's where the tier gate on ads
+                  lives — contractors don't publish). */}
               <ul className="text-sm text-slate-700 space-y-1.5 flex-grow">
-                {t.features.map((f) => (
-                  <li key={f} className="flex items-start gap-2">
-                    <Check className="w-4 h-4 text-emerald-600 mt-0.5 shrink-0" />
-                    <span>{f}</span>
-                  </li>
-                ))}
-                {/* R25 §1a · extra_user_price_nis surfaces on the
-                    CURRENT tier when the plan sells extra seats.
-                    Customer sees "₪80 למשתמש נוסף" so adding a
-                    teammate has a known cost. */}
-                {isCurrent && usage?.limits?.extra_user_price_nis != null && (
+                {plan?.included_users != null && (
                   <li className="flex items-start gap-2">
                     <Check className="w-4 h-4 text-emerald-600 mt-0.5 shrink-0" />
-                    <span>₪{usage.limits.extra_user_price_nis} למשתמש נוסף</span>
+                    <span>
+                      {plan.included_users} משתמשים כלולים
+                      {plan.max_users != null && ` · עד ${plan.max_users}`}
+                    </span>
+                  </li>
+                )}
+                {plan?.reveals_per_month != null && (
+                  <li className="flex items-start gap-2">
+                    <Check className="w-4 h-4 text-emerald-600 mt-0.5 shrink-0" />
+                    <span>עד {plan.reveals_per_month} חשיפות בחודש</span>
+                  </li>
+                )}
+                {!isContractor && plan?.active_ads != null && (
+                  <li className="flex items-start gap-2">
+                    <Check className="w-4 h-4 text-emerald-600 mt-0.5 shrink-0" />
+                    <span>{plan.active_ads} מודעות פעילות במקביל</span>
+                  </li>
+                )}
+                {/* extra_user_price_nis === null → row omitted (that's
+                    what NULL means per subscription_limits.py:99: extra
+                    seats are not sold on this tier). */}
+                {plan?.extra_user_price_nis != null && (
+                  <li className="flex items-start gap-2">
+                    <Check className="w-4 h-4 text-emerald-600 mt-0.5 shrink-0" />
+                    <span>₪{plan.extra_user_price_nis} למשתמש נוסף</span>
                   </li>
                 )}
               </ul>
               <button
                 type="button"
-                disabled={busyTier !== null || isCurrent}
+                disabled={busyTier !== null || isCurrent || priceMissing}
                 onClick={() => upgrade(t.code)}
+                title={priceMissing ? 'מחיר חסר בקטלוג — פנה לתמיכה' : undefined}
                 className={`w-full text-sm font-semibold py-2.5 rounded-lg
                            disabled:cursor-not-allowed inline-flex items-center justify-center gap-2 transition ${
-                  isCurrent
+                  isCurrent || priceMissing
                     ? 'bg-slate-100 text-slate-500 border border-slate-200'
                     : isDowngrade
                       ? 'bg-white text-slate-700 border-2 border-slate-300 hover:border-slate-400'
@@ -559,6 +598,8 @@ export default function BillingPage() {
                   <><Loader2 className="w-4 h-4 animate-spin" /> מעבד…</>
                 ) : isCurrent ? (
                   <><Crown className="w-4 h-4" /> המנוי הנוכחי</>
+                ) : priceMissing ? (
+                  <>לא זמין</>
                 ) : isUpgrade ? (
                   <>שדרג ל{t.title} <ArrowLeft className="w-4 h-4" /></>
                 ) : isDowngrade ? (

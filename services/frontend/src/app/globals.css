@@ -531,15 +531,22 @@ body {
   padding-inline-start: 6px;
 }
 
-/* Preview shell. Fixed floor height on 390 so the layout doesn't
-   pop between phases; desktop lets it grow naturally. aria-hidden
-   is on the JSX. */
+/* Preview shell. R26 §4 · dropped the flat 168px floor. It was
+   added to stop layout jump between phases, but the scanning
+   phase is the only one where children collapse to 0 (tags +
+   cards are opacity:0 while the scan line animates). Confining
+   the floor to `demo-phase-scanning` means the visitor sees a
+   short reserved band only while there's actually nothing to show;
+   `showing` and `fading` size to their content (tags + up to 2
+   cards) and no longer paint 168px of empty on mobile. */
 .demo-preview {
   position: relative;
   overflow: hidden;
-  min-height: 168px;
   pointer-events: none;
   transition: opacity .32s ease;
+}
+.demo-preview.demo-phase-scanning {
+  min-height: 120px;
 }
 .demo-preview.demo-phase-fading { opacity: 0; }
 

@@ -107,6 +107,62 @@ def tier_limits(tier: str, entity_type: str = "contractor") -> dict[str, Optiona
     }
 
 
+def all_tier_limits(entity_type: str) -> list[dict[str, Optional[int]]]:
+    """R26 §1b · list every seeded tier for one entity_type in ONE query.
+
+    Same projection as `tier_limits` above — allow-listed columns, no
+    SELECT *, cross-schema on the same connection. Returns them ordered
+    the way the billing screen renders (basic → advanced → pro …).
+
+    Why this exists: /billing renders three plan cards and needs the
+    catalog (price + seats + reveals) for each tier so the customer sees
+    what an upgrade costs. Calling `tier_limits(tier, entity_type)` three
+    times would round-trip three times and duplicate the fallback logic
+    per row; this batches. The projection is duplicated deliberately
+    from `tier_limits` — a shared helper would tie the two contracts
+    together and I want them to move independently later (per-tier vs
+    catalog).
+
+    Contract on missing rows: the DB is the source of truth. If a
+    tier isn't seeded, it's simply absent from the list — this
+    function does NOT synthesize from _FALLBACK. The billing UI then
+    renders "מחיר לא זמין" + disabled button for tiers with
+    `monthly_price_nis === null`, per R26 §1c. That way a missing
+    plan is visibly missing instead of quietly filled with a
+    made-up number that could contradict what the customer sees at
+    checkout.
+    """
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT tier, max_users, included_users, extra_user_price_nis,
+                      max_reveals_per_month, max_active_ads,
+                      max_ad_lifetime_days, monthly_price_nis, can_boost
+                 FROM payment_db.subscription_plans
+                WHERE entity_type=%s
+                ORDER BY FIELD(tier, 'basic', 'advanced', 'pro'), tier""",
+            (entity_type,),
+        )
+        rows = cur.fetchall()
+    finally:
+        conn.close()
+    return [
+        {
+            "tier":                 r["tier"],
+            "max_users":            r["max_users"],
+            "included_users":       r["included_users"],
+            "extra_user_price_nis": r["extra_user_price_nis"],
+            "reveals_per_month":    r["max_reveals_per_month"],
+            "active_ads":           r["max_active_ads"],
+            "max_ad_lifetime_days": r["max_ad_lifetime_days"],
+            "monthly_price_nis":    r["monthly_price_nis"],
+            "can_boost":            bool(r["can_boost"]),
+        }
+        for r in rows
+    ]
+
+
 def effective_seats(entity_id: str, entity_type: str) -> dict:
     """R4 · single source of truth for how many seats an entity has.
 

@@ -23,7 +23,7 @@ from pydantic import BaseModel, Field
 
 from app.db import get_db
 from app.publisher import publish_event
-from app.services.subscription_limits import fetch_entitlement, tier_limits
+from app.services.subscription_limits import fetch_entitlement, tier_limits, all_tier_limits
 from app.services.visibility import require_contractor_approved, require_no_service_provider, viewer_scope_wheres
 
 router = APIRouter()
@@ -219,6 +219,30 @@ def create_ad(
         return _serialize(cur.fetchone())
     finally:
         conn.close()
+
+
+# ─── GET /ads/plans — full tier catalog for the caller's entity_type ────────
+#
+# R26 §1b · billing screen renders three plan cards and needs price +
+# seats + reveals for EACH tier so the customer sees what an upgrade
+# costs. `/usage` above is the caller's own runtime state (current
+# tier + counters); this sibling route is the catalog the picker draws.
+# Kept next to `/usage` so a reader who lands here sees both paths at
+# once. Authenticated only — no PUBLIC_PREFIXES entry needed; no
+# anonymous surface renders plan cards.
+
+@router.get("/plans")
+def plans(
+    x_entity_id:   Optional[str] = Header(default=None),
+    x_entity_type: Optional[str] = Header(default=None),
+):
+    if not x_entity_id or not x_entity_type:
+        raise HTTPException(status_code=401, detail="auth_required")
+    # entity_id is required for auth (the gateway strips headers when a
+    # request lacks a JWT), but the catalog itself is per-entity_type,
+    # not per-entity. Two contractors on the same tier see the same
+    # catalog.
+    return {"tiers": all_tier_limits(x_entity_type)}
 
 
 # ─── GET /ads/usage — current caller's tier + counters (Phase 5) ────────────

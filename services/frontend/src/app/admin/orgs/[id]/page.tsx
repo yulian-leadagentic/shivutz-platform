@@ -347,6 +347,16 @@ function OrgDetailContent() {
               <input value={form.company_name_he ?? ''}
                 onChange={(e) => setForm((p) => ({ ...p, company_name_he: e.target.value }))}
                 className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm" />
+              {/* R26 §2c · non-blocking hint. Detects the pattern
+                  "<Hebrew-letter>בע" — a letter directly touching a
+                  company-suffix stem — which usually means a missing
+                  space (e.g. "הנגבבע״מ"). Just a suggestion; no
+                  rejection, no auto-edit. The admin decides. */}
+              {form.company_name_he && /[֐-׿]בע/.test(form.company_name_he) && !/\sבע/.test(form.company_name_he) && (
+                <p className="text-[11px] text-amber-700 mt-1 leading-tight">
+                  נראה שחסר רווח לפני ״בע״מ״. הוסף רווח אם זו טעות; אחרת התעלם.
+                </p>
+              )}
             </div>
             <div>
               <label className="text-xs text-slate-500 block mb-1">שם החברה (אנגלית)</label>

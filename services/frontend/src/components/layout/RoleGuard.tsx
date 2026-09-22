@@ -31,9 +31,19 @@
 // or a real access card with an actionable CTA — never a blank page.
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
+import { ArrowLeftRight, ShieldAlert } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
 import { NoAccessCard } from './NoAccessCard';
+
+// R26 §3 · Hebrew labels for entity types. Kept next to the banner
+// that uses them so a new entity_type value flags here immediately.
+const ENTITY_TYPE_HE: Record<string, string> = {
+  contractor:       'קבלן',
+  corporation:      'תאגיד',
+  service_provider: 'ספק שירותים',
+};
 
 // R5 §1 · 'provider' section covers /provider/* routes for
 // service_provider entities. Kept as a distinct section value so a
@@ -154,6 +164,48 @@ export default function RoleGuard({ expect, children }: Props) {
     expect !== 'admin'
   ) {
     return <NoAccessCard variant={expect === 'corporation' ? 'need-corporation' : 'need-contractor'} />;
+  }
+
+  // R26 §3 · admin cross-entity banner. An admin visiting a section
+  // whose entity_type differs from their active JWT context passes
+  // through this guard for support work (line 88 above), but every
+  // API call from the rendered page uses the ADMIN's active entity
+  // headers — which gets rejected as "corp_only" / "contractor_only".
+  // The screen loads, the data doesn't. The banner names both facts
+  // and offers the switch, so an admin in support doesn't waste a
+  // minute wondering why the page is empty. Regular users never see
+  // this — they hit the NoAccessCard branch above.
+  const showAdminCrossEntityBanner =
+    role === 'admin' &&
+    expect !== 'admin' &&
+    hasEntityContext &&
+    entityType &&
+    entityType !== expect;
+
+  if (showAdminCrossEntityBanner) {
+    const activeLabel = (entityType && ENTITY_TYPE_HE[entityType]) || entityType || '';
+    const expectLabel = ENTITY_TYPE_HE[expect] || expect;
+    return (
+      <>
+        <div
+          role="status"
+          className="sticky top-0 z-40 border-b border-amber-200 bg-amber-50 text-amber-900 px-4 py-2.5 text-sm flex items-center gap-2 flex-wrap"
+        >
+          <ShieldAlert className="w-4 h-4 shrink-0 text-amber-700" aria-hidden="true" />
+          <span className="flex-1 min-w-0 leading-snug">
+            אתה צופה כמנהל מערכת. הישות הפעילה שלך היא <b>{activeLabel}</b>, והמסך הזה מיועד ל<b>{expectLabel}</b> — לכן חלק מהנתונים לא ייטענו.
+          </span>
+          <Link
+            href="/select-entity"
+            className="inline-flex items-center gap-1.5 rounded-md bg-white/80 hover:bg-white border border-amber-300 text-amber-900 text-xs font-semibold px-2.5 py-1 shrink-0"
+          >
+            <ArrowLeftRight className="w-3.5 h-3.5" />
+            החלף ישות ←
+          </Link>
+        </div>
+        {children}
+      </>
+    );
   }
 
   return <>{children}</>;
