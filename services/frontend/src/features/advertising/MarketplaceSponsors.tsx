@@ -587,17 +587,29 @@ function SponsorSideRail({ aboveFold = true }: { aboveFold?: boolean } = {}) {
 
   // Positioned fixed on the LEFT edge — Hebrew RTL means content
   // reads right-to-left, so the left edge is the outer margin the
-  // side_rail should live in. `top: 96` clears the sticky top bar
-  // (~64-80px) with a little breathing room. `z-30` sits below any
-  // modal (z-40+) but above content (z-10).
+  // side_rail should live in.
+  //
+  // `top-56` (14rem = 224px) clears the WHOLE stickable header stack,
+  // not just the fixed nav. That stack is:
+  //   * LandingNav — fixed top-0, h-16 (64px)
+  //   * search sticky bar — top-16 z-40; grows to ~140-180px when a
+  //     result is active (input + chip row + filters row); the earlier
+  //     top-24 (96px) put the rail's top edge INSIDE this sticky
+  //     zone, and z-40 > z-30 meant the sticky bar painted OVER the
+  //     rail's top ~100px (the "top row over the ad" Yulian caught
+  //     on the search-results screenshot).
+  // 224px = 64 (nav) + ~160 (sticky at its tallest observed on search
+  // results) = the rail's top edge sits at the bottom of the sticky
+  // zone with no measurable overlap.
+  //
+  // `z-30` still sits below modals (z-40+) but above regular content;
+  // NOT raised to z-40 because the sticky search bar is z-40 and the
+  // rail must NEVER cover the search input.
   return (
     <aside
       ref={observeRef}
-      className="hidden fixed left-4 top-24 z-30"
+      className="hidden fixed left-4 top-56 z-30"
       style={{
-        // Explicit inline display so we can gate on JS-detected width
-        // rather than only Tailwind's breakpoints (default 2xl=1536,
-        // we want 1440).
         display: wide ? 'block' : 'none',
         width: 300,
         height: 600,
