@@ -271,6 +271,25 @@ export default function HowItWorksPage() {
         </div>
       </section>
 
+      {/* R30 §7 · CTA row — the page had NO way to reach the
+          registration picker except the trust footer's "← חזרה
+          לדף הבית" text link, which many visitors miss. Add a
+          prominent "הצטרף עכשיו" that navigates to /#register;
+          the landing page's own scroll effect (R30 §7 in page.tsx)
+          docks the visitor at the role picker. Wraps in a real
+          <Link> so click / cmd-click / Enter / middle-click all
+          behave. */}
+      <section aria-label="הרשמה" className="text-center pt-2">
+        <Link
+          href="/#register"
+          className="inline-flex items-center gap-2 bg-brand-600 hover:bg-brand-500 text-slate-900 text-base font-bold px-6 py-3 rounded-lg shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-slate-900 focus-visible:ring-offset-2"
+        >
+          <span>הצטרף עכשיו</span>
+          <ArrowLeft className="w-5 h-5" aria-hidden="true" />
+        </Link>
+        <p className="text-xs text-slate-500 mt-2">בחר את סוג המשתמש והתחל להתאים עובדים או לפרסם מודעה</p>
+      </section>
+
       {/* Trust footer */}
       <section aria-label="שקיפות" className="text-center max-w-2xl mx-auto space-y-3 pt-2 pb-4">
         <div className="inline-flex items-center gap-2 text-emerald-700">

@@ -35,14 +35,28 @@ export default function AdminAdsPage() {
   const [typeFilter, setType] = useState<'' | 'worker' | 'housing'>('');
   const [showHidden, setHid]  = useState(false);
 
-  async function refresh() {
+  // R30 §5 · refresh accepts an explicit override so `onClear` can
+  // pass the empty values without waiting for React to batch the
+  // setType/setHid/setQ writes. Before this the effect deps only
+  // watched typeFilter/showHidden — if the ONLY active filter was
+  // the text `q` (Yulian's screenshot case: '/'), setType('') /
+  // setHid(false) rewrote the same value, React bailed the effect,
+  // and the table stayed filtered even though the input was blank.
+  // Now onClear invokes refresh({q:'', type:'', hidden:false})
+  // directly so the network call and the visible state agree on the
+  // same tick. `q` still isn't in the effect deps (that would fire a
+  // request per keystroke) — the search button + onClear own it.
+  async function refresh(overrides?: { q?: string; type?: string; hidden?: boolean }) {
     setLoading(true);
     setError('');
     try {
+      const effType   = overrides?.type    ?? typeFilter;
+      const effHidden = overrides?.hidden  ?? showHidden;
+      const effQ      = (overrides?.q      ?? q).trim();
       const params = new URLSearchParams();
-      if (typeFilter) params.set('ad_type', typeFilter);
-      if (showHidden) params.set('hidden', 'true');
-      if (q.trim())   params.set('q', q.trim());
+      if (effType)   params.set('ad_type', effType);
+      if (effHidden) params.set('hidden', 'true');
+      if (effQ)      params.set('q', effQ);
       const rows = await apiFetch<AdminAdRow[]>(`/admin/ads?${params.toString()}`);
       setAds(rows);
     } catch (e) {
@@ -96,7 +110,17 @@ export default function AdminAdsPage() {
         searchPlaceholder="חיפוש בכותרת/תיאור"
         onSearchSubmit={refresh}
         hasActiveFilter={typeFilter !== '' || showHidden || q.trim() !== ''}
-        onClear={() => { setType(''); setHid(false); setQ(''); }}
+        onClear={() => {
+          setType('');
+          setHid(false);
+          setQ('');
+          // R30 §5 · call refresh with explicit empties. The effect
+          // won't fire (typeFilter/showHidden are already at their
+          // defaults when 'q' was the only active filter), so we
+          // must issue the request here — with values, not from a
+          // closed-over stale state.
+          refresh({ q: '', type: '', hidden: false });
+        }}
         trailingControls={
           <label className="text-xs text-slate-600 inline-flex items-center gap-1.5 cursor-pointer">
             <input type="checkbox" checked={showHidden} onChange={(e) => setHid(e.target.checked)} className="rounded" />

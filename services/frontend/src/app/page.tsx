@@ -460,6 +460,39 @@ function LandingPageInner() {
     return () => { cancelled = true; };
   }, [resp]);
 
+  // R30 §7 · scroll to #register when we arrive from a cross-page
+  // link (LandingNav CTAs from /how-it-works, /marketplace, /login
+  // etc.). Next.js App Router applies the hash BEFORE the target
+  // section exists in the DOM, so the browser's native anchor scroll
+  // finds nothing and the user lands at scroll=0 — the "does nothing"
+  // Yulian filed. Retry via requestAnimationFrame until #register
+  // mounts (~one paint post-hydration), then smooth-scroll to it.
+  // history.replaceState clears the hash so a subsequent SPA nav
+  // back to `/` doesn't re-scroll.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (window.location.hash !== '#register') return;
+    let cancelled = false;
+    let attempts = 0;
+    const tick = () => {
+      if (cancelled) return;
+      const el = document.getElementById('register');
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        try {
+          history.replaceState(null, '', window.location.pathname + window.location.search);
+        } catch { /* not critical */ }
+        return;
+      }
+      // Up to ~60 frames (~1s at 60fps) — enough for hydration + any
+      // Suspense boundaries above the target. If it still isn't there
+      // after that, the target genuinely isn't on this page.
+      if (++attempts < 60) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+    return () => { cancelled = true; };
+  }, []);
+
   // SR — scroll to the results section on TWO edges:
   //   • loading became true → user just pressed חפש; anchor to the
   //     skeleton so they see immediate feedback instead of the ads
@@ -2261,18 +2294,21 @@ function LandingPageInner() {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {recent.slice(0, 9).map((ad) => {
                   const isHousing = ad.ad_type === 'housing';
-                  // U10 · Yulian 14.09 — the "פרסום חדש בפורטל"
-                  // mosaic was a plain <div>, not linked. Same shape
-                  // as FeaturedAdsCarousel now: `?ad=<id>` on the
-                  // landing route so H11's reveal-return code path
-                  // and the existing prospect/returnTo flow both
-                  // resolve without a new route. aria-label carries
-                  // the ad title so the whole card is one clear tab
-                  // stop instead of nine "קישור" items.
+                  // R30 §13 · use `?reveal=<id>` instead of the earlier
+                  // `?ad=<id>` — the reveal handler already exists at
+                  // page.tsx:878-944 (matches ?reveal, opens
+                  // RevealModal for anon → registration return, or
+                  // consumes a quota for a signed-in contractor). The
+                  // earlier `?ad=` was written into the URL but had
+                  // no reader anywhere in the frontend, so the click
+                  // navigated to `/?ad=<id>` and rendered exactly the
+                  // same landing page — the "does nothing" bug Yulian
+                  // filed on 22.09. aria-label unchanged; whole card
+                  // is one tab stop.
                   return (
                     <Link
                       key={ad.id}
-                      href={`/?ad=${ad.id}`}
+                      href={`/?reveal=${ad.id}`}
                       aria-label={ad.title_he || 'פרסום חדש'}
                       className="group rounded-2xl border border-slate-200 bg-white p-4 shadow-sm hover:shadow-md hover:border-brand-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 transition"
                     >

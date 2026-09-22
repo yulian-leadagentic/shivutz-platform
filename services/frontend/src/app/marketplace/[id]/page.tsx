@@ -211,13 +211,20 @@ export default function ListingDetailPage() {
                     {listing.city}
                   </span>
                 )}
-                {listing.capacity && (
+                {/* R30 §12a · MySQL TINYINT + JSX && trap.
+                    `is_furnished` comes back as 0/1 from MySQL, and
+                    `0 && <span/>` renders as the digit "0" — the
+                    stray zero Yulian screenshotted in the meta row.
+                    `capacity` had the same shape (a 0 count would
+                    render "0"). Coerce both to boolean before the
+                    guard. */}
+                {listing.capacity != null && listing.capacity > 0 && (
                   <span className="flex items-center gap-1.5">
                     <Users className="h-4 w-4 text-slate-400" />
                     עד {listing.capacity} עובדים
                   </span>
                 )}
-                {listing.is_furnished && (
+                {!!listing.is_furnished && (
                   <span className="text-emerald-700 font-medium">מרוהטת</span>
                 )}
                 {listing.available_from && (

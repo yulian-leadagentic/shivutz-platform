@@ -47,6 +47,24 @@ def _enrich_ticket(conn, t: dict) -> dict:
             t["org_name"] = row.get("company_name_he") or row.get("company_name")
             t["org_phone"] = row.get("contact_phone")
             t["org_email"] = row.get("contact_email")
+    elif t.get("entity_type") == "service_provider" and t.get("entity_id"):
+        # R30 §14a · resolve provider identity so the admin queue
+        # shows who filed the ticket, matching the contractor +
+        # corporation branches above. The service_providers table
+        # was seeded by U7 Phase D (migration 077); columns match
+        # the corp shape but no `company_name_he` — providers use
+        # `business_name` for both languages.
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT business_name, contact_phone, contact_email "
+            "FROM org_db.service_providers WHERE id=%s",
+            (t["entity_id"],),
+        )
+        row = cur.fetchone()
+        if row:
+            t["org_name"]  = row.get("business_name")
+            t["org_phone"] = row.get("contact_phone")
+            t["org_email"] = row.get("contact_email")
 
     if t.get("user_id"):
         cur = conn.cursor()
