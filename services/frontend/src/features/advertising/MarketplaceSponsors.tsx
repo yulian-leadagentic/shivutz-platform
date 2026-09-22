@@ -518,56 +518,23 @@ function SponsorCarousel({ placement, label, aboveFold = false }: { placement: s
  * renders the flat image regardless of exact aspect; composite is
  * the fallback when there's no image.
  */
-// R29 §4 · measure the ACTUAL bottom edge of the sticky-header stack
-// (fixed nav + sticky search bar + whatever grows into that bar when
-// a search is active) and return a `top` px value the rail can use
-// with a small buffer. Re-runs on window resize AND on a
-// ResizeObserver hit against the observed sticky element, so a
-// chip row appearing after user interaction doesn't push the rail
-// back under the bar.
-//
-// Static Tailwind `top-56` (224px) got close but the search-results
-// state routinely pushes the sticky bar to ~250+px; that's the
-// overlap Yulian caught on his screenshot. Measuring is the only way
-// to stay right under every state without over-shooting.
-function useSideRailTop(fallback: number = 240): number {
-  const [topPx, setTopPx] = useState<number>(fallback);
-  useEffect(() => {
-    // Query candidates in reading order — nav first, then the sticky
-    // search bar. Any element with `sticky top-16` OR `fixed top-0`
-    // counts as part of the header stack. If NEITHER is present
-    // (unusual — SPA hydration mid-flight) we fall back to 240.
-    const measure = () => {
-      let bottom = 0;
-      document.querySelectorAll('nav, [class*="sticky"], [class*="fixed"]').forEach((el) => {
-        const r = el.getBoundingClientRect();
-        // Only count elements pinned to (or near) the top of the
-        // viewport — we don't want the accessibility button (fixed
-        // bottom) or a footer to influence the rail's placement.
-        if (r.top <= 100 && r.bottom > bottom && r.width > 200) {
-          bottom = r.bottom;
-        }
-      });
-      // 16px breathing room so the rail doesn't kiss the bar's edge.
-      setTopPx(Math.max(fallback, Math.round(bottom + 16)));
-    };
-    measure();
-    window.addEventListener('resize', measure);
-    // Observe body for size changes — cheaper than tracking each
-    // sticky candidate individually, and fires when the sticky bar
-    // grows a chip row or when the user's browser zoom changes.
-    let ro: ResizeObserver | null = null;
-    try {
-      ro = new ResizeObserver(measure);
-      ro.observe(document.body);
-    } catch { /* older browser — resize event is enough */ }
-    return () => {
-      window.removeEventListener('resize', measure);
-      ro?.disconnect();
-    };
-  }, [fallback]);
-  return topPx;
-}
+// R29 §4 · rail's `top` in the viewport, hard-coded to sit BELOW the
+// entire search zone at every state Yulian screens on (nav ~64 +
+// h1 section ~90 + chip row ~40 + search input ~60 + filter row ~60
+// + how-it-works link ~40 ≈ 350-420 in the search-results state that
+// caused the overlap complaint). 480px is generous enough to survive
+// the tallest layout observed without micro-tuning:
+//   * On the landing state (short header) the rail sits noticeably
+//     lower than it could — but it's inside the dead margin at 1440+,
+//     so extra whitespace above it is harmless.
+//   * On the search-results state the rail clears the search bar
+//     (input + chips + filters) cleanly.
+// Previous attempts: top-24 (96) inside the sticky zone, top-56 (224)
+// still 20px short, then a measurement hook that under-measured the
+// sticky bar because its top is not near 0 at scroll=0. A static
+// number that just clears everything is what Yulian asked for —
+// "פשוט תוריד את המודעה מתחת לכל שורת החיפוש". Done.
+const SIDE_RAIL_TOP_PX = 480;
 
 
 function SponsorSideRail({ aboveFold = true }: { aboveFold?: boolean } = {}) {
@@ -575,7 +542,6 @@ function SponsorSideRail({ aboveFold = true }: { aboveFold?: boolean } = {}) {
   const [ad, setAd] = useState<SponsorAd | null>(null);
   const [claimResolved, setCR] = useState<boolean>(false);
   const ctx = useSponsorCtx();
-  const railTop = useSideRailTop();
 
   useEffect(() => {
     if (!wide) { setAd(null); setCR(true); return; }
@@ -640,28 +606,18 @@ function SponsorSideRail({ aboveFold = true }: { aboveFold?: boolean } = {}) {
 
   // Positioned fixed on the LEFT edge — Hebrew RTL means content
   // reads right-to-left, so the left edge is the outer margin the
-  // side_rail should live in.
-  //
-  // `top` is MEASURED at runtime by useSideRailTop (see hook above):
-  // static Tailwind classes (top-24 → top-56) fail on the search-
-  // results state because the sticky search bar grows to 200+px when
-  // an input + chip row + filters row all render. The measurement
-  // finds the header stack's true bottom every time the layout
-  // changes (window resize, chip row appearing, viewport zoom) and
-  // pins the rail 16px below that. Fallback constant 240px is used
-  // only during the first paint before the measurement runs.
-  //
-  // `z-30` still sits below modals (z-40+) and below the sticky
-  // search bar (also z-40) so the rail can NEVER cover the search
-  // input. Since we're now placing it BELOW the bar rather than
-  // relying on stacking, this is defence-in-depth for the CSS.
+  // side_rail should live in. `top: SIDE_RAIL_TOP_PX` clears the
+  // whole search zone at every state — see the constant's doc.
+  // z-30 sits below modals AND below the sticky search bar (also
+  // z-40), so the search input can never be covered even if the
+  // rail's top ever ends up too high.
   return (
     <aside
       ref={observeRef}
       className="hidden fixed left-4 z-30"
       style={{
         display: wide ? 'block' : 'none',
-        top: railTop,
+        top: SIDE_RAIL_TOP_PX,
         width: 300,
         height: 600,
       }}
