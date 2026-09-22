@@ -89,10 +89,19 @@ interface SponsorAd {
 
 // ── R29 §5 · dedupe + above-fold ceiling context ────────────────────
 
+// R29 §5 · claim result. `first` = one ad picked for a banner slot,
+// `batch` = many ads picked for a carousel. `null` in either means
+// "nothing survived dedupe / cap", render nothing.
 interface SponsorCtxValue {
   aboveFoldLimit: number;
-  claimAd:     (id: string) => boolean;          // true = first claim wins
-  claimSlot:   (aboveFold: boolean) => boolean;  // true = under the ceiling
+  /** Enqueue a banner-slot fetch. The queue serialises claims in JSX
+   *  mount order so the topmost surface (leaderboard) always wins the
+   *  first pick when two surfaces target the same ad. Fetches still
+   *  run in parallel — the queue only orders the claim step. */
+  enqueueOne:   (fetchFn: () => Promise<SponsorAd[]>, aboveFold: boolean) => Promise<SponsorAd | null>;
+  /** Same as `enqueueOne` but for a carousel that wants N unclaimed
+   *  ads. Returns the sublist that survived dedupe + cap. */
+  enqueueBatch: (fetchFn: () => Promise<SponsorAd[]>, aboveFold: boolean) => Promise<SponsorAd[]>;
 }
 
 const SponsorCtx = createContext<SponsorCtxValue | null>(null);
@@ -116,42 +125,85 @@ export function SponsorProvider({ children }: { children: ReactNode }) {
     return () => { cancelled = true; };
   }, []);
 
-  // Refs (not state) so a claim inside a render pass takes effect
-  // synchronously and doesn't trigger re-render storms. The Set of
-  // seen ids and the above-fold count are conceptually component-
-  // lifetime state; we intentionally never reset them mid-session.
   const seenAds        = useRef<Set<string>>(new Set());
   const aboveFoldCount = useRef<number>(0);
+  const limitRef       = useRef<number>(limit);
+  useEffect(() => { limitRef.current = limit; }, [limit]);
 
-  const claimAd = useCallback((id: string) => {
-    if (seenAds.current.has(id)) return false;
-    seenAds.current.add(id);
-    return true;
-  }, []);
+  // Serial claim queue. Each surface's useEffect calls enqueueOne /
+  // enqueueBatch on mount; the tasks are chained on `queueRef` so
+  // claim decisions resolve in queue-join order. Since useEffect
+  // fires in DOM/JSX mount order, the queue-join order IS the reading
+  // order of the page — leaderboard → billboard → carousel → side_rail.
+  // The fetch inside each task still runs concurrently (the task
+  // awaits its own fetch); only the CLAIM decision serialises. That
+  // keeps page load fast while making the winner deterministic.
+  const queueRef = useRef<Promise<unknown>>(Promise.resolve());
 
-  const claimSlot = useCallback((aboveFold: boolean) => {
-    if (!aboveFold) return true;
-    if (aboveFoldCount.current >= limit) return false;
-    aboveFoldCount.current += 1;
-    return true;
-  }, [limit]);
+  const enqueueOne = useCallback(
+    (fetchFn: () => Promise<SponsorAd[]>, aboveFold: boolean): Promise<SponsorAd | null> => {
+      const task = queueRef.current.then(async () => {
+        const rows = await fetchFn();
+        if (!rows || rows.length === 0) return null;
+        // Take the FIRST unclaimed ad from the fetched list.
+        for (const ad of rows) {
+          if (seenAds.current.has(ad.id)) continue;
+          if (aboveFold && aboveFoldCount.current >= limitRef.current) return null;
+          seenAds.current.add(ad.id);
+          if (aboveFold) aboveFoldCount.current += 1;
+          return ad;
+        }
+        return null;
+      });
+      // Chain so a rejection never poisons the queue for the next task.
+      queueRef.current = task.catch(() => null);
+      return task;
+    },
+    [],
+  );
+
+  const enqueueBatch = useCallback(
+    (fetchFn: () => Promise<SponsorAd[]>, aboveFold: boolean): Promise<SponsorAd[]> => {
+      const task = queueRef.current.then(async () => {
+        const rows = await fetchFn();
+        if (!rows || rows.length === 0) return [];
+        const keep: SponsorAd[] = [];
+        for (const ad of rows) {
+          if (seenAds.current.has(ad.id)) continue;
+          seenAds.current.add(ad.id);
+          keep.push(ad);
+        }
+        // Carousel counts as ONE above-fold slot regardless of how many
+        // cards it holds — otherwise a 4-card carousel would blow the
+        // cap on its own.
+        if (keep.length > 0 && aboveFold) {
+          if (aboveFoldCount.current >= limitRef.current) return [];
+          aboveFoldCount.current += 1;
+        }
+        return keep;
+      });
+      queueRef.current = task.catch(() => []);
+      return task;
+    },
+    [],
+  );
 
   const value = useMemo<SponsorCtxValue>(
-    () => ({ aboveFoldLimit: limit, claimAd, claimSlot }),
-    [limit, claimAd, claimSlot],
+    () => ({ aboveFoldLimit: limit, enqueueOne, enqueueBatch }),
+    [limit, enqueueOne, enqueueBatch],
   );
 
   return <SponsorCtx.Provider value={value}>{children}</SponsorCtx.Provider>;
 }
 
 // Every sponsor component reads context. When there's no provider
-// the fallback lets everything through — Marketplace still works
-// standalone with no dedupe / cap, matching pre-R29 behaviour.
+// the fallback lets everything through, no dedupe, no cap — a lone
+// MarketplaceSponsorBanner still renders exactly as it did before R29.
 function useSponsorCtx(): SponsorCtxValue {
   return useContext(SponsorCtx) ?? {
     aboveFoldLimit: Infinity,
-    claimAd:   () => true,
-    claimSlot: () => true,
+    enqueueOne:   async (fn) => (await fn())[0] ?? null,
+    enqueueBatch: async (fn) => fn(),
   };
 }
 
@@ -250,21 +302,23 @@ function SponsorStripBanner({ placement, label, aboveFold = false, aspectRatio }
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const rows = await fetchSponsored(placement, 1);
+      // R29 §5 · enqueue via the Provider's serial claim queue so
+      // whichever surface joined the queue first wins the ad when
+      // two surfaces target the same one (leaderboard beats billboard
+      // beats carousel beats side_rail in reading order). Fetches
+      // still run concurrently — only the claim decision serialises.
+      // Fetch up to 3 candidates so if the top pick is already
+      // claimed by an earlier surface, this slot can fall back to
+      // the next-best row instead of rendering nothing.
+      const winner = await ctx.enqueueOne(
+        () => fetchSponsored(placement, 3),
+        aboveFold,
+      );
       if (cancelled) return;
-      // Try dedupe + slot-cap in that order. `claimAd` returns false
-      // if this ad already rendered in an earlier slot on this page;
-      // `claimSlot` returns false if we're past the above-fold cap.
-      // Either "no" → render nothing.
-      const winner = rows.find(r => ctx.claimAd(r.id)) ?? null;
-      const slotOk = winner ? ctx.claimSlot(aboveFold) : true;
-      setAd(slotOk ? winner : null);
+      setAd(winner);
       setCR(true);
     })();
     return () => { cancelled = true; };
-    // ctx methods are stable per Provider (useCallback), so re-running
-    // this on ctx changes just means the Provider's limit was re-read;
-    // that's fine to re-evaluate against.
   }, [placement, aboveFold, ctx]);
 
   const observeRef = useAdImpression({ targetId: ad?.id, placement: placementBucket(placement) });
@@ -385,20 +439,25 @@ function SponsorCarousel({ placement, label, aboveFold = false }: { placement: s
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      let limit = 4;
-      try {
-        const s = await fetch('/api/legal/settings').then(r => (r.ok ? r.json() : null));
-        const raw = s?.sponsor_carousel_limit;
-        const parsed = raw != null ? parseInt(String(raw), 10) : NaN;
-        if (Number.isFinite(parsed) && parsed > 0) limit = parsed;
-      } catch { /* fall back to 4 */ }
-      const rows = await fetchSponsored(placement, limit);
+      // R29 §5 · enqueue via the serial claim queue so the carousel
+      // resolves AFTER any wide-strip surface above it. Ads already
+      // claimed by an earlier surface are filtered out; the carousel
+      // renders whatever survives.
+      const claimed = await ctx.enqueueBatch(
+        async () => {
+          let limit = 4;
+          try {
+            const s = await fetch('/api/legal/settings').then(r => (r.ok ? r.json() : null));
+            const raw = s?.sponsor_carousel_limit;
+            const parsed = raw != null ? parseInt(String(raw), 10) : NaN;
+            if (Number.isFinite(parsed) && parsed > 0) limit = parsed;
+          } catch { /* fall back to 4 */ }
+          return fetchSponsored(placement, limit);
+        },
+        aboveFold,
+      );
       if (cancelled) return;
-      // R29 §5 · dedupe. First-come-first-render across slots.
-      // A carousel that loses every ad to earlier slots renders empty.
-      const keep = rows.filter(r => ctx.claimAd(r.id));
-      const slotOk = keep.length > 0 ? ctx.claimSlot(aboveFold) : true;
-      setAds(slotOk ? keep : []);
+      setAds(claimed);
     })();
     return () => { cancelled = true; };
   }, [placement, aboveFold, ctx]);
@@ -469,11 +528,15 @@ function SponsorSideRail({ aboveFold = true }: { aboveFold?: boolean } = {}) {
     if (!wide) { setAd(null); setCR(true); return; }
     let cancelled = false;
     (async () => {
-      const rows = await fetchSponsored('side_rail', 1);
+      // Serial claim queue: rail joins the queue AFTER the in-page
+      // wide-strip / carousel surfaces in mount order, so it takes
+      // whatever unclaimed ad remains for the side_rail placement.
+      const winner = await ctx.enqueueOne(
+        () => fetchSponsored('side_rail', 3),
+        aboveFold,
+      );
       if (cancelled) return;
-      const winner = rows.find(r => ctx.claimAd(r.id)) ?? null;
-      const slotOk = winner ? ctx.claimSlot(aboveFold) : true;
-      setAd(slotOk ? winner : null);
+      setAd(winner);
       setCR(true);
     })();
     return () => { cancelled = true; };
