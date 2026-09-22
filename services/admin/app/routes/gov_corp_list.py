@@ -53,6 +53,13 @@ async def add_manual_entry(
     bn = (data.business_number or "").strip()
     if not bn or not bn.isdigit() or len(bn) != 9:
         raise HTTPException(status_code=400, detail="invalid_business_number")
+    # R26 §2 v3 · same whitespace normalisation the three registration
+    # paths + approvals.edit_org use. A manual gov-list entry that
+    # promotes a corp to tier_2 propagates its company_name_he into
+    # the corp row on the join at :83; if the admin pastes a
+    # doubled-space name here, the promoted corp gets it too.
+    if data.company_name_he:
+        data.company_name_he = " ".join(data.company_name_he.split()).strip()
 
     conn = get_db("org_db")
     try:

@@ -318,6 +318,18 @@ def edit_org(
 
     updates: dict = body.model_dump(exclude_none=True)
 
+    # R26 §2 v3 · admin-save mirror of the registration normalisation
+    # in contractors.py / corporations.py / providers.py. Yulian is
+    # about to fix the four broken name rows here, so this route MUST
+    # collapse doubled spaces + trim on write; otherwise a typo pasted
+    # in the admin UI re-introduces the same shape the registration
+    # gate now catches. No reject regex — same guardrail: 'בע"מ' is
+    # one of many valid Hebrew suffixes.
+    for _k in ("company_name_he", "company_name", "contact_name"):
+        _v = updates.get(_k)
+        if isinstance(_v, str):
+            updates[_k] = " ".join(_v.split()).strip()
+
     # Strip fields that don't apply to this org_type to avoid SQL errors
     # against columns that don't exist on the other table.
     CONTRACTOR_ONLY = {"kablan_number", "kvutza", "sivug", "gov_branch"}
