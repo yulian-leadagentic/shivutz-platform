@@ -1037,6 +1037,12 @@ function LandingPageInner() {
                   <input
                     ref={searchInputRef}
                     type="text"
+                    // R23 §7 · mobile keyboards show the search magnifier
+                    // instead of a generic Return key. Pressing it fires
+                    // form.onSubmit → runSearch(). The form + submit
+                    // button were already wired; only the on-screen
+                    // keyboard hint was missing.
+                    enterKeyHint="search"
                     value={q}
                     // F1 §2 — skip-to-end. Any keyboard input during a
                     // chip-typing animation cancels it so the visitor

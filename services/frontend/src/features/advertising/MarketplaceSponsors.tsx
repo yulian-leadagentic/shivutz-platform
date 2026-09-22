@@ -68,10 +68,26 @@ async function fetchSponsored(placement: string, limit: number): Promise<Sponsor
     const res = await apiFetch<{ results: SponsorAd[] }>(
       `/ads/public/sponsored?placement=${encodeURIComponent(placement)}&limit=${limit}`,
     );
-    return res.results ?? [];
+    return (res.results ?? []).filter(isRenderable);
   } catch {
     return [];   // network / auth blip → hide the section, F3-safe
   }
+}
+
+// R23 §6 · a sponsor row is renderable when it has either a finished
+// creative (image path — creative_url alone is enough because the
+// image IS the ad) OR a headline (text path — headline_he is
+// NOT NULL in the DB per migration 069, but a caller could still
+// send empty string). Skipping rows that have neither turns the
+// "giant empty blue rectangle" R23 §6 flagged into a rendered
+// section only when it has something to say. Server-side filter
+// would be cleaner (touches ads.py, out of scope) — the client
+// guard is defense-in-depth that also protects against a future
+// admin sending a whitespace-only headline.
+function isRenderable(ad: SponsorAd): boolean {
+  if (ad.creative_url) return true;
+  if (ad.headline_he && ad.headline_he.trim() !== '') return true;
+  return false;
 }
 
 // Parameterised banner. Named exports below (Marketplace/Home) pin
@@ -163,6 +179,11 @@ function SponsorBanner({ placement, label }: { placement: string; label?: string
             )}
           </div>
         </div>
+        {/* R23 §3 · when cta_url is NULL the CTA renders as plain
+            text (no pill, no bold, no hover) — a button shape without
+            a click target is worse than no button per the R23 rule.
+            When cta_url is set, the anchor gets the full pill + link
+            styling. */}
         {ad.cta_url ? (
           <a
             href={ad.cta_url}
@@ -174,7 +195,7 @@ function SponsorBanner({ placement, label }: { placement: string; label?: string
             {ad.cta_label_he}
           </a>
         ) : (
-          <span className="shrink-0 inline-flex items-center bg-white/20 text-xs sm:text-sm font-semibold px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg opacity-80">
+          <span className="shrink-0 hidden sm:inline text-xs opacity-70">
             {ad.cta_label_he}
           </span>
         )}
@@ -354,6 +375,9 @@ function CarouselCard({ ad, placement }: { ad: SponsorAd; placement: AdPlacement
           ))}
         </div>
       )}
+      {/* R23 §3 · same rule as banner — no button shape when the
+          click target doesn't exist. Renders as a small caption in
+          the ad's foreground colour instead. */}
       {ad.cta_url ? (
         <a
           href={ad.cta_url}
@@ -365,7 +389,7 @@ function CarouselCard({ ad, placement }: { ad: SponsorAd; placement: AdPlacement
           {ad.cta_label_he}
         </a>
       ) : (
-        <span className="mt-3 inline-flex items-center justify-center bg-white/20 text-xs font-semibold px-3 py-1.5 rounded-md opacity-80">
+        <span className="mt-3 inline-flex text-[11px] opacity-70">
           {ad.cta_label_he}
         </span>
       )}

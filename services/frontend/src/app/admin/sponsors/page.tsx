@@ -386,6 +386,15 @@ function AdEditor({
         ? 'מודעה עם תמונה חייבת קישור CTA (R20 §3c)'
         : 'קישור CTA חובה ביצירה (R20 §3c)');
     }
+    // R23 §2 · when a cta_url IS supplied, it must be an absolute URL
+    // with http:// or https://. The bug that surfaced this: a seed
+    // row shipped 'Www.tagidai.com' (capital W, no protocol) — the
+    // browser treats that as a RELATIVE path and every click 404s.
+    // The check runs on both create + edit, so an old seed being
+    // corrected here can't slip through with the same shape.
+    if (f.cta_url.trim() && !/^https?:\/\//i.test(f.cta_url.trim())) {
+      return setErr('קישור CTA חייב להתחיל ב-http:// או https:// — קישור יחסי ייקרא כנתיב באתר וייפול ל-404');
+    }
 
     const creativeSet = [f.creative_url, f.creative_w, f.creative_h].filter(x => x.trim() !== '');
     if (creativeSet.length > 0 && creativeSet.length !== 3) {
