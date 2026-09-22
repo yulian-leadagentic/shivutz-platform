@@ -2218,8 +2218,16 @@ function LandingPageInner() {
 
           {/* RoleRegisterPicker — the picker is a signup CTA that
               only makes sense to a visitor who hasn't yet run a
-              search, so it stays gated. */}
-          {!resp && !loading && <RoleRegisterPicker />}
+              search, so it stays gated. R27 §2 · anchored so
+              /#register from LandingNav's "הצטרף עכשיו" CTAs scrolls
+              here instead of dumping the visitor in the contractor
+              form. `scroll-margin-top` keeps the sticky nav from
+              overlapping the picker after the jump. */}
+          {!resp && !loading && (
+            <section id="register" style={{ scrollMarginTop: 'calc(64px + var(--sticky-h, 72px) + 12px)' }}>
+              <RoleRegisterPicker />
+            </section>
+          )}
         </main>
 
         <LandingFooter />

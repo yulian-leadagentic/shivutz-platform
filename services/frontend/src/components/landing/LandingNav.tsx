@@ -188,9 +188,14 @@ export default function LandingNav(_: LandingNavProps) {
                 משתמש רשום? לחץ כאן
               </Link>
               <Link
-                href="/register/contractor"
+                href="/#register"
                 className="text-sm font-semibold bg-brand-600 hover:bg-brand-800 text-slate-900 px-4 py-2 rounded-lg transition-colors shadow-sm"
               >
+                {/* R27 §2 · was /register/contractor which dropped
+                    every visitor into the contractor form. Anchors
+                    to the RoleRegisterPicker section at the bottom
+                    of / instead, so a corp or provider chooses
+                    correctly. */}
                 הצטרף עכשיו
               </Link>
             </>
@@ -256,7 +261,9 @@ export default function LandingNav(_: LandingNavProps) {
             ) : (
               <>
                 <Link href="/login" className="w-full text-center text-sm font-medium text-slate-600 py-2.5 rounded-lg hover:bg-slate-50 border border-slate-200" onClick={() => setMenuOpen(false)}>משתמש רשום? לחץ כאן</Link>
-                <Link href="/register/contractor" className="w-full text-center text-sm font-semibold text-slate-900 bg-brand-600 hover:bg-brand-800 py-2.5 rounded-lg" onClick={() => setMenuOpen(false)}>הצטרף עכשיו</Link>
+                {/* R27 §2 · mobile CTA anchors to the role picker,
+                    same reason as the desktop link above. */}
+                <Link href="/#register" className="w-full text-center text-sm font-semibold text-slate-900 bg-brand-600 hover:bg-brand-800 py-2.5 rounded-lg" onClick={() => setMenuOpen(false)}>הצטרף עכשיו</Link>
               </>
             )}
           </div>

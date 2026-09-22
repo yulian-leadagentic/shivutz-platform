@@ -282,6 +282,25 @@ def list_listings(
 # route below matches /{listing_id} greedily, so this MUST be defined
 # first for FastAPI's ordered matching.
 
+# R27 §1 · dedicated allow-list projection for marketplace_categories
+# rows. Previously this route reused `_serialize`, which is scoped to
+# marketplace_listings columns (contact_phone leak guard from R15 §3a).
+# The overlap between the two schemas is empty, so `_serialize` dropped
+# every category field and the endpoint returned [{}, {}, {}, ...] —
+# blocking provider registration because /register/provider's category
+# picker rendered rows with no code/label. Keep the two allow-lists
+# separate so R15's phone-leak guard stays intact.
+_PUBLIC_CATEGORY_FIELDS = ("code", "name_he", "name_en", "icon_slug", "sort_order")
+
+def _serialize_category(row: dict) -> dict:
+    result: dict = {}
+    for k in _PUBLIC_CATEGORY_FIELDS:
+        if k not in row:
+            continue
+        result[k] = _coerce(row[k])
+    return result
+
+
 @router.get("/categories")
 def list_public_categories():
     conn = get_db()
@@ -293,7 +312,7 @@ def list_public_categories():
                 WHERE is_active = 1
                 ORDER BY sort_order, code"""
         )
-        return [_serialize(r) for r in cur.fetchall()]
+        return [_serialize_category(r) for r in cur.fetchall()]
     finally:
         conn.close()
 

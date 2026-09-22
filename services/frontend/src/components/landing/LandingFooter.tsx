@@ -26,6 +26,10 @@ export default function LandingFooter() {
               <li><Link href="/marketplace" className="hover:text-brand-600 transition-colors">שירותים נלווים</Link></li>
               <li><Link href="/register/contractor" className="hover:text-brand-600 transition-colors">הצטרף עכשיו כקבלן</Link></li>
               <li><Link href="/register/corporation" className="hover:text-brand-600 transition-colors">הצטרף עכשיו כתאגיד</Link></li>
+              {/* R27 §2 · third role added. Explicit links stay
+                  because they already tell the visitor which form
+                  they'll land in — no picker needed here. */}
+              <li><Link href="/register/provider" className="hover:text-brand-600 transition-colors">הצטרף עכשיו כספק שירותים</Link></li>
             </ul>
           </div>
 

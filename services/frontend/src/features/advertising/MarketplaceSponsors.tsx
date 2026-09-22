@@ -138,7 +138,22 @@ function SponsorBanner({ placement, label }: { placement: string; label?: string
         <div className="text-[10px] uppercase tracking-wide text-slate-400 mb-1">
           {label ?? 'מודעה ממומנת'}
         </div>
-        <div className="rounded-2xl overflow-hidden shadow-sm bg-white"
+        {/* R27 §3 · height ceiling on the banner. R20 §3 shipped
+            aspectRatio + object-fit:contain (both correct — the
+            legal-disclaimer band on a bizi-style creative must not
+            crop). `contain` preserves the aspect but does NOT cap
+            size, so at 1920 the container filled the row and the
+            image scaled to ~600px tall, eating the fold. Added:
+              max-w-3xl · centred      → so the container never
+                                          exceeds ~768px even at
+                                          1920 (matches content
+                                          reading width)
+              max-height clamp (mobile 160px / desktop 200px)
+                                        → clamps the vertical size
+                                          under the max-w gate.
+            Heights ARE לאישור Yulian — visual call, easy to tune.
+            object-fit:contain STAYS. Never 'cover'. */}
+        <div className="rounded-2xl overflow-hidden shadow-sm bg-white sponsor-banner-creative mx-auto max-w-3xl"
              style={{ ...aspectStyle, backgroundColor: bg }}>
           {ad.cta_url ? (
             <a href={ad.cta_url} target="_blank" rel="noopener noreferrer sponsored"

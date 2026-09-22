@@ -937,6 +937,24 @@ body {
   }
 }
 
+/* R27 §3 · sponsor banner height ceiling. R20 §3 shipped aspect-ratio
+   + object-fit:contain, which is correct for the finished-creative
+   render, but on a wide viewport the container took the full width
+   of its row and the image scaled to ~600px tall, hiding the fold.
+   The Tailwind `max-w-3xl` on the container already caps horizontal
+   growth; this rule adds the paired vertical cap. Values are the
+   R27 §3 proposal — approve/adjust in a follow-up. object-fit:contain
+   is unchanged; NEVER swap to cover (R20 §3a: cropping loses the
+   legal-disclaimer band on financial ads). */
+.sponsor-banner-creative {
+  max-height: 160px;
+}
+@media (min-width: 640px) {
+  .sponsor-banner-creative {
+    max-height: 200px;
+  }
+}
+
 /* R24 §4 · legal-page prose styling.
    The three legal pages (/accessibility, /terms, /privacy) render
    markdown-it output inside <div class="legal-content prose ...">.
