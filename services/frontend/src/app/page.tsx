@@ -45,7 +45,7 @@ import {
   HomeSponsorLeaderboard,
   HomeSponsorBillboard,
   HomeSponsorCarousel,
-  SponsorSideRail,
+  SponsorRailLayout,
   SponsorProvider,
 } from '@/features/advertising/MarketplaceSponsors';
 import { LandingTrustBar } from '@/features/advertising/LandingTrustBar';
@@ -519,6 +519,32 @@ function LandingPageInner() {
     syncFiltersToUrl('', '', '');
   }
   const anyFilter = !!(fProf || fRegion || fOrigin);
+
+  // R30 §23 · when the result type changes (e.g. previous search was
+  // 'ריצוף' with fProf=flooring, next search is 'מגורים' → housing),
+  // clear filters that are no longer relevant. Otherwise the hidden
+  // profession/origin values silently narrow the housing query —
+  // the "בשקט" trap the spec calls out.
+  useEffect(() => {
+    if (!resp) return;
+    const adType = resp.filters?.ad_type;
+    const isMarketplace = resp.primary_section === 'marketplace';
+    if (isMarketplace) {
+      // Marketplace has no worker/housing filters at all.
+      if (fProf || fRegion || fOrigin) {
+        setFProf(''); setFRegion(''); setFOrigin('');
+        syncFiltersToUrl('', '', '');
+      }
+    } else if (adType === 'housing') {
+      // Housing keeps region, drops profession + origin.
+      if (fProf || fOrigin) {
+        setFProf(''); setFOrigin('');
+        syncFiltersToUrl('', fRegion, '');
+      }
+    }
+    // worker: all three stay valid — nothing to clear.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resp?.filters?.ad_type, resp?.primary_section]);
 
   // F1 §2 — chip click types the chip's query into the input over
   // ~320ms and then submits. The animation is one-shot per click
@@ -997,15 +1023,10 @@ function LandingPageInner() {
         q={q}
       />
 
-      {/* R29 §4 · sticky sponsor rail — desktop ≥1440 only.
-          Fixed-position aside, out of the document flow, so it
-          overlays the dead left margin at wide viewports without
-          shifting the content column. Renders nothing at narrower
-          widths or when there is no side_rail ad. Spec explicitly
-          keeps it visible on both landing AND search results —
-          those are the two pages with ~380px of dead margin at
-          1920 — so no state gate. */}
-      <SponsorSideRail />
+      {/* R30 §24 · SponsorSideRail is no longer rendered here as a
+          standalone fixed-position overlay. The rail lives inside
+          SponsorRailLayout further down — as a grid column, not a
+          floating layer. See the component doc for why. */}
 
       <div className="min-h-screen flex flex-col">
         {/* R29 §3 · nav clearance moved from the h1 section to <main>
@@ -1067,69 +1088,73 @@ function LandingPageInner() {
               above now provides the vertical offset from the fixed
               nav at scroll=0. Sticky-top-16 alone handles the
               scrolled state. */}
+          {/* R30 §22 · chip row LIFTED OUT of the sticky wrapper. Old
+              placement put it inside `sticky top-16 z-40 backdrop-blur-sm
+              border-b shadow-sm` — so the row inherited the sticky bar's
+              full-width edge, the shadow, the bottom border, and (via
+              `-mx-3` cancelling the container's `px-3`) went edge-to-edge
+              at mobile widths while the form stayed inset by 12px.
+              Yulian: "השורה 0..412, הטופס 12..400" — visible misalignment.
+              Also removed backdrop-blur which was creating a containing
+              block for `position: fixed` descendants (root of §24).
+              Now: chip row is a plain in-flow row sharing the same
+              max-w-5xl container as the sticky form below. No sticky,
+              no backdrop-blur, no border, no shadow, no margin trick. */}
+          {!resp && !loading && (
+            <div className="max-w-5xl mx-auto px-3 sm:px-4 pt-2 sm:pt-3">
+              <div
+                className="chip-row-scroll flex flex-nowrap overflow-x-auto sm:flex-wrap sm:justify-center items-center gap-1.5 text-xs snap-x snap-proximity"
+                role="group"
+                aria-label="הצעות לשירותים נלווים"
+              >
+                <span className="shrink-0 text-[11px] text-slate-500">
+                  ניתן לחפש גם שירותים נלווים כגון:
+                </span>
+                {[
+                  { label: 'ביטוח',           query: 'ביטוח' },
+                  { label: 'הסעות',           query: 'הסע' },
+                  { label: 'דיור לעובדים',    query: 'מגורים' },
+                  { label: 'ציוד וכלי עבודה', query: 'כלי' },
+                  { label: 'פיגומים',         query: 'פיגומים' },
+                  { label: 'קורסים והסמכות',  query: 'קורס' },
+                ].map((chip) => (
+                  <button
+                    key={chip.label}
+                    type="button"
+                    className="shrink-0 snap-start inline-flex items-center gap-1 rounded-full border border-brand-300 bg-white text-slate-800 px-2.5 py-1 hover:bg-brand-50 hover:border-brand-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+                    onClick={() => {
+                      cancelTyping();
+                      setQ(chip.query);
+                      const el = searchInputRef.current;
+                      if (el) {
+                        el.focus();
+                        const len = chip.query.length;
+                        try { el.setSelectionRange(len, len); } catch { /* ignore */ }
+                      }
+                    }}
+                  >
+                    {chip.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div
             ref={stickyBarRef}
-            className="sticky top-16 z-40 bg-white/95 backdrop-blur-sm border-b border-slate-200 shadow-sm"
+            className="sticky top-16 z-40 bg-white/95 border-b border-slate-200 shadow-sm"
           >
-            {/* Height budget (WCAG-tight): 44px row + 8px wrapper py-1
-                + 8px form py-1 + 4px border = 64px on 390. Desktop
-                gets 4px more wrapper padding → 68px, under the 72px
-                ceiling. */}
+            {/* R30 §24 root · `backdrop-blur-sm` REMOVED from this
+                sticky wrapper. backdrop-filter creates a new
+                containing block for `position: fixed` descendants —
+                that was the root cause of the side_rail chasing this
+                bar around the viewport for a whole session. The
+                sticky bar still separates from scrolled content via
+                bg-white/95 + shadow-sm; blur was cosmetic and cost
+                a whole layout bug.
+                Height budget (WCAG-tight): 44px row + 8px wrapper py-1
+                + 8px form py-1 + 4px border = 64px on 390. */}
             <div className="max-w-5xl mx-auto px-3 sm:px-4 py-1 sm:py-1.5">
-              {/* R28 §3 · ancillary-services chip row.
-                  One row above the search form. Label + 6 chips. Click
-                  fills the input (does NOT run) and re-focuses the
-                  caret at the end so the visitor sees the word land
-                  and understands they can type similar things
-                  themselves. Rendered ONLY on the pre-search state
-                  (no `resp`, no active loading) — after search the
-                  screen is about results, not discovery.
-                  Mobile: `flex-nowrap overflow-x-auto` — I tried
-                  regular wrap at 390px and it grew to 6 rows and
-                  pushed the search box below the fold. A single
-                  scrollable row keeps search high.
-                  label≠query mapping: the user-facing chip labels
-                  match seed data as of 22.09; the query strings are
-                  the stems that hit the current _search_marketplace
-                  best. Once R28 §2 stemming is proven the two
-                  columns can collapse. */}
-              {!resp && !loading && (
-                <div
-                  className="mb-2 flex flex-nowrap overflow-x-auto sm:flex-wrap sm:justify-center items-center gap-1.5 text-xs -mx-3 px-3 sm:mx-0 sm:px-0"
-                  role="group"
-                  aria-label="הצעות לשירותים נלווים"
-                >
-                  <span className="shrink-0 text-[11px] text-slate-500">
-                    ניתן לחפש גם שירותים נלווים כגון:
-                  </span>
-                  {[
-                    { label: 'ביטוח',           query: 'ביטוח' },
-                    { label: 'הסעות',           query: 'הסע' },
-                    { label: 'דיור לעובדים',    query: 'מגורים' },
-                    { label: 'ציוד וכלי עבודה', query: 'כלי' },
-                    { label: 'פיגומים',         query: 'פיגומים' },
-                    { label: 'קורסים והסמכות',  query: 'קורס' },
-                  ].map((chip) => (
-                    <button
-                      key={chip.label}
-                      type="button"
-                      className="shrink-0 inline-flex items-center gap-1 rounded-full border border-brand-300 bg-white text-slate-800 px-2.5 py-1 hover:bg-brand-50 hover:border-brand-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
-                      onClick={() => {
-                        cancelTyping();
-                        setQ(chip.query);
-                        const el = searchInputRef.current;
-                        if (el) {
-                          el.focus();
-                          const len = chip.query.length;
-                          try { el.setSelectionRange(len, len); } catch { /* ignore */ }
-                        }
-                      }}
-                    >
-                      {chip.label}
-                    </button>
-                  ))}
-                </div>
-              )}
               <form
                 onSubmit={(e) => { e.preventDefault(); cancelTyping(); runSearch(); }}
                 className={`ai-search-form flex items-center gap-2 sm:gap-3 rounded-xl border-2 border-slate-200 bg-white px-2 sm:px-3 py-1 focus-within:border-brand-600 focus-within:ring-2 focus-within:ring-brand-200 transition-colors motion-reduce:transition-none ${(resp || (demoView && !searchError && !loading)) ? 'is-joined' : ''}`}
@@ -1237,27 +1262,23 @@ function LandingPageInner() {
                 </button>
               </form>
 
-              {/* R12 §4 · text link to /how-it-works right under the
-                  search bar. Before this, the link only existed in
-                  LandingNav (hidden inside the mobile burger) and
-                  the footer — a visitor on mobile at 390px who
-                  didn't understand what the site does would bounce
-                  before opening the menu. Kept small + secondary so
-                  it does not compete with the search field (F1
-                  ruled that search is the primary landing action).
-                  Hidden once a search has run so it doesn't sit
-                  between the input and the results. */}
-              {!resp && (
-                <div className="mt-2 mb-1 flex justify-center">
-                  <Link
-                    href="/how-it-works"
-                    className="text-xs text-slate-500 hover:text-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 rounded px-2 py-1 inline-flex items-center gap-1"
-                  >
-                    <span>איך זה עובד?</span>
-                    <ArrowLeft className="w-3 h-3" aria-hidden="true" />
-                  </Link>
-                </div>
-              )}
+              {/* R30 §16 · "איך זה עובד?" link REMOVED from between
+                  the form and the readout. The form has border-top/
+                  left/right + rounded-t only (open bottom, meant to
+                  join the readout below); the readout has border-
+                  bottom/left/right + rounded-b only (open top, meant
+                  to join the form above). Together they were designed
+                  as ONE capsule. Slotting the how-it-works link in
+                  the middle pushed the two apart and left both edges
+                  open — the "broken frame" Yulian screenshotted.
+                  Also, the form is slate-200 rounded 12px and the
+                  readout is brand-600 rounded 14px — those don't
+                  match anyway; treating them as one capsule was
+                  wishful in the first place, but at least keeping
+                  them adjacent hides the mismatch. Link moved BELOW
+                  the sticky wrapper (§16 rec: "מתחת ל-.readout, לא
+                  בין השניים"). See the block after the sticky's
+                  closing </div>. */}
 
               {/* F2 v2 §5.2 — readout ('הבנתי:' tags) sits directly
                   under the form as one visual surface. Sticky-bar
@@ -1402,6 +1423,23 @@ function LandingPageInner() {
             </div>
           </div>
 
+          {/* R30 §16 · how-it-works link relocated to BELOW the
+              sticky capsule (was between the form and the readout —
+              broke the visual join). Same conditional (hide once a
+              search has run), same styling, same aria. Kept centred
+              in the max-w-5xl content column. */}
+          {!resp && (
+            <div className="max-w-5xl mx-auto px-3 sm:px-4 mt-2 mb-1 flex justify-center">
+              <Link
+                href="/how-it-works"
+                className="text-xs text-slate-500 hover:text-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 rounded px-2 py-1 inline-flex items-center gap-1"
+              >
+                <span>איך זה עובד?</span>
+                <ArrowLeft className="w-3 h-3" aria-hidden="true" />
+              </Link>
+            </div>
+          )}
+
           {/* Category tiles + search — the commercial hero.
               Was `pt-6 pb-6` (48px total) plus a `gap-6` inner
               (another 24px around the filters-toggle-wrap). After
@@ -1541,59 +1579,83 @@ function LandingPageInner() {
                   )}
                 </button>
 
-                {advancedOpen && (
-                  <div
-                    id="advanced-filters-panel"
-                    className="mt-3 mx-auto max-w-3xl flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center sm:justify-center gap-2 text-sm bg-white border border-slate-200 rounded-xl p-3"
-                  >
-                    {/* M1 mobile — selects stack full-width so at 390px
-                        the labels + values are readable, not squeezed
-                        into a wrapping strip. min-h-11 keeps them tap-
-                        friendly. */}
-                    <select
-                      value={fProf}
-                      onChange={(e) => setFProf(e.target.value)}
-                      aria-label="מקצוע"
-                      className="w-full sm:w-auto min-h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-800"
+                {advancedOpen && (() => {
+                  // R30 §23 · advanced filters are gated by the ACTUAL
+                  // result type coming back from the server. Yulian:
+                  // "חיפוש 'מגורים' — 'כל המקצועות' ו-'כל הארצות'
+                  // לא מוצגים." Rules from the spec:
+                  //   worker   → profession · region · origin
+                  //   housing  → region only
+                  //   marketplace (primary_section)  → nothing to
+                  //     filter here (category picker lives elsewhere;
+                  //     ancillary ads have no profession/origin at all)
+                  //   no results yet → show all three (default)
+                  const adType = resp?.filters?.ad_type;
+                  const isMarketplace = resp?.primary_section === 'marketplace';
+                  const showProf   = !isMarketplace && (!resp || adType === 'worker');
+                  const showRegion = !isMarketplace && (!resp || adType === 'worker' || adType === 'housing');
+                  const showOrigin = !isMarketplace && (!resp || adType === 'worker');
+                  return (
+                    <div
+                      id="advanced-filters-panel"
+                      className="mt-3 mx-auto max-w-3xl flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center sm:justify-center gap-2 text-sm bg-white border border-slate-200 rounded-xl p-3"
                     >
-                      <option value="">כל המקצועות</option>
-                      {professions.map((p) => (
-                        <option key={p.code} value={p.code}>{p.name_he}</option>
-                      ))}
-                    </select>
-                    <select
-                      value={fRegion}
-                      onChange={(e) => setFRegion(e.target.value)}
-                      aria-label="אזור"
-                      className="w-full sm:w-auto min-h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-800"
-                    >
-                      <option value="">כל הארץ</option>
-                      {regions.map((r) => (
-                        <option key={r.code} value={r.code}>{r.name_he}</option>
-                      ))}
-                    </select>
-                    <select
-                      value={fOrigin}
-                      onChange={(e) => setFOrigin(e.target.value)}
-                      aria-label="ארץ מוצא"
-                      className="w-full sm:w-auto min-h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-800"
-                    >
-                      <option value="">כל הארצות</option>
-                      {origins.map((o) => (
-                        <option key={o.code} value={o.code}>{o.name_he}</option>
-                      ))}
-                    </select>
-                    {anyFilter && (
-                      <button
-                        type="button"
-                        onClick={clearFilters}
-                        className="text-xs text-slate-500 hover:text-brand-800 underline underline-offset-2 min-h-11"
-                      >
-                        נקה סינון
-                      </button>
-                    )}
-                  </div>
-                )}
+                      {isMarketplace && (
+                        <p className="text-xs text-slate-500 py-1">
+                          תוצאות שירותים נלווים — הסינון המתקדם לא רלוונטי כאן. לחיפוש קטגוריה, קלד אותה בשורה למעלה.
+                        </p>
+                      )}
+                      {showProf && (
+                        <select
+                          value={fProf}
+                          onChange={(e) => setFProf(e.target.value)}
+                          aria-label="מקצוע"
+                          className="w-full sm:w-auto min-h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-800"
+                        >
+                          <option value="">כל המקצועות</option>
+                          {professions.map((p) => (
+                            <option key={p.code} value={p.code}>{p.name_he}</option>
+                          ))}
+                        </select>
+                      )}
+                      {showRegion && (
+                        <select
+                          value={fRegion}
+                          onChange={(e) => setFRegion(e.target.value)}
+                          aria-label="אזור"
+                          className="w-full sm:w-auto min-h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-800"
+                        >
+                          <option value="">כל הארץ</option>
+                          {regions.map((r) => (
+                            <option key={r.code} value={r.code}>{r.name_he}</option>
+                          ))}
+                        </select>
+                      )}
+                      {showOrigin && (
+                        <select
+                          value={fOrigin}
+                          onChange={(e) => setFOrigin(e.target.value)}
+                          aria-label="ארץ מוצא"
+                          className="w-full sm:w-auto min-h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-800"
+                        >
+                          <option value="">כל הארצות</option>
+                          {origins.map((o) => (
+                            <option key={o.code} value={o.code}>{o.name_he}</option>
+                          ))}
+                        </select>
+                      )}
+                      {anyFilter && (
+                        <button
+                          type="button"
+                          onClick={clearFilters}
+                          className="text-xs text-slate-500 hover:text-brand-800 underline underline-offset-2 min-h-11"
+                        >
+                          נקה סינון
+                        </button>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           </section>
@@ -2280,16 +2342,28 @@ function LandingPageInner() {
               R29 §5 · dedupe + above-fold cap live in SponsorProvider
               so leaderboard + billboard + carousel + side_rail agree
               on who's rendered which ad. */}
+          {/* R30 §24 · SponsorRailLayout wraps the billboard +
+              carousel + recent-ads mosaic in a 2-column grid at
+              ≥1440 when a side_rail ad exists (rail cell = 300px,
+              content cell = 1fr). At <1440 or with no rail ad, the
+              layout collapses to a single centred column at the
+              same max-width the sections used before. The
+              individual sections inside NO LONGER carry their own
+              `max-w-6xl mx-auto px-4` — the layout owns width +
+              centring, exactly the §24 rule
+              ("שתיהן נלחמות על אותו רוחב"). */}
           {!resp && !loading && (
-            <section className="max-w-6xl mx-auto px-4">
-              <HomeSponsorBillboard />
-              <HomeSponsorCarousel />
-            </section>
-          )}
+            <SponsorRailLayout>
+              {/* R30 §24 · these sections must NOT re-centre with
+                  mx-auto — the layout centres the whole grid. */}
+              <section>
+                <HomeSponsorBillboard />
+                <HomeSponsorCarousel />
+              </section>
 
-          {/* Recent-ads mosaic (yad2-style) — only when no active search */}
-          {!resp && !loading && recent.length > 0 && (
-            <section className="max-w-6xl mx-auto px-4 py-4">
+              {/* Recent-ads mosaic (yad2-style) — only when no active search */}
+              {recent.length > 0 && (
+                <section className="py-4">
               <h2 className="text-lg sm:text-xl font-bold text-slate-900 mb-3">פרסום חדש בפורטל</h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {recent.slice(0, 9).map((ad) => {
@@ -2343,7 +2417,9 @@ function LandingPageInner() {
                   );
                 })}
               </div>
-            </section>
+                </section>
+              )}
+            </SponsorRailLayout>
           )}
 
           {/* RoleRegisterPicker — the picker is a signup CTA that

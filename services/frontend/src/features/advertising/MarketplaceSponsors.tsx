@@ -498,72 +498,129 @@ function SponsorCarousel({ placement, label, aboveFold = false }: { placement: s
   );
 }
 
-// ── side_rail · sticky tower, ≥1440 only, single ad ─────────────────
+// ── R30 §24 · side_rail rebuilt as a GRID COLUMN ────────────────────
+//
+// The previous fixed-position implementation (R29 §4) chased the
+// content around the viewport for a whole session because the sticky
+// search bar had `backdrop-filter: blur(sm)`, which created a new
+// containing block for `position: fixed` descendants (see R30 §22
+// which also removes the blur). Even after removing the blur, a
+// fixed-position rail can't reserve horizontal space — the content
+// column doesn't know the rail is there, so any `mx-auto max-w-*`
+// centres the content across the FULL width, and the rail overlaps.
+//
+// R30 §24 direction: the rail is NOT a floating overlay. It's a
+// column in a page grid. Content column fills its cell, rail cell
+// takes 300px, gap 24px, ≥1440 only. When there's no side_rail ad,
+// the grid collapses to a single column (display:none on the cell
+// isn't enough — the cell still holds width, so we conditionally
+// render a single-column vs two-column grid).
+//
+// One layout component (`SponsorRailLayout`) is shared between home,
+// search results, and /marketplace — the "רכיב פריסה אחד, לא שלושה
+// עותקים" rule.
+
+// Content column max-width when NO rail. Matches the previous
+// `max-w-6xl` most callers used (72rem = 1152px).
+const RAIL_CONTENT_MAX_PX = 1152;
+// Content max + gap + rail. When rail is visible the grid centres
+// the whole 1152 + 24 + 300 = 1476px inside the viewport.
+const RAIL_LAYOUT_MAX_PX  = RAIL_CONTENT_MAX_PX + 24 + 300;
+// Sticky top for the rail cell. 96px = h-16 nav (64) + 32px buffer.
+// The sticky search bar (z-40) still paints over the rail if they
+// visually overlap — z-10 here stays LOWER than the search bar per
+// §24: "z-index נמוך מהניווט. הרייל אף פעם לא מעל סרגל עליון".
+// Since the rail is inside the content grid and the content grid
+// starts BELOW the sticky search bar in the DOM, the rail's cell
+// sits at y ≥ (search bar bottom) at scroll=0. As scroll advances
+// the rail moves up with the content until top: 96, then sticks.
+const RAIL_STICKY_TOP_PX = 96;
+
 
 /**
- * R29 §4 · fixed sticky rail on the left edge of the viewport
- * (Hebrew RTL — the left margin is the "outer" one). Spec is 300×600.
- * Placement gated to viewports ≥1440 (roughly 15" MacBook and up)
- * where the content column leaves enough dead margin to host it
- * without shoving copy off-centre.
+ * R30 §24 · one-component layout wrapper. Renders a two-column CSS
+ * grid at ≥1440 when a side_rail ad is available, and a single-
+ * column layout otherwise. Content column is the child; the rail
+ * cell is managed internally.
  *
- * Not rendered when:
- *   - viewport < 1440
- *   - server returned no ad for this placement
- *   - the ad id was already claimed by an earlier slot (R29 §5 dedupe)
- *   - above-fold cap already spent
+ * Usage:
+ *   <SponsorRailLayout>
+ *     <div>... page content ...</div>
+ *   </SponsorRailLayout>
  *
- * The rail carries the SAME creative-vs-composite fork as the strip
- * banner. side_rail is not a wide-strip slot, so a creative_url
- * renders the flat image regardless of exact aspect; composite is
- * the fallback when there's no image.
+ * Content should NOT wrap itself in `mx-auto max-w-6xl` — the
+ * layout handles centring + width. Adding a second `mx-auto max-w-*`
+ * inside is the exact bug §24 warned against.
  */
-// R29 §4 · rail's `top` in the viewport, hard-coded to sit BELOW the
-// entire search zone at every state Yulian screens on (nav ~64 +
-// h1 section ~90 + chip row ~40 + search input ~60 + filter row ~60
-// + how-it-works link ~40 ≈ 350-420 in the search-results state that
-// caused the overlap complaint). 480px is generous enough to survive
-// the tallest layout observed without micro-tuning:
-//   * On the landing state (short header) the rail sits noticeably
-//     lower than it could — but it's inside the dead margin at 1440+,
-//     so extra whitespace above it is harmless.
-//   * On the search-results state the rail clears the search bar
-//     (input + chips + filters) cleanly.
-// Previous attempts: top-24 (96) inside the sticky zone, top-56 (224)
-// still 20px short, then a measurement hook that under-measured the
-// sticky bar because its top is not near 0 at scroll=0. A static
-// number that just clears everything is what Yulian asked for —
-// "פשוט תוריד את המודעה מתחת לכל שורת החיפוש". Done.
-const SIDE_RAIL_TOP_PX = 480;
-
-
-function SponsorSideRail({ aboveFold = true }: { aboveFold?: boolean } = {}) {
+export function SponsorRailLayout({
+  children,
+  aboveFold = true,
+}: {
+  children: ReactNode;
+  aboveFold?: boolean;
+}) {
   const wide = useIsWideDesktop();
   const [ad, setAd] = useState<SponsorAd | null>(null);
-  const [claimResolved, setCR] = useState<boolean>(false);
+  const [checked, setChk] = useState(false);
   const ctx = useSponsorCtx();
 
   useEffect(() => {
-    if (!wide) { setAd(null); setCR(true); return; }
+    if (!wide) { setAd(null); setChk(true); return; }
     let cancelled = false;
     (async () => {
-      // Serial claim queue: rail joins the queue AFTER the in-page
-      // wide-strip / carousel surfaces in mount order, so it takes
-      // whatever unclaimed ad remains for the side_rail placement.
       const winner = await ctx.enqueueOne(
         () => fetchSponsored('side_rail', 3),
         aboveFold,
       );
       if (cancelled) return;
       setAd(winner);
-      setCR(true);
+      setChk(true);
     })();
     return () => { cancelled = true; };
   }, [wide, aboveFold, ctx]);
 
-  const observeRef = useAdImpression({ targetId: ad?.id, placement: placementBucket('side_rail') });
+  const showRail = wide && checked && !!ad;
 
-  if (!wide || !claimResolved || !ad) return null;
+  // Single-column path — same width/centring the callers had before.
+  if (!showRail) {
+    return (
+      <div className="mx-auto px-4" style={{ maxWidth: RAIL_CONTENT_MAX_PX }}>
+        {children}
+      </div>
+    );
+  }
+
+  // Two-column path — grid centres the whole span (1152 + 24 + 300).
+  // `min-w-0` on the content column so long words / URLs don't force
+  // an overflow that would blow the grid layout up.
+  return (
+    <div
+      className="mx-auto px-4"
+      style={{
+        maxWidth: RAIL_LAYOUT_MAX_PX,
+        display: 'grid',
+        gridTemplateColumns: `minmax(0, 1fr) 300px`,
+        gap: 24,
+      }}
+    >
+      <div className="min-w-0">{children}</div>
+      <RailCell ad={ad} />
+    </div>
+  );
+}
+
+
+/**
+ * R30 §24 · the sticky rail cell inside SponsorRailLayout. Kept
+ * separate so the layout can render `null` (single column) or
+ * this component (two columns) without conditional JSX inside the
+ * grid definition. `position: sticky` + `align-self: start` — the
+ * §24 note "sticky בתוך גריד לא עובד בלי align-self: start" because
+ * the default `stretch` gives the cell full row height and there's
+ * nothing to stick TO.
+ */
+function RailCell({ ad }: { ad: SponsorAd }) {
+  const observeRef = useAdImpression({ targetId: ad.id, placement: placementBucket('side_rail') });
 
   const bg = ad.brand_bg ?? '#0f172a';
   const fg = ad.brand_fg ?? '#ffffff';
@@ -604,36 +661,27 @@ function SponsorSideRail({ aboveFold = true }: { aboveFold?: boolean } = {}) {
     </div>
   );
 
-  // Positioned fixed on the LEFT edge — Hebrew RTL means content
-  // reads right-to-left, so the left edge is the outer margin the
-  // side_rail should live in. `top: SIDE_RAIL_TOP_PX` clears the
-  // whole search zone at every state — see the constant's doc.
-  // z-30 sits below modals AND below the sticky search bar (also
-  // z-40), so the search input can never be covered.
+  // R30 §24 · sticky grid child. NO fixed, NO absolute, NO negative
+  // margins. `align-self: start` because a grid cell defaults to
+  // `stretch` (fills the row height), leaving sticky nothing to
+  // stick to.
   //
-  // Height rule (fixes the "cut off at bottom" Yulian caught on a
-  // 900px-tall viewport where top-480 + height-600 = 1080 > viewport):
-  //   * creative branch — locked to 600px so the image renders at
-  //     its 300×600 slot aspect (matches the SIZES catalog entry).
-  //   * composite branch — natural content height (~240-300px for
-  //     the seed row's headline + body + CTA). NO fixed height so
-  //     short viewports don't clip the bottom.
-  //   * BOTH branches capped by maxHeight = 100vh − top − 16px
-  //     bottom margin, so even a 600px creative on a 900px screen
-  //     gets scaled down (its aspect wrapper handles the shrink)
-  //     rather than running off-screen.
+  // Height: creative branch keeps the 300×600 slot spec; composite
+  // uses natural content height. maxHeight caps at viewport minus
+  // sticky top minus 16px bottom margin so a tall creative on a
+  // short laptop screen doesn't run off the bottom.
   const isCreative = mode === 'creative' && !!ad.creative_url;
   return (
     <aside
       ref={observeRef}
-      className="hidden fixed left-4 z-30"
+      className="sticky z-10"
       style={{
-        display: wide ? 'block' : 'none',
-        top:       SIDE_RAIL_TOP_PX,
-        width:     300,
+        top:        RAIL_STICKY_TOP_PX,
+        alignSelf:  'start',
+        width:      300,
         ...(isCreative ? { height: 600 } : {}),
-        maxHeight: `calc(100vh - ${SIDE_RAIL_TOP_PX + 16}px)`,
-        overflow:  'hidden',
+        maxHeight:  `calc(100vh - ${RAIL_STICKY_TOP_PX + 16}px)`,
+        overflow:   'hidden',
       }}
       aria-label="מודעה ממומנת · צד"
     >
@@ -761,5 +809,10 @@ export function HomeSponsorBillboard() {
   return <SponsorStripBanner placement="home_billboard" aspectRatio={4.8} aboveFold />;
 }
 
-// R29 §4 · sticky rail. Hosts: home, search results, marketplace.
-export { SponsorSideRail };
+// R30 §24 · SponsorRailLayout replaces the R29 §4 <SponsorSideRail />
+// standalone component. Callers now wrap their main content in
+// <SponsorRailLayout>...</SponsorRailLayout>; the layout owns both
+// the grid AND the rail cell, so a "no side_rail ad" state collapses
+// the grid to a single column without leaving an empty cell. See the
+// component doc above for the usage rule (content must not have its
+// own mx-auto max-w-*).

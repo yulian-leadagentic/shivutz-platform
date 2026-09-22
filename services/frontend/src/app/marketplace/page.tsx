@@ -18,7 +18,7 @@ import RegistrationCTASection from '@/components/landing/RegistrationCTASection'
 import {
   MarketplaceSponsorBanner,
   MarketplaceSponsorCarousel,
-  SponsorSideRail,
+  SponsorRailLayout,
   SponsorProvider,
 } from '@/features/advertising/MarketplaceSponsors';
 
@@ -170,10 +170,10 @@ function MarketplacePageInner() {
 
   return (
     <SponsorProvider>
-      {/* R29 §4 · sticky sponsor rail — desktop ≥1440 only. Same
-          component as home + search; SponsorProvider dedupes across
-          all surfaces on this page. */}
-      <SponsorSideRail />
+      {/* R30 §24 · SponsorSideRail is no longer rendered here as a
+          standalone. The rail lives inside SponsorRailLayout that
+          wraps the marketplace grid below — as a grid column, not
+          a fixed overlay. */}
       <div className="min-h-screen bg-slate-50" dir="rtl">
       {/* Top nav bar */}
       <nav className="bg-white border-b border-slate-200 sticky top-0 z-40">

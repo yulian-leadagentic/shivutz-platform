@@ -928,6 +928,37 @@ body {
 .sponsor-carousel-scroll::-webkit-scrollbar {
   display: none;
 }
+
+/* R30 §22 · same scrollbar-hide treatment for the ancillary-chip
+   row above the search form. The row is horizontally scrollable on
+   mobile (R28 §3 explanation: wrapping grew to six rows and pushed
+   the search box below the fold). The scrollbar was visible and
+   ugly; Yulian screenshotted "ציוד נחתך באמצע המילה" — nothing
+   telling the visitor there was more. Now: no scrollbar; the last
+   visible chip fades via a mask so the "there is more, swipe" cue
+   is visual not textual. Snap points on each chip live in the JSX
+   (`snap-x snap-proximity` + `snap-start` per button). */
+.chip-row-scroll {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  /* Edge fade: the RTL start (right) is fully opaque so the label
+     "ניתן לחפש גם שירותים נלווים כגון:" stays crisp; the LTR end
+     (left) fades to hint at more content past the fold. */
+  mask-image: linear-gradient(to left, black 85%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to left, black 85%, transparent 100%);
+}
+.chip-row-scroll::-webkit-scrollbar {
+  display: none;
+}
+/* Only fade on mobile (below sm). At sm+ the chips wrap into a
+   centred flex layout with no scroll, so a mask would erase the
+   leftmost chip permanently. */
+@media (min-width: 640px) {
+  .chip-row-scroll {
+    mask-image: none;
+    -webkit-mask-image: none;
+  }
+}
 /* R20 §1 · prefers-reduced-motion turns snap-scroll from smooth to
    instant. Scroll-snap itself stays — jumping to the next card is
    still useful; only the animation is muted. */
