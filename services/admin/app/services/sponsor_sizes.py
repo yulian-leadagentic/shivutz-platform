@@ -259,3 +259,72 @@ def check_creative_dimensions(
             ),
             extra={"expected_w": spec_w, "expected_h": spec_h, "got_w": w, "got_h": h},
         )
+
+
+# ── R29 §3 · drift guard for the mirrored catalog ──────────────────
+#
+# The read-side subset of this table (SIZES + _WIDE_STRIP_PLACEMENTS
+# + _ASPECT_TOLERANCE) is DUPLICATED in
+# services/user-org/app/services/sponsor_sizes.py because Railway
+# builds each service from its own subtree — a cross-service import
+# from user-org into admin returned ImportError at runtime and every
+# ad silently fell to render_mode="creative" (a bug that shipped
+# once, staging, 22.09).
+#
+# Duplication is intentional; drift is not. Every module import
+# recomputes _catalog_hash() and asserts it against
+# `_CANONICAL_CATALOG_HASH` below. Editing SIZES / _WIDE_STRIP_PLACEMENTS
+# / _ASPECT_TOLERANCE in one copy without updating the constant here
+# (and in the sibling file) crashes that service at IMPORT time:
+#   * FastAPI startup fails → Railway health check flips red
+#   * CI (which imports the module during unit tests) fails to green
+# Neither service can silently disagree — mismatch = loud.
+#
+# Procedure to change the catalog:
+#   1. Edit SIZES / _WIDE_STRIP_PLACEMENTS / _ASPECT_TOLERANCE HERE.
+#   2. Run `python services/admin/app/services/sponsor_sizes.py` to
+#      print the new hash (main block below).
+#   3. Paste the new hash into _CANONICAL_CATALOG_HASH in BOTH copies.
+#   4. Copy the exact same SIZES / _WIDE_STRIP_PLACEMENTS values to
+#      the user-org copy.
+# Skipping step 3 or 4 = one service dies on startup. That is the
+# feature.
+_CANONICAL_CATALOG_HASH = "945707de90c1f4fdb9e3192b0c58e9913cec9aebb391b8ad2027ebaa3c565098"
+
+
+def _catalog_hash() -> str:
+    """Canonical hash of the read-side catalog. Both service copies
+    must produce the same string, and it must match
+    _CANONICAL_CATALOG_HASH. Serialisation is sorted-key JSON so
+    Python dict ordering never affects the digest."""
+    import hashlib
+    import json
+    payload = {
+        "sizes": {
+            slot: {bp: (list(spec) if spec else None) for bp, spec in bps.items()}
+            for slot, bps in SIZES.items()
+        },
+        "wide_strip": sorted(_WIDE_STRIP_PLACEMENTS),
+        "tolerance":  _ASPECT_TOLERANCE,
+    }
+    canon = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canon.encode()).hexdigest()
+
+
+_actual_hash = _catalog_hash()
+if _actual_hash != _CANONICAL_CATALOG_HASH:
+    raise RuntimeError(
+        "sponsor_sizes catalog drift detected in services/admin.\n"
+        f"  computed: {_actual_hash}\n"
+        f"  expected: {_CANONICAL_CATALOG_HASH}\n"
+        "Either revert your SIZES edit OR update _CANONICAL_CATALOG_HASH "
+        "in BOTH services/admin/app/services/sponsor_sizes.py AND "
+        "services/user-org/app/services/sponsor_sizes.py (with matching "
+        "SIZES bodies)."
+    )
+
+
+if __name__ == "__main__":  # pragma: no cover — dev helper
+    # Run this file directly to print the current catalog hash, so you
+    # can paste it into _CANONICAL_CATALOG_HASH after a legitimate edit.
+    print(_catalog_hash())

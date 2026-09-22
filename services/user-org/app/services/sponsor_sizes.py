@@ -84,3 +84,46 @@ def creative_matches_slot(
     spec_ratio = spec_w / spec_h
     got_ratio  = w / h
     return abs(got_ratio - spec_ratio) / spec_ratio <= _ASPECT_TOLERANCE
+
+
+# R29 §3 · drift guard for the mirrored catalog. See the sibling
+# comment in services/admin/app/services/sponsor_sizes.py for the
+# full procedure. Short version: SIZES / _WIDE_STRIP_PLACEMENTS /
+# _ASPECT_TOLERANCE are duplicated across two files because Railway
+# builds each service from its own subtree; every module import
+# recomputes the hash and compares to the constant below; a mismatch
+# crashes the service at startup so CI (or Railway health checks)
+# catch the drift instead of shipping a silently-broken read side.
+_CANONICAL_CATALOG_HASH = "945707de90c1f4fdb9e3192b0c58e9913cec9aebb391b8ad2027ebaa3c565098"
+
+
+def _catalog_hash() -> str:
+    import hashlib
+    import json
+    payload = {
+        "sizes": {
+            slot: {bp: (list(spec) if spec else None) for bp, spec in bps.items()}
+            for slot, bps in SIZES.items()
+        },
+        "wide_strip": sorted(_WIDE_STRIP_PLACEMENTS),
+        "tolerance":  _ASPECT_TOLERANCE,
+    }
+    canon = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canon.encode()).hexdigest()
+
+
+_actual_hash = _catalog_hash()
+if _actual_hash != _CANONICAL_CATALOG_HASH:
+    raise RuntimeError(
+        "sponsor_sizes catalog drift detected in services/user-org.\n"
+        f"  computed: {_actual_hash}\n"
+        f"  expected: {_CANONICAL_CATALOG_HASH}\n"
+        "Either revert your SIZES edit OR update _CANONICAL_CATALOG_HASH "
+        "in BOTH services/admin/app/services/sponsor_sizes.py AND "
+        "services/user-org/app/services/sponsor_sizes.py (with matching "
+        "SIZES bodies)."
+    )
+
+
+if __name__ == "__main__":  # pragma: no cover — dev helper
+    print(_catalog_hash())
