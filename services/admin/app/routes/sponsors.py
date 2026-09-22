@@ -30,17 +30,28 @@ from pydantic import BaseModel, Field, HttpUrl
 from app.db import get_db
 from app.services.sponsor_sizes import (
     check_creative_dimensions,
+    check_brand_contrast,
     DimensionRejection,
 )
 
 router = APIRouter()
 
+# R29 §3-4 · three new slots on top of the R21/R22/U7 originals:
+#   * home_leaderboard — 1200×150 wide strip on the home page, above
+#                        the fold; composite render is DEFAULT.
+#   * home_billboard   — 1200×250 wide strip below the fold; composite
+#                        render is DEFAULT.
+#   * side_rail        — 300×600 sticky tower shown ONLY on ≥1440
+#                        viewports (home + search results + marketplace).
 _ALLOWED_PLACEMENTS = {
     "search_inline",
     "marketplace_banner",
     "marketplace_carousel",
     "home_banner",
     "home_carousel",
+    "home_leaderboard",
+    "home_billboard",
+    "side_rail",
 }
 
 
@@ -264,11 +275,28 @@ def _validate_creative(url, w, h, placements: Optional[list[str]] = None):
                 )
 
 
+def _validate_brand_contrast(brand_fg, brand_bg):
+    """R29 §3 tail rule — the composite render paints text in brand_fg
+    on brand_bg. WCAG AA requires 4.5:1 for normal body text; the
+    headline is bold-ish so this is a conservative floor, not a
+    ceiling. Bridges sponsor_sizes.DimensionRejection to HTTP 400 with
+    the same shape as the dimension check so admin UI can render both
+    error surfaces identically."""
+    try:
+        check_brand_contrast(brand_fg, brand_bg)
+    except DimensionRejection as e:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": e.code, "message": e.message_he, **e.extra},
+        )
+
+
 @router.post("/sponsors", status_code=201)
 def create_sponsor(body: SponsorCreate):
     _validate_placements(body.placements)
     _validate_dates(body.starts_at, body.ends_at)
     _validate_creative(body.creative_url, body.creative_w, body.creative_h, body.placements)
+    _validate_brand_contrast(body.brand_fg, body.brand_bg)
 
     new_id = str(uuid.uuid4())
     conn = get_db("org_db")
@@ -374,6 +402,15 @@ def update_sponsor(ad_id: str, body: SponsorPatch):
         # new SIZES gate. `body.placements` still takes precedence
         # when picking which slot to validate against; falls back to
         # the row's current stored placements otherwise.
+        # R29 §3 · brand contrast check on update. Same
+        # grandfathering rule as the creative dimensions above: only
+        # fire when the caller actually touched brand_fg or brand_bg;
+        # a metadata-only save on a legacy row with a low-contrast
+        # colour pair stays editable.
+        new_fg = row.get("brand_fg") if body.brand_fg is None else body.brand_fg
+        new_bg = row.get("brand_bg") if body.brand_bg is None else body.brand_bg
+        if body.brand_fg is not None or body.brand_bg is not None:
+            _validate_brand_contrast(new_fg, new_bg)
         creative_touched = (
             body.creative_url is not None
             or body.creative_w   is not None

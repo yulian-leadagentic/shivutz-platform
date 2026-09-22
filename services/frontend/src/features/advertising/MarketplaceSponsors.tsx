@@ -1,33 +1,53 @@
 'use client';
 
 /**
- * U7 §5 · marketplace sponsor placements + R5 §3 · home sponsor slots.
+ * U7 §5 · marketplace sponsor placements
+ * R5 §3 · home sponsor slots
+ * R29 §3 · composite-first wide-strip renderer (home_leaderboard,
+ *          home_billboard, marketplace_banner)
+ * R29 §4 · side_rail sticky tower on ≥1440 viewports
+ * R29 §5 · dedupe by ad id + above-fold density ceiling
  *
- * Two surfaces per host page:
- *   - Banner    · full-width strip. One creative at a time; rotates
- *                 on refresh (backend orders by RAND()).
- *   - Carousel  · R20 §1 · CSS scroll-snap on mobile (horizontal
- *                 swipe, next card peeks at the edge). At `sm` and
- *                 above collapses back to a responsive grid. No
- *                 auto-scroll, no arrows, no third-party library —
- *                 scroll-snap alone. Previous docstring claimed
- *                 "scrolls on mobile" but the CSS was grid-cols-1;
- *                 fixed together with this comment.
+ * Two families of surfaces per host page:
  *
- * Both hit the SAME endpoint (/ads/public/sponsored) with a
- * ?placement= param — the backend gates every allowed value
- * separately so nothing leaks across surfaces. `SponsorBanner` and
- * `SponsorCarousel` are the parameterised components; the named
- * `MarketplaceSponsor*` / `HomeSponsor*` wrappers are what callers
- * actually import so grep-for-placement stays honest.
+ *   - Wide-strip banners (home_leaderboard, home_billboard,
+ *     marketplace_banner, legacy home_banner) · full-page-width
+ *     brand_bg strip carrying headline + body + CTA. The composite
+ *     render is the DEFAULT for these; a flat creative renders ONLY
+ *     when server-side `render_mode === 'creative'` (i.e. the
+ *     sponsor_ads row has a creative_url whose aspect fits the slot
+ *     within ±3%). This closes the R28 §4 finding: a 1037×609 image
+ *     no longer paints as a 340×200 letterbox floating in a 1120-wide
+ *     white strip — it now paints the brand strip and the text lives.
  *
- * F3 · "no sections without active ads" — if the endpoint returns
- * zero rows, the component renders NOTHING (not a placeholder, not
- * a skeleton, not a "coming soon"). Migration 078 seeds marketplace
- * rows; home_banner / home_carousel rows are seeded in the R5 §3
- * follow-up seeder (docs/cc-prompts/…).
+ *   - Cards (marketplace_carousel, home_carousel, search_inline,
+ *     side_rail) · discrete tiles rendered inside their host's grid
+ *     or rail. Creative-first when a creative_url is present; falls
+ *     back to the composite card when it isn't.
+ *
+ * SponsorProvider (below) wraps a page's sponsor surfaces and
+ * enforces two R29 §5 rules:
+ *
+ *   1. **Dedupe by ad id** — an ad promoted into two placements
+ *      (e.g. an advertiser who bought both `home_leaderboard` and
+ *      `side_rail`) renders in whichever slot claims it first; every
+ *      other slot skips that id. Same rule R23 §1 wrote in prose for
+ *      the marketplace region-heading double-render — surfaced here
+ *      as shared React state so the two families stay honest.
+ *
+ *   2. **Above-fold cap** — `site_settings.sponsor_above_fold_limit`
+ *      (default 2) hard-caps how many sponsor rows can sit above the
+ *      fold on any page. Components whose `aboveFold` prop is true
+ *      count against the ceiling; over-count → render nothing rather
+ *      than push real content below the fold. R28 §3's ancillary
+ *      chip row + R29 §3-4's leaderboard/side_rail made this real.
+ *
+ * `SponsorProvider` is OPTIONAL — surfaces render fine without one,
+ * they just skip the dedupe + cap logic. Home + search results wrap
+ * in one; older callers keep working.
  */
-import { useEffect, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import { apiFetch } from '@/lib/api/client';
 import { useAdImpression } from '@/hooks/useAdImpression';
 import { postAdEvent, type AdPlacement } from '@/lib/adEvents';
@@ -39,7 +59,8 @@ import { postAdEvent, type AdPlacement } from '@/lib/adEvents';
 function placementBucket(raw: string): AdPlacement {
   if (raw.startsWith('marketplace')) return 'marketplace';
   if (raw.includes('carousel'))      return 'carousel';
-  if (raw.includes('banner'))        return 'featured';
+  if (raw.includes('banner') || raw.includes('leaderboard') || raw.includes('billboard')) return 'featured';
+  if (raw === 'side_rail')           return 'inline';
   return 'inline';
 }
 
@@ -52,16 +73,89 @@ interface SponsorAd {
   cta_label_he:    string;
   cta_url:         string | null;
   logo_url:        string | null;
-  // R20 §3 · finished-creative overrides. When creative_url is
-  // present the client renders the image and IGNORES the
-  // headline/body/chips model. w/h drive the aspect-ratio wrapper
-  // that reserves layout space and prevents CLS on load.
   creative_url:    string | null;
   creative_w:      number | null;
   creative_h:      number | null;
   brand_bg:        string | null;
   brand_fg:        string | null;
+  // R29 §3 · server-computed. 'composite' forces the brand_bg strip;
+  // 'creative' allows the flat image. Wide-strip slots (leaderboard,
+  // billboard) return 'composite' whenever the creative doesn't fit
+  // the slot spec within ±3%, regardless of whether creative_url is
+  // set. Cards keep the legacy behaviour (creative when creative_url
+  // is set).
+  render_mode?:    'creative' | 'composite';
 }
+
+// ── R29 §5 · dedupe + above-fold ceiling context ────────────────────
+
+interface SponsorCtxValue {
+  aboveFoldLimit: number;
+  claimAd:     (id: string) => boolean;          // true = first claim wins
+  claimSlot:   (aboveFold: boolean) => boolean;  // true = under the ceiling
+}
+
+const SponsorCtx = createContext<SponsorCtxValue | null>(null);
+
+export function SponsorProvider({ children }: { children: ReactNode }) {
+  // R29 §5 · admin-editable ceiling. Reads sponsor_above_fold_limit
+  // from /api/legal/settings (same endpoint carousel_limit already
+  // reads). Missing / malformed value → 2, matching the seed in
+  // migration 093.
+  const [limit, setLimit] = useState<number>(2);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const s = await fetch('/api/legal/settings').then(r => (r.ok ? r.json() : null));
+        const raw = s?.sponsor_above_fold_limit;
+        const parsed = raw != null ? parseInt(String(raw), 10) : NaN;
+        if (!cancelled && Number.isFinite(parsed) && parsed > 0) setLimit(parsed);
+      } catch { /* keep default */ }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Refs (not state) so a claim inside a render pass takes effect
+  // synchronously and doesn't trigger re-render storms. The Set of
+  // seen ids and the above-fold count are conceptually component-
+  // lifetime state; we intentionally never reset them mid-session.
+  const seenAds        = useRef<Set<string>>(new Set());
+  const aboveFoldCount = useRef<number>(0);
+
+  const claimAd = useCallback((id: string) => {
+    if (seenAds.current.has(id)) return false;
+    seenAds.current.add(id);
+    return true;
+  }, []);
+
+  const claimSlot = useCallback((aboveFold: boolean) => {
+    if (!aboveFold) return true;
+    if (aboveFoldCount.current >= limit) return false;
+    aboveFoldCount.current += 1;
+    return true;
+  }, [limit]);
+
+  const value = useMemo<SponsorCtxValue>(
+    () => ({ aboveFoldLimit: limit, claimAd, claimSlot }),
+    [limit, claimAd, claimSlot],
+  );
+
+  return <SponsorCtx.Provider value={value}>{children}</SponsorCtx.Provider>;
+}
+
+// Every sponsor component reads context. When there's no provider
+// the fallback lets everything through — Marketplace still works
+// standalone with no dedupe / cap, matching pre-R29 behaviour.
+function useSponsorCtx(): SponsorCtxValue {
+  return useContext(SponsorCtx) ?? {
+    aboveFoldLimit: Infinity,
+    claimAd:   () => true,
+    claimSlot: () => true,
+  };
+}
+
+// ── fetch + guards ──────────────────────────────────────────────────
 
 async function fetchSponsored(placement: string, limit: number): Promise<SponsorAd[]> {
   try {
@@ -80,33 +174,120 @@ async function fetchSponsored(placement: string, limit: number): Promise<Sponsor
 // NOT NULL in the DB per migration 069, but a caller could still
 // send empty string). Skipping rows that have neither turns the
 // "giant empty blue rectangle" R23 §6 flagged into a rendered
-// section only when it has something to say. Server-side filter
-// would be cleaner (touches ads.py, out of scope) — the client
-// guard is defense-in-depth that also protects against a future
-// admin sending a whitespace-only headline.
+// section only when it has something to say.
 function isRenderable(ad: SponsorAd): boolean {
   if (ad.creative_url) return true;
   if (ad.headline_he && ad.headline_he.trim() !== '') return true;
   return false;
 }
 
-// Parameterised banner. Named exports below (Marketplace/Home) pin
-// the placement string so grep-for-placement stays honest.
-function SponsorBanner({ placement, label }: { placement: string; label?: string }) {
-  const [ad, setAd] = useState<SponsorAd | null>(null);
-  useEffect(() => {
-    fetchSponsored(placement, 1).then((rows) => setAd(rows[0] ?? null));
-  }, [placement]);
+// R29 §3 · shorthand — should this ad render as flat image or as
+// the composite brand strip? Server tells us via render_mode; legacy
+// rows (server didn't ship the field) fall back to "creative if
+// creative_url is set" so old admin surfaces keep working.
+function pickRenderMode(ad: SponsorAd): 'creative' | 'composite' {
+  if (ad.render_mode) return ad.render_mode;
+  return ad.creative_url ? 'creative' : 'composite';
+}
 
-  // R6 §1a · one impression per (ad, page load) when this banner is
-  // ≥50% visible for ≥1s. The hook returns early when targetId is
-  // undefined (fetch still pending) and re-registers when the ad
-  // arrives.
+// ── viewport hooks ──────────────────────────────────────────────────
+
+function useIsMobile(breakpointPx = 640): boolean | undefined {
+  const [isMobile, setIsMobile] = useState<boolean | undefined>(undefined);
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width: ${breakpointPx - 1}px)`);
+    const apply = () => setIsMobile(mq.matches);
+    apply();
+    mq.addEventListener('change', apply);
+    return () => mq.removeEventListener('change', apply);
+  }, [breakpointPx]);
+  return isMobile;
+}
+
+// R29 §4 · side_rail is desktop-only, and only wide enough on
+// ≥1440 viewports where the content column leaves ~380px of dead
+// margin on either side. Below that we don't have the room without
+// crowding the main content. Returns undefined during SSR so the
+// server-rendered HTML has no rail (avoids a hydration mismatch on
+// the first paint at any width).
+function useIsWideDesktop(minPx = 1440): boolean | undefined {
+  const [wide, setWide] = useState<boolean | undefined>(undefined);
+  useEffect(() => {
+    const mq = window.matchMedia(`(min-width: ${minPx}px)`);
+    const apply = () => setWide(mq.matches);
+    apply();
+    mq.addEventListener('change', apply);
+    return () => mq.removeEventListener('change', apply);
+  }, [minPx]);
+  return wide;
+}
+
+// ── wide-strip banner (composite default; creative when it fits) ────
+
+interface StripProps {
+  placement: string;
+  label?:    string;
+  /** R29 §5 — this slot sits above the fold on its host page.
+   *  Counts against `sponsor_above_fold_limit`; over-count → the
+   *  slot renders nothing (rather than shoving real content down). */
+  aboveFold?: boolean;
+  /** Slot aspect ratio for the CLS wrapper (width / height).
+   *  home_leaderboard = 8      (1200×150)
+   *  home_billboard   = 4.8    (1200×250)
+   *  home_banner      = 4.8    (legacy 1200×250)
+   *  marketplace_banner = 4.8  (1200×250)
+   *
+   *  Kept as a number rather than a string so callers can't ship a
+   *  malformed aspectRatio expression by accident. */
+  aspectRatio: number;
+}
+
+function SponsorStripBanner({ placement, label, aboveFold = false, aspectRatio }: StripProps) {
+  const [ad, setAd]           = useState<SponsorAd | null>(null);
+  const [claimResolved, setCR] = useState<boolean>(false);
+  const ctx = useSponsorCtx();
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const rows = await fetchSponsored(placement, 1);
+      if (cancelled) return;
+      // Try dedupe + slot-cap in that order. `claimAd` returns false
+      // if this ad already rendered in an earlier slot on this page;
+      // `claimSlot` returns false if we're past the above-fold cap.
+      // Either "no" → render nothing.
+      const winner = rows.find(r => ctx.claimAd(r.id)) ?? null;
+      const slotOk = winner ? ctx.claimSlot(aboveFold) : true;
+      setAd(slotOk ? winner : null);
+      setCR(true);
+    })();
+    return () => { cancelled = true; };
+    // ctx methods are stable per Provider (useCallback), so re-running
+    // this on ctx changes just means the Provider's limit was re-read;
+    // that's fine to re-evaluate against.
+  }, [placement, aboveFold, ctx]);
+
   const observeRef = useAdImpression({ targetId: ad?.id, placement: placementBucket(placement) });
 
+  if (!claimResolved) {
+    // Reserve the vertical space during the initial fetch so the
+    // page doesn't jump when the ad arrives. Uses the slot aspect
+    // ratio so both branches (creative or composite) fit the same
+    // box. `max-w-6xl` matches the containing <section>'s width.
+    return (
+      <div className="mb-6 w-full">
+        <div className="text-[10px] uppercase tracking-wide text-slate-400 mb-1">
+          {label ?? 'מודעה ממומנת'}
+        </div>
+        <div className="rounded-2xl bg-slate-100/60" style={{ aspectRatio }} />
+      </div>
+    );
+  }
   if (!ad) return null;
-  const bg = ad.brand_bg ?? '#1e293b';
+
+  const bg = ad.brand_bg ?? '#0f172a';
   const fg = ad.brand_fg ?? '#ffffff';
+  const mode = pickRenderMode(ad);
   const handleClick = () => {
     if (!ad.cta_url) return;
     postAdEvent({
@@ -115,16 +296,13 @@ function SponsorBanner({ placement, label }: { placement: string; label?: string
     });
   };
 
-  // R20 §3 · when the ad ships a finished creative, render the
-  // image and forget the headline/body/chips model. The whole card
-  // is a single anchor so a click anywhere fires ad_click, per
-  // §3c. `object-fit: contain` prevents cropping — a bizi-style
-  // legal disclaimer at the bottom of the image survives even if
-  // the aspect ratio is a shade off the 1.91:1 banner spec.
-  if (ad.creative_url) {
-    const aspectStyle = ad.creative_w && ad.creative_h
-      ? { aspectRatio: `${ad.creative_w} / ${ad.creative_h}` }
-      : {};
+  // R29 §3 · CREATIVE branch — the server has cleared the ad
+  // (render_mode === 'creative' means the flat image fits this slot
+  // within ±3%). Full-bleed image, brand_bg only visible as the
+  // (near-zero) letterbox from `object-contain`. Never centred on
+  // white. `object-fit: cover` is banned — R20 §3a says the legal
+  // disclaimer band on a bizi-style creative must not crop.
+  if (mode === 'creative' && ad.creative_url) {
     const inner = (
       <img
         src={ad.creative_url}
@@ -138,23 +316,8 @@ function SponsorBanner({ placement, label }: { placement: string; label?: string
         <div className="text-[10px] uppercase tracking-wide text-slate-400 mb-1">
           {label ?? 'מודעה ממומנת'}
         </div>
-        {/* R27 §3 · height ceiling on the banner. R20 §3 shipped
-            aspectRatio + object-fit:contain (both correct — the
-            legal-disclaimer band on a bizi-style creative must not
-            crop). `contain` preserves the aspect but does NOT cap
-            size, so at 1920 the container filled the row and the
-            image scaled to ~600px tall, eating the fold. Added:
-              max-w-3xl · centred      → so the container never
-                                          exceeds ~768px even at
-                                          1920 (matches content
-                                          reading width)
-              max-height clamp (mobile 160px / desktop 200px)
-                                        → clamps the vertical size
-                                          under the max-w gate.
-            Heights ARE לאישור Yulian — visual call, easy to tune.
-            object-fit:contain STAYS. Never 'cover'. */}
-        <div className="rounded-2xl overflow-hidden shadow-sm bg-white sponsor-banner-creative mx-auto max-w-3xl"
-             style={{ ...aspectStyle, backgroundColor: bg }}>
+        <div className="rounded-2xl overflow-hidden shadow-sm w-full"
+             style={{ aspectRatio, backgroundColor: bg }}>
           {ad.cta_url ? (
             <a href={ad.cta_url} target="_blank" rel="noopener noreferrer sponsored"
                onClick={handleClick} className="block w-full h-full">
@@ -166,51 +329,44 @@ function SponsorBanner({ placement, label }: { placement: string; label?: string
     );
   }
 
+  // R29 §3 · COMPOSITE branch — the DEFAULT for wide-strip slots.
+  // brand_bg fills the whole strip; brand_fg carries headline + body
+  // + CTA. Logo sits at the start of the strip when present. Layout
+  // is horizontal at sm+, stacks on mobile. No white centering, no
+  // letterbox — the strip IS the ad.
   return (
     <div ref={observeRef} className="mb-6">
       <div className="text-[10px] uppercase tracking-wide text-slate-400 mb-1">
         {label ?? 'מודעה ממומנת'}
       </div>
-      {/* R20 §2 · mobile banner compact layout.
-          Was `flex flex-col sm:flex-row` — mobile stacked logo,
-          headline+body, and CTA in THREE separate rows (~180px).
-          Now: logo + headline share row 1 (via a nested flex), CTA
-          drops as row 2. body_he is hidden below sm because the
-          headline + brand line is what carries the message on a
-          380px screen; body_he still shows from sm+ where there's
-          room. Total mobile height ~72-88px vs ~180px before. */}
       <div
-        className="rounded-2xl px-4 sm:px-6 py-3 sm:py-5 shadow-sm flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-4"
-        style={{ backgroundColor: bg, color: fg }}
+        className="rounded-2xl overflow-hidden shadow-sm w-full flex flex-col sm:flex-row items-stretch"
+        style={{ backgroundColor: bg, color: fg, aspectRatio }}
       >
-        <div className="flex items-center gap-3 min-w-0 w-full sm:flex-1">
-          {ad.logo_url && (
-            <img src={ad.logo_url} alt="" className="h-8 sm:h-12 w-auto shrink-0" />
-          )}
-          <div className="flex-1 min-w-0">
-            <h3 className="text-base sm:text-lg font-bold leading-tight truncate">{ad.headline_he}</h3>
-            {ad.body_he && (
-              <p className="hidden sm:block text-sm opacity-90 mt-1 leading-relaxed">{ad.body_he}</p>
-            )}
+        {ad.logo_url && (
+          <div className="shrink-0 flex items-center justify-center px-4 sm:px-6 py-2 sm:py-0 bg-black/10">
+            {/* Logo max height 60% of strip so it doesn't crowd copy. */}
+            <img src={ad.logo_url} alt="" className="max-h-[60%] max-w-[140px] w-auto object-contain" />
           </div>
+        )}
+        <div className="flex-1 min-w-0 flex flex-col justify-center px-4 sm:px-6 py-2 sm:py-3">
+          <h3 className="text-base sm:text-xl font-bold leading-tight line-clamp-1">{ad.headline_he}</h3>
+          {ad.body_he && (
+            <p className="hidden sm:block text-sm opacity-90 mt-1 leading-snug line-clamp-2">{ad.body_he}</p>
+          )}
         </div>
-        {/* R23 §3 · when cta_url is NULL the CTA renders as plain
-            text (no pill, no bold, no hover) — a button shape without
-            a click target is worse than no button per the R23 rule.
-            When cta_url is set, the anchor gets the full pill + link
-            styling. */}
         {ad.cta_url ? (
           <a
             href={ad.cta_url}
             target="_blank"
             rel="noopener noreferrer sponsored"
             onClick={handleClick}
-            className="shrink-0 inline-flex items-center bg-white/95 hover:bg-white text-slate-900 text-xs sm:text-sm font-semibold px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg transition-colors"
+            className="shrink-0 self-center mx-4 sm:mx-6 my-2 inline-flex items-center bg-white/95 hover:bg-white text-slate-900 text-xs sm:text-sm font-semibold px-3 sm:px-5 py-1.5 sm:py-2 rounded-lg transition-colors"
           >
             {ad.cta_label_he}
           </a>
         ) : (
-          <span className="shrink-0 hidden sm:inline text-xs opacity-70">
+          <span className="shrink-0 self-center mx-4 sm:mx-6 hidden sm:inline text-xs opacity-70">
             {ad.cta_label_he}
           </span>
         )}
@@ -219,56 +375,36 @@ function SponsorBanner({ placement, label }: { placement: string; label?: string
   );
 }
 
-// R23 §1 / R24 §1 · viewport hook — returns undefined during SSR + first
-// render so the two-branch fallback below matches the server HTML; on
-// mount it flips to true/false and only ONE branch renders its cards
-// into the DOM. This kills the accessibility-tree double-count that
-// R23/R24 flagged (Chrome AX tree, and read_page, include display:none
-// nodes; visually one branch was hidden but the cards were still in
-// the tree twice).
-function useIsMobile(breakpointPx = 640): boolean | undefined {
-  const [isMobile, setIsMobile] = useState<boolean | undefined>(undefined);
-  useEffect(() => {
-    const mq = window.matchMedia(`(max-width: ${breakpointPx - 1}px)`);
-    const apply = () => setIsMobile(mq.matches);
-    apply();
-    mq.addEventListener('change', apply);
-    return () => mq.removeEventListener('change', apply);
-  }, [breakpointPx]);
-  return isMobile;
-}
+// ── card carousel (unchanged shape; dedupe added) ───────────────────
 
-function SponsorCarousel({ placement, label }: { placement: string; label?: string }) {
+function SponsorCarousel({ placement, label, aboveFold = false }: { placement: string; label?: string; aboveFold?: boolean }) {
   const [ads, setAds] = useState<SponsorAd[]>([]);
   const isMobile = useIsMobile();
+  const ctx = useSponsorCtx();
+
   useEffect(() => {
-    // R21 §3 · admin-editable ceiling via site_settings.sponsor_carousel_limit.
-    // Default 4 (matches migration 092 seed). Server clamps to 12 in
-    // ads.py:565 regardless of what the setting says.
     let cancelled = false;
     (async () => {
       let limit = 4;
       try {
-        const s = await fetch('/api/legal/settings')
-          .then(r => (r.ok ? r.json() : null));
+        const s = await fetch('/api/legal/settings').then(r => (r.ok ? r.json() : null));
         const raw = s?.sponsor_carousel_limit;
         const parsed = raw != null ? parseInt(String(raw), 10) : NaN;
         if (Number.isFinite(parsed) && parsed > 0) limit = parsed;
       } catch { /* fall back to 4 */ }
       const rows = await fetchSponsored(placement, limit);
-      if (!cancelled) setAds(rows);
+      if (cancelled) return;
+      // R29 §5 · dedupe. First-come-first-render across slots.
+      // A carousel that loses every ad to earlier slots renders empty.
+      const keep = rows.filter(r => ctx.claimAd(r.id));
+      const slotOk = keep.length > 0 ? ctx.claimSlot(aboveFold) : true;
+      setAds(slotOk ? keep : []);
     })();
     return () => { cancelled = true; };
-  }, [placement]);
+  }, [placement, aboveFold, ctx]);
 
   if (ads.length === 0) return null;
   const bucket = placementBucket(placement);
-  // Post-hydration branch selection. Before mount (isMobile === undefined)
-  // both branches render with tailwind sm:hidden / hidden sm:grid so the
-  // server HTML matches the visible-at-first-paint layout at every width.
-  // After mount, only the branch matching the current viewport gets its
-  // cards mapped in — the other renders an empty placeholder that also
-  // matches SSR CSS gates so hydration stays quiet.
   const renderMobile  = isMobile === undefined || isMobile === true;
   const renderDesktop = isMobile === undefined || isMobile === false;
 
@@ -277,18 +413,6 @@ function SponsorCarousel({ placement, label }: { placement: string; label?: stri
       <div className="text-[10px] uppercase tracking-wide text-slate-400 mb-2">
         {label ?? 'שירותים ממומנים'}
       </div>
-      {/* R20 §1 · TWO layouts by breakpoint, one container per layout.
-          Mobile (<sm): horizontal scroll-snap strip. Each card is
-          ~82vw with `snap-start` so the NEXT card peeks at the edge —
-          the peek is the whole "there's more, swipe" signal, and the
-          reason we deliberately don't hit 100vw. `snap-mandatory`
-          keeps the scroll from stopping between cards.
-          Desktop (sm+): the responsive grid stays exactly as before.
-          `.sponsor-carousel-scroll` (globals.css) hides the WebKit +
-          Firefox scrollbar — a peek plus scrollbar is visual noise;
-          the peek alone is the affordance.
-          NO auto-scroll, NO arrows, NO carousel library. Yulian §1
-          rule + guardrail: those trigger ad-blocker installs. */}
       <div className="sm:hidden -mx-4 px-4">
         <div
           role="region"
@@ -315,25 +439,125 @@ function SponsorCarousel({ placement, label }: { placement: string; label?: stri
   );
 }
 
-// ── Named wrappers. Import these, not the parameterised bases, so
-//    the file's grep footprint mirrors what's actually rendered on
-//    each page. Adding a new placement = add a new wrapper.
-export function MarketplaceSponsorBanner()   { return <SponsorBanner   placement="marketplace_banner"   />; }
-export function MarketplaceSponsorCarousel() { return <SponsorCarousel placement="marketplace_carousel" />; }
-export function HomeSponsorBanner()          { return <SponsorBanner   placement="home_banner"          />; }
-export function HomeSponsorCarousel()        { return <SponsorCarousel placement="home_carousel"        />; }
+// ── side_rail · sticky tower, ≥1440 only, single ad ─────────────────
+
+/**
+ * R29 §4 · fixed sticky rail on the left edge of the viewport
+ * (Hebrew RTL — the left margin is the "outer" one). Spec is 300×600.
+ * Placement gated to viewports ≥1440 (roughly 15" MacBook and up)
+ * where the content column leaves enough dead margin to host it
+ * without shoving copy off-centre.
+ *
+ * Not rendered when:
+ *   - viewport < 1440
+ *   - server returned no ad for this placement
+ *   - the ad id was already claimed by an earlier slot (R29 §5 dedupe)
+ *   - above-fold cap already spent
+ *
+ * The rail carries the SAME creative-vs-composite fork as the strip
+ * banner. side_rail is not a wide-strip slot, so a creative_url
+ * renders the flat image regardless of exact aspect; composite is
+ * the fallback when there's no image.
+ */
+function SponsorSideRail({ aboveFold = true }: { aboveFold?: boolean } = {}) {
+  const wide = useIsWideDesktop();
+  const [ad, setAd] = useState<SponsorAd | null>(null);
+  const [claimResolved, setCR] = useState<boolean>(false);
+  const ctx = useSponsorCtx();
+
+  useEffect(() => {
+    if (!wide) { setAd(null); setCR(true); return; }
+    let cancelled = false;
+    (async () => {
+      const rows = await fetchSponsored('side_rail', 1);
+      if (cancelled) return;
+      const winner = rows.find(r => ctx.claimAd(r.id)) ?? null;
+      const slotOk = winner ? ctx.claimSlot(aboveFold) : true;
+      setAd(slotOk ? winner : null);
+      setCR(true);
+    })();
+    return () => { cancelled = true; };
+  }, [wide, aboveFold, ctx]);
+
+  const observeRef = useAdImpression({ targetId: ad?.id, placement: placementBucket('side_rail') });
+
+  if (!wide || !claimResolved || !ad) return null;
+
+  const bg = ad.brand_bg ?? '#0f172a';
+  const fg = ad.brand_fg ?? '#ffffff';
+  const mode = pickRenderMode(ad);
+  const handleClick = () => {
+    if (!ad.cta_url) return;
+    postAdEvent({
+      event_type: 'ad_click', target_type: 'sponsor_ad',
+      target_id: ad.id, placement: placementBucket('side_rail'),
+    });
+  };
+
+  const inner = mode === 'creative' && ad.creative_url ? (
+    <img
+      src={ad.creative_url}
+      alt={ad.advertiser_name}
+      className="w-full h-full object-contain block"
+      loading="lazy"
+    />
+  ) : (
+    <div className="flex flex-col h-full p-4" style={{ color: fg }}>
+      <h3 className="text-base font-bold leading-tight">{ad.headline_he}</h3>
+      {ad.body_he && (
+        <p className="text-xs opacity-90 mt-2 leading-relaxed flex-1 overflow-hidden">{ad.body_he}</p>
+      )}
+      {ad.chips_he && ad.chips_he.length > 0 && (
+        <div className="flex flex-wrap gap-1 mt-2">
+          {ad.chips_he.slice(0, 3).map((c) => (
+            <span key={c} className="text-[10px] px-2 py-0.5 rounded-full bg-white/15">{c}</span>
+          ))}
+        </div>
+      )}
+      {ad.cta_url && (
+        <span className="mt-3 inline-flex items-center justify-center bg-white/95 text-slate-900 text-xs font-semibold px-3 py-1.5 rounded-md">
+          {ad.cta_label_he}
+        </span>
+      )}
+    </div>
+  );
+
+  // Positioned fixed on the LEFT edge — Hebrew RTL means content
+  // reads right-to-left, so the left edge is the outer margin the
+  // side_rail should live in. `top: 96` clears the sticky top bar
+  // (~64-80px) with a little breathing room. `z-30` sits below any
+  // modal (z-40+) but above content (z-10).
+  return (
+    <aside
+      ref={observeRef}
+      className="hidden fixed left-4 top-24 z-30"
+      style={{
+        // Explicit inline display so we can gate on JS-detected width
+        // rather than only Tailwind's breakpoints (default 2xl=1536,
+        // we want 1440).
+        display: wide ? 'block' : 'none',
+        width: 300,
+        height: 600,
+      }}
+      aria-label="מודעה ממומנת · צד"
+    >
+      <div className="rounded-2xl overflow-hidden shadow-md w-full h-full" style={{ backgroundColor: bg }}>
+        {ad.cta_url ? (
+          <a href={ad.cta_url} target="_blank" rel="noopener noreferrer sponsored"
+             onClick={handleClick} className="block w-full h-full">
+            {inner}
+          </a>
+        ) : inner}
+      </div>
+    </aside>
+  );
+}
+
+// ── carousel card (unchanged) ───────────────────────────────────────
 
 function CarouselCard({ ad, placement }: { ad: SponsorAd; placement: AdPlacement }) {
   const bg = ad.brand_bg ?? '#0f172a';
   const fg = ad.brand_fg ?? '#ffffff';
-  // R6 §1a · per-card impression. Each carousel slide is its own
-  // observed element — a card that never scrolls into view does
-  // NOT count. §1a: "מודעה שנשלפה ולא נראתה — אין impression".
-  // R20 §1b · with the mobile scroll-snap strip cards 2-N sit
-  // OUTSIDE the visible viewport until the user swipes; the
-  // IntersectionObserver only fires on scroll-in. That's the
-  // intended behaviour — expect fewer mobile impressions on
-  // late cards, that IS the fix. Do not adjust the observer.
   const observeRef = useAdImpression({ targetId: ad.id, placement });
   const handleClick = () => {
     if (!ad.cta_url) return;
@@ -343,12 +567,15 @@ function CarouselCard({ ad, placement }: { ad: SponsorAd; placement: AdPlacement
     });
   };
 
-  // R20 §3 · creative_url branch — same rendering rule as SponsorBanner.
-  // Card = image + anchor wrapper. No headline/body/chips overlay.
-  if (ad.creative_url) {
+  // Cards keep the pre-R29 rule — creative when creative_url is set,
+  // composite when it isn't. Card slots aren't wide-strips, so a
+  // slight aspect mismatch is fine (the card is square-ish and
+  // object-contain letterboxes with brand_bg on either side, which
+  // is the intended card look).
+  if (ad.creative_url && pickRenderMode(ad) !== 'composite') {
     const aspectStyle = ad.creative_w && ad.creative_h
       ? { aspectRatio: `${ad.creative_w} / ${ad.creative_h}` }
-      : { aspectRatio: '1 / 1' };  // fall back to square (R20 §3a spec)
+      : { aspectRatio: '1 / 1' };
     const inner = (
       <img
         src={ad.creative_url}
@@ -390,9 +617,6 @@ function CarouselCard({ ad, placement }: { ad: SponsorAd; placement: AdPlacement
           ))}
         </div>
       )}
-      {/* R23 §3 · same rule as banner — no button shape when the
-          click target doesn't exist. Renders as a small caption in
-          the ad's foreground colour instead. */}
       {ad.cta_url ? (
         <a
           href={ad.cta_url}
@@ -411,3 +635,35 @@ function CarouselCard({ ad, placement }: { ad: SponsorAd; placement: AdPlacement
     </div>
   );
 }
+
+// ── named exports ───────────────────────────────────────────────────
+//
+// Import these, not the parameterised bases, so the file's grep
+// footprint mirrors what's actually rendered on each page. Adding a
+// new placement = add a new wrapper.
+
+// Marketplace surfaces (existing).
+export function MarketplaceSponsorBanner()   { return <SponsorStripBanner placement="marketplace_banner"   aspectRatio={4.8} label="מודעה ממומנת" />; }
+export function MarketplaceSponsorCarousel() { return <SponsorCarousel    placement="marketplace_carousel" />; }
+
+// Legacy home surfaces (R5 §3). Kept exported so old callers work.
+// Prefer the new HomeSponsorLeaderboard / HomeSponsorBillboard pair
+// for new work; those enforce the R29 §3 composite-first rule.
+export function HomeSponsorBanner()          { return <SponsorStripBanner placement="home_banner"          aspectRatio={4.8} aboveFold />; }
+export function HomeSponsorCarousel()        { return <SponsorCarousel    placement="home_carousel"        />; }
+
+// R29 §3 · new wide-strip slots. Composite-first render.
+export function HomeSponsorLeaderboard() {
+  // 1200×150 → 8:1 aspect. Sits at the very top of the home content
+  // area, above the search field. aboveFold=true.
+  return <SponsorStripBanner placement="home_leaderboard" aspectRatio={8} aboveFold />;
+}
+export function HomeSponsorBillboard() {
+  // 1200×250 → 4.8:1 aspect. Between search + recent-ads mosaic.
+  // Still counts as above-fold on desktop; on mobile it lands right
+  // at the fold line. Cap it either way.
+  return <SponsorStripBanner placement="home_billboard" aspectRatio={4.8} aboveFold />;
+}
+
+// R29 §4 · sticky rail. Hosts: home, search results, marketplace.
+export { SponsorSideRail };

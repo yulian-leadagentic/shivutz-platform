@@ -15,7 +15,12 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import Logo from '@/components/Logo';
 import RegistrationCTASection from '@/components/landing/RegistrationCTASection';
-import { MarketplaceSponsorBanner, MarketplaceSponsorCarousel } from '@/features/advertising/MarketplaceSponsors';
+import {
+  MarketplaceSponsorBanner,
+  MarketplaceSponsorCarousel,
+  SponsorSideRail,
+  SponsorProvider,
+} from '@/features/advertising/MarketplaceSponsors';
 
 type CategoryOption = { value: string; label: string; icon: typeof Filter };
 
@@ -164,7 +169,12 @@ function MarketplacePageInner() {
   const hasFilters = category || region || search;
 
   return (
-    <div className="min-h-screen bg-slate-50" dir="rtl">
+    <SponsorProvider>
+      {/* R29 §4 · sticky sponsor rail — desktop ≥1440 only. Same
+          component as home + search; SponsorProvider dedupes across
+          all surfaces on this page. */}
+      <SponsorSideRail />
+      <div className="min-h-screen bg-slate-50" dir="rtl">
       {/* Top nav bar */}
       <nav className="bg-white border-b border-slate-200 sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
@@ -299,6 +309,7 @@ function MarketplacePageInner() {
       {/* U7 Phase C · shared 3-role CTA (compact variant) replaces the
           old corp-only banner. Providers are a first-class role here. */}
       <RegistrationCTASection variant="compact" />
-    </div>
+      </div>
+    </SponsorProvider>
   );
 }

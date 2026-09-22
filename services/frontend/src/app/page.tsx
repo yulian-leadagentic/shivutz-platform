@@ -41,7 +41,13 @@ import { VoiceInputButton } from '@/features/voice/VoiceInputButton';
 import { useAdImpression } from '@/hooks/useAdImpression';
 import { postAdEvent } from '@/lib/adEvents';
 import { FeaturedAdsCarousel } from '@/features/advertising/FeaturedAdsCarousel';
-import { HomeSponsorBanner, HomeSponsorCarousel } from '@/features/advertising/MarketplaceSponsors';
+import {
+  HomeSponsorLeaderboard,
+  HomeSponsorBillboard,
+  HomeSponsorCarousel,
+  SponsorSideRail,
+  SponsorProvider,
+} from '@/features/advertising/MarketplaceSponsors';
 import { LandingTrustBar } from '@/features/advertising/LandingTrustBar';
 import { searchApi, type SearchResponse, type AdSearchResult, type ContactReveal, type TrustLevel } from '@/lib/api/search';
 import { apiFetch, ApiError } from '@/lib/api/client';
@@ -949,7 +955,7 @@ function LandingPageInner() {
   }, [params, resp, recent, recentLoaded, loading, reveals, block, revealFor, router]);
 
   return (
-    <>
+    <SponsorProvider>
       <LandingNav onLeadCapture={() => setLeadModalOpen(true)} />
       <RevealModal
         block={block}
@@ -958,8 +964,33 @@ function LandingPageInner() {
         q={q}
       />
 
+      {/* R29 §4 · sticky sponsor rail — desktop ≥1440 only.
+          Fixed-position aside, out of the document flow, so it
+          overlays the dead left margin at wide viewports without
+          shifting the content column. Renders nothing at narrower
+          widths or when there is no side_rail ad. Spec explicitly
+          keeps it visible on both landing AND search results —
+          those are the two pages with ~380px of dead margin at
+          1920 — so no state gate. */}
+      <SponsorSideRail />
+
       <div className="min-h-screen flex flex-col">
-        <main className="flex-1 pb-8">
+        {/* R29 §3 · nav clearance moved from the h1 section to <main>
+            so the (optional) leaderboard slot below can sit BETWEEN
+            the fixed nav and the h1 without double-margining when
+            it's present. h1 section's mt-16 was the only prior
+            claimant; deleted below in the same commit. */}
+        <main className="flex-1 pb-8 pt-16">
+          {/* R29 §3 · home_leaderboard — the topmost above-fold
+              sponsor slot. Composite render by default; a flat
+              creative only paints when it fits the 1200×150 spec
+              within ±3%. Landing-only (skip once a search has run
+              so the strip doesn't push results below the fold). */}
+          {!resp && !loading && (
+            <div className="max-w-6xl mx-auto px-4">
+              <HomeSponsorLeaderboard />
+            </div>
+          )}
           {/* F2 v2 §5.1 — the header-block section that hosts the
               h1. Lives BETWEEN the fixed nav and the sticky search
               bar in DOM/flow, styled to feel like a continuation
@@ -972,7 +1003,7 @@ function LandingPageInner() {
               the wrapping section — the h1 inside is real content
               and SR needs to read it. */}
           <section
-            className="mt-16 bg-white border-b border-slate-200 px-4 pt-2 pb-3 sm:pt-3 sm:pb-4 text-center"
+            className="bg-white border-b border-slate-200 px-4 pt-2 pb-3 sm:pt-3 sm:pb-4 text-center"
           >
             <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900 leading-tight">
               {/* R12 §3 · explicit {' '} on BOTH sides of the AI badge.
@@ -2205,15 +2236,20 @@ function LandingPageInner() {
             </section>
           )}
 
-          {/* R5 §3 · home sponsor slots. Between the search area and
-              "פרסום חדש בפורטל" per Yulian's spec. F3 rule holds:
-              each component returns null on empty, so no shell renders
-              without an active ad. Landing-only (skip mid-search) so
-              ads don't jostle results — same condition as the recent
-              mosaic below. */}
+          {/* R29 §3 · home wide-strip slots. Leaderboard sits above
+              the search field's "post-fold" region; billboard sits
+              between the search area and the recent-ads mosaic per
+              Yulian's spec. F3 rule holds: each component returns
+              null on empty, so no shell renders without an active
+              ad. Landing-only (skip mid-search) so ads don't jostle
+              results — same condition as the recent mosaic below.
+
+              R29 §5 · dedupe + above-fold cap live in SponsorProvider
+              so leaderboard + billboard + carousel + side_rail agree
+              on who's rendered which ad. */}
           {!resp && !loading && (
             <section className="max-w-6xl mx-auto px-4">
-              <HomeSponsorBanner />
+              <HomeSponsorBillboard />
               <HomeSponsorCarousel />
             </section>
           )}
@@ -2310,7 +2346,7 @@ function LandingPageInner() {
           resolved: 'הוכרע, לא מומש'. This lands the removal.
           Component file + mocks kept intact for the day the real
           feed endpoint exists. */}
-    </>
+    </SponsorProvider>
   );
 }
 

@@ -528,6 +528,14 @@ _PUBLIC_SPONSOR_AD_COLS = frozenset({
     # in the RAND path; the slot-first path's explicit SELECT list
     # gets the three appended below.
     "creative_url", "creative_w", "creative_h",
+    # R29 §3 · render mode. Computed field, not stored on sponsor_ads.
+    # "creative" = the caller should paint the flat image (creative_url
+    # matches this slot's aspect within ±3%). "composite" = paint the
+    # brand_bg strip with headline + body + CTA — the DEFAULT for wide
+    # slots (home_leaderboard, home_billboard, marketplace_banner) and
+    # the fallback for a creative that does not fit the slot. See
+    # sponsor_sizes.is_wide_strip / creative_matches_slot for the rule.
+    "render_mode",
     # NOT included (kept out of the public feed even if added to
     # sponsor_ads later): price_nis, billing_*, advertiser_contact_*,
     # placements (internal targeting, not for the client). Bring them
@@ -535,7 +543,66 @@ _PUBLIC_SPONSOR_AD_COLS = frozenset({
 })
 
 
-def _serialize_sponsor_ad(item: dict) -> dict:
+# R29 §3 · render mode computation is imported from the admin package
+# (the SIZES catalog is admin-owned; user-org just consumes the read
+# helpers). Falls back to a stub when the admin package isn't importable
+# (test environments, isolated user-org deploys) — the stub returns
+# render_mode="creative" for anything with a creative_url, matching the
+# pre-R29 behaviour so nothing breaks.
+try:
+    from app.services.sponsor_sizes import is_wide_strip, creative_matches_slot  # type: ignore
+except ImportError:  # pragma: no cover — user-org can't reach admin pkg in some layouts
+    try:
+        # Same file lives at services/admin/app/services/sponsor_sizes.py.
+        # Both services deploy from the same monorepo so the path is
+        # stable. If your local layout differs, add a symlink instead of
+        # editing this — the catalog stays one source of truth.
+        import os
+        import sys
+        _HERE = os.path.dirname(os.path.abspath(__file__))
+        _ADMIN_SVC = os.path.abspath(os.path.join(_HERE, "..", "..", "..", "..", "admin"))
+        if _ADMIN_SVC not in sys.path:
+            sys.path.insert(0, _ADMIN_SVC)
+        from app.services.sponsor_sizes import is_wide_strip, creative_matches_slot  # type: ignore
+    except ImportError:
+        def is_wide_strip(_placement):  # type: ignore
+            return False
+        def creative_matches_slot(_p, _bp, _w, _h):  # type: ignore
+            return True   # legacy — trust the caller
+
+
+def _pick_render_mode(row: dict, placement: Optional[str]) -> str:
+    """R29 §3 · decide whether the client renders the flat creative or
+    the composite (brand_bg + headline + body + CTA).
+
+    Rule:
+      - Wide-strip placement (home_leaderboard, home_billboard,
+        marketplace_banner, home_banner):
+          * "creative" ONLY when creative_url is set AND
+            (creative_w, creative_h) matches the slot spec within
+            ±3% aspect + minimum width. Otherwise "composite" —
+            NEVER centre a mismatched creative on a white background,
+            which was the R28 §4 finding (1037×609 rendered as a
+            340×200 tile inside a 1120-wide leaderboard).
+          * "composite" when there's no creative_url or the shape
+            doesn't fit — the brand_bg strip fills the whole width
+            and carries the message.
+      - Any other placement (carousels, search_inline, logo_wall,
+        side_rail): pre-R29 behaviour — "creative" when creative_url
+        is set, "composite" when it isn't.
+    """
+    has_creative = bool(row.get("creative_url"))
+    if is_wide_strip(placement):
+        if has_creative and creative_matches_slot(
+            placement, "desktop",
+            row.get("creative_w"), row.get("creative_h"),
+        ):
+            return "creative"
+        return "composite"
+    return "creative" if has_creative else "composite"
+
+
+def _serialize_sponsor_ad(item: dict, placement: Optional[str] = None) -> dict:
     """Public serialiser for sponsor_ads rows on `/ads/public/sponsored`.
 
     R6 §2 · allow-list. Keys not in _PUBLIC_SPONSOR_AD_COLS are
@@ -549,8 +616,15 @@ def _serialize_sponsor_ad(item: dict) -> dict:
     the legacy path did this inline. Kept inside this function so
     both the slot-first path and the RAND() fallback round-trip the
     same JSON fields identically.
+
+    R29 §3 · `placement` is used to compute `render_mode` on the way
+    out. Kept as an optional kwarg so callers that don't have the
+    placement handy (there aren't any today, but the door stays open)
+    get the sensible fallback ("creative" when creative_url is set).
     """
-    out = {k: v for k, v in item.items() if k in _PUBLIC_SPONSOR_AD_COLS}
+    row_with_mode = dict(item)
+    row_with_mode["render_mode"] = _pick_render_mode(row_with_mode, placement)
+    out = {k: v for k, v in row_with_mode.items() if k in _PUBLIC_SPONSOR_AD_COLS}
     for jkey in ("chips_he", "target_professions", "target_ad_types", "target_regions"):
         v = out.get(jkey)
         if isinstance(v, (bytes, bytearray)):
@@ -585,12 +659,19 @@ def get_sponsored_ads(
     # on the app's home page (below the search field, above "פרסום חדש
     # בפורטל"). Same backend contract as marketplace_* — NULL placements
     # never leaks into a home slot; placements JSON must name it.
+    # R29 §3-4 · three new slots on top of the R21/R22/U7 originals.
+    # Keep this set in sync with services/admin/app/routes/sponsors.py
+    # `_ALLOWED_PLACEMENTS` — mismatch means an admin can save a value
+    # the public endpoint then rejects with 400.
     _ALLOWED_PLACEMENTS = {
         "search_inline",
         "marketplace_banner",
         "marketplace_carousel",
         "home_banner",
         "home_carousel",
+        "home_leaderboard",
+        "home_billboard",
+        "side_rail",
     }
     if placement is not None and placement not in _ALLOWED_PLACEMENTS:
         raise HTTPException(status_code=400, detail="invalid_placement")
@@ -638,7 +719,7 @@ def get_sponsored_ads(
                 )
                 slot_ad = cur.fetchone()
                 if slot_ad:
-                    return {"results": [_serialize_sponsor_ad(dict(slot_ad))]}
+                    return {"results": [_serialize_sponsor_ad(dict(slot_ad), placement)]}
                 # If the slot points to an inactive/expired sponsor_ads
                 # row, fall through to the legacy pool rather than
                 # returning nothing — F3 says empty spans hide, and the
@@ -708,7 +789,7 @@ def get_sponsored_ads(
         rows = cur.fetchall()
     finally:
         conn.close()
-    return {"results": [_serialize_sponsor_ad(dict(r)) for r in rows]}
+    return {"results": [_serialize_sponsor_ad(dict(r), placement) for r in rows]}
 
 
 # ─── GET /ads/public/{ad_id} ────────────────────────────────────────────────

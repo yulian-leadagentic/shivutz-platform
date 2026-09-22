@@ -85,6 +85,137 @@ class DimensionRejection(Exception):
         self.extra = extra or {}
 
 
+# R29 §3 · wide-strip slots default to the composite render (brand_bg
+# strip + headline + body + CTA). A flat creative is served ONLY when
+# a sponsor_creatives row exactly matches the slot aspect (±3%). A
+# non-matching creative falls to composite — never a centred image on
+# white. Listed here so the render-mode picker in the public read
+# endpoint stays honest about which slots this rule covers.
+_WIDE_STRIP_PLACEMENTS = frozenset({
+    "home_leaderboard",
+    "home_billboard",
+    "home_banner",          # R21/R22 legacy, same 1200×250 spec as billboard
+    "marketplace_banner",   # same rule — a strip on a page, not a card
+})
+
+
+def is_wide_strip(placement: Optional[str]) -> bool:
+    """True when the placement is a full-width strip where the composite
+    (headline + body + CTA on brand_bg) is the default render."""
+    return placement in _WIDE_STRIP_PLACEMENTS
+
+
+def creative_matches_slot(
+    placement: str,
+    breakpoint: Breakpoint,
+    w: Optional[int],
+    h: Optional[int],
+) -> bool:
+    """True when a raw creative (w, h) sits within ±3% of the slot's
+    approved aspect AND meets the minimum-width bar. Used at read
+    time to decide whether a legacy sponsor_ads.creative_url may
+    render for this slot or must be replaced by the composite.
+
+    Unknown placement OR missing (w, h) → False (fall to composite).
+    This is stricter than `check_creative_dimensions`, which returns
+    silently on unknown placements — the read path prefers composite
+    when unsure, because a bad wide-strip render is worse than a text
+    strip.
+    """
+    if not w or not h:
+        return False
+    spec = size_for(placement, breakpoint)
+    if spec is None:
+        return False
+    spec_w, spec_h = spec
+    if w < spec_w:
+        return False
+    spec_ratio = spec_w / spec_h
+    got_ratio  = w / h
+    return abs(got_ratio - spec_ratio) / spec_ratio <= _ASPECT_TOLERANCE
+
+
+# ── WCAG 4.5:1 contrast check (R29 §3 tail rule) ──────────────────────────
+#
+# The composite render paints headline + body + CTA in brand_fg on
+# brand_bg. When contrast falls below WCAG AA large-text 4.5:1 the
+# strip is unreadable and the ad is worse than useless — a viewer
+# who can't read it never clicks. So we reject on save rather than
+# ship the bad ad. Reference:
+# https://www.w3.org/TR/WCAG21/#contrast-minimum
+#
+# Both colours arrive as "#RRGGBB" (Pydantic already validates the
+# shape at Field(min=7, max=7)). Anything else → False and we skip
+# the check (a defensive-only path — the validator upstream should
+# have thrown 400).
+
+def _hex_to_srgb(hex_col: str) -> Optional[tuple[float, float, float]]:
+    if not hex_col or not hex_col.startswith("#") or len(hex_col) != 7:
+        return None
+    try:
+        r = int(hex_col[1:3], 16) / 255.0
+        g = int(hex_col[3:5], 16) / 255.0
+        b = int(hex_col[5:7], 16) / 255.0
+    except ValueError:
+        return None
+    return r, g, b
+
+
+def _relative_luminance(rgb: tuple[float, float, float]) -> float:
+    def _channel(c: float) -> float:
+        # WCAG 2.1 formula; linearise sRGB → luminance.
+        return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+    r, g, b = rgb
+    return 0.2126 * _channel(r) + 0.7152 * _channel(g) + 0.0722 * _channel(b)
+
+
+def contrast_ratio(fg_hex: str, bg_hex: str) -> Optional[float]:
+    """Return the WCAG contrast ratio (>= 1.0). None on malformed input
+    (caller should skip enforcement rather than 500)."""
+    fg = _hex_to_srgb(fg_hex)
+    bg = _hex_to_srgb(bg_hex)
+    if fg is None or bg is None:
+        return None
+    lum_a = _relative_luminance(fg)
+    lum_b = _relative_luminance(bg)
+    lighter, darker = (lum_a, lum_b) if lum_a > lum_b else (lum_b, lum_a)
+    return (lighter + 0.05) / (darker + 0.05)
+
+
+_MIN_CONTRAST_RATIO = 4.5
+
+
+def check_brand_contrast(brand_fg: Optional[str], brand_bg: Optional[str]) -> None:
+    """Raise DimensionRejection when brand_fg on brand_bg falls below
+    WCAG AA 4.5:1. Silent when either value is missing (the composite
+    render already has fallback #0f172a bg / #ffffff fg with 15+ contrast,
+    so a NULL pair is legal).
+
+    Same exception type as the dimension check so the admin route
+    handler has one catch to bridge back to HTTP 400.
+    """
+    if not brand_fg or not brand_bg:
+        return
+    ratio = contrast_ratio(brand_fg, brand_bg)
+    if ratio is None:
+        return
+    if ratio < _MIN_CONTRAST_RATIO:
+        raise DimensionRejection(
+            code="brand_contrast_too_low",
+            message_he=(
+                f"ניגודיות הצבעים נמוכה מדי לקריאה. "
+                f"נדרש יחס ניגודיות של לפחות {_MIN_CONTRAST_RATIO:.1f}:1 "
+                f"(WCAG AA), התקבל {ratio:.2f}:1."
+            ),
+            extra={
+                "min_ratio":    _MIN_CONTRAST_RATIO,
+                "actual_ratio": round(ratio, 2),
+                "brand_fg":     brand_fg,
+                "brand_bg":     brand_bg,
+            },
+        )
+
+
 def check_creative_dimensions(
     placement: str,
     breakpoint: Breakpoint,
