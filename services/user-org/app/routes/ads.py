@@ -665,6 +665,19 @@ def get_sponsored_ads(
         "listing_rail",
         "listing_inline",
     }
+
+    # R30 §12c · for THESE placements the slot inventory is
+    # AUTHORITATIVE — no matching slot means serve nothing.
+    #
+    # Everything below falls through to a legacy pool that filters on
+    # the `placements` JSON alone and ignores `category` entirely. For
+    # the page-level slots that is correct (they aren't category-
+    # scoped, and F3's "no empty spans" leans on it). For the listing
+    # slots it is the exact leak they exist to prevent: measured on
+    # staging, an equipment listing was served the housing-targeted
+    # advertiser because the slot query matched nothing and the pool
+    # picked the ad up by placement alone.
+    _CATEGORY_SCOPED_PLACEMENTS = {"listing_rail", "listing_inline"}
     if placement is not None and placement not in _ALLOWED_PLACEMENTS:
         raise HTTPException(status_code=400, detail="invalid_placement")
     lim = max(1, min(limit, 12))
@@ -716,6 +729,13 @@ def get_sponsored_ads(
                 # row, fall through to the legacy pool rather than
                 # returning nothing — F3 says empty spans hide, and the
                 # legacy pool preserves the not-empty guarantee.
+            # R30 §12c · …except for the category-scoped listing slots,
+            # where "no matching slot" must mean "render nothing"
+            # rather than "show whoever bought this placement". Covers
+            # both misses above: no slot at all, and a slot pointing at
+            # an ad that is no longer active.
+            if placement in _CATEGORY_SCOPED_PLACEMENTS:
+                return {"results": []}
         # MySQL 8 JSON_CONTAINS returns 1/0. Wrapping each in a
         # coalesced boolean lets us both filter (WHERE) and rank
         # (ORDER BY) with the same expressions.
