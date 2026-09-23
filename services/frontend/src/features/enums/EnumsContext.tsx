@@ -41,6 +41,29 @@ const EMPTY: EnumsContextValue = {
 
 const EnumsContext = createContext<EnumsContextValue>(EMPTY);
 
+// R30 §26 · module-scoped promise cache for the three enum catalogs.
+// These are reference data — they don't change within a page view —
+// so the first caller's in-flight request is what every later caller
+// awaits. Lives outside the component on purpose: a provider remount
+// must NOT restart the requests, which is exactly the leak the
+// `fired` ref could not close.
+const _enumCache = new Map<string, Promise<unknown>>();
+
+function cachedEnum<T>(key: string, fetcher: () => Promise<T>): Promise<T> {
+  const hit = _enumCache.get(key);
+  if (hit) return hit as Promise<T>;
+  const p = fetcher();
+  _enumCache.set(key, p);
+  // A rejected catalog must not be cached forever — drop it so the
+  // retry path (and any later mount) can try the network again.
+  void p.catch(() => { _enumCache.delete(key); });
+  return p;
+}
+
+function clearEnumCache(): void {
+  _enumCache.clear();
+}
+
 /**
  * Fetches reference enums (regions, professions, origins) once per session
  * and exposes them — plus code→name_he lookup maps — to all descendants.
@@ -59,13 +82,24 @@ export function EnumsProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState(false);
   const fired = useRef(false);
 
-  const fetchAll = useCallback(async () => {
+  const fetchAll = useCallback(async (force = false) => {
     setLoading(true);
     setError(false);
+    // R30 §26 · the `fired` ref below guards a double-invoked effect
+    // but NOT a remount — StrictMode tears the provider down and
+    // builds a fresh one, ref included, so all three enum requests
+    // went out twice. Six of an anonymous visitor's thirty-per-minute
+    // gateway budget, spent re-fetching a catalog that had not
+    // changed. Caching the promises at module scope makes the second
+    // mount reuse the first mount's in-flight requests.
+    // `force` is the retry path: it clears the cache so a user who
+    // hit the error branch gets a genuine re-fetch, not the rejected
+    // promise again.
+    if (force) clearEnumCache();
     const [r, p, o] = await Promise.allSettled([
-      enumApi.regions(),
-      enumApi.professions(),
-      enumApi.origins(),
+      cachedEnum('regions',     enumApi.regions),
+      cachedEnum('professions', enumApi.professions),
+      cachedEnum('origins',     enumApi.origins),
     ]);
     if (r.status === 'fulfilled') setRegions(r.value);
     if (p.status === 'fulfilled') setProfessions(p.value);
@@ -85,7 +119,9 @@ export function EnumsProvider({ children }: { children: ReactNode }) {
     void fetchAll();
   }, [fetchAll]);
 
-  const retry = useCallback(() => { void fetchAll(); }, [fetchAll]);
+  // Retry bypasses the module cache — otherwise it would replay the
+  // same rejected promise and the button would appear dead.
+  const retry = useCallback(() => { void fetchAll(true); }, [fetchAll]);
 
   const value = useMemo<EnumsContextValue>(() => {
     const regionMap: Record<string, string> = {};

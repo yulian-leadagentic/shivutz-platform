@@ -26,6 +26,7 @@ import {
 import { legalAdminApi, type LegalSettingAdmin } from '@/lib/api/legal';
 import { apiFetch } from '@/lib/api/client';
 import { enumApi } from '@/lib/api/enums';
+import { sizeFor } from '@/lib/sponsorSizes';
 import type { Profession } from '@/types';
 
 // ── placement / ad_type dictionaries ────────────────────────────
@@ -690,20 +691,14 @@ function CreativeUploader({ creativeUrl, creativeW, creativeH, placements, onCha
   // not hard-coded 1200×628 / 1080×1080. Those two shapes don't exist
   // in the catalog (R29 §2 rejects them at save time), so an admin
   // preparing an asset to spec would upload a rejected file.
-  // Map from placement → the approved (width, height) — mirrored from
-  // services/admin/app/services/sponsor_sizes.py SIZES table.
-  const SIZES: Record<string, [number, number]> = {
-    home_leaderboard:     [1200, 150],
-    home_billboard:       [1200, 250],
-    home_banner:          [1200, 250],
-    marketplace_banner:   [1200, 250],
-    marketplace_carousel: [640, 360],
-    home_carousel:        [640, 360],
-    search_inline:        [240, 240],
-    logo_wall:            [240, 120],
-    side_rail:            [300, 600],
-  };
-  const specs = placements.map(p => SIZES[p]).filter(Boolean) as [number, number][];
+  // R30 §25 · this used to be a fourth hand-typed copy of the table.
+  // It now reads @/lib/sponsorSizes, the same mirror the strip
+  // renderer uses, so a catalog edit can't update one and miss the
+  // other. Desktop is the upload spec — the mobile shape is a render
+  // concern, not an asset the admin supplies separately.
+  const specs = placements
+    .map(p => sizeFor(p, 'desktop'))
+    .filter(Boolean) as [number, number][];
   const hint = specs.length === 0
     ? 'לא נבחר סלוט. בחר placements בטופס כדי לראות את המידות הנדרשות.'
     : specs.length === 1

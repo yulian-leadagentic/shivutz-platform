@@ -967,6 +967,28 @@ body {
     scroll-behavior: auto;
   }
 }
+/* R30 §25 · per-breakpoint aspect lock for the wide-strip sponsor
+   slots. The catalog carries two shapes per slot (home_leaderboard
+   is 1200×150 desktop, 720×200 mobile); an inline style can't hold
+   a media query, so the component passes BOTH ratios as custom
+   properties and the breakpoint switch happens here.
+
+   Mobile-first: the phone ratio is the default because that's the
+   width where getting it wrong clips content. Below sm the composite
+   stacks to a column (flex-col) and needs the taller 720×200 = 3.6
+   box; at sm+ it's a row and takes the 8:1 desktop lock.
+
+   --ar-m / --ar-d are unitless numbers. A slot that somehow renders
+   without them falls back to `auto` rather than collapsing to zero
+   height. */
+.sponsor-strip {
+  aspect-ratio: var(--ar-m, auto);
+}
+@media (min-width: 640px) {
+  .sponsor-strip {
+    aspect-ratio: var(--ar-d, auto);
+  }
+}
 
 /* R27 §3 · sponsor banner height ceiling. R20 §3 shipped aspect-ratio
    + object-fit:contain, which is correct for the finished-creative

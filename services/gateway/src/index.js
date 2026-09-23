@@ -261,6 +261,13 @@ const PUBLIC_METHOD_ROUTES = {
   // stays behind the standard JWT + x_user_role='admin' handler
   // check — NOT included here so admin JWT flows the normal path.
   '/api/events': new Set(['POST']),
+  // R30 §26 · the batch sibling. Same security boundary as the single
+  // route (per-IP limiter + target_id validity inside the handler);
+  // it exists so four sponsor impressions on one page cost the
+  // visitor ONE request against the anon budget in rateLimit.js
+  // instead of four. This map is exact-path, so /api/events above
+  // does not cover it.
+  '/api/events/batch': new Set(['POST']),
 };
 
 // Public only for specific HTTP methods matched by prefix (prefix → allowed methods)

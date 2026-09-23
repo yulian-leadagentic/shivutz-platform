@@ -51,6 +51,7 @@ import type { ReactNode } from 'react';
 import { apiFetch } from '@/lib/api/client';
 import { useAdImpression } from '@/hooks/useAdImpression';
 import { postAdEvent, type AdPlacement } from '@/lib/adEvents';
+import { aspectFor, type AspectPair } from '@/lib/sponsorSizes';
 
 // R6 §1a · translate placement strings the backend uses into the
 // terser 'placement' enum on promo_events.metadata_json. The
@@ -106,6 +107,42 @@ interface SponsorCtxValue {
 
 const SponsorCtx = createContext<SponsorCtxValue | null>(null);
 
+// R30 §26 · ONE /legal/settings fetch per page load, shared.
+//
+// SponsorProvider wanted `sponsor_above_fold_limit` and every
+// SponsorCarousel wanted `sponsor_carousel_limit` — from the same
+// response, via two independent `fetch` calls. On a page with a
+// provider and a carousel that's two requests out of an anonymous
+// visitor's thirty-per-minute gateway budget for one JSON blob.
+//
+// Memoising the PROMISE (not the value) means concurrent callers
+// during the initial render all await the same in-flight request,
+// and a StrictMode remount reuses it rather than refetching. Module
+// scope is the right lifetime here: site settings don't change
+// within a page view, and a full navigation reloads the module.
+let _settingsPromise: Promise<Record<string, unknown> | null> | null = null;
+
+function siteSettingsOnce(): Promise<Record<string, unknown> | null> {
+  if (!_settingsPromise) {
+    _settingsPromise = fetch('/api/legal/settings')
+      .then((r) => (r.ok ? r.json() : null))
+      .catch(() => null);
+  }
+  return _settingsPromise;
+}
+
+/** Positive integer for `key`, else `fallback`. Settings arrive as
+ *  strings from the settings table, so parse rather than trust. */
+function settingNumber(
+  s: Record<string, unknown> | null,
+  key: string,
+  fallback: number,
+): number {
+  const raw = s?.[key];
+  const parsed = raw != null ? parseInt(String(raw), 10) : NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 export function SponsorProvider({ children }: { children: ReactNode }) {
   // R29 §5 · admin-editable ceiling. Reads sponsor_above_fold_limit
   // from /api/legal/settings (same endpoint carousel_limit already
@@ -116,10 +153,9 @@ export function SponsorProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
     (async () => {
       try {
-        const s = await fetch('/api/legal/settings').then(r => (r.ok ? r.json() : null));
-        const raw = s?.sponsor_above_fold_limit;
-        const parsed = raw != null ? parseInt(String(raw), 10) : NaN;
-        if (!cancelled && Number.isFinite(parsed) && parsed > 0) setLimit(parsed);
+        const s = await siteSettingsOnce();
+        const parsed = settingNumber(s, 'sponsor_above_fold_limit', 2);
+        if (!cancelled) setLimit(parsed);
       } catch { /* keep default */ }
     })();
     return () => { cancelled = true; };
@@ -209,12 +245,44 @@ function useSponsorCtx(): SponsorCtxValue {
 
 // ── fetch + guards ──────────────────────────────────────────────────
 
+// R30 §27 · a cta_url with no scheme is a RELATIVE path to the
+// browser. The seed row shipped `Www.tagidai.com`, which resolves to
+// https://<our-host>/Www.tagidai.com and 404s on our own domain —
+// the advertiser paid for a click-through that goes nowhere.
+//
+// R23 §2 added a validator to the admin form requiring http(s)://,
+// but a form guard only covers rows edited AFTER it shipped; the
+// offending row is still in the table. Normalising here, at the one
+// place ads enter the component, means no render site can inherit a
+// broken href regardless of what the DB holds.
+//
+// Also a security boundary: an href is an execution surface, and
+// `javascript:` / `data:` in cta_url would run on click. The admin
+// form does not reject those today, so anything with a scheme we
+// don't explicitly trust is dropped to null (the CTA then renders
+// in its R23 §3 inert style rather than as a live link).
+const _SAFE_SCHEME = /^(?:https?:|mailto:|tel:)/i;
+const _ANY_SCHEME   = /^[a-z][a-z0-9+.-]*:/i;
+
+function normalizeCtaUrl(raw: string | null): string | null {
+  if (!raw) return null;
+  const v = raw.trim();
+  if (!v) return null;
+  if (_SAFE_SCHEME.test(v)) return v;
+  if (_ANY_SCHEME.test(v))  return null;   // javascript:, data:, vbscript:…
+  if (v.startsWith('//'))   return `https:${v}`;  // protocol-relative
+  if (v.startsWith('/'))    return v;             // deliberate in-app link
+  return `https://${v}`;                          // bare host, scheme omitted
+}
+
 async function fetchSponsored(placement: string, limit: number): Promise<SponsorAd[]> {
   try {
     const res = await apiFetch<{ results: SponsorAd[] }>(
       `/ads/public/sponsored?placement=${encodeURIComponent(placement)}&limit=${limit}`,
     );
-    return (res.results ?? []).filter(isRenderable);
+    return (res.results ?? [])
+      .map((ad) => ({ ...ad, cta_url: normalizeCtaUrl(ad.cta_url) }))
+      .filter(isRenderable);
   } catch {
     return [];   // network / auth blip → hide the section, F3-safe
   }
@@ -283,15 +351,27 @@ interface StripProps {
    *  Counts against `sponsor_above_fold_limit`; over-count → the
    *  slot renders nothing (rather than shoving real content down). */
   aboveFold?: boolean;
-  /** Slot aspect ratio for the CLS wrapper (width / height).
-   *  home_leaderboard = 8      (1200×150)
-   *  home_billboard   = 4.8    (1200×250)
-   *  home_banner      = 4.8    (legacy 1200×250)
-   *  marketplace_banner = 4.8  (1200×250)
+  /** R30 §25 · slot aspect ratios for the CLS wrapper, one per
+   *  breakpoint, read from the shared catalog via `aspectFor()`.
    *
-   *  Kept as a number rather than a string so callers can't ship a
-   *  malformed aspectRatio expression by accident. */
-  aspectRatio: number;
+   *    home_leaderboard   8    desktop (1200×150) · 3.6 mobile (720×200)
+   *    home_billboard     4.8  desktop (1200×250) · 2.4 mobile (720×300)
+   *    home_banner        4.8  desktop (legacy)   · 2.4 mobile
+   *    marketplace_banner 4.8  desktop (1200×250) · 2.4 mobile
+   *
+   *  This used to be a single number, and the desktop ratio was
+   *  applied at every width: on a phone the composite stacked to a
+   *  column inside an 8:1 box (43px at 375px wide) and
+   *  `overflow-hidden` clipped the CTA away entirely. The catalog
+   *  always had the mobile shape; the renderer just never read it. */
+  aspectRatio: AspectPair;
+}
+
+/** R30 §25 · both ratios ride to CSS as custom properties — an inline
+ *  style can't hold a media query, so `.sponsor-strip` in globals.css
+ *  picks --ar-m below sm and --ar-d at sm+. */
+function aspectVars(a: AspectPair): React.CSSProperties {
+  return { '--ar-d': a.desktop, '--ar-m': a.mobile } as React.CSSProperties;
 }
 
 function SponsorStripBanner({ placement, label, aboveFold = false, aspectRatio }: StripProps) {
@@ -333,7 +413,7 @@ function SponsorStripBanner({ placement, label, aboveFold = false, aspectRatio }
         <div className="text-[10px] uppercase tracking-wide text-slate-400 mb-1">
           {label ?? 'מודעה ממומנת'}
         </div>
-        <div className="rounded-2xl bg-slate-100/60" style={{ aspectRatio }} />
+        <div className="sponsor-strip rounded-2xl bg-slate-100/60" style={aspectVars(aspectRatio)} />
       </div>
     );
   }
@@ -370,8 +450,8 @@ function SponsorStripBanner({ placement, label, aboveFold = false, aspectRatio }
         <div className="text-[10px] uppercase tracking-wide text-slate-400 mb-1">
           {label ?? 'מודעה ממומנת'}
         </div>
-        <div className="rounded-2xl overflow-hidden shadow-sm w-full"
-             style={{ aspectRatio, backgroundColor: bg }}>
+        <div className="sponsor-strip rounded-2xl overflow-hidden shadow-sm w-full"
+             style={{ ...aspectVars(aspectRatio), backgroundColor: bg }}>
           {ad.cta_url ? (
             <a href={ad.cta_url} target="_blank" rel="noopener noreferrer sponsored"
                onClick={handleClick} className="block w-full h-full">
@@ -394,8 +474,8 @@ function SponsorStripBanner({ placement, label, aboveFold = false, aspectRatio }
         {label ?? 'מודעה ממומנת'}
       </div>
       <div
-        className="rounded-2xl overflow-hidden shadow-sm w-full flex flex-col sm:flex-row items-stretch"
-        style={{ backgroundColor: bg, color: fg, aspectRatio }}
+        className="sponsor-strip rounded-2xl overflow-hidden shadow-sm w-full flex flex-col sm:flex-row items-stretch"
+        style={{ ...aspectVars(aspectRatio), backgroundColor: bg, color: fg }}
       >
         {ad.logo_url && (
           <div className="shrink-0 flex items-center justify-center px-4 sm:px-6 py-2 sm:py-0 bg-black/10">
@@ -445,12 +525,10 @@ function SponsorCarousel({ placement, label, aboveFold = false }: { placement: s
       // renders whatever survives.
       const claimed = await ctx.enqueueBatch(
         async () => {
+          // R30 §26 · shares the provider's in-flight settings request.
           let limit = 4;
           try {
-            const s = await fetch('/api/legal/settings').then(r => (r.ok ? r.json() : null));
-            const raw = s?.sponsor_carousel_limit;
-            const parsed = raw != null ? parseInt(String(raw), 10) : NaN;
-            if (Number.isFinite(parsed) && parsed > 0) limit = parsed;
+            limit = settingNumber(await siteSettingsOnce(), 'sponsor_carousel_limit', 4);
           } catch { /* fall back to 4 */ }
           return fetchSponsored(placement, limit);
         },
@@ -786,27 +864,37 @@ function CarouselCard({ ad, placement }: { ad: SponsorAd; placement: AdPlacement
 // footprint mirrors what's actually rendered on each page. Adding a
 // new placement = add a new wrapper.
 
+// R30 §25 · every wrapper now derives its aspect pair from the
+// catalog instead of restating the desktop number inline. The old
+// literals (8, 4.8) matched the catalog's desktop column by hand —
+// which is exactly how the mobile column went unnoticed for a whole
+// release. `STRIP_ASPECT` resolves once at module load; an unknown
+// placement can't reach it because these wrappers are the only
+// callers and each name is a catalog key.
+const STRIP_ASPECT = (placement: string): AspectPair =>
+  aspectFor(placement) ?? { desktop: 4.8, mobile: 2.4 };
+
 // Marketplace surfaces (existing).
-export function MarketplaceSponsorBanner()   { return <SponsorStripBanner placement="marketplace_banner"   aspectRatio={4.8} label="מודעה ממומנת" />; }
+export function MarketplaceSponsorBanner()   { return <SponsorStripBanner placement="marketplace_banner"   aspectRatio={STRIP_ASPECT('marketplace_banner')} label="מודעה ממומנת" />; }
 export function MarketplaceSponsorCarousel() { return <SponsorCarousel    placement="marketplace_carousel" />; }
 
 // Legacy home surfaces (R5 §3). Kept exported so old callers work.
 // Prefer the new HomeSponsorLeaderboard / HomeSponsorBillboard pair
 // for new work; those enforce the R29 §3 composite-first rule.
-export function HomeSponsorBanner()          { return <SponsorStripBanner placement="home_banner"          aspectRatio={4.8} aboveFold />; }
+export function HomeSponsorBanner()          { return <SponsorStripBanner placement="home_banner"          aspectRatio={STRIP_ASPECT('home_banner')} aboveFold />; }
 export function HomeSponsorCarousel()        { return <SponsorCarousel    placement="home_carousel"        />; }
 
 // R29 §3 · new wide-strip slots. Composite-first render.
 export function HomeSponsorLeaderboard() {
-  // 1200×150 → 8:1 aspect. Sits at the very top of the home content
-  // area, above the search field. aboveFold=true.
-  return <SponsorStripBanner placement="home_leaderboard" aspectRatio={8} aboveFold />;
+  // 1200×150 desktop (8:1) · 720×200 mobile (3.6:1). Sits at the very
+  // top of the home content area, above the search field.
+  return <SponsorStripBanner placement="home_leaderboard" aspectRatio={STRIP_ASPECT('home_leaderboard')} aboveFold />;
 }
 export function HomeSponsorBillboard() {
-  // 1200×250 → 4.8:1 aspect. Between search + recent-ads mosaic.
-  // Still counts as above-fold on desktop; on mobile it lands right
-  // at the fold line. Cap it either way.
-  return <SponsorStripBanner placement="home_billboard" aspectRatio={4.8} aboveFold />;
+  // 1200×250 desktop (4.8:1) · 720×300 mobile (2.4:1). Between search
+  // + recent-ads mosaic. Still counts as above-fold on desktop; on
+  // mobile it lands right at the fold line. Cap it either way.
+  return <SponsorStripBanner placement="home_billboard" aspectRatio={STRIP_ASPECT('home_billboard')} aboveFold />;
 }
 
 // R30 §24 · SponsorRailLayout replaces the R29 §4 <SponsorSideRail />

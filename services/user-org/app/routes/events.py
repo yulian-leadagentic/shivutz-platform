@@ -1,8 +1,21 @@
 """R6 §1b + §4 · promo_events endpoints.
 
-Two routes:
-    POST /events                 · public — record ad impression/click/inquiry
+Three routes:
+    POST /events                 · public — record ONE ad impression/click/inquiry
+    POST /events/batch           · public — record up to 20 in one request (R30 §26)
     GET  /admin/sponsor-stats    · admin  — per-ad daily counters + CTR
+
+R30 §26 · why the batch route exists. The home page mounts four
+sponsor surfaces (leaderboard, billboard, carousel, side_rail) and
+each fired its own POST /events on impression. Combined with the
+gateway's 30-requests-per-minute anon budget
+(services/gateway/src/rateLimit.js), one page load spent four of a
+visitor's thirty requests on telemetry alone — and since the rail's
+fetch is issued last, it was the request that got 429'd when the
+budget ran out. The paid ad slot was the thing being dropped.
+The impressions are NOT removed (they are the CTR data the pricing
+decision depends on); they are coalesced client-side and arrive as
+one request.
 
 The table `promo_events` was created in migration 065 and never wired
 up — R6 argues that impression tracking is a PREREQUISITE for
@@ -56,6 +69,46 @@ class EventPayload(BaseModel):
     target_id:     str = Field(min_length=1, max_length=36)
     session_id:    Optional[str] = Field(default=None, max_length=64)
     metadata:      Optional[dict] = None
+
+
+# R30 §26 · batch envelope. Cap of 20 keeps the docstring's 16 KiB
+# body ceiling comfortable and bounds the IN-clause below; the home
+# page only ever coalesces four.
+_BATCH_MAX = 20
+
+
+class EventBatch(BaseModel):
+    events: list[EventPayload] = Field(min_length=1, max_length=_BATCH_MAX)
+
+
+def _clean_metadata(metadata: Optional[dict]) -> Optional[dict]:
+    """§1b · metadata allow-list. Keep the two keys the client cares
+    about, drop everything else. String values only, <= 64 chars each
+    — no nested objects. Shared by the single + batch paths so the
+    two can't drift on what a caller is allowed to smuggle in."""
+    if not metadata:
+        return None
+    picked = {}
+    for k, v in metadata.items():
+        if k in _ALLOWED_METADATA_KEYS and isinstance(v, str):
+            picked[k] = v[:64]
+    return picked or None
+
+
+def _live_target_ids(cur, target_ids: list[str]) -> set:
+    """Subset of `target_ids` that are active sponsor_ads right now.
+    One query for the whole batch rather than one per event."""
+    if not target_ids:
+        return set()
+    placeholders = ",".join(["%s"] * len(target_ids))
+    cur.execute(
+        f"""SELECT id FROM sponsor_ads
+             WHERE id IN ({placeholders}) AND active = TRUE
+               AND (starts_at IS NULL OR starts_at <= NOW())
+               AND (ends_at   IS NULL OR ends_at   >= NOW())""",
+        tuple(target_ids),
+    )
+    return {row[0] if not isinstance(row, dict) else row["id"] for row in cur.fetchall()}
 
 
 # ── Rate limiter (per-process, in-memory) ───────────────────────────
@@ -142,16 +195,7 @@ async def record_event(
         if not cur.fetchone():
             raise HTTPException(status_code=400, detail={"code": "target_not_found"})
 
-        # §1b · metadata allow-list. Keep the two keys the client cares
-        # about, drop everything else. String values only, ≤ 64 chars
-        # each — no nested objects.
-        clean_meta = None
-        if body.metadata:
-            picked = {}
-            for k, v in body.metadata.items():
-                if k in _ALLOWED_METADATA_KEYS and isinstance(v, str):
-                    picked[k] = v[:64]
-            clean_meta = picked or None
+        clean_meta = _clean_metadata(body.metadata)
 
         import uuid as _uuid
         cur.execute(
@@ -168,6 +212,76 @@ async def record_event(
             ),
         )
         conn.commit()
+    finally:
+        conn.close()
+
+    return  # 204
+
+
+# ── POST /events/batch ──────────────────────────────────────────────
+@router.post("/events/batch", status_code=204)
+async def record_events_batch(
+    body:            EventBatch,
+    request:         Request,
+    x_entity_id:     Optional[str] = Header(default=None),
+    x_entity_type:   Optional[str] = Header(default=None),
+):
+    """R30 §26 · record up to 20 ad events in ONE request.
+
+    Counts as a single hit against both this endpoint's per-IP limiter
+    and the gateway's anon budget — that is the entire point. Four
+    sponsor impressions on a home page used to spend four of a
+    visitor's thirty gateway requests.
+
+    Differs from the single-event route in one deliberate way: an
+    entry that fails validation (unknown event_type, stale target_id)
+    is DROPPED, not 400. This is fire-and-forget telemetry and the
+    batch is heterogeneous — one expired ad in the set must not cost
+    us the other three impressions. A caller sending entirely invalid
+    input gets a 204 and writes nothing, which is the same outcome
+    they'd get from four individually-rejected posts.
+    """
+    ip = _client_ip(request)
+    if _rate_limited(ip):
+        raise HTTPException(status_code=429, detail="rate_limited")
+
+    # Allow-list filter first — cheap, and shrinks the ID set we query.
+    candidates = [
+        e for e in body.events
+        if e.event_type in _ALLOWED_EVENT_TYPES
+        and e.target_type in _ALLOWED_TARGET_TYPES
+    ]
+    if not candidates:
+        return  # 204 — nothing survived validation, nothing to write
+
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        live = _live_target_ids(cur, list({e.target_id for e in candidates}))
+        if not live:
+            return  # 204
+
+        import uuid as _uuid
+        rows = [
+            (
+                str(_uuid.uuid4()),
+                e.event_type, e.target_type, e.target_id,
+                x_entity_id or None, x_entity_type or None,
+                e.session_id,
+                json.dumps(_clean_metadata(e.metadata)) if _clean_metadata(e.metadata) else None,
+            )
+            for e in candidates if e.target_id in live
+        ]
+        if rows:
+            cur.executemany(
+                """INSERT INTO promo_events
+                       (id, event_type, target_type, target_id,
+                        actor_entity_id, actor_entity_type, session_id,
+                        metadata_json)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+                rows,
+            )
+            conn.commit()
     finally:
         conn.close()
 

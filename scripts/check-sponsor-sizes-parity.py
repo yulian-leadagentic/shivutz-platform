@@ -55,6 +55,44 @@ def _normalise_sizes(sizes: dict) -> dict:
     }
 
 
+def _parse_ts_sizes(path: str):
+    """Extract SPONSOR_SIZES from the TS mirror into the same shape
+    _normalise_sizes produces. Returns None when the literal can't be
+    found, which the caller treats as an error — a silent skip would
+    defeat the whole point of the check.
+
+    Only understands the exact shape the file is written in:
+        slot: { desktop: [w, h], mobile: [w, h] | null },
+    Anything else fails closed."""
+    import re
+
+    with open(path, encoding="utf-8") as fh:
+        src = fh.read()
+
+    block = re.search(
+        r"export\s+const\s+SPONSOR_SIZES\s*:[^=]*=\s*\{(.*?)\n\};",
+        src,
+        re.S,
+    )
+    if not block:
+        return None
+
+    entry_re = re.compile(
+        r"(\w+)\s*:\s*\{\s*"
+        r"desktop\s*:\s*\[\s*(\d+)\s*,\s*(\d+)\s*\]\s*,\s*"
+        r"mobile\s*:\s*(?:null|\[\s*(\d+)\s*,\s*(\d+)\s*\])\s*,?\s*\}",
+        re.S,
+    )
+    out: dict = {}
+    for m in entry_re.finditer(block.group(1)):
+        slot, dw, dh, mw, mh = m.groups()
+        out[slot] = {
+            "desktop": [int(dw), int(dh)],
+            "mobile": [int(mw), int(mh)] if mw and mh else None,
+        }
+    return out or None
+
+
 def main() -> int:
     here = os.path.dirname(os.path.abspath(__file__))
     root = os.path.abspath(os.path.join(here, ".."))
@@ -101,6 +139,35 @@ def main() -> int:
             f"_ASPECT_TOLERANCE differs: admin={admin._ASPECT_TOLERANCE}, "
             f"user-org={user._ASPECT_TOLERANCE}"
         )
+
+    # R30 §25 · the front-end carries a THIRD copy (the browser can't
+    # import Python). It feeds the strip renderer's per-breakpoint
+    # aspect lock, so a slot that drifts here ships a mis-shaped ad
+    # rather than failing loudly. Parsed with a regex rather than a JS
+    # engine: the file is a plain object literal by construction, and
+    # adding a node dependency to a python CI check is worse than a
+    # narrow parser that fails closed.
+    ts_path = os.path.join(
+        root, "services", "frontend", "src", "lib", "sponsorSizes.ts"
+    )
+    if not os.path.isfile(ts_path):
+        errors.append(f"front-end mirror missing: {ts_path}")
+    else:
+        ts_sizes = _parse_ts_sizes(ts_path)
+        if ts_sizes is None:
+            errors.append(
+                f"could not parse SPONSOR_SIZES out of {ts_path} — if the "
+                "literal was reformatted, update _parse_ts_sizes()"
+            )
+        elif ts_sizes != admin_sizes:
+            errors.append("front-end SPONSOR_SIZES differs from the Python catalog.")
+            for k in sorted(set(admin_sizes) | set(ts_sizes)):
+                a = admin_sizes.get(k, "<missing>")
+                t = ts_sizes.get(k, "<missing>")
+                if a != t:
+                    errors.append(f"  slot {k!r} differs:")
+                    errors.append(f"    python   → {a}")
+                    errors.append(f"    frontend → {t}")
 
     # Belt-and-braces: also assert the sha256 hashes agree. This
     # catches a hash-constant drift even when the catalogs happen to
