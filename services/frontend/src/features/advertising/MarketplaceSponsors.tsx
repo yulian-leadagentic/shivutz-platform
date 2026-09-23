@@ -58,10 +58,22 @@ import { aspectFor, type AspectPair } from '@/lib/sponsorSizes';
 // original strings are longer than we want to store per row, and
 // the enum keeps admin-stats filtering readable.
 function placementBucket(raw: string): AdPlacement {
+  // R30 §12b · the listing slots are matched BEFORE the generic rules
+  // so they keep their own identity in promo_events.metadata_json.
+  // Measured on staging before this fix: both listing slots — and
+  // side_rail — recorded {"placement":"inline"}, so admin CTR could
+  // not separate a 300×600 rail from a 1200×250 strip from the home
+  // page's own rail. Three different products, one label.
+  if (raw === 'listing_rail')        return 'listing_rail';
+  if (raw === 'listing_inline')      return 'listing_inline';
   if (raw.startsWith('marketplace')) return 'marketplace';
   if (raw.includes('carousel'))      return 'carousel';
   if (raw.includes('banner') || raw.includes('leaderboard') || raw.includes('billboard')) return 'featured';
-  if (raw === 'side_rail')           return 'inline';
+  // 'sidebar' was declared in AdPlacement and never used — side_rail
+  // was falling through to the catch-all. Rows written before this
+  // change carry 'inline' for side_rail; anything comparing across
+  // that boundary needs to account for the rename.
+  if (raw === 'side_rail')           return 'sidebar';
   return 'inline';
 }
 
@@ -710,8 +722,12 @@ export function SponsorRailLayout({
  * the default `stretch` gives the cell full row height and there's
  * nothing to stick TO.
  */
-function RailCell({ ad }: { ad: SponsorAd }) {
-  const observeRef = useAdImpression({ targetId: ad.id, placement: placementBucket('side_rail') });
+function RailCell({ ad, placement = 'side_rail' }: { ad: SponsorAd; placement?: string }) {
+  // R30 §12b · the placement was hardcoded to 'side_rail'. ListingRailSponsor
+  // reuses this cell, so every listing_rail impression was being attributed
+  // to the home-page rail — visible in promo_events as listing_rail rows
+  // carrying side_rail's bucket. The caller now says which slot it is.
+  const observeRef = useAdImpression({ targetId: ad.id, placement: placementBucket(placement) });
 
   const bg = ad.brand_bg ?? '#0f172a';
   const fg = ad.brand_fg ?? '#ffffff';
@@ -720,7 +736,7 @@ function RailCell({ ad }: { ad: SponsorAd }) {
     if (!ad.cta_url) return;
     postAdEvent({
       event_type: 'ad_click', target_type: 'sponsor_ad',
-      target_id: ad.id, placement: placementBucket('side_rail'),
+      target_id: ad.id, placement: placementBucket(placement),
     });
   };
 
@@ -966,7 +982,7 @@ export function ListingRailSponsor({ category }: { category: string }) {
   }, [wide, category, ctx]);
 
   if (!wide || !ad) return null;
-  return <RailCell ad={ad} />;
+  return <RailCell ad={ad} placement="listing_rail" />;
 }
 
 // R30 §24 · SponsorRailLayout replaces the R29 §4 <SponsorSideRail />

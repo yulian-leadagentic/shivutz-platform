@@ -46,7 +46,14 @@ function getSessionId(): string {
 
 export type AdEventType   = 'impression' | 'ad_click' | 'inquiry';
 export type AdTargetType  = 'sponsor_ad';
-export type AdPlacement   = 'inline' | 'carousel' | 'sidebar' | 'featured' | 'marketplace' | 'trustbar';
+// R30 §12b · `listing_rail` / `listing_inline` are their own buckets.
+// Without them both listing slots fell to the catch-all 'inline' and
+// admin CTR could not tell them apart — or tell either from side_rail,
+// which was ALSO landing on 'inline' even though 'sidebar' existed
+// here unused. Rail-shaped units now bucket as 'sidebar'.
+export type AdPlacement =
+  | 'inline' | 'carousel' | 'sidebar' | 'featured' | 'marketplace' | 'trustbar'
+  | 'listing_rail' | 'listing_inline';
 
 interface PostArgs {
   event_type:  AdEventType;
