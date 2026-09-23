@@ -34,6 +34,32 @@ const LIMITS = {
   admin:       parseInt(process.env.RATE_LIMIT_ADMIN || '500'),
 };
 
+// R30 §26 (2) · telemetry gets its OWN counter, wider than the page's.
+//
+// Sharing one bucket meant ad impressions competed with the content
+// the page needs to render — four impressions on a home page spent
+// four of the visitor's request budget, and the rail (fetched last)
+// was the first thing dropped. Measuring the ads was starving them.
+//
+// Separate namespace + higher ceiling: a burst of impressions can no
+// longer 429 a search, and a flood of fake impressions still can't
+// exhaust the page budget because it is counted apart.
+const TELEMETRY_LIMITS = {
+  anon:        parseInt(process.env.RATE_LIMIT_TELEMETRY_ANON || '120'),
+  user:        parseInt(process.env.RATE_LIMIT_TELEMETRY_USER || '400'),
+  contractor:  parseInt(process.env.RATE_LIMIT_TELEMETRY_USER || '400'),
+  corporation: parseInt(process.env.RATE_LIMIT_TELEMETRY_USER || '400'),
+  admin:       parseInt(process.env.RATE_LIMIT_TELEMETRY_USER || '400'),
+};
+
+// Fire-and-forget measurement endpoints. /api/events covers both the
+// single and the §26 batch route.
+const TELEMETRY_PREFIXES = ['/api/events'];
+
+function isTelemetry(req) {
+  return TELEMETRY_PREFIXES.some((p) => req.originalUrl.startsWith(p));
+}
+
 // Paths the gateway-level rate limiter should NOT count. The auth
 // service has its own per-phone + per-IP throttle on the OTP-send
 // flow that's tuned for abuse-prevention there; double-counting at
@@ -56,8 +82,14 @@ function isExempt(req) {
 async function rateLimiter(req, res) {
   if (isExempt(req)) return false;
 
+  // These headers are trustworthy here ONLY because index.js strips
+  // any caller-supplied copies at ingress and re-sets them from a
+  // validated JWT, and because this runs AFTER that step. Both halves
+  // matter: before R30 this ran first, so `role` was always 'anon'.
   const role   = req.headers['x-user-role'] || 'anon';
-  const limit  = LIMITS[role] || LIMITS.anon;
+  const tele   = isTelemetry(req);
+  const table  = tele ? TELEMETRY_LIMITS : LIMITS;
+  const limit  = table[role] || table.anon;
   // Bucket by user_id when authenticated — IP alone can starve every
   // real user behind a single NAT / Docker bridge. Anon still buckets
   // by IP because there's no better identifier before login.
@@ -65,7 +97,11 @@ async function rateLimiter(req, res) {
   const ip     = req.ip || req.socket.remoteAddress;
   const bucket = userId ? `u:${userId}` : `ip:${ip}`;
   const minute = Math.floor(Date.now() / 60000);
-  const key    = `rate:${role}:${bucket}:${minute}`;
+  // `ns` keeps telemetry counting in its own keyspace so the two
+  // ceilings are genuinely independent rather than two names for one
+  // counter.
+  const ns     = tele ? 'tel' : 'api';
+  const key    = `rate:${ns}:${role}:${bucket}:${minute}`;
 
   const count = await redis.incr(key);
   if (count === 1) await redis.expire(key, 60);

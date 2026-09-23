@@ -14,6 +14,27 @@ app.use((req, _, next) => {
   next();
 });
 
+// ─── R30 · ingress identity strip ──────────────────────────
+//
+// SECURITY: x-user-* / x-entity-* are OURS to set from a validated
+// JWT, never the caller's to supply. Stripping them here — before any
+// route, including the standalone /api/voice handler and the proxy
+// loop below — guarantees the only values the rate limiter and the
+// downstream services ever see were derived from a real token.
+//
+// Without this a request could declare `x-user-role: admin`. On a
+// public route with no Authorization header neither attachUserHeaders
+// branch runs, so forged headers would reach services that scope
+// visibility on x_user_role (ads.py public feeds, visibility.py).
+const CLIENT_FORBIDDEN_HEADERS = [
+  'x-user-id', 'x-user-role', 'x-org-id', 'x-phone',
+  'x-entity-id', 'x-entity-type', 'x-membership-role',
+];
+app.use((req, _, next) => {
+  for (const h of CLIENT_FORBIDDEN_HEADERS) delete req.headers[h];
+  next();
+});
+
 // ─── Logging ───────────────────────────────────────────────
 app.use(morgan(':method :url :status :response-time ms - :req[x-request-id]'));
 
@@ -300,10 +321,6 @@ for (const [prefix, target] of Object.entries(services)) {
   app.use(prefix, async (req, res, next) => {
     req.headers['x-request-id'] = req.id;
 
-    // Rate limiting
-    const limited = await rateLimiter(req, res);
-    if (limited) return;
-
     // Auth check — use originalUrl so the full /api/... path is available
     const url = req.originalUrl.split('?')[0];
     const isPublic =
@@ -376,6 +393,23 @@ for (const [prefix, target] of Object.entries(services)) {
       const user = await validateToken(req).catch(() => null);
       if (user) attachUserHeaders(user);
     }
+
+    // R30 · rate limiting runs HERE, after identification — not before.
+    //
+    // It used to be the first thing in this middleware, which meant it
+    // read x-user-id / x-user-role before attachUserHeaders had set
+    // them. Every request therefore looked anonymous: role fell back to
+    // 'anon' and the bucket keyed on IP. The `user: 200` and
+    // `admin: 500` entries in LIMITS were unreachable code, and a
+    // logged-in user browsing normally shared one anon ceiling with
+    // everyone behind their IP — which is how Yulian hit "יותר מדי
+    // חיפושים כרגע" while authenticated.
+    //
+    // Safe to run after auth because validateToken is a local
+    // jwt.verify (no network call), so an unauthenticated flood costs
+    // one HMAC verify per request before being turned away.
+    const limited = await rateLimiter(req, res);
+    if (limited) return;
 
     next();
   }, createProxyMiddleware({
