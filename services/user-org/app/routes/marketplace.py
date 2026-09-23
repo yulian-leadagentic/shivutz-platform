@@ -11,6 +11,7 @@ import uuid
 
 from app.db import get_db
 from app.services.search_normalize import normalize_search_term
+from app.services.phone_normalize import normalize_or_400
 
 router = APIRouter()
 
@@ -607,7 +608,11 @@ def create_listing(
             body.category, body.subcategory, body.title.strip(), body.description,
             body.city, body.region, body.price, body.price_unit,
             body.capacity, body.is_furnished, body.available_from,
-            body.contact_phone, body.contact_name,
+            # R30 §15 · contact_phone is what a contractor calls to reach
+            # the advertiser — it was stored verbatim. Optional field, so
+            # blank stays blank, but a supplied value must be a real
+            # Israeli mobile and is stored canonically.
+            normalize_or_400(body.contact_phone, required=False), body.contact_name,
             json.dumps(images) if images else None,
         ))
         conn.commit()
@@ -667,6 +672,13 @@ def update_listing(
                     imgs = imgs[:_MAX_IMAGES_PER_LISTING]
                 updates.append("images_json=%s")
                 params.append(json.dumps(imgs) if imgs else None)
+            elif field == "contact_phone":
+                # R30 §15 · same rule as create. exclude_none means we
+                # only reach here when the caller actually sent the
+                # field, so a present-but-malformed value is a 400
+                # rather than a silently stored string.
+                updates.append("contact_phone=%s")
+                params.append(normalize_or_400(val, required=False))
             else:
                 updates.append(f"{field}=%s")
                 params.append(val)
@@ -726,8 +738,11 @@ def delete_listing(
 
 @router.post("/leads", status_code=201)
 def submit_lead(body: LeadCreate):
-    if not body.full_name.strip() or not body.phone.strip():
+    if not body.full_name.strip():
         raise HTTPException(status_code=400, detail="שם וטלפון הם שדות חובה")
+    # R30 §15 · a lead IS a phone number — an unreachable one is a
+    # worthless row. Was .strip() only.
+    phone = normalize_or_400(body.phone)
     if body.org_type not in ("contractor", "corporation"):
         raise HTTPException(status_code=400, detail="org_type must be contractor or corporation")
 
@@ -737,7 +752,7 @@ def submit_lead(body: LeadCreate):
         cur = conn.cursor()
         cur.execute(
             "INSERT INTO leads (id, full_name, phone, org_type, notes) VALUES (%s,%s,%s,%s,%s)",
-            (lead_id, body.full_name.strip(), body.phone.strip(), body.org_type, body.notes)
+            (lead_id, body.full_name.strip(), phone, body.org_type, body.notes)
         )
         conn.commit()
         return {"id": lead_id, "message": "תודה! ניצור איתך קשר בקרוב"}

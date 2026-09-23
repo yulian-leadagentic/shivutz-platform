@@ -9,7 +9,7 @@ from app.publisher import publish_event
 from app.services import verification, rate_limit
 from app.services import notification_recipients as notif_recipients
 from app.services import team_membership as team_mgmt
-from app.services.phone_normalize import InvalidPhone, normalize_israeli_phone
+from app.services.phone_normalize import InvalidPhone, normalize_israeli_phone, normalize_or_400
 from app.services import membership_requests as mreq
 from app.services.subscription_limits import fetch_entitlement, tier_limits, effective_seats
 from app.services.entity_access import require_entity_access
@@ -124,6 +124,14 @@ async def register_contractor(
     # is just a normal cold signup by a logged-in user (which the FE
     # never emits — cold signup is anonymous).
     is_add_mode = bool(data.add_role and x_user_id)
+
+    # R30 §15 · until now only the team-INVITE route below (:788)
+    # normalized a phone; registration wrote contact_phone through
+    # verbatim, so the same malformed value the invite path rejects
+    # could enter via the front door and become the owner's SMS login
+    # identity. Normalize before the duplicate guard so the
+    # membership_request branch also carries the canonical form.
+    data.contact_phone = normalize_or_400(data.contact_phone)
 
     if not is_valid_israeli_id(data.business_number):
         raise HTTPException(status_code=400, detail="invalid_business_number")

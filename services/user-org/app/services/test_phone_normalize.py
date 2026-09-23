@@ -5,7 +5,11 @@
 
 import pytest
 
-from app.services.phone_normalize import InvalidPhone, normalize_israeli_phone
+from app.services.phone_normalize import (
+    InvalidPhone,
+    normalize_israeli_phone,
+    normalize_or_400,
+)
 
 
 def test_bare_10_digit_stays_local():
@@ -76,3 +80,47 @@ def test_none_is_phone_required():
     with pytest.raises(InvalidPhone) as exc:
         normalize_israeli_phone(None)
     assert exc.value.code == "phone_required"
+
+
+# ── R30 §15 · normalize_or_400 ───────────────────────────────────────
+# The HTTP wrapper every write path now calls. The subtle part is
+# `required=False`: "optional" must mean "may be absent", never "may
+# be malformed" — that distinction is what let 090998798677868 into
+# support_tickets.
+
+def test_or_400_returns_canonical():
+    assert normalize_or_400("052-526-7879") == "0525267879"
+
+
+def test_or_400_optional_blank_is_none():
+    assert normalize_or_400(None, required=False) is None
+    assert normalize_or_400("", required=False) is None
+    assert normalize_or_400("   ", required=False) is None
+
+
+def test_or_400_optional_but_present_is_still_validated():
+    # The support-ticket regression: a supplied value gets checked
+    # even though the field itself is optional.
+    from fastapi import HTTPException
+    with pytest.raises(HTTPException) as exc:
+        normalize_or_400("090998798677868", required=False)
+    assert exc.value.status_code == 400
+    assert exc.value.detail["code"] == "invalid_phone"
+
+
+def test_or_400_required_blank_is_400_hebrew():
+    from fastapi import HTTPException
+    with pytest.raises(HTTPException) as exc:
+        normalize_or_400(None)
+    assert exc.value.status_code == 400
+    assert exc.value.detail["code"] == "phone_required"
+    # Hebrew, not a bare token — a direct API caller must be able to
+    # read the reason (R30 §15: "400 עם הודעה בעברית, לא 500").
+    assert any("\u0590" <= ch <= "\u05FF" for ch in exc.value.detail["message"])
+
+
+def test_or_400_garbage_is_400_not_500():
+    from fastapi import HTTPException
+    with pytest.raises(HTTPException) as exc:
+        normalize_or_400("0525267879גגג")
+    assert exc.value.status_code == 400

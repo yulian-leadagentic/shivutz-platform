@@ -54,3 +54,56 @@ def normalize_israeli_phone(raw: Optional[str]) -> str:
     if digits.startswith("0") and len(digits) == 10:
         return digits
     raise InvalidPhone("invalid_phone")
+
+
+# ── R30 §15 · HTTP mapping ───────────────────────────────────────────
+#
+# Every write path that takes a phone needs the same three things:
+# normalize, reject with 400 (never a 500 from an unhandled raise),
+# and say why in Hebrew. Doing that inline at each call site is how
+# the codebase ended up with two paths normalizing and eight not, so
+# it lives here as a one-liner the routes call.
+#
+# The `code` still rides in the detail because the frontend's
+# mapApiError keys off it (CODE_TO_HE in lib/api/errors.ts); the
+# Hebrew string is added so a direct API caller — curl, Postman, an
+# integration — gets a readable reason instead of a bare token.
+_MESSAGES_HE = {
+    "phone_required": "יש להזין מספר טלפון",
+    "invalid_phone":  "מספר טלפון לא תקין. יש להזין מספר ישראלי בפורמט 05XXXXXXXX",
+}
+
+
+def message_he(code: str) -> str:
+    return _MESSAGES_HE.get(code, _MESSAGES_HE["invalid_phone"])
+
+
+def normalize_or_400(raw: Optional[str], *, required: bool = True) -> Optional[str]:
+    """Canonical phone for a write path, or HTTP 400 with Hebrew.
+
+    `required=False` lets a blank optional field through as None
+    instead of rejecting it — a support ticket may legitimately carry
+    no callback number. A value that is PRESENT is always validated:
+    "optional" means "may be absent", never "may be malformed".
+
+    Import fastapi lazily so the module stays usable (and testable)
+    outside a request context — test_phone_normalize.py imports it
+    directly.
+    """
+    from fastapi import HTTPException
+
+    if raw is None or not str(raw).strip():
+        if not required:
+            return None
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "phone_required", "error": "phone_required",
+                    "message": message_he("phone_required")},
+        )
+    try:
+        return normalize_israeli_phone(raw)
+    except InvalidPhone as e:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": e.code, "error": e.code, "message": message_he(e.code)},
+        )

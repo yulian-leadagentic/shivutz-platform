@@ -12,6 +12,7 @@ from fastapi import APIRouter, HTTPException, Header
 from pydantic import BaseModel, Field
 
 from app.db import get_db
+from app.services.phone_normalize import normalize_or_400
 
 router = APIRouter()
 
@@ -42,6 +43,15 @@ def submit_ticket(
     entity_type = x_user_role if x_user_role in ("contractor", "corporation", "service_provider", "admin") else None
     entity_id   = x_org_id if entity_type in ("contractor", "corporation", "service_provider") else None
 
+    # R30 §15 · this is the route Yulian broke: `090998798677868`
+    # (fifteen digits) was accepted verbatim, because the only
+    # treatment was .strip(). The field stays optional — a ticket
+    # without a callback number is legitimate — but a value that IS
+    # supplied must be a real Israeli mobile, and what lands in the
+    # row is the canonical form, so 052-526-7879 and 0525267879 are
+    # the same number rather than two.
+    contact_phone = normalize_or_400(data.contact_phone, required=False)
+
     ticket_id = str(uuid.uuid4())
     conn = get_db()
     try:
@@ -52,7 +62,7 @@ def submit_ticket(
                VALUES (%s,%s,%s,%s,%s,%s,%s,'open')""",
             (ticket_id, entity_type, entity_id, x_user_id,
              data.subject.strip(), data.body.strip(),
-             (data.contact_phone or "").strip() or None)
+             contact_phone)
         )
         conn.commit()
     except Exception as e:

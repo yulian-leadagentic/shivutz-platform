@@ -39,6 +39,7 @@ from pydantic import BaseModel, EmailStr
 
 from app.db import get_db
 from app.publisher import publish_event
+from app.services.phone_normalize import normalize_or_400
 
 router = APIRouter()
 AUTH_SERVICE = os.getenv("AUTH_SERVICE_URL", "http://auth:3001")
@@ -92,8 +93,13 @@ async def register_provider(data: ProviderCreate):
     name = " ".join(((data.name or "").strip() or data.contact_name.strip()).split()).strip()
     if not name:
         raise HTTPException(status_code=400, detail="name_required")
-    if not data.contact_phone.strip():
-        raise HTTPException(status_code=400, detail="contact_phone_required")
+    # R30 §15 · was a bare .strip() emptiness check, so any string of
+    # any shape became this provider's SMS login identity. Normalize
+    # to the canonical form and reject anything that isn't an Israeli
+    # mobile; `data.contact_phone` is reassigned so every downstream
+    # use (the duplicate check at :261, the INSERT, the auth user row)
+    # sees the same canonical value.
+    data.contact_phone = normalize_or_400(data.contact_phone)
 
     # R5 §2a · format-only ח.פ check (9 digits). No registry lookup —
     # provider is deliberately outside the corp registry (that's why the
