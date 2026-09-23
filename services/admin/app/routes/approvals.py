@@ -1,9 +1,10 @@
 from fastapi import APIRouter, HTTPException, Header
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from typing import Optional, List, Literal
 import os, httpx
 
 from app.db import get_db
+from app.services.phone_normalize import normalize_or_400
 
 router = APIRouter()
 
@@ -118,7 +119,10 @@ class OrgEdit(BaseModel):
     company_name_he: Optional[str] = None
     company_name: Optional[str] = None
     contact_name: Optional[str] = None
-    contact_email: Optional[str] = None
+    # R30 §15 · was a bare str, so the admin edit surface could write an
+    # address the registration forms would have rejected. EmailStr makes
+    # pydantic return 422 before the row is touched.
+    contact_email: Optional[EmailStr] = None
     contact_phone: Optional[str] = None
     notes: Optional[str] = None
     # Registry / business fields — admin can correct these (e.g. fix mojibake,
@@ -329,6 +333,20 @@ def edit_org(
         _v = updates.get(_k)
         if isinstance(_v, str):
             updates[_k] = " ".join(_v.split()).strip()
+
+    # R30 §15 · same treatment for contact_phone. This route is the
+    # admin's edit surface for the very rows the registration gate now
+    # protects — without this, an admin pasting a malformed number
+    # re-introduces exactly the shape the front door started rejecting.
+    # exclude_none above means we only touch the key when the admin
+    # actually sent it; an explicit empty string clears the field.
+    if "contact_phone" in updates:
+        raw_phone = updates["contact_phone"]
+        updates["contact_phone"] = (
+            normalize_or_400(raw_phone, required=False)
+            if isinstance(raw_phone, str) and raw_phone.strip()
+            else None
+        )
 
     # Strip fields that don't apply to this org_type to avoid SQL errors
     # against columns that don't exist on the other table.

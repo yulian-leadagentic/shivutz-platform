@@ -78,6 +78,18 @@ def message_he(code: str) -> str:
     return _MESSAGES_HE.get(code, _MESSAGES_HE["invalid_phone"])
 
 
+def _mirror_guard_probes():
+    """R30 §15 · see the drift guard at the bottom of this file."""
+    return (
+        None, "", "   ",
+        "0525267879", "+972525267879", "972525267879",
+        "052-526-7879", "052 526 7879", "(052)526-7879",
+        "0525267879גגג", "052😀5267879", "052/5267879",
+        "05252678799", "052526787", "090998798677868",
+        "+9725252678790", "00972525267879",
+    )
+
+
 def normalize_or_400(raw: Optional[str], *, required: bool = True) -> Optional[str]:
     """Canonical phone for a write path, or HTTP 400 with Hebrew.
 
@@ -107,3 +119,48 @@ def normalize_or_400(raw: Optional[str], *, required: bool = True) -> Optional[s
             status_code=400,
             detail={"code": e.code, "error": e.code, "message": message_he(e.code)},
         )
+
+
+# ── R30 §15 · drift guard (mirror side) ──────────────────────────────
+#
+# This module is MIRRORED into services/admin/app/services/
+# phone_normalize.py because Railway builds each service from its own
+# subtree and a cross-service import fails at runtime (R29 §3). Both
+# copies fingerprint their BEHAVIOUR — a fixed probe set run through
+# the function, outcomes hashed — so a genuine logic change is caught
+# while a reworded comment is not.
+#
+# Crash policy differs by blast radius, per the sponsor_sizes
+# precedent: the admin copy raises at import, this one logs and
+# carries on. user-org failing to boot is a full outage; a mismatch
+# here still gets shouted into the logs and fails CI via
+# scripts/check-phone-normalize-parity.py, which is the authoritative
+# check.
+_CANONICAL_BEHAVIOR_HASH = "f98fe5cb79b2c69b98ed9ffee23ac4c3cb7bec5b613e7593be964599d555452b"
+
+
+def _behavior_fingerprint() -> str:
+    import hashlib
+    lines = []
+    for probe in _mirror_guard_probes():
+        try:
+            lines.append(f"{probe!r}=>{normalize_israeli_phone(probe)}")
+        except InvalidPhone as exc:
+            lines.append(f"{probe!r}=>!{exc.code}")
+    return hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()
+
+
+_actual = _behavior_fingerprint()
+if _actual != _CANONICAL_BEHAVIOR_HASH:
+    import logging
+    logging.error(
+        "phone_normalize behaviour drift in services/user-org: computed %s, "
+        "expected %s. This module is mirrored into services/admin — the two "
+        "MUST agree. Continuing (a failed boot here is a full outage), but "
+        "CI will fail.",
+        _actual, _CANONICAL_BEHAVIOR_HASH,
+    )
+
+
+if __name__ == "__main__":  # pragma: no cover — dev helper
+    print(_behavior_fingerprint())
