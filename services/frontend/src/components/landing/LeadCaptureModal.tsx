@@ -140,6 +140,8 @@ export default function LeadCaptureModal({ open, onClose }: LeadCaptureModalProp
                   <User className="absolute end-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
                   <Input
                     id="lead-name"
+                    name="name"
+                    autoComplete="name"
                     value={form.full_name}
                     onChange={(e) => setForm((f) => ({ ...f, full_name: e.target.value }))}
                     placeholder="ישראל ישראלי"
@@ -159,6 +161,9 @@ export default function LeadCaptureModal({ open, onClose }: LeadCaptureModalProp
                   <Input
                     id="lead-phone"
                     type="tel"
+                    name="tel"
+                    autoComplete="tel"
+                    inputMode="tel"
                     value={form.phone}
                     onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
                     placeholder="050-0000000"

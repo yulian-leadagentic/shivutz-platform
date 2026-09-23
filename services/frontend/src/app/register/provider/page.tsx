@@ -594,7 +594,10 @@ export default function ProviderRegisterPage() {
 
                   <label className="block text-sm">
                     <span className="text-slate-700 mb-1 block">שם העסק *</span>
+                    {/* R30 §15 · autofill needs name + autoComplete together. */}
                     <Input
+                      name="organization"
+                      autoComplete="organization"
                       value={name}
                       onChange={(e) => { setName(e.target.value); if (fieldErrors.name) clearField('name'); }}
                       required
@@ -638,6 +641,8 @@ export default function ProviderRegisterPage() {
                     <label className="block text-sm">
                       <span className="text-slate-700 mb-1 block">עיר (אופציונלי)</span>
                       <Input
+                        name="city"
+                        autoComplete="address-level2"
                         value={city}
                         onChange={(e) => setCity(e.target.value)}
                       />
@@ -681,6 +686,9 @@ export default function ProviderRegisterPage() {
                       value={website}
                       onChange={(e) => setWebsite(e.target.value)}
                       dir="ltr"
+                      type="url"
+                      name="url"
+                      autoComplete="url"
                       placeholder="https://"
                     />
                   </label>

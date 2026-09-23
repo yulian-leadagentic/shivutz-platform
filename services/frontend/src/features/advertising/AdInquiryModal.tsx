@@ -130,8 +130,14 @@ export function AdInquiryModal({
 
             <form onSubmit={submit} className="space-y-3">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">שם מלא</label>
+                <label htmlFor="ad-inq-name" className="block text-xs font-semibold text-slate-700 mb-1">שם מלא</label>
+                {/* R30 §15 · raw <input>, so it misses everything the
+                    shared Input component gives for free. These are the
+                    visitor's OWN details, so autofill is wanted here. */}
                 <input
+                  id="ad-inq-name"
+                  name="name"
+                  autoComplete="name"
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
@@ -139,13 +145,22 @@ export function AdInquiryModal({
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">טלפון</label>
+                <label htmlFor="ad-inq-phone" className="block text-xs font-semibold text-slate-700 mb-1">טלפון</label>
+                {/* dir="ltr" is the bug that matters here: a phone number
+                    typed into an RTL field renders in the wrong visual
+                    order, so the visitor proof-reads a number that is not
+                    the one being submitted. */}
                 <input
+                  id="ad-inq-phone"
+                  name="tel"
+                  autoComplete="tel"
+                  inputMode="tel"
+                  dir="ltr"
                   type="tel"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
                   placeholder="050-0000000"
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm text-start outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
                 />
               </div>
               <div>

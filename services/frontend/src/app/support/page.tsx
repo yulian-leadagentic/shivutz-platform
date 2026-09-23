@@ -11,12 +11,15 @@ import { supportApi } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { HomeLink } from '@/components/HomeLink';
+import { checkIsraeliPhone, PHONE_ERROR_INVALID } from '@/lib/phone';
 
 export default function SupportPage() {
   const router = useRouter();
   const [subject, setSubject]   = useState('');
   const [body, setBody]         = useState('');
   const [phone, setPhone]       = useState('');
+  // R30 §15 · inline phone error, cleared on the next keystroke.
+  const [phoneError, setPhoneError] = useState('');
   const [submitting, setSubmit] = useState(false);
   const [error, setError]       = useState('');
   const [done, setDone]         = useState(false);
@@ -25,12 +28,24 @@ export default function SupportPage() {
     e.preventDefault();
     if (subject.trim().length < 2)  { setError('יש להזין נושא'); return; }
     if (body.trim().length    < 5)  { setError('יש להזין תיאור קצר של הפנייה'); return; }
+    // R30 §15 · optional field, but a value that IS typed must be a
+    // real number — and we send the canonical form so the row matches
+    // what the server would have normalized it to anyway.
+    let contactPhone: string | undefined;
+    if (phone.trim()) {
+      const check = checkIsraeliPhone(phone);
+      if (!check.valid || !check.normalized) {
+        setPhoneError(check.message || PHONE_ERROR_INVALID);
+        return;
+      }
+      contactPhone = check.normalized;
+    }
     setSubmit(true); setError('');
     try {
       await supportApi.submit({
         subject: subject.trim(),
         body:    body.trim(),
-        contact_phone: phone.trim() || undefined,
+        contact_phone: contactPhone,
       });
       setDone(true);
     } catch (e) {
@@ -97,13 +112,27 @@ export default function SupportPage() {
           />
         </div>
 
+        {/* R30 §15 · this is the field that accepted 090998798677868.
+            The server now rejects it (400, Hebrew), and the input
+            carries the attributes browser autofill actually keys off:
+            `name` + `autoComplete` together, plus inputMode so a phone
+            gets the numeric keypad. dir="ltr" was already right. */}
         <Input
           label="טלפון לחזרה (אופציונלי)"
           placeholder="אם תרצה שנחזיר במספר אחר מהמספר הרשום אצלינו"
           value={phone}
-          onChange={(e) => setPhone(e.target.value)}
+          onChange={(e) => { setPhone(e.target.value); if (phoneError) setPhoneError(''); }}
+          onBlur={() => {
+            if (!phone.trim()) return;
+            const check = checkIsraeliPhone(phone);
+            if (!check.valid) setPhoneError(check.message || PHONE_ERROR_INVALID);
+          }}
+          error={phoneError || undefined}
           type="tel"
           dir="ltr"
+          name="tel"
+          autoComplete="tel"
+          inputMode="tel"
         />
 
         {error && (

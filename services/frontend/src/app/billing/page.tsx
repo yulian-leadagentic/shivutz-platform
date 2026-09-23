@@ -437,12 +437,21 @@ export default function BillingPage() {
           )}
 
           <div className="pt-2 border-t border-slate-100 flex items-center gap-2">
+            {/* R30 §15 · dir="ltr" so the number reads in the right
+                order. No autoComplete: this adds a TEAMMATE's number to
+                the notification list, and autofilling the operator's own
+                details into a third-party field is worse than no
+                autofill at all. inputMode still gives the right keypad. */}
             <input
               type="tel"
+              inputMode="tel"
+              dir="ltr"
+              id="billing-notify-phone"
+              name="notify-phone"
               value={newPhone}
               onChange={(e) => setNewPhone(e.target.value)}
               placeholder="הוסף מספר טלפון"
-              className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
+              className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm text-start outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
             />
             <button
               type="button"
