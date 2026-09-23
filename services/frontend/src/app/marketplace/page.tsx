@@ -171,9 +171,9 @@ function MarketplacePageInner() {
   return (
     <SponsorProvider>
       {/* R30 §24 · SponsorSideRail is no longer rendered here as a
-          standalone. The rail lives inside SponsorRailLayout that
-          wraps the marketplace grid below — as a grid column, not
-          a fixed overlay. */}
+          standalone. The rail lives inside the SponsorRailLayout that
+          wraps the marketplace grid below — as a grid column, not a
+          fixed overlay. */}
       <div className="min-h-screen bg-slate-50" dir="rtl">
       {/* Top nav bar */}
       <nav className="bg-white border-b border-slate-200 sticky top-0 z-40">
@@ -211,7 +211,17 @@ function MarketplacePageInner() {
         </div>
       </nav>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+      {/* R30 §24 (completed in wave 0) · the rail wrapper the comment
+          above has claimed since wave 3 was never actually added here
+          — SponsorRailLayout was imported and left unused, so
+          /marketplace never requested a side_rail ad at all. Wrapping
+          now. The layout owns the centring container, so this div
+          keeps only the vertical padding; content max-width becomes
+          RAIL_CONTENT_MAX_PX (1152) instead of max-w-7xl (1280), which
+          is what §24 specified so the rail and the grid share one
+          measurement. */}
+      <div className="py-8">
+        <SponsorRailLayout>
         {/* Page header */}
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-slate-900">שירותים נלווים לעובדים זרים</h1>
@@ -304,6 +314,7 @@ function MarketplacePageInner() {
             ))}
           </div>
         )}
+        </SponsorRailLayout>
       </div>
 
       {/* U7 Phase C · shared 3-role CTA (compact variant) replaces the
