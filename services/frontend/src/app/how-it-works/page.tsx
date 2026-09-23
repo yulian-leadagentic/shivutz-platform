@@ -271,6 +271,51 @@ export default function HowItWorksPage() {
         </div>
       </section>
 
+      {/* R30 §10 · verification section — הצעה, לאישור Yulian.
+          Every paragraph MUST describe what the code actually does
+          today, not aspirational copy. The service_provider paragraph
+          in particular is worded to reflect the ״format-only ח.פ
+          check, no registry lookup" reality documented in
+          providers.py:11,98 and migration 077:181-182 — because
+          promising verification we don't perform is a broken
+          promise the visitor will discover the first time they hit
+          a fraudulent provider. When Yulian returns copy edits, swap
+          the three <p> strings; do not re-shape the structure. */}
+      <section
+        aria-labelledby="how-we-verify"
+        className="bg-white border border-slate-200 rounded-2xl p-6 md:p-8 space-y-5"
+      >
+        <div className="flex items-center gap-3">
+          <div className="h-11 w-11 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center">
+            <ShieldCheck className="h-5 w-5" />
+          </div>
+          <div>
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">איך אנחנו מאמתים</p>
+            <h2 id="how-we-verify" className="text-xl md:text-2xl font-bold text-slate-900">אימות המשתמשים בפלטפורמה</h2>
+          </div>
+        </div>
+        <div className="grid gap-4 text-sm md:text-base text-slate-700 leading-relaxed">
+          <div className="border-r-4 border-amber-500 pr-3">
+            <p className="font-semibold text-slate-900 mb-1">קבלנים</p>
+            <p>
+              נבדקים מול פנקס הקבלנים של משרד הבינוי והשיכון. הרשומים בפנקס עוברים אימות אוטומטי בעת ההרשמה, וקבלני tier_2 נבדקים מחדש כל שישה חודשים.
+            </p>
+          </div>
+          <div className="border-r-4 border-brand-500 pr-3">
+            <p className="font-semibold text-slate-900 mb-1">תאגידי כוח אדם</p>
+            <p>
+              נבדקים מול רשם החברות (data.gov.il) וברשימת תאגידי כוח אדם המורשים של רשות האוכלוסין וההגירה, המיובאת מדי שנה מ-PDF רשמי. תאגיד שאינו ברשימה — אינו יכול לפרסם.
+            </p>
+          </div>
+          <div className="border-r-4 border-emerald-500 pr-3">
+            <p className="font-semibold text-slate-900 mb-1">ספקי שירותים נלווים</p>
+            <p>
+              נבדק פורמט של ח.פ / ע.מ בלבד (9 ספרות). אין הצלבה מול מרשם ממשלתי, וסימון ״ספק מאומת״ ניתן ידנית על ידי צוות TagidAI. יש לקחת זאת בחשבון בפנייה לספק.
+            </p>
+          </div>
+        </div>
+      </section>
+
       {/* R30 §7 · CTA row — the page had NO way to reach the
           registration picker except the trust footer's "← חזרה
           לדף הבית" text link, which many visitors miss. Add a

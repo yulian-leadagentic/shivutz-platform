@@ -449,39 +449,89 @@ const TEST_CATALOG = [
   },
 ];
 
-// List of cron jobs the panel can fire manually. The handler name maps to
-// the require path so the trigger endpoint can resolve it without a switch.
-const TEST_CRONS = [
-  {
-    name:        'visaExpiry',
-    description: 'Sweep workers whose visas expire in 30 / 7 / 0 days. Daily 06:00 in prod.',
-    module:      '../cron/visaExpiry',
+// R30 §6 · cron catalog for /admin/notifications-test.
+//
+// Was hand-typed and drifted: three of the five listed crons pointed
+// at modules deleted with 058_drop_dead_pivot_tables.sql
+// (dealLifecycle, contractorApprovalReminder, corpResponseOverdue),
+// and five real crons on disk were never listed at all
+// (adExpiringReminder, graceHardCap, graceReminder, subscriptionRenewal,
+// trialEndingReminder).
+//
+// Rule now: the FILES in src/cron/ are the source of truth for
+// which crons exist. This map only names the exported fn per file
+// and gives it a Hebrew description for the Hebrew admin panel.
+// Add a new cron → drop the file + one row here; delete a cron →
+// remove the file + the row. If the two get out of sync, the boot
+// warnings below fire so the drift is caught before it reaches
+// admins staring at a "cron not found" error.
+const fs   = require('fs');
+const path = require('path');
+
+const CRON_METADATA = {
+  'visaExpiry.js': {
+    description: 'סריקת עובדים שהוויזה שלהם פגה בעוד 30 / 7 / 0 ימים. בפרוד רץ יומי ב-06:00.',
     fn:          'runVisaExpiryCron',
   },
-  {
-    name:        'contractorRevalidation',
-    description: 'Re-checks tier_2 contractors against פנקס הקבלנים. Daily 06:30 in prod.',
-    module:      '../cron/contractorRevalidation',
+  'contractorRevalidation.js': {
+    description: 'בדיקה מחדש של קבלני tier_2 מול פנקס הקבלנים. בפרוד רץ יומי ב-06:30.',
     fn:          'runContractorRevalidationCron',
   },
-  {
-    name:        'dealLifecycle',
-    description: 'Sweep deals — expire / capture / nudge. Hourly in prod.',
-    module:      '../cron/dealLifecycle',
-    fn:          'runDealLifecycleCron',
+  'adExpiringReminder.js': {
+    description: 'תזכורת למפרסמים על מודעות שיפוגו בעוד 3 ימים. בפרוד רץ יומי ב-09:00.',
+    fn:          'runAdExpiringReminderCron',
   },
-  {
-    name:        'contractorApprovalReminder',
-    description: 'SMS contractors with stuck corp_committed deals (>24h pending approval). Daily 09:00 in prod.',
-    module:      '../cron/contractorApprovalReminder',
-    fn:          'runContractorApprovalReminderCron',
+  'graceReminder.js': {
+    description: 'תזכורות תשלום בתקופת החסד (day 1 / day 4 / day 7) למנויים שהכרטיס שלהם נדחה. בפרוד רץ יומי ב-09:00.',
+    fn:          'runGraceReminderCron',
   },
-  {
-    name:        'corpResponseOverdue',
-    description: 'Admin alert for `proposed` deals past the corp-response deadline. Every 5 min in prod.',
-    module:      '../cron/corpResponseOverdue',
-    fn:          'runCorpResponseOverdueCron',
+  'graceHardCap.js': {
+    description: 'סגירת מנויים שחלפו 10 ימי חסד ללא תשלום — מסמן ל-cancelled ומודיע לבעלים. בפרוד רץ יומי ב-09:00.',
+    fn:          'runGraceHardCapCron',
   },
-];
+  'subscriptionRenewal.js': {
+    description: 'סריקת מנויים חודשיים שהגיע מועד החיוב שלהם — סכומי Cardcom ועדכון next_billing_at. בפרוד רץ יומי ב-09:00.',
+    fn:          'runSubscriptionRenewalCron',
+  },
+  'trialEndingReminder.js': {
+    description: 'תזכורת לתאגידים 3 ימים לפני סוף תקופת הניסיון. בפרוד רץ יומי ב-09:00.',
+    fn:          'runTrialEndingReminderCron',
+  },
+};
+
+const CRON_DIR = path.join(__dirname, 'cron');
+
+function loadCrons() {
+  let files = [];
+  try {
+    files = fs.readdirSync(CRON_DIR).filter((f) => f.endsWith('.js'));
+  } catch (err) {
+    console.warn('[testCatalog] cron dir unreadable:', err.message);
+    return [];
+  }
+  const crons = [];
+  for (const file of files) {
+    const meta = CRON_METADATA[file];
+    if (!meta) {
+      console.warn(`[testCatalog] cron file ${file} has no CRON_METADATA entry — hidden from admin panel until described`);
+      continue;
+    }
+    crons.push({
+      name:        file.replace(/\.js$/, ''),
+      description: meta.description,
+      module:      `../cron/${file.replace(/\.js$/, '')}`,
+      fn:          meta.fn,
+    });
+  }
+  // Reverse drift: metadata entries whose file has been deleted.
+  for (const key of Object.keys(CRON_METADATA)) {
+    if (!files.includes(key)) {
+      console.warn(`[testCatalog] CRON_METADATA references ${key} but file is not on disk — remove the entry or restore the file`);
+    }
+  }
+  return crons;
+}
+
+const TEST_CRONS = loadCrons();
 
 module.exports = { TEST_CATALOG, TEST_CRONS };

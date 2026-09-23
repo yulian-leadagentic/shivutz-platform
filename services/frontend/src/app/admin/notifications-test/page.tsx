@@ -188,6 +188,27 @@ export default function NotificationTestPanel() {
               </select>
             </div>
 
+            {/* R30 §6b · empty-state help — the panel used to render a
+                500px-tall blank space under an unselected dropdown, so
+                a first-time admin had no idea what the screen even
+                does. Populate the same slot with a short "how this
+                works" note; it disappears once an event is picked. */}
+            {!selected && (
+              <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3 text-sm text-slate-700 space-y-2">
+                <p className="font-medium text-slate-900">מה המסך הזה עושה</p>
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  בחר אירוע מערכת מהרשימה למעלה כדי לשלוח הודעה לדוגמה — SMS, אימייל
+                  או WhatsApp — לפי הערוצים שההנדלר משתמש בהם בפועל. אין השפעה על משתמשים
+                  אמיתיים: הכפתורים ״החלף טלפון יעד״ ו״החלף אימייל יעד״ ממתגים את היעד
+                  לפרטים שהאדמין נותן, וה-payload עצמו נותר כפי שמוגדר בקטלוג.
+                </p>
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  הבלוק ״Cron — הפעל עכשיו״ מימין מפעיל job מתוזמן ידנית פעם אחת;
+                  הוא גורף על נתונים אמיתיים ב-DB, לכן שם אין override.
+                </p>
+              </div>
+            )}
+
             {selected && (
               <>
                 <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3 text-sm text-slate-700 space-y-1.5">

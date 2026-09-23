@@ -73,6 +73,38 @@ def _visual_to_logical_hebrew(s: str | None) -> str | None:
     return DIGIT_RUN_RE.sub(lambda m: m.group(0)[::-1], rev)
 
 
+# R30 §1 · PDF extraction converts the Hebrew double-quote ״ into
+# a tilde ~ when a cell contains "בע״מ" (limited company). Yulian
+# spot-fixed five rows on 22.09 (בע~מ → בע"מ); without a
+# normaliser the next import re-corrupts every row that has בע״מ
+# in its display name. Also: the same extraction runs sequences
+# of ASCII spaces together into "double-space runs" that show up
+# in the admin table as double gaps ("בניה  בע~מ"), so we collapse
+# runs of whitespace to a single space at the same time.
+#
+# Rule: `~` between two Hebrew letters becomes `"`. Standalone ~
+# in any other context is left alone — it's a legitimate character
+# elsewhere and we don't want a blanket replace.
+_TILDE_BETWEEN_HEBREW_RE = re.compile(r"(?<=[֐-׿])~(?=[֐-׿])")
+_MULTI_SPACE_RE = re.compile(r"[ \t ]{2,}")
+
+
+def _fix_pdf_extract_artifacts(s: str | None) -> str | None:
+    """Post-process the Hebrew string coming out of pdfplumber to
+    undo the two extraction artefacts Yulian catches manually in
+    /admin/orgs:
+      1. ~ between two Hebrew letters → " (בע~מ → בע"מ). §1.
+      2. runs of whitespace collapsed to a single space (double gap
+         inside "מזרח הירקון בניה  בע"מ").
+    Applied to display names ONLY (not to phone / business-number
+    strings — those go through their own normalisers)."""
+    if not s:
+        return s
+    out = _TILDE_BETWEEN_HEBREW_RE.sub('"', s)
+    out = _MULTI_SPACE_RE.sub(' ', out)
+    return out.strip()
+
+
 def _normalize_phone(raw: str) -> str | None:
     """Return a canonical digit-only phone or None if it doesn't look like one.
 
@@ -207,8 +239,13 @@ def parse_pdf_bytes(pdf_bytes: bytes) -> list[dict[str, Any]]:
                     # The name + address cells come back from pdfplumber in
                     # visual order — flip them to logical reading order
                     # before storing so admin sees correct Hebrew everywhere.
-                    name_he    = _visual_to_logical_hebrew(name_cell or None)
-                    address_he = _visual_to_logical_hebrew(address_cell or None)
+                    # R30 §1 · then run _fix_pdf_extract_artifacts to undo
+                    # the ~ (for ״) + double-space artefacts the extractor
+                    # leaves in place — otherwise every import re-writes
+                    # "בע~מ" into the DB and Yulian has to hand-fix five
+                    # rows again.
+                    name_he    = _fix_pdf_extract_artifacts(_visual_to_logical_hebrew(name_cell or None))
+                    address_he = _fix_pdf_extract_artifacts(_visual_to_logical_hebrew(address_cell or None))
 
                     business_number = _first_business_number(bn_cell)
                     if not business_number:

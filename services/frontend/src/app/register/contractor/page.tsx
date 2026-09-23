@@ -14,6 +14,7 @@ import { HomeLink } from '@/components/HomeLink';
 import Logo from '@/components/Logo';
 import { ConsentLine } from '@/components/register/ConsentLine';
 import { readProspect, clearProspect } from '@/features/prospect/state';
+import { checkEmail } from '@/lib/email';
 import {
   writeReturnTo, clearReturnTo, resolveDestination, sanitizeReturnTo,
 } from '@/features/prospect/returnTo';
@@ -204,6 +205,10 @@ function RegisterContractorInner() {
     company_name_he: '', business_number: '', kablan_number: '', operating_regions: [],
   });
   const [step3, setStep3] = useState<Step3>({ contact_email: '', tc_accepted: false, whatsapp_opt_in: false });
+  // R30 §9 · inline email error surface. Empty is fine (email is
+  // optional here); a filled-in but malformed address gets a Hebrew
+  // message on blur, cleared on the next keystroke.
+  const [emailError, setEmailError] = useState<string>('');
 
   const [lookup, setLookup]           = useState<RegistryLookupResult | null>(null);
   const [lookupLoading, setLookupLoading] = useState(false);
@@ -326,6 +331,15 @@ function RegisterContractorInner() {
     if (!step3.tc_accepted) {
       setError('יש לאשר את תנאי השימוש כדי להמשיך');
       return;
+    }
+    // R30 §9 · re-check on submit so a value that never got blurred
+    // (paste + Enter) still surfaces the Hebrew inline message.
+    if (step3.contact_email.trim()) {
+      const check = checkEmail(step3.contact_email, { required: false });
+      if (!check.valid && check.message) {
+        setEmailError(check.message);
+        return;
+      }
     }
     setLoading(true);
     try {
@@ -838,7 +852,18 @@ function RegisterContractorInner() {
                   placeholder="info@company.co.il"
                   dir="ltr"
                   value={step3.contact_email}
-                  onChange={(e) => setStep3((p) => ({ ...p, contact_email: e.target.value }))}
+                  onChange={(e) => {
+                    setStep3((p) => ({ ...p, contact_email: e.target.value }));
+                    if (emailError) setEmailError('');
+                  }}
+                  onBlur={() => {
+                    // R30 §9 · empty stays empty (field is optional);
+                    // a filled-in value is checked with the shared helper.
+                    if (!step3.contact_email.trim()) return;
+                    const check = checkEmail(step3.contact_email, { required: false });
+                    if (!check.valid && check.message) setEmailError(check.message);
+                  }}
+                  error={emailError || undefined}
                   autoComplete="email"
                 />
 

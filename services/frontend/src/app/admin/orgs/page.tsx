@@ -271,8 +271,16 @@ export default function AdminOrgsPage() {
                         />
                       </td>
                       <td className="py-3 px-4 sm:px-0 font-medium text-slate-900">
+                        {/* R30 §3 · corporations.company_name and
+                            .company_name_he hold IDENTICAL Hebrew
+                            strings across every row (verified against
+                            DB — the registration path writes the same
+                            value to both). The design intent was
+                            Latin-on-top / Hebrew-below, but the data
+                            never materialized. Show the secondary
+                            line only when it ACTUALLY differs. */}
                         {o.company_name}
-                        {o.company_name_he && (
+                        {o.company_name_he && o.company_name_he !== o.company_name && (
                           <span className="block text-xs text-slate-400">{o.company_name_he}</span>
                         )}
                       </td>

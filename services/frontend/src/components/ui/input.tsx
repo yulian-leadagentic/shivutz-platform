@@ -16,7 +16,15 @@ export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> 
 const NO_AUTOSELECT_TYPES = new Set(['tel', 'email', 'password', 'number', 'url']);
 
 const Input = React.forwardRef<HTMLInputElement, InputProps>(
-  ({ className, type, label, error, hint, id, onFocus, ...props }, ref) => {
+  (
+    {
+      className, type, label, error, hint, id, onFocus,
+      'aria-invalid': ariaInvalidProp,
+      'aria-describedby': ariaDescribedByProp,
+      ...props
+    },
+    ref,
+  ) => {
     // U8 §5a defect (b) — the old `label.toLowerCase().replace(/\s+/g,'-')`
     // produced Hebrew ids (`שם-פרטי`) which collided across forms with
     // the same label and mispointed <label htmlFor>. `useId()` is
@@ -24,6 +32,14 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
     // concern, and the caller-supplied `id` still wins when set.
     const generatedId = React.useId();
     const inputId = id ?? generatedId;
+    // R30 §9 · a screen-reader user must hear the inline error message.
+    // Wire aria-invalid + aria-describedby whenever the caller passes
+    // an error string, without every caller repeating the boilerplate.
+    // Caller-supplied aria-describedby is preserved and merged.
+    const errorId = `${inputId}-err`;
+    const describedBy = [error ? errorId : null, ariaDescribedByProp]
+      .filter(Boolean)
+      .join(' ') || undefined;
     // QA-R3 #21 — auto-select existing content on focus so the user can
     // just type to replace. Skip for type=checkbox/radio (no text value)
     // and respect any per-input override (caller-provided onFocus runs
@@ -81,10 +97,12 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
             className
           )}
           ref={ref}
+          aria-invalid={error ? true : ariaInvalidProp}
+          aria-describedby={describedBy}
           {...props}
         />
         {error && (
-          <p className="text-xs text-red-600 text-start">{error}</p>
+          <p id={errorId} className="text-xs text-red-600 text-start">{error}</p>
         )}
         {hint && !error && (
           <p className="text-xs text-slate-400 text-start">{hint}</p>

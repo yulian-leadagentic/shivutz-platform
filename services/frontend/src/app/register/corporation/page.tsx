@@ -14,6 +14,7 @@ import { HomeLink } from '@/components/HomeLink';
 import Logo from '@/components/Logo';
 import { ConsentLine } from '@/components/register/ConsentLine';
 import { readProspect, clearProspect } from '@/features/prospect/state';
+import { checkEmail } from '@/lib/email';
 // RT — reveal→register funnel resilience. See docs/cc-prompts/
 // cc_prompt_return_to_reveal.md §4. Mirrors register/contractor's
 // gotoAfterRegister so the corp side stops silently dropping the
@@ -185,6 +186,10 @@ function RegisterCorporationInner() {
     company_name_he: '', business_number: '', countries_of_origin: [], minimum_contract_months: 3,
   });
   const [step3, setStep3] = useState<Step3>({ contact_email: '', tc_accepted: false, whatsapp_opt_in: false });
+  // R30 §9 · inline email error surface, same pattern as contractor
+  // register — empty is fine (field is optional here); a filled-in
+  // but malformed address gets a Hebrew message on blur.
+  const [emailError, setEmailError] = useState<string>('');
 
   const [lookup, setLookup]               = useState<CorporationLookupResult | null>(null);
   const [lookupLoading, setLookupLoading] = useState(false);
@@ -282,6 +287,14 @@ function RegisterCorporationInner() {
     if (!step3.tc_accepted) {
       setError('יש לאשר את תנאי השימוש כדי להמשיך');
       return;
+    }
+    // R30 §9 · re-check on submit for the paste-then-Enter path.
+    if (step3.contact_email.trim()) {
+      const check = checkEmail(step3.contact_email, { required: false });
+      if (!check.valid && check.message) {
+        setEmailError(check.message);
+        return;
+      }
     }
     setLoading(true);
     try {
@@ -684,7 +697,16 @@ function RegisterCorporationInner() {
                   placeholder="info@corp.com"
                   dir="ltr"
                   value={step3.contact_email}
-                  onChange={(e) => setStep3((p) => ({ ...p, contact_email: e.target.value }))}
+                  onChange={(e) => {
+                    setStep3((p) => ({ ...p, contact_email: e.target.value }));
+                    if (emailError) setEmailError('');
+                  }}
+                  onBlur={() => {
+                    if (!step3.contact_email.trim()) return;
+                    const check = checkEmail(step3.contact_email, { required: false });
+                    if (!check.valid && check.message) setEmailError(check.message);
+                  }}
+                  error={emailError || undefined}
                   autoComplete="email"
                 />
 

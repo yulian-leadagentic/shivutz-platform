@@ -48,6 +48,7 @@ import { HomeLink } from '@/components/HomeLink';
 import Logo from '@/components/Logo';
 import { ConsentLine } from '@/components/register/ConsentLine';
 import { checkIsraeliPhone } from '@/lib/phone';
+import { checkEmail } from '@/lib/email';
 
 type Phase = 'phone' | 'otp' | 'form' | 'done';
 
@@ -282,14 +283,14 @@ export default function ProviderRegisterPage() {
     if (!/^\d{9}$/.test(bn))    { setField('business_number', 'ח.פ / ע.מ חייב להיות 9 ספרות'); return; }
     // R10 §5 · email now required. Yulian's decisions doc §5:
     // "בלי אימייל אין לאן לשלוח" (welcome email needs a target).
-    const em = email.trim();
-    if (!em) { setField('email', 'אימייל עסקי הוא שדה חובה'); return; }
-    // Basic format check — Pydantic EmailStr does the server-side
-    // validation. Just a "did you paste an address" gate here.
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) {
-      setField('email', 'אימייל בפורמט לא תקין');
+    // R30 §9 · use the shared helper so the error copy matches the
+    // onBlur path. Pydantic EmailStr is still the server-side truth.
+    const emailCheck = checkEmail(email, { required: true });
+    if (!emailCheck.valid || !emailCheck.normalized) {
+      setField('email', emailCheck.message ?? 'אימייל עסקי הוא שדה חובה');
       return;
     }
+    const em = emailCheck.normalized;
     setBusy(true);
     try {
       const res = await orgApi.registerProvider({
@@ -445,7 +446,7 @@ export default function ProviderRegisterPage() {
               )}
 
               {phase === 'form' && (
-                <form onSubmit={submit} className="space-y-4">
+                <form onSubmit={submit} className="space-y-4" noValidate>
                   <div className="flex items-center gap-2 rounded-md bg-emerald-50 border border-emerald-200 px-3 py-2 text-sm text-emerald-800">
                     <ShieldCheck className="w-4 h-4" />
                     הטלפון אומת. נותרו פרטי העסק:
@@ -564,9 +565,28 @@ export default function ProviderRegisterPage() {
                               </label>
                             );
                           })}
-                          <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
-                            במסגרת מבצע ההשקה — הפרסום ללא עלות עד סיום המבצע. לא נחייב אותך ללא הודעה מראש.
-                          </p>
+                          {/* R30 §8 · promo sentence gets an EXPLICIT
+                              end date from NEXT_PUBLIC_FREE_LAUNCH_UNTIL
+                              (the same env var FreeLaunchBanner reads).
+                              When the env is unset we render NOTHING —
+                              never "עד סיום המבצע" without a date, per
+                              §8: "המשתמש מוסר פרטי עסק בלי לדעת מתי
+                              מתחיל החיוב". Formatted DD.MM.YYYY, matches
+                              the display in FreeLaunchBanner. */}
+                          {(() => {
+                            const raw = process.env.NEXT_PUBLIC_FREE_LAUNCH_UNTIL?.trim();
+                            if (!raw) return null;
+                            const d = new Date(raw);
+                            if (Number.isNaN(d.getTime())) return null;
+                            const dd = String(d.getDate()).padStart(2, '0');
+                            const mm = String(d.getMonth() + 1).padStart(2, '0');
+                            const yyyy = d.getFullYear();
+                            return (
+                              <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                                הפרסום ללא עלות עד {dd}.{mm}.{yyyy}. לא נחייב אותך ללא הודעה מראש.
+                              </p>
+                            );
+                          })()}
                         </div>
                       )}
                     </div>
@@ -630,6 +650,19 @@ export default function ProviderRegisterPage() {
                       type="email"
                       value={email}
                       onChange={(e) => { setEmail(e.target.value); if (fieldErrors.email) clearField('email'); }}
+                      // R30 §9 · validate on blur, not on every keystroke.
+                      // Keystroke validation flashes an error while the
+                      // visitor is still typing the address; blur waits
+                      // until they leave the field. Empty stays empty —
+                      // the submit path shows the "required" copy. The
+                      // browser's own bubble is suppressed by noValidate
+                      // on the <form>; the Hebrew message under the field
+                      // is now the only message the visitor sees.
+                      onBlur={() => {
+                        if (!email.trim()) return;
+                        const check = checkEmail(email, { required: false });
+                        if (!check.valid && check.message) setField('email', check.message);
+                      }}
                       dir="ltr"
                       autoComplete="email"
                       required
