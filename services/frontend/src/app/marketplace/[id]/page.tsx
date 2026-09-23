@@ -12,6 +12,11 @@ import { marketplaceApi } from '@/lib/api';
 import type { MarketplaceListing } from '@/types';
 import { Button } from '@/components/ui/button';
 import { CATEGORY_HE_FALLBACK, PRICE_UNIT_HE, labelFor } from '@/lib/labels';
+import {
+  SponsorProvider,
+  ListingInlineSponsor,
+  ListingRailSponsor,
+} from '@/features/advertising/MarketplaceSponsors';
 
 // U8 §1 — CATEGORY_HE_FALLBACK and PRICE_UNIT_HE moved to
 // lib/labels.ts. The icons stay local (they aren't labels, and the
@@ -117,6 +122,11 @@ export default function ListingDetailPage() {
                    listing.category === 'services'  ? 'bg-emerald-500' : 'bg-slate-400';
 
   return (
+    // R30 §12b · SponsorProvider so the two listing slots dedupe
+    // against each other — without it an advertiser who bought both
+    // listing_rail and listing_inline would appear twice on one page
+    // (the R29 §5 rule: an ad in two placements shows once).
+    <SponsorProvider>
     <div className="min-h-screen bg-slate-50">
       {/* Header bar */}
       <header className="bg-white border-b border-slate-200 sticky top-0 z-10">
@@ -262,6 +272,13 @@ export default function ListingDetailPage() {
               </div>
             )}
 
+            {/* R30 §12b · listing_inline, under the description. The
+                page was empty from here down. Category-targeted: a
+                housing listing draws housing advertisers only, and
+                when nothing matches the slot renders nothing rather
+                than falling back to a generic ad. */}
+            <ListingInlineSponsor category={listing.category} />
+
             {/* Posted date */}
             <p className="text-xs text-slate-400 text-center">
               פורסם {daysAgo(listing.created_at)}
@@ -363,9 +380,17 @@ export default function ListingDetailPage() {
                 ← חזור לכל המודעות
               </Link>
             </div>
+
+            {/* R30 §12b · listing_rail, under the contact card — the
+                ~530px of dead space in the left column. Desktop ≥1440
+                only (the component self-gates), category-targeted, and
+                below the fold so it doesn't count against the §5
+                above-fold ceiling. */}
+            <ListingRailSponsor category={listing.category} />
           </div>
         </div>
       </main>
     </div>
+    </SponsorProvider>
   );
 }

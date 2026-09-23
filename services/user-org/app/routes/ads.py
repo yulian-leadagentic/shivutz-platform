@@ -655,6 +655,15 @@ def get_sponsored_ads(
         "home_leaderboard",
         "home_billboard",
         "side_rail",
+        # R30 §12b · listing-page slots. Targeting needs no new
+        # mechanism: the `category` query param already filters via
+        # s.category_code below, where NULL means "all categories"
+        # (the 069 target_* convention). A listing page passes its own
+        # category, so a housing listing draws housing advertisers and
+        # an equipment listing does not draw them — which is the whole
+        # point of the pair.
+        "listing_rail",
+        "listing_inline",
     }
     if placement is not None and placement not in _ALLOWED_PLACEMENTS:
         raise HTTPException(status_code=400, detail="invalid_placement")

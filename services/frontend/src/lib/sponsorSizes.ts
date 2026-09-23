@@ -34,6 +34,10 @@ export const SPONSOR_SIZES: Record<string, SlotSpec> = {
   home_leaderboard:     { desktop: [1200, 150], mobile: [720, 200] },
   home_billboard:       { desktop: [1200, 250], mobile: [720, 300] },
   side_rail:            { desktop: [300, 600],  mobile: null },
+  // R30 §12b · listing-page slots. Same shapes as their page-level
+  // cousins so one creative can serve both.
+  listing_rail:         { desktop: [300, 600],  mobile: null },
+  listing_inline:       { desktop: [1200, 250], mobile: [720, 300] },
   home_carousel:        { desktop: [640, 360],  mobile: [640, 360] },
   marketplace_carousel: { desktop: [640, 360],  mobile: [640, 360] },
   marketplace_banner:   { desktop: [1200, 250], mobile: [720, 300] },

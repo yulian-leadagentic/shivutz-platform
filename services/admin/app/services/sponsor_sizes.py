@@ -49,6 +49,13 @@ SIZES: dict[str, dict[str, Optional[tuple[int, int]]]] = {
     "home_leaderboard":                    {"desktop": (1200, 150), "mobile": (720, 200)},
     "home_billboard":                      {"desktop": (1200, 250), "mobile": (720, 300)},
     "side_rail":                           {"desktop": (300, 600),  "mobile": None},
+    # R30 §12b · listing-page slots. Same shapes as their page-level
+    # cousins on purpose — an agency supplying a side_rail creative can
+    # reuse it for listing_rail, and a billboard asset fits
+    # listing_inline. Fewer distinct sizes to order = fewer rejected
+    # uploads.
+    "listing_rail":                        {"desktop": (300, 600),  "mobile": None},
+    "listing_inline":                      {"desktop": (1200, 250), "mobile": (720, 300)},
     "home_carousel":                       {"desktop": (640, 360),  "mobile": (640, 360)},
     "marketplace_carousel":                {"desktop": (640, 360),  "mobile": (640, 360)},
     "marketplace_banner":                  {"desktop": (1200, 250), "mobile": (720, 300)},
@@ -96,6 +103,7 @@ _WIDE_STRIP_PLACEMENTS = frozenset({
     "home_billboard",
     "home_banner",          # R21/R22 legacy, same 1200×250 spec as billboard
     "marketplace_banner",   # same rule — a strip on a page, not a card
+    "listing_inline",       # R30 §12b · 1200×250 strip under the description
 })
 
 
@@ -289,7 +297,7 @@ def check_creative_dimensions(
 #      the user-org copy.
 # Skipping step 3 or 4 = one service dies on startup. That is the
 # feature.
-_CANONICAL_CATALOG_HASH = "945707de90c1f4fdb9e3192b0c58e9913cec9aebb391b8ad2027ebaa3c565098"
+_CANONICAL_CATALOG_HASH = "aecc1dac9f3721390f21937ff7ae5aa6956e3881c039487db087506a9395904a"
 
 
 def _catalog_hash() -> str:

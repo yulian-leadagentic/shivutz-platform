@@ -275,10 +275,19 @@ function normalizeCtaUrl(raw: string | null): string | null {
   return `https://${v}`;                          // bare host, scheme omitted
 }
 
-async function fetchSponsored(placement: string, limit: number): Promise<SponsorAd[]> {
+async function fetchSponsored(
+  placement: string,
+  limit: number,
+  // R30 §12b/§12c · when supplied, the server filters to slots whose
+  // category_code matches OR is NULL ("all categories"). Omitted for
+  // the page-level slots, which aren't category-scoped.
+  category?: string,
+): Promise<SponsorAd[]> {
   try {
+    const qs = new URLSearchParams({ placement, limit: String(limit) });
+    if (category) qs.set('category', category);
     const res = await apiFetch<{ results: SponsorAd[] }>(
-      `/ads/public/sponsored?placement=${encodeURIComponent(placement)}&limit=${limit}`,
+      `/ads/public/sponsored?${qs.toString()}`,
     );
     return (res.results ?? [])
       .map((ad) => ({ ...ad, cta_url: normalizeCtaUrl(ad.cta_url) }))
@@ -365,6 +374,10 @@ interface StripProps {
    *  `overflow-hidden` clipped the CTA away entirely. The catalog
    *  always had the mobile shape; the renderer just never read it. */
   aspectRatio: AspectPair;
+  /** R30 §12b · category-scoped slots (listing_inline) pass the viewed
+   *  listing's category so the server can match category_code. Page-level
+   *  strips omit it. */
+  category?: string;
 }
 
 /** R30 §25 · both ratios ride to CSS as custom properties — an inline
@@ -374,7 +387,7 @@ function aspectVars(a: AspectPair): React.CSSProperties {
   return { '--ar-d': a.desktop, '--ar-m': a.mobile } as React.CSSProperties;
 }
 
-function SponsorStripBanner({ placement, label, aboveFold = false, aspectRatio }: StripProps) {
+function SponsorStripBanner({ placement, label, aboveFold = false, aspectRatio, category }: StripProps) {
   const [ad, setAd]           = useState<SponsorAd | null>(null);
   const [claimResolved, setCR] = useState<boolean>(false);
   const ctx = useSponsorCtx();
@@ -391,7 +404,7 @@ function SponsorStripBanner({ placement, label, aboveFold = false, aspectRatio }
       // claimed by an earlier surface, this slot can fall back to
       // the next-best row instead of rendering nothing.
       const winner = await ctx.enqueueOne(
-        () => fetchSponsored(placement, 3),
+        () => fetchSponsored(placement, 3, category),
         aboveFold,
       );
       if (cancelled) return;
@@ -399,7 +412,7 @@ function SponsorStripBanner({ placement, label, aboveFold = false, aspectRatio }
       setCR(true);
     })();
     return () => { cancelled = true; };
-  }, [placement, aboveFold, ctx]);
+  }, [placement, aboveFold, ctx, category]);
 
   const observeRef = useAdImpression({ targetId: ad?.id, placement: placementBucket(placement) });
 
@@ -895,6 +908,65 @@ export function HomeSponsorBillboard() {
   // + recent-ads mosaic. Still counts as above-fold on desktop; on
   // mobile it lands right at the fold line. Cap it either way.
   return <SponsorStripBanner placement="home_billboard" aspectRatio={STRIP_ASPECT('home_billboard')} aboveFold />;
+}
+
+// ── R30 §12b · listing-page slots ───────────────────────────────────
+//
+// Two slots on /marketplace/[id], both CATEGORY-TARGETED (§12c):
+//
+//   listing_rail    300×600, under the contact card, desktop ≥1440
+//   listing_inline  1200×250 · 720×300 mobile, under the description
+//
+// The targeting needed no new mechanism — sponsor_ads_slots already
+// carries category_code, where NULL means "every category" (the same
+// convention 069 set for target_professions / target_ad_types). The
+// page passes the viewed listing's own category, so a housing listing
+// draws housing advertisers and an equipment listing does not.
+//
+// Yulian's rule, verbatim: an insurance advertiser appearing on a
+// housing listing is exactly what these slots exist to prevent. So
+// when nothing matches the category, the slot renders NOTHING — there
+// is deliberately no generic fallback. That also satisfies F3 ("no
+// sections without active ads").
+//
+// Impressions ride the existing useAdImpression / postAdEvent path;
+// no second counter.
+
+/** Under the description. Wide strip, so composite-first like the
+ *  other 1200×250 slots. */
+export function ListingInlineSponsor({ category }: { category: string }) {
+  return (
+    <SponsorStripBanner
+      placement="listing_inline"
+      category={category}
+      aspectRatio={STRIP_ASPECT('listing_inline')}
+      label="מודעה ממומנת"
+    />
+  );
+}
+
+/** Under the contact card. Reuses the rail cell so the sticky
+ *  behaviour and the ≥1440 gate match side_rail exactly. */
+export function ListingRailSponsor({ category }: { category: string }) {
+  const wide = useIsWideDesktop();
+  const [ad, setAd] = useState<SponsorAd | null>(null);
+  const ctx = useSponsorCtx();
+
+  useEffect(() => {
+    if (!wide) { setAd(null); return; }
+    let cancelled = false;
+    (async () => {
+      const winner = await ctx.enqueueOne(
+        () => fetchSponsored('listing_rail', 3, category),
+        false,   // below the fold — does not count against the §5 ceiling
+      );
+      if (!cancelled) setAd(winner);
+    })();
+    return () => { cancelled = true; };
+  }, [wide, category, ctx]);
+
+  if (!wide || !ad) return null;
+  return <RailCell ad={ad} />;
 }
 
 // R30 §24 · SponsorRailLayout replaces the R29 §4 <SponsorSideRail />
