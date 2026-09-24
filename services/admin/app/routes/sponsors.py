@@ -24,6 +24,8 @@ from typing import Optional
 import json
 import uuid
 
+import re
+
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field, HttpUrl
 
@@ -119,6 +121,52 @@ def _serialize(row: dict) -> dict:
         "created_at":         _to_iso(row.get("created_at")),
         "updated_at":         _to_iso(row.get("updated_at")),
     }
+
+
+# ── R30 §27 · cta_url normalisation, server-side ─────────────────────
+#
+# `Www.tagidai.com` (no scheme) is a RELATIVE path to a browser: it
+# resolves to https://<our-host>/Www.tagidai.com and 404s on our own
+# domain. The advertiser paid for a click-through that goes nowhere.
+#
+# R23 §2 added a check to the admin FORM. A client-only rule guards one
+# form, not the data — it cannot touch a row that predates it, and it
+# does nothing for any other write path. Hence here, at the boundary
+# every write crosses.
+#
+# `javascript:` / `data:` / `vbscript:` are rejected outright rather
+# than prefixed: an href is an execution surface, and no legitimate
+# advertiser CTA needs one.
+_CTA_SAFE_SCHEME = re.compile(r"^(?:https?|mailto|tel):", re.I)
+_CTA_ANY_SCHEME  = re.compile(r"^[a-z][a-z0-9+.\-]*:", re.I)
+
+
+def _normalize_cta_url(raw: Optional[str]) -> Optional[str]:
+    """Canonical cta_url, or HTTP 400. None/blank passes through as
+    None — an ad with no CTA renders its label as an inert <span>
+    (the 069 rule), which is valid."""
+    if raw is None:
+        return None
+    v = raw.strip()
+    if not v:
+        return None
+    if _CTA_SAFE_SCHEME.match(v):
+        return v
+    if _CTA_ANY_SCHEME.match(v):
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "cta_url_unsafe_scheme",
+                "message": "קישור ה-CTA חייב להתחיל ב-http:// או https://.",
+            },
+        )
+    if v.startswith("//"):
+        return "https:" + v
+    if v.startswith("/"):
+        # A deliberate in-app path. Left as-is; it is not a dead link.
+        return v
+    # Bare host typed without a scheme — the Www.tagidai.com case.
+    return "https://" + v
 
 
 def _validate_placements(placements: Optional[list[str]]) -> None:
@@ -331,7 +379,7 @@ def create_sponsor(body: SponsorCreate):
             (
                 new_id, body.advertiser_name, body.headline_he, body.body_he,
                 _json_or_none(body.chips_he),
-                body.cta_label_he, body.cta_url, body.logo_url,
+                body.cta_label_he, _normalize_cta_url(body.cta_url), body.logo_url,
                 body.creative_url, body.creative_w, body.creative_h,
                 body.brand_bg, body.brand_fg,
                 _json_or_none(body.target_professions),
@@ -451,7 +499,7 @@ def update_sponsor(ad_id: str, body: SponsorPatch):
         if body.body_he         is not None: _set("body_he",         body.body_he or None)
         if body.chips_he        is not None: _set("chips_he",        _json_or_none(body.chips_he))
         if body.cta_label_he    is not None: _set("cta_label_he",    body.cta_label_he)
-        if body.cta_url         is not None: _set("cta_url",         body.cta_url or None)
+        if body.cta_url         is not None: _set("cta_url",         _normalize_cta_url(body.cta_url))
         if body.logo_url        is not None: _set("logo_url",        body.logo_url or None)
         if body.brand_bg        is not None: _set("brand_bg",        body.brand_bg or None)
         if body.brand_fg        is not None: _set("brand_fg",        body.brand_fg or None)
