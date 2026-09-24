@@ -72,3 +72,31 @@ export function sizeFor(
 ): readonly [number, number] | null {
   return SPONSOR_SIZES[placement]?.[breakpoint] ?? null;
 }
+
+// R30 §30b · which placements actually have a renderer.
+//
+// The rule: a placement that can be BOOKED must have somewhere to
+// appear. `logo_wall` is in SPONSOR_SIZES above but is absent here —
+// it was deferred in R29 §6 (needs ~8 advertisers before a wall of
+// logos reads as anything but abandoned), so the admin write-side
+// allow-list rejects it and an admin cannot sell a slot that renders
+// nowhere.
+//
+// Each entry names the component that draws it, so the next person
+// adding a slot can see what "has a renderer" means concretely.
+// scripts/check-placement-renderers.py diffs this against
+// services/admin/app/routes/sponsors.py:_ALLOWED_PLACEMENTS and fails
+// CI when they drift — which is exactly how listing_rail and
+// listing_inline ended up servable but not bookable.
+export const RENDERED_PLACEMENTS: Record<string, string> = {
+  search_inline:        'app/page.tsx · SponsorSlot (injected between search results)',
+  marketplace_banner:   'MarketplaceSponsors · SponsorStripBanner',
+  marketplace_carousel: 'MarketplaceSponsors · SponsorCarousel',
+  home_banner:          'MarketplaceSponsors · SponsorStripBanner',
+  home_carousel:        'MarketplaceSponsors · SponsorCarousel',
+  home_leaderboard:     'MarketplaceSponsors · SponsorStripBanner',
+  home_billboard:       'MarketplaceSponsors · SponsorStripBanner',
+  side_rail:            'MarketplaceSponsors · SponsorRailLayout → RailCell',
+  listing_rail:         'MarketplaceSponsors · ListingRailSponsor → RailCell',
+  listing_inline:       'MarketplaceSponsors · ListingInlineSponsor',
+};

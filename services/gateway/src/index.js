@@ -5,6 +5,7 @@ const { createProxyMiddleware } = require('http-proxy-middleware');
 const { v4: uuidv4 } = require('uuid');
 const { validateToken } = require('./auth');
 const { rateLimiter }   = require('./rateLimit');
+const { stripIdentityHeadersMiddleware } = require('./stripIdentityHeaders');
 
 const app = express();
 
@@ -14,26 +15,12 @@ app.use((req, _, next) => {
   next();
 });
 
-// ─── R30 · ingress identity strip ──────────────────────────
+// ─── R30 §30c · ingress identity strip ─────────────────────
 //
-// SECURITY: x-user-* / x-entity-* are OURS to set from a validated
-// JWT, never the caller's to supply. Stripping them here — before any
-// route, including the standalone /api/voice handler and the proxy
-// loop below — guarantees the only values the rate limiter and the
-// downstream services ever see were derived from a real token.
-//
-// Without this a request could declare `x-user-role: admin`. On a
-// public route with no Authorization header neither attachUserHeaders
-// branch runs, so forged headers would reach services that scope
-// visibility on x_user_role (ads.py public feeds, visibility.py).
-const CLIENT_FORBIDDEN_HEADERS = [
-  'x-user-id', 'x-user-role', 'x-org-id', 'x-phone',
-  'x-entity-id', 'x-entity-type', 'x-membership-role',
-];
-app.use((req, _, next) => {
-  for (const h of CLIENT_FORBIDDEN_HEADERS) delete req.headers[h];
-  next();
-});
+// See src/stripIdentityHeaders.js for why this exists and why it is a
+// separate module (so the regression test can exercise the real
+// middleware instead of a copy of it).
+app.use(stripIdentityHeadersMiddleware);
 
 // ─── Logging ───────────────────────────────────────────────
 app.use(morgan(':method :url :status :response-time ms - :req[x-request-id]'));

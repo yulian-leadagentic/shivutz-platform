@@ -43,6 +43,19 @@ router = APIRouter()
 #                        render is DEFAULT.
 #   * side_rail        — 300×600 sticky tower shown ONLY on ≥1440
 #                        viewports (home + search results + marketplace).
+#
+# R30 §30b · THE RULE: a placement that can be booked must have a
+# renderer. Otherwise an admin books and prices a slot that never
+# appears — we sell air. `logo_wall` is in SPONSOR_SIZES but has no
+# renderer (deferred in R29 §6: it needs ~8 advertisers before it
+# looks anything but abandoned), so it is deliberately ABSENT here and
+# a booking naming it gets a 400 from _validate_placements below.
+#
+# R30 §12b added listing_rail + listing_inline to the READ side
+# (user-org ads.py) and missed this WRITE side, so the two new slots
+# could be served but never booked. scripts/check-placement-renderers.py
+# now cross-checks this set against the frontend's RENDERED_PLACEMENTS
+# registry and fails CI on any divergence in either direction.
 _ALLOWED_PLACEMENTS = {
     "search_inline",
     "marketplace_banner",
@@ -52,6 +65,8 @@ _ALLOWED_PLACEMENTS = {
     "home_leaderboard",
     "home_billboard",
     "side_rail",
+    "listing_rail",
+    "listing_inline",
 }
 
 

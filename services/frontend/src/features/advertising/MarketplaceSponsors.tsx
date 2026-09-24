@@ -587,14 +587,14 @@ function SponsorCarousel({ placement, label, aboveFold = false }: { placement: s
               className="snap-start shrink-0"
               style={{ width: '82vw' }}
             >
-              <CarouselCard ad={ad} placement={bucket} />
+              <CarouselCard ad={ad} placement={bucket} rawPlacement={placement} />
             </div>
           ))}
         </div>
       </div>
       <div className="hidden sm:grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
         {renderDesktop && ads.map((ad) => (
-          <CarouselCard key={ad.id} ad={ad} placement={bucket} />
+          <CarouselCard key={ad.id} ad={ad} placement={bucket} rawPlacement={placement} />
         ))}
       </div>
     </div>
@@ -831,7 +831,7 @@ function RailCell({ ad, placement = 'side_rail' }: { ad: SponsorAd; placement?: 
 
 // ── carousel card (unchanged) ───────────────────────────────────────
 
-function CarouselCard({ ad, placement }: { ad: SponsorAd; placement: AdPlacement }) {
+function CarouselCard({ ad, placement, rawPlacement }: { ad: SponsorAd; placement: AdPlacement; rawPlacement: string }) {
   const bg = ad.brand_bg ?? '#0f172a';
   const fg = ad.brand_fg ?? '#ffffff';
   const observeRef = useAdImpression({ targetId: ad.id, placement });
@@ -849,9 +849,15 @@ function CarouselCard({ ad, placement }: { ad: SponsorAd; placement: AdPlacement
   // object-contain letterboxes with brand_bg on either side, which
   // is the intended card look).
   if (ad.creative_url && pickRenderMode(ad) !== 'composite') {
+    // R30 §30d · the fallback was a bare '1 / 1', unrelated to the
+    // catalog's 640×360 for both carousel slots. Cards never collapsed
+    // (the grid row is align-items: stretch) so this was consistency,
+    // not a break — but a card without stored dimensions rendered
+    // square inside a 16:9 slot. Catalog now, like every other slot.
+    const slotAspect = aspectFor(rawPlacement);
     const aspectStyle = ad.creative_w && ad.creative_h
       ? { aspectRatio: `${ad.creative_w} / ${ad.creative_h}` }
-      : { aspectRatio: '1 / 1' };
+      : { aspectRatio: slotAspect ? slotAspect.desktop : 1 };
     const inner = (
       <img
         src={ad.creative_url}

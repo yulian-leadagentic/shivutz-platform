@@ -32,12 +32,27 @@ import type { Profession } from '@/types';
 
 // ── placement / ad_type dictionaries ────────────────────────────
 
+// R30 §30b · this list is what an admin can actually tick. It had
+// drifted five slots behind the API: R29 added home_leaderboard,
+// home_billboard and side_rail, R30 §12b added the two listing slots,
+// and none reached the picker — so the endpoint accepted bookings the
+// form could not express.
+//
+// `logo_wall` is deliberately ABSENT: it is in SPONSOR_SIZES but has
+// no renderer (deferred R29 §6 — needs ~8 advertisers before a wall of
+// logos reads as anything but abandoned). The server rejects it with a
+// 400 and scripts/check-placement-renderers.py keeps the two in step.
 const PLACEMENTS: { code: string; label_he: string; hint_he: string }[] = [
-  { code: 'search_inline',        label_he: 'תוצאות חיפוש',    hint_he: 'מוטמעת בין תוצאות חיפוש' },
-  { code: 'marketplace_banner',   label_he: 'באנר קניון',      hint_he: 'רצועה רחבה מעל התוצאות' },
-  { code: 'marketplace_carousel', label_he: 'קרוסלת קניון',    hint_he: 'קבוצת כרטיסים בקניון' },
-  { code: 'home_banner',          label_he: 'באנר עמוד הבית',  hint_he: 'רצועה רחבה בעמוד הבית' },
-  { code: 'home_carousel',        label_he: 'קרוסלת עמוד הבית', hint_he: 'קבוצת כרטיסים בעמוד הבית' },
+  { code: 'search_inline',        label_he: 'תוצאות חיפוש',      hint_he: 'מוטמעת בין תוצאות חיפוש' },
+  { code: 'home_leaderboard',     label_he: 'רצועה עליונה',      hint_he: 'רצועה רחבה בראש עמוד הבית' },
+  { code: 'home_billboard',       label_he: 'רצועת ביניים',      hint_he: 'רצועה רחבה מתחת לחיפוש' },
+  { code: 'home_banner',          label_he: 'באנר עמוד הבית',    hint_he: 'רצועה רחבה בעמוד הבית' },
+  { code: 'home_carousel',        label_he: 'קרוסלת עמוד הבית',  hint_he: 'קבוצת כרטיסים בעמוד הבית' },
+  { code: 'marketplace_banner',   label_he: 'באנר קניון',        hint_he: 'רצועה רחבה מעל התוצאות' },
+  { code: 'marketplace_carousel', label_he: 'קרוסלת קניון',      hint_he: 'קבוצת כרטיסים בקניון' },
+  { code: 'side_rail',            label_he: 'עמודת צד',          hint_he: 'מגדל דביק — דסקטופ ‎1440‎ ומעלה בלבד' },
+  { code: 'listing_rail',         label_he: 'עמודת צד במודעה',   hint_he: 'בעמוד המודעה, מתחת לכרטיס יצירת הקשר' },
+  { code: 'listing_inline',       label_he: 'רצועה במודעה',      hint_he: 'בעמוד המודעה, מתחת לתיאור' },
 ];
 
 const AD_TYPES: { code: string; label_he: string }[] = [

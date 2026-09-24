@@ -40,6 +40,7 @@ import { RoleRegisterPicker } from '@/features/advertising/RoleRegisterPicker';
 import { VoiceInputButton } from '@/features/voice/VoiceInputButton';
 import { useAdImpression } from '@/hooks/useAdImpression';
 import { postAdEvent } from '@/lib/adEvents';
+import { aspectFor } from '@/lib/sponsorSizes';
 import { FeaturedAdsCarousel } from '@/features/advertising/FeaturedAdsCarousel';
 import {
   HomeSponsorLeaderboard,
@@ -2521,9 +2522,20 @@ function SponsorSlot({ ad }: { ad: SponsorAd }) {
   // legal disclaimer at the bottom from cropping even if the aspect
   // ratio ends up slightly off.
   if (ad.creative_url) {
+    // R30 §30a · the fallback was '1200 / 628' — a shape that does not
+    // exist in SPONSOR_SIZES at all, so a creative without stored
+    // dimensions rendered at a ratio no slot ever sells. search_inline
+    // is 240×240 in the catalog; take it from there, same as §25 and
+    // §29 did for the strips and the rail.
+    //
+    // A creative WITH stored dimensions keeps its own ratio: the R20 §3
+    // rule is object-contain so a legal-disclaimer band never crops,
+    // and the server already enforces ±3% against the slot spec at
+    // upload, so a stored pair is known-good.
+    const slotAspect = aspectFor('search_inline');
     const aspectStyle = ad.creative_w && ad.creative_h
       ? { aspectRatio: `${ad.creative_w} / ${ad.creative_h}` }
-      : { aspectRatio: '1200 / 628' };
+      : { aspectRatio: slotAspect ? slotAspect.desktop : 1 };
     const inner = (
       <img
         src={ad.creative_url}
