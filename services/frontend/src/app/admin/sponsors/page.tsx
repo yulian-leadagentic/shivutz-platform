@@ -60,10 +60,12 @@ const AD_TYPES: { code: string; label_he: string }[] = [
   { code: 'housing', label_he: 'דיור' },
 ];
 
-// ── format presets — R20 §3 aspect gates ─────────────────────────
-
-const BANNER_ASPECT = 1200 / 628;    // marketplace_banner + home_banner
-const CARD_ASPECT   = 1;             // 1080×1080 for carousel + inline
+// R30 · BANNER_ASPECT (1200/628) and CARD_ASPECT (1080×1080) lived
+// here and were referenced NOWHERE — dead since R20 §3's gate moved
+// server-side to sponsor_sizes.py. Both encoded shapes that exist in
+// no slot in the catalog, so they were also a standing invitation to
+// wire the wrong number back in. Deleted; SPONSOR_SIZES is the only
+// source of a slot dimension.
 
 interface CloudinarySig {
   cloud_name: string;

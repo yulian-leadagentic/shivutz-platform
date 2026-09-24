@@ -947,8 +947,24 @@ function CarouselCard({ ad, placement, rawPlacement }: { ad: SponsorAd; placemen
 // release. `STRIP_ASPECT` resolves once at module load; an unknown
 // placement can't reach it because these wrappers are the only
 // callers and each name is a catalog key.
-const STRIP_ASPECT = (placement: string): AspectPair =>
-  aspectFor(placement) ?? { desktop: 4.8, mobile: 2.4 };
+const STRIP_ASPECT = (placement: string): AspectPair => {
+  const a = aspectFor(placement);
+  if (a) return a;
+  // R30 · this fallback used to be a literal { desktop: 4.8, mobile: 2.4 }.
+  // That is the same defect the fallback scan was hunting — a slot
+  // dimension living somewhere other than SPONSOR_SIZES, ready to be
+  // silently served if a placement key were ever mistyped. It now
+  // derives from a REAL catalog entry and says so out loud, because a
+  // placement missing from the catalog is a bug, not a shape to guess.
+  const fallback = aspectFor('marketplace_banner');
+  if (typeof console !== 'undefined') {
+    console.error(
+      `[sponsors] placement "${placement}" is not in SPONSOR_SIZES — ` +
+      'falling back to marketplace_banner. Add it to the catalog.',
+    );
+  }
+  return fallback ?? { desktop: 1, mobile: 1 };
+};
 
 // Marketplace surfaces (existing).
 export function MarketplaceSponsorBanner()   { return <SponsorStripBanner placement="marketplace_banner"   aspectRatio={STRIP_ASPECT('marketplace_banner')} label="מודעה ממומנת" />; }
