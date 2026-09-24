@@ -12,6 +12,7 @@ import uuid
 from app.db import get_db
 from app.services.search_normalize import normalize_search_term
 from app.services.phone_normalize import normalize_or_400
+from app.services.seed_visibility import seed_where
 
 router = APIRouter()
 
@@ -237,6 +238,13 @@ def list_listings(
                     params.extend([tok, tok, tok])
                 conditions.append("(" + " AND ".join(per_token) + ")")
 
+        # R30 · seed listings are never served in production. One gate,
+        # shared with the sponsor-ads path; a no-op on staging where the
+        # demo inventory lives.
+        _seed = seed_where("ml")
+        if _seed:
+            conditions.append(_seed)
+
         where = " AND ".join(conditions)
         params.extend([limit, offset])
 
@@ -338,6 +346,7 @@ def get_listing(
               FROM marketplace_listings ml
               LEFT JOIN corporations c ON ml.corporation_id = c.id
              WHERE ml.id = %s AND ml.deleted_at IS NULL
+        """ + (f" AND {seed_where('ml')}" if seed_where('ml') else "") + """
         """, (listing_id,))
         row = cur.fetchone()
         if not row:

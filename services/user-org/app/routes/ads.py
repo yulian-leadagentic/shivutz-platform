@@ -552,6 +552,7 @@ _PUBLIC_SPONSOR_AD_COLS = frozenset({
 # section closes. Duplication is intentional; the module docstring
 # in the local copy carries the "keep in sync" comment.
 from app.services.sponsor_sizes import is_wide_strip, creative_matches_slot
+from app.services.seed_visibility import hide_seed_rows
 
 
 def _pick_render_mode(row: dict, placement: Optional[str]) -> str:
@@ -619,6 +620,13 @@ def _serialize_sponsor_ad(item: dict, placement: Optional[str] = None) -> dict:
                 out[jkey] = None
     return out
 
+
+# R30 · seed rows are never served in production. `advertiser_name` is
+# a public field (rendered as the wordmark and announced in the
+# aria-label), and staging carried real Israeli company names on it.
+# One gate, applied to every public read of sponsor_ads. Evaluated at
+# import: the environment does not change under a running process.
+_SEED_GATE = " AND is_seed = FALSE" if hide_seed_rows() else ""
 
 @router.get("/public/sponsored")
 def get_sponsored_ads(
@@ -719,7 +727,8 @@ def get_sponsored_ads(
                        FROM sponsor_ads
                       WHERE id = %s AND active = TRUE
                         AND (starts_at IS NULL OR starts_at <= NOW())
-                        AND (ends_at   IS NULL OR ends_at   >= NOW())""",
+                        AND (ends_at   IS NULL OR ends_at   >= NOW())
+                        """ + _SEED_GATE + """""",
                     (slot_row["sponsor_ad_id"],),
                 )
                 slot_ad = cur.fetchone()
@@ -762,6 +771,7 @@ def get_sponsored_ads(
             WHERE active = TRUE
               AND (starts_at IS NULL OR starts_at <= NOW())
               AND (ends_at   IS NULL OR ends_at   >= NOW())
+              """ + _SEED_GATE + """
               /* U7 §5 · placements filter. When the caller asks for
                  search_inline (the default), NULL placements passes
                  (backwards compat with pre-078 rows). For any other
