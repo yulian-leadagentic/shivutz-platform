@@ -22,7 +22,7 @@ import type { Profession } from '@/types';
 // Lifetime is the module, i.e. the page view — a full navigation
 // reloads it. A rejected catalog is evicted so a retry is a real
 // network attempt rather than a replay of the same failure.
-type EnumKey = 'professions' | 'regions' | 'origins';
+type EnumKey = 'professions' | 'regions' | 'origins' | 'all';
 
 const _cache = new Map<EnumKey, Promise<unknown>>();
 
@@ -45,11 +45,38 @@ export function clearEnumCache(): void {
 
 export type RegionOrOriginRow = { code: string; name_he: string; name_en: string };
 
+// R30 §26 · one round-trip for all three catalogs.
+//
+// The caching above already collapsed six requests to three. Three is
+// still three round-trips for reference data that is always wanted
+// together, and the §26 target is a home load under 8.
+//
+// `/enums/all` returns the lot. Each per-catalog accessor awaits that
+// same shared promise and picks its slice, so the existing call sites
+// (five of them, across the context and four forms) need no change and
+// concurrent callers still coalesce.
+//
+// Falls back to the individual endpoints if /all fails — worker may be
+// mid-deploy, and a stale service returning 404 must not blank every
+// select on the page.
+interface AllEnums {
+  professions: Profession[];
+  origins:     RegionOrOriginRow[];
+  regions:     RegionOrOriginRow[];
+}
+
+function allEnums(): Promise<AllEnums> {
+  return cached('all', () =>
+    apiFetch<AllEnums>('/enums/all').catch(async () => ({
+      professions: await apiFetch<Profession[]>('/enums/professions'),
+      origins:     await apiFetch<RegionOrOriginRow[]>('/enums/origins'),
+      regions:     await apiFetch<RegionOrOriginRow[]>('/enums/regions'),
+    })),
+  );
+}
+
 export const enumApi = {
-  professions: () =>
-    cached('professions', () => apiFetch<Profession[]>('/enums/professions')),
-  regions: () =>
-    cached('regions', () => apiFetch<RegionOrOriginRow[]>('/enums/regions')),
-  origins: () =>
-    cached('origins', () => apiFetch<RegionOrOriginRow[]>('/enums/origins')),
+  professions: () => allEnums().then((e) => e.professions ?? []),
+  regions:     () => allEnums().then((e) => e.regions ?? []),
+  origins:     () => allEnums().then((e) => e.origins ?? []),
 };
