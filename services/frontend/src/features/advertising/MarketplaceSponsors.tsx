@@ -748,20 +748,28 @@ function RailCell({ ad, placement = 'side_rail' }: { ad: SponsorAd; placement?: 
       loading="lazy"
     />
   ) : (
-    <div className="flex flex-col h-full p-4" style={{ color: fg }}>
-      <h3 className="text-base font-bold leading-tight">{ad.headline_he}</h3>
-      {ad.body_he && (
-        <p className="text-xs opacity-90 mt-2 leading-relaxed flex-1 overflow-hidden">{ad.body_he}</p>
-      )}
-      {ad.chips_he && ad.chips_he.length > 0 && (
-        <div className="flex flex-wrap gap-1 mt-2">
-          {ad.chips_he.slice(0, 3).map((c) => (
-            <span key={c} className="text-[10px] px-2 py-0.5 rounded-full bg-white/15">{c}</span>
-          ))}
-        </div>
-      )}
+    // R30 §29 · once the card has a real 300×600 frame the old layout
+    // bunched every element at the top and left ~450px of empty brand
+    // colour below. `justify-between` with the copy grouped at the top
+    // and the CTA pinned to the bottom spreads it over the height
+    // WITHOUT stretching the text — the body keeps its natural leading
+    // rather than being flex-grown into a sparse column.
+    <div className="flex flex-col h-full justify-between p-4" style={{ color: fg }}>
+      <div>
+        <h3 className="text-base font-bold leading-tight">{ad.headline_he}</h3>
+        {ad.body_he && (
+          <p className="text-xs opacity-90 mt-2 leading-relaxed">{ad.body_he}</p>
+        )}
+        {ad.chips_he && ad.chips_he.length > 0 && (
+          <div className="flex flex-wrap gap-1 mt-3">
+            {ad.chips_he.slice(0, 3).map((c) => (
+              <span key={c} className="text-[10px] px-2 py-0.5 rounded-full bg-white/15">{c}</span>
+            ))}
+          </div>
+        )}
+      </div>
       {ad.cta_url && (
-        <span className="mt-3 inline-flex items-center justify-center bg-white/95 text-slate-900 text-xs font-semibold px-3 py-1.5 rounded-md">
+        <span className="inline-flex items-center justify-center bg-white/95 text-slate-900 text-xs font-semibold px-3 py-2 rounded-md">
           {ad.cta_label_he}
         </span>
       )}
@@ -773,11 +781,22 @@ function RailCell({ ad, placement = 'side_rail' }: { ad: SponsorAd; placement?: 
   // `stretch` (fills the row height), leaving sticky nothing to
   // stick to.
   //
-  // Height: creative branch keeps the 300×600 slot spec; composite
-  // uses natural content height. maxHeight caps at viewport minus
-  // sticky top minus 16px bottom margin so a tall creative on a
-  // short laptop screen doesn't run off the bottom.
-  const isCreative = mode === 'creative' && !!ad.creative_url;
+  // R30 §29 · the slot had NO aspect-ratio anywhere in the chain, so
+  // the card collapsed to its content height: 300×139 instead of
+  // 300×600. The old `height: 600` here only applied to the creative
+  // branch, and it sat on the <aside> — the wrong element twice over.
+  //
+  // The ratio now comes from the catalog (side_rail / listing_rail are
+  // both 300×600 → 0.5) and sits on the CARD container, never on the
+  // <aside>: giving the sticky element a fixed height is what broke
+  // the pin in R29 §4. The aside keeps only its viewport cap; the
+  // card inside it owns the shape, and the existing `h-full` chain
+  // below finally has a height to fill.
+  //
+  // maxHeight on the card degrades gracefully: on a screen too short
+  // for 600px the card shrinks instead of being clipped by the
+  // aside's overflow:hidden — the bottom-cut-off bug from R29 §4.
+  const railAspect = aspectFor(placement);
   return (
     <aside
       ref={observeRef}
@@ -786,13 +805,19 @@ function RailCell({ ad, placement = 'side_rail' }: { ad: SponsorAd; placement?: 
         top:        RAIL_STICKY_TOP_PX,
         alignSelf:  'start',
         width:      300,
-        ...(isCreative ? { height: 600 } : {}),
         maxHeight:  `calc(100vh - ${RAIL_STICKY_TOP_PX + 16}px)`,
         overflow:   'hidden',
       }}
       aria-label="מודעה ממומנת · צד"
     >
-      <div className="rounded-2xl overflow-hidden shadow-md w-full h-full" style={{ backgroundColor: bg }}>
+      <div
+        className="rounded-2xl overflow-hidden shadow-md w-full"
+        style={{
+          backgroundColor: bg,
+          ...(railAspect ? { aspectRatio: railAspect.desktop } : {}),
+          maxHeight: '100%',
+        }}
+      >
         {ad.cta_url ? (
           <a href={ad.cta_url} target="_blank" rel="noopener noreferrer sponsored"
              onClick={handleClick} className="block w-full h-full">

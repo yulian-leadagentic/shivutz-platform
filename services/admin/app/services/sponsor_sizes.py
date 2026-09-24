@@ -81,6 +81,28 @@ def size_for(placement: str, breakpoint: Breakpoint) -> Optional[tuple[int, int]
     return (SIZES.get(placement) or {}).get(breakpoint)
 
 
+# ── R30 §28 · bidi isolation for dimension pairs in Hebrew copy ──────
+#
+# "נדרש 1200×150" renders as "נדרש 150×1200" in an RTL paragraph: the
+# `×` is a NEUTRAL character between two LTR runs, so it takes the
+# paragraph's base direction and the pair lays out right-to-left. The
+# admin then reads the REVERSED size out of our own rejection message
+# and re-uploads at the wrong shape.
+#
+# The frontend fixes its own strings with <bdi>, but a server message
+# is plain text with nowhere to hang markup. U+2066 LEFT-TO-RIGHT
+# ISOLATE … U+2069 POP DIRECTIONAL ISOLATE does the same job in the
+# character stream, and any conforming renderer honours it — browser,
+# curl in a terminal, Postman, a log line.
+_LRI = "⁦"   # LEFT-TO-RIGHT ISOLATE
+_PDI = "⁩"   # POP DIRECTIONAL ISOLATE
+
+
+def _ltr(text: str) -> str:
+    """Wrap a run that must read left-to-right inside Hebrew copy."""
+    return f"{_LRI}{text}{_PDI}"
+
+
 class DimensionRejection(Exception):
     """Server-side rejection surfaces as HTTP 400 with the Hebrew
     message. Kept as a dedicated exception so callers can distinguish
@@ -251,7 +273,7 @@ def check_creative_dimensions(
             code="creative_too_small",
             message_he=(
                 f"התמונה שהועלתה קטנה מדי לסלוט הזה. "
-                f"נדרש רוחב של לפחות {spec_w}px, הועלתה {w}px."
+                f"נדרש רוחב של לפחות {_ltr(f'{spec_w}px')}, הועלתה {_ltr(f'{w}px')}."
             ),
             extra={"expected_w": spec_w, "expected_h": spec_h, "got_w": w, "got_h": h},
         )
@@ -263,7 +285,7 @@ def check_creative_dimensions(
             code="creative_wrong_aspect",
             message_he=(
                 f"יחס הצדדים של התמונה אינו מתאים לסלוט. "
-                f"נדרש {spec_w}×{spec_h}, הועלתה {w}×{h}."
+                f"נדרש {_ltr(f'{spec_w}×{spec_h}')}, הועלתה {_ltr(f'{w}×{h}')}."
             ),
             extra={"expected_w": spec_w, "expected_h": spec_h, "got_w": w, "got_h": h},
         )

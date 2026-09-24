@@ -1075,3 +1075,13 @@ body {
   color: #475569;
   margin-block: 1rem;
 }
+
+/* R30 §28 · number pairs must not flip in Hebrew.
+   <bdi> already defaults to `unicode-bidi: isolate` in every modern
+   browser; restating it means a CSS reset or a `* { unicode-bidi }`
+   rule can't silently turn '300×600' back into '600×300'.
+   isolate — NOT embed: embed still resolves the neutral '×' against
+   the outer RTL paragraph, which is the bug itself. */
+bdi {
+  unicode-bidi: isolate;
+}

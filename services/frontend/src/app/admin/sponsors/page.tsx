@@ -26,7 +26,8 @@ import {
 import { legalAdminApi, type LegalSettingAdmin } from '@/lib/api/legal';
 import { apiFetch } from '@/lib/api/client';
 import { enumApi } from '@/lib/api/enums';
-import { sizeFor } from '@/lib/sponsorSizes';
+import { sizeFor, SPONSOR_SIZES } from '@/lib/sponsorSizes';
+import { BidiText } from '@/lib/bidi';
 import type { Profession } from '@/types';
 
 // ── placement / ad_type dictionaries ────────────────────────────
@@ -615,7 +616,7 @@ function TextField({ label, value, onChange, hint, placeholder }: {
       <input type="text" value={value} placeholder={placeholder}
              onChange={e => onChange(e.target.value)}
              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
-      {hint && <p className="text-xs text-slate-500 mt-1">{hint}</p>}
+      {hint && <p className="text-xs text-slate-500 mt-1"><BidiText>{hint}</BidiText></p>}
     </div>
   );
 }
@@ -744,7 +745,10 @@ function CreativeUploader({ creativeUrl, creativeW, creativeH, placements, onCha
         <div className="space-y-2">
           <div className="text-xs text-slate-500 flex items-center justify-between">
             <span>
-              נטענה תמונה{creativeW && creativeH ? ` · ${creativeW}×${creativeH}px (יחס ${(creativeW/creativeH).toFixed(2)})` : ''}
+              נטענה תמונה
+              {creativeW && creativeH && (
+                <> · <BidiText>{`${creativeW}×${creativeH}`}</BidiText>px (יחס {(creativeW/creativeH).toFixed(2)})</>
+              )}
             </span>
             <button type="button" onClick={() => onChange(null, null, null)} className="text-red-600 hover:text-red-800 text-xs font-medium">הסר</button>
           </div>
@@ -774,7 +778,7 @@ function CreativeUploader({ creativeUrl, creativeW, creativeH, placements, onCha
               <>
                 <Upload className="w-6 h-6 mx-auto text-slate-400" />
                 <p className="text-sm font-semibold text-slate-700 mt-2">העלה תמונה</p>
-                <p className="text-xs text-slate-500 mt-1">JPG / PNG / WebP · {hint}</p>
+                <p className="text-xs text-slate-500 mt-1">JPG / PNG / WebP · <BidiText>{hint}</BidiText></p>
               </>
             )}
           </div>
@@ -870,8 +874,21 @@ function ManualUrlEntry({ onPick, setErr }: {
           הוסף
         </button>
       </div>
+      {/* R30 §28 · §17b replaced the hint above with catalog-derived
+          sizes and left THIS one hard-coded. Neither 1200×628 nor
+          1080×1080 exists in SPONSOR_SIZES, so an admin following it
+          uploads a file the R29 §2 check rejects. Now derived, and
+          bidi-isolated so the pair does not read reversed. */}
       <p className="text-[11px] text-slate-500">
-        מומלץ 1200×628 (באנר) או 1080×1080 (קרוסלה). המידות ייקלטו אוטומטית מהתמונה.
+        מומלץ{' '}
+        <BidiText>
+          {`${SPONSOR_SIZES.marketplace_banner.desktop[0]}×${SPONSOR_SIZES.marketplace_banner.desktop[1]}`}
+        </BidiText>
+        {' '}(רצועה) או{' '}
+        <BidiText>
+          {`${SPONSOR_SIZES.marketplace_carousel.desktop[0]}×${SPONSOR_SIZES.marketplace_carousel.desktop[1]}`}
+        </BidiText>
+        {' '}(קרוסלה). המידות ייקלטו אוטומטית מהתמונה.
       </p>
     </div>
   );
