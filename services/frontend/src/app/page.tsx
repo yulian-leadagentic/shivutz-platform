@@ -1123,15 +1123,22 @@ function LandingPageInner() {
                     key={chip.label}
                     type="button"
                     className="shrink-0 snap-start inline-flex items-center gap-1 rounded-full border border-brand-300 bg-white text-slate-800 px-2.5 py-1 hover:bg-brand-50 hover:border-brand-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+                    // R30 §31a · click now RUNS the search.
+                    //
+                    // R28 §3 made the click fill-only, and Yulian signed
+                    // that off on paper. In use it reads as a broken
+                    // control: the word lands in the box and nothing
+                    // happens. Decision reversed — fill and run in one
+                    // click. The existing loading state covers the wait.
+                    //
+                    // runSearch(chip.query) is passed explicitly rather
+                    // than relying on the setQ above: state updates are
+                    // async, so reading `q` inside runSearch on this tick
+                    // would still see the PREVIOUS query.
                     onClick={() => {
                       cancelTyping();
                       setQ(chip.query);
-                      const el = searchInputRef.current;
-                      if (el) {
-                        el.focus();
-                        const len = chip.query.length;
-                        try { el.setSelectionRange(len, len); } catch { /* ignore */ }
-                      }
+                      void runSearch(chip.query);
                     }}
                   >
                     {chip.label}
@@ -1912,16 +1919,20 @@ function LandingPageInner() {
                     if (f.region)           parts.push(labelFor(regions,     f.region));
                     if (f.quantity)         parts.push(String(f.quantity));
 
-                    let message: string;
-                    if (parts.length === 0 && adTypeLabel) {
-                      // ad_type-only case → Yulian's spec wording:
-                      // "היה צריך להיות כתוב זיהינו שאתה מחפש מגורים
-                      //  לעובדים".
-                      message = `זיהינו שאתה מחפש ${adTypeLabel}`;
-                    } else {
-                      const prefix = adTypeLabel ? `${adTypeLabel} · ` : '';
-                      message = `זיהינו: ${prefix}${parts.join(' · ')}`;
-                    }
+                    // R30 §31 · `ad_type` defaults to 'worker' server-side
+                    // even when the rewriter extracted NOTHING, so the
+                    // ad_type-only branch was announcing an understanding
+                    // that never happened: clicking "ציוד וכלי עבודה"
+                    // produced "זיהינו שאתה מחפש עובדים".
+                    //
+                    // Only claim recognition when a real field came back.
+                    // `explicit_ad_type` is not in the response shape, so
+                    // a bare ad_type is treated as the default it is —
+                    // silence beats a confident wrong claim.
+                    if (parts.length === 0) return null;
+
+                    const prefix = adTypeLabel ? `${adTypeLabel} · ` : '';
+                    const message = `זיהינו: ${prefix}${parts.join(' · ')}`;
                     return (
                       <div
                         role="status"
@@ -2098,10 +2109,19 @@ function LandingPageInner() {
                               // results screen into an ad screen).
                               // Sponsors NEVER counted in the total.
                               const rows = byKind[kind];
-                              const canInject = rows.length >= 4 && sponsoredAds.length > 0;
+                              // R30 §31c · when primary_section is
+                              // 'marketplace' the services section has
+                              // already rendered sponsoredAds[0] at its
+                              // top. Start from 1 so the same advertiser
+                              // does not appear twice on one screen —
+                              // R29 §5's "an ad in two placements shows
+                              // once", applied within a single page.
+                              const topSlotTaken = resp.primary_section === 'marketplace';
+                              let sponsorIdx = topSlotTaken ? 1 : 0;
+                              const canInject =
+                                rows.length >= 4 && sponsoredAds.length > sponsorIdx;
                               const AFTER_POSITIONS = [3, 8]; // 1-indexed slot boundaries
                               const nodes: React.ReactNode[] = [];
-                              let sponsorIdx = 0;
                               rows.forEach((ad, i) => {
                                 const revealed = reveals[ad.id];
                                 const boosted  = ad.featured_until && new Date(ad.featured_until) > new Date();
@@ -2309,6 +2329,26 @@ function LandingPageInner() {
                           עוד ב״שירותים נלווים״ ←
                         </Link>
                       </div>
+                      {/* R30 §31c · when the services ARE the answer
+                          (primary_section === 'marketplace'), a relevant
+                          sponsor belongs at the top of this section — not
+                          buried at position 4 of a worker list the reader
+                          did not ask for. Yulian's case: an equipment
+                          query put "כלי ריצוף מקצועיים" between unrelated
+                          worker ads.
+
+                          Rendered as its own <ul> so SponsorSlot keeps
+                          the <li> semantics it was built with, and the
+                          "מודעה" badge it carries stays visible — R13
+                          disclosure does not get softened in the name of
+                          relevance. The in-list injection starts its
+                          sponsorIdx at 1 in this mode so the same
+                          advertiser cannot render twice on one screen. */}
+                      {resp.primary_section === 'marketplace' && sponsoredAds.length > 0 && (
+                        <ul className="results-table" aria-label="מודעה ממומנת רלוונטית">
+                          <SponsorSlot ad={sponsoredAds[0]} />
+                        </ul>
+                      )}
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         {resp.marketplace_matches.slice(0, 6).map((listing) => (
                           <ListingCard key={listing.id} listing={listing} />
