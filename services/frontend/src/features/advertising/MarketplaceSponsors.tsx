@@ -843,6 +843,9 @@ function CarouselCard({ ad, placement, rawPlacement }: { ad: SponsorAd; placemen
     });
   };
 
+  // R30 §30d · one lookup, used by both branches below.
+  const carouselAspect = aspectFor(rawPlacement);
+
   // Cards keep the pre-R29 rule — creative when creative_url is set,
   // composite when it isn't. Card slots aren't wide-strips, so a
   // slight aspect mismatch is fine (the card is square-ish and
@@ -854,7 +857,7 @@ function CarouselCard({ ad, placement, rawPlacement }: { ad: SponsorAd; placemen
     // (the grid row is align-items: stretch) so this was consistency,
     // not a break — but a card without stored dimensions rendered
     // square inside a 16:9 slot. Catalog now, like every other slot.
-    const slotAspect = aspectFor(rawPlacement);
+    const slotAspect = carouselAspect;
     const aspectStyle = ad.creative_w && ad.creative_h
       ? { aspectRatio: `${ad.creative_w} / ${ad.creative_h}` }
       : { aspectRatio: slotAspect ? slotAspect.desktop : 1 };
@@ -883,8 +886,21 @@ function CarouselCard({ ad, placement, rawPlacement }: { ad: SponsorAd; placemen
   return (
     <div
       ref={observeRef}
+      // R30 §30d · the catalog ratio applies to the COMPOSITE card too,
+      // not just the creative one. Every sponsor ad on staging has
+      // creative_url NULL, so every carousel card takes this branch —
+      // meaning the §30d fix was wired to a path nothing exercises, and
+      // "the carousel is 640×360" could not be demonstrated at all.
+      //
+      // Cards never collapsed (the grid row is align-items: stretch) so
+      // this is consistency rather than a bug fix: without it a row's
+      // height is set by whichever card happens to have the most copy.
       className="rounded-xl p-4 shadow-sm flex flex-col h-full"
-      style={{ backgroundColor: bg, color: fg }}
+      style={{
+        backgroundColor: bg,
+        color: fg,
+        ...(carouselAspect ? { aspectRatio: carouselAspect.desktop } : {}),
+      }}
     >
       <h3 className="text-sm font-bold leading-tight">{ad.headline_he}</h3>
       {ad.body_he && (
