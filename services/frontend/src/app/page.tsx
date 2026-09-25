@@ -41,6 +41,7 @@ import { VoiceInputButton } from '@/features/voice/VoiceInputButton';
 import { useAdImpression } from '@/hooks/useAdImpression';
 import { postAdEvent } from '@/lib/adEvents';
 import { aspectFor } from '@/lib/sponsorSizes';
+import { BidiText } from '@/lib/bidi';
 import { FeaturedAdsCarousel } from '@/features/advertising/FeaturedAdsCarousel';
 import {
   HomeSponsorLeaderboard,
@@ -2625,8 +2626,8 @@ function SponsorSlot({ ad }: { ad: SponsorAd }) {
           : <span className="sponsor-slot__wordmark">{ad.advertiser_name}</span>}
       </div>
       <div className="sponsor-slot__copy">
-        <div className="sponsor-slot__headline">{ad.headline_he}</div>
-        {ad.body_he && <div className="sponsor-slot__body">{ad.body_he}</div>}
+        <div className="sponsor-slot__headline"><BidiText>{ad.headline_he}</BidiText></div>
+        {ad.body_he && <div className="sponsor-slot__body"><BidiText>{ad.body_he}</BidiText></div>}
         {Array.isArray(ad.chips_he) && ad.chips_he.length > 0 && (
           <div className="sponsor-slot__chips">
             {ad.chips_he.map((c) => (

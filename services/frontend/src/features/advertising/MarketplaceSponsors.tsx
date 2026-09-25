@@ -52,6 +52,7 @@ import { apiFetch } from '@/lib/api/client';
 import { useAdImpression } from '@/hooks/useAdImpression';
 import { postAdEvent, type AdPlacement } from '@/lib/adEvents';
 import { aspectFor, type AspectPair } from '@/lib/sponsorSizes';
+import { BidiText } from '@/lib/bidi';
 
 // R6 §1a · translate placement strings the backend uses into the
 // terser 'placement' enum on promo_events.metadata_json. The
@@ -523,9 +524,9 @@ function SponsorStripBanner({ placement, label, aboveFold = false, aspectRatio, 
           </div>
         )}
         <div className="flex-1 min-w-0 flex flex-col justify-center px-4 sm:px-6 py-2 sm:py-3">
-          <h3 className="text-base sm:text-xl font-bold leading-tight line-clamp-1">{ad.headline_he}</h3>
+          <h3 className="text-base sm:text-xl font-bold leading-tight line-clamp-1"><BidiText>{ad.headline_he}</BidiText></h3>
           {ad.body_he && (
-            <p className="hidden sm:block text-sm opacity-90 mt-1 leading-snug line-clamp-2">{ad.body_he}</p>
+            <p className="hidden sm:block text-sm opacity-90 mt-1 leading-snug line-clamp-2"><BidiText>{ad.body_he}</BidiText></p>
           )}
         </div>
         {ad.cta_url ? (
@@ -783,9 +784,9 @@ function RailCell({ ad, placement = 'side_rail' }: { ad: SponsorAd; placement?: 
     // rather than being flex-grown into a sparse column.
     <div className="flex flex-col h-full justify-between p-4" style={{ color: isDemo ? '#475569' : fg }}>
       <div>
-        <h3 className="text-base font-bold leading-tight">{ad.headline_he}</h3>
+        <h3 className="text-base font-bold leading-tight"><BidiText>{ad.headline_he}</BidiText></h3>
         {ad.body_he && (
-          <p className="text-xs opacity-90 mt-2 leading-relaxed">{ad.body_he}</p>
+          <p className="text-xs opacity-90 mt-2 leading-relaxed"><BidiText>{ad.body_he}</BidiText></p>
         )}
         {ad.chips_he && ad.chips_he.length > 0 && (
           <div className="flex flex-wrap gap-1 mt-3">
@@ -938,9 +939,9 @@ function CarouselCard({ ad, placement, rawPlacement }: { ad: SponsorAd; placemen
         ...(carouselAspect ? { aspectRatio: carouselAspect.desktop } : {}),
       }}
     >
-      <h3 className="text-sm font-bold leading-tight">{ad.headline_he}</h3>
+      <h3 className="text-sm font-bold leading-tight"><BidiText>{ad.headline_he}</BidiText></h3>
       {ad.body_he && (
-        <p className="text-xs opacity-90 mt-1 leading-relaxed flex-1">{ad.body_he}</p>
+        <p className="text-xs opacity-90 mt-1 leading-relaxed flex-1"><BidiText>{ad.body_he}</BidiText></p>
       )}
       {ad.chips_he && ad.chips_he.length > 0 && (
         <div className="flex flex-wrap gap-1 mt-2">

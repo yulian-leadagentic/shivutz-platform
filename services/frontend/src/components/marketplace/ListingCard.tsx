@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { BidiText } from '@/lib/bidi';
 import { MapPin, Users, CheckCircle2, Home, Wrench, Briefcase, MoreHorizontal } from 'lucide-react';
 import type { MarketplaceListing } from '@/types';
 import { CATEGORY_HE_FALLBACK, PRICE_UNIT_HE, labelFor } from '@/lib/labels';
@@ -71,7 +72,7 @@ export default function ListingCard({ listing }: { listing: MarketplaceListing }
 
         {/* Title */}
         <h3 className="font-bold text-slate-900 text-sm leading-snug group-hover:text-brand-700 transition-colors line-clamp-2">
-          {listing.title}
+          <BidiText>{listing.title}</BidiText>
         </h3>
 
         {/* Location + capacity */}
