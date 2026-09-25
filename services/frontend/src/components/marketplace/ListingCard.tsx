@@ -82,13 +82,13 @@ export default function ListingCard({ listing }: { listing: MarketplaceListing }
               {listing.city}
             </span>
           )}
-          {listing.capacity && (
+          {listing.capacity != null && listing.capacity > 0 && (
             <span className="flex items-center gap-1">
               <Users className="h-3 w-3 shrink-0" />
               עד {listing.capacity} עובדים
             </span>
           )}
-          {listing.is_furnished && (
+          {!!listing.is_furnished && (
             <span className="text-emerald-600 font-medium">מרוהטת</span>
           )}
         </div>
@@ -118,7 +118,7 @@ export default function ListingCard({ listing }: { listing: MarketplaceListing }
           <span className="text-xs text-slate-500 truncate">
             {listing.corporation_name || 'לחץ להצגת פרטים'}
           </span>
-          {listing.is_corporation_verified && (
+          {!!listing.is_corporation_verified && (
             <span className="shrink-0 inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
               <CheckCircle2 className="h-2.5 w-2.5" />
               מאומת

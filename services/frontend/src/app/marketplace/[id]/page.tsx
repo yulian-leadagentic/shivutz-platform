@@ -198,7 +198,7 @@ export default function ListingDetailPage() {
                         {statusInfo.label}
                       </span>
                     )}
-                    {listing.is_corporation_verified && (
+                    {!!listing.is_corporation_verified && (
                       <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full">
                         <CheckCircle2 className="h-3 w-3" />
                         תאגיד מאומת
@@ -303,7 +303,7 @@ export default function ListingDetailPage() {
                   <p className="text-sm font-semibold text-slate-900">
                     {revealed?.corporation_name || listing.corporation_name || 'תאגיד'}
                   </p>
-                  {listing.is_corporation_verified && (
+                  {!!listing.is_corporation_verified && (
                     <p className="text-xs text-emerald-700 mt-0.5 inline-flex items-center gap-1">
                       <CheckCircle2 className="w-3 h-3" />
                       תאגיד מאומת

@@ -155,7 +155,7 @@ export function NotificationRecipientsSection({ entityType, entityId, onChange, 
                 </div>
 
                 {/* Channel checkboxes — visible only when the toggle is on. */}
-                {r.is_recipient && (
+                {!!r.is_recipient && (
                   <div className="flex items-center gap-3 flex-wrap text-xs">
                     <ChannelBox
                       icon={<Mail className="h-3.5 w-3.5" />} label="דוא״ל"

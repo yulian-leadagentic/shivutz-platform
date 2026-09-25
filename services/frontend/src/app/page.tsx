@@ -1714,7 +1714,7 @@ function LandingPageInner() {
                         ) : (
                           <>
                             {ad.city && <span>{ad.city}</span>}
-                            {ad.available_beds && <span> · {ad.available_beds} מיטות</span>}
+                            {ad.available_beds != null && ad.available_beds > 0 && <span> · {ad.available_beds} מיטות</span>}
                           </>
                         )}
                       </div>
@@ -2437,8 +2437,8 @@ function LandingPageInner() {
                         {isHousing ? (
                           <>
                             {ad.city && <span>{ad.city}</span>}
-                            {ad.available_beds && <span>· {ad.available_beds} מיטות</span>}
-                            {ad.price_per_bed_nis && <span>· ₪{ad.price_per_bed_nis}</span>}
+                            {ad.available_beds != null && ad.available_beds > 0 && <span>· {ad.available_beds} מיטות</span>}
+                            {ad.price_per_bed_nis != null && ad.price_per_bed_nis > 0 && <span>· ₪{ad.price_per_bed_nis}</span>}
                           </>
                         ) : (
                           <>

@@ -123,7 +123,7 @@ function LicenseSection({
               </div>
               <div className="flex items-center gap-3 text-xs text-slate-400 flex-wrap">
                 <span>הועלה: {new Date(license.uploaded_at).toLocaleDateString('he-IL')}</span>
-                {license.file_size && <span>{formatSize(license.file_size)}</span>}
+                {!!license.file_size && <span>{formatSize(license.file_size)}</span>}
               </div>
               {license.notes && <p className="text-xs text-slate-500">{license.notes}</p>}
             </div>
@@ -507,7 +507,7 @@ function OtherDocsSection({
                   <div className="flex items-center gap-3 text-xs text-slate-400 flex-wrap">
                     <span>{DOC_TYPE_LABELS[d.doc_type] ?? d.doc_type}</span>
                     <span>{new Date(d.uploaded_at).toLocaleDateString('he-IL')}</span>
-                    {d.file_size && <span>{formatSize(d.file_size)}</span>}
+                    {!!d.file_size && <span>{formatSize(d.file_size)}</span>}
                   </div>
                   {d.notes && <p className="text-xs text-slate-400">{d.notes}</p>}
                 </div>
