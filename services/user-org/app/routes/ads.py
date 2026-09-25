@@ -528,6 +528,16 @@ _PUBLIC_SPONSOR_AD_COLS = frozenset({
     # in the RAND path; the slot-first path's explicit SELECT list
     # gets the three appended below.
     "creative_url", "creative_w", "creative_h",
+    # R30 §28b · demo marker. The seed rows hold the staging demo and
+    # look exactly like paid inventory: dark brand_bg, real CTA, no
+    # indication they are placeholders. Yulian judged the side_rail
+    # card as product because nothing said otherwise.
+    #
+    # Safe to expose: it is a boolean with no identity in it, and the
+    # production gate (services/seed_visibility.py) means a production
+    # response can never carry a row where this is true. On staging it
+    # lets the client mark a demo AS a demo.
+    "is_seed",
     # R29 §3 · render mode. Computed field, not stored on sponsor_ads.
     # "creative" = the caller should paint the flat image (creative_url
     # matches this slot's aspect within ±3%). "composite" = paint the
@@ -723,7 +733,8 @@ def get_sponsored_ads(
                          cta_label_he, cta_url,
                          logo_url, creative_url, creative_w, creative_h,
                          brand_bg, brand_fg,
-                         target_professions, target_ad_types, target_regions
+                         target_professions, target_ad_types, target_regions,
+                         is_seed
                        FROM sponsor_ads
                       WHERE id = %s AND active = TRUE
                         AND (starts_at IS NULL OR starts_at <= NOW())
@@ -757,6 +768,7 @@ def get_sponsored_ads(
               logo_url, creative_url, creative_w, creative_h,
               brand_bg, brand_fg,
               target_professions, target_ad_types, target_regions,
+              is_seed,
               /* targeting-score: how many axes matched a concrete
                  value (not NULL). Higher = more specific. */
               (

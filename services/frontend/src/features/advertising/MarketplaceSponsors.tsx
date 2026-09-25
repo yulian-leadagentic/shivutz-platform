@@ -98,6 +98,10 @@ interface SponsorAd {
   // set. Cards keep the legacy behaviour (creative when creative_url
   // is set).
   render_mode?:    'creative' | 'composite';
+  // R30 §28b · true for demo inventory. The production gate means a
+  // production response never carries a true value, so this only ever
+  // changes how STAGING renders.
+  is_seed?:        boolean;
 }
 
 // ── R29 §5 · dedupe + above-fold ceiling context ────────────────────
@@ -455,6 +459,16 @@ function SponsorStripBanner({ placement, label, aboveFold = false, aspectRatio, 
     });
   };
 
+  // R30 §28b · a demo row must not read as product.
+  //
+  // The seed card carried a real brand_bg (#0F172A), a real CTA and
+  // developer copy — "זהו מיקום התצוגה של פרסום מסוג side rail" — on a
+  // light site. Yulian judged it as design because nothing said it was
+  // a placeholder. Neutral ground, dashed border, explicit "הדגמה"
+  // badge: unmistakably scaffolding, while still exercising the real
+  // layout and measurement path we test against.
+  const isDemo = !!ad.is_seed;
+
   // R29 §3 · CREATIVE branch — the server has cleared the ad
   // (render_mode === 'creative' means the flat image fits this slot
   // within ±3%). Full-bleed image, brand_bg only visible as the
@@ -740,6 +754,19 @@ function RailCell({ ad, placement = 'side_rail' }: { ad: SponsorAd; placement?: 
     });
   };
 
+  // R30 §28b · a demo row must not read as product.
+  //
+  // The seed card carried a real brand_bg (#0F172A), a real CTA and
+  // developer copy — "זהו מיקום התצוגה של פרסום מסוג side rail" — on a
+  // light site. Yulian judged it as design because nothing marked it as
+  // scaffolding. Neutral ground, dashed border and an explicit "הדגמה"
+  // badge make it unmistakable, while still exercising the real layout
+  // and measurement path we test against.
+  //
+  // `is_seed` can only be true off-production: seed_visibility.py gates
+  // those rows out entirely there, so this branch is staging-only.
+  const isDemo = !!ad.is_seed;
+
   const inner = mode === 'creative' && ad.creative_url ? (
     <img
       src={ad.creative_url}
@@ -754,7 +781,7 @@ function RailCell({ ad, placement = 'side_rail' }: { ad: SponsorAd; placement?: 
     // and the CTA pinned to the bottom spreads it over the height
     // WITHOUT stretching the text — the body keeps its natural leading
     // rather than being flex-grown into a sparse column.
-    <div className="flex flex-col h-full justify-between p-4" style={{ color: fg }}>
+    <div className="flex flex-col h-full justify-between p-4" style={{ color: isDemo ? '#475569' : fg }}>
       <div>
         <h3 className="text-base font-bold leading-tight">{ad.headline_he}</h3>
         {ad.body_he && (
@@ -797,6 +824,7 @@ function RailCell({ ad, placement = 'side_rail' }: { ad: SponsorAd; placement?: 
   // for 600px the card shrinks instead of being clipped by the
   // aside's overflow:hidden — the bottom-cut-off bug from R29 §4.
   const railAspect = aspectFor(placement);
+
   return (
     <aside
       ref={observeRef}
@@ -811,13 +839,21 @@ function RailCell({ ad, placement = 'side_rail' }: { ad: SponsorAd; placement?: 
       aria-label="מודעה ממומנת · צד"
     >
       <div
-        className="rounded-2xl overflow-hidden shadow-md w-full"
+        className={
+          'rounded-2xl overflow-hidden w-full relative ' +
+          (isDemo ? 'border-2 border-dashed border-slate-300' : 'shadow-md')
+        }
         style={{
-          backgroundColor: bg,
+          backgroundColor: isDemo ? '#f8fafc' : bg,
           ...(railAspect ? { aspectRatio: railAspect.desktop } : {}),
           maxHeight: '100%',
         }}
       >
+        {isDemo && (
+          <span className="absolute top-2 end-2 z-10 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-200 text-slate-600">
+            הדגמה
+          </span>
+        )}
         {ad.cta_url ? (
           <a href={ad.cta_url} target="_blank" rel="noopener noreferrer sponsored"
              onClick={handleClick} className="block w-full h-full">
