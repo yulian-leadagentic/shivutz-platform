@@ -106,15 +106,15 @@ def list_slots(
 #   לידרבורד          ₪750   home_leaderboard
 #   בילבורד           ₪500   home_billboard
 #   רייל צדדי         ₪400   side_rail · listing_rail
-#   באנר קטגוריה      ₪350   marketplace_banner · home_banner · listing_inline
-#   ממוקד בתוצאות     ₪300   search_inline
+#   באנר קטגוריה      ₪350   marketplace_banner · home_banner
+#   ממוקד בתוצאות     ₪300   search_inline · listing_inline
 #   כרטיס קרוסלה      ₪250   home_carousel · marketplace_carousel
 #
-# ⚠️ listing_inline is a judgement call, not something the approved
-# table named. It is a 1200×250 strip — the same shape and role as
-# marketplace_banner — so it takes the banner price. If it should sit
-# with "ממוקד בתוצאות" at ₪300 instead, change it here; nothing else
-# reads these numbers.
+# listing_inline: R31 §6 settled it at ₪300, not the ₪350 I had
+# inferred from its shape. Yulian's reasoning is placement, not
+# geometry — it sits on a single listing page, which is deeper in the
+# funnel and lower-traffic than the marketplace banner. Shape was the
+# wrong axis to price on.
 #
 # Exclusivity (+100%, whole-site for the category, per quarter) and the
 # 15% three-months-upfront discount are NOT applied here. Both are
@@ -127,7 +127,7 @@ SHELF_PRICE_NIS = {
     "listing_rail":         400,
     "marketplace_banner":   350,
     "home_banner":          350,
-    "listing_inline":       350,
+    "listing_inline":       300,
     "search_inline":        300,
     "home_carousel":        250,
     "marketplace_carousel": 250,
