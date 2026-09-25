@@ -2310,7 +2310,7 @@ function LandingPageInner() {
                           next to a "0 results" counter. */}
                       {resp.results.length === 0 && (!resp.near_matches || resp.near_matches.length === 0) && (
                         <p className="text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
-                          לא נמצאו עובדים או דיור לחיפוש הזה. מצאנו התאמה בשירותים הנלווים.
+                          לא מצאנו מודעות עובדים שמתאימות. אלה שירותים נלווים רלוונטיים:
                         </p>
                       )}
                       <div className="flex items-center justify-between gap-2">

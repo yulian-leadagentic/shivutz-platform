@@ -24,6 +24,7 @@ ad, behind the subscription gate. That contract applies identically
 to results AND near_matches.
 """
 import json
+import logging
 from typing import Optional
 
 from fastapi import APIRouter, Header, HTTPException
@@ -40,6 +41,8 @@ from app.services.visibility import (
 from app.services.search_normalize import normalize_search_term
 
 router = APIRouter()
+
+_log = logging.getLogger(__name__)
 
 RESULT_LIMIT = 50
 
@@ -494,6 +497,48 @@ def search(
     # the frontend suppresses the section on empty rather than
     # rendering a hollow heading.
     marketplace_matches = _search_marketplace(body.query)
+
+    # R30 §31b · inventory is not a result.
+    #
+    # `_build_where` adds a narrowing predicate ONLY when the rewriter
+    # extracted one — profession_code, origin_country or region are each
+    # behind an `if`. When it extracted none of them, the worker query
+    # carries no filter beyond ad_type + active, so it returns the whole
+    # table for any caller whose visibility scope is open (contractor,
+    # admin). Anonymous callers get 1=0 and see nothing, which is why a
+    # curl and a logged-in browser disagreed so completely on the same
+    # query.
+    #
+    # Clicking "ציוד וכלי עבודה" therefore produced 14 worker ads. Not a
+    # rendering bug — the server really returned them. But they are
+    # inventory, not an answer, and the query was plainly about
+    # something else: marketplace matched three equipment services.
+    #
+    # Yulian's rule: "מלאי שמוצג כתוצאה הוא שקר קטן שהורס את האמון
+    # בחיפוש כולו" — a contractor who gets 14 irrelevant results once
+    # will not trust the next search.
+    #
+    # So: nothing narrowing extracted AND the marketplace DID match →
+    # the marketplace hits are the real answer; drop the unfiltered
+    # worker rows and let the FE render the phrased empty state.
+    #
+    # Deliberately NOT suppressed when marketplace is also empty. That
+    # is the honest broad-browse path, and the FE already labels it
+    # ("לא זיהינו מקצוע מסוים — מציג את כל ההיצע"). Inventory offered AS
+    # inventory is fine; inventory dressed as a match is the lie.
+    _NARROWING = ("profession_code", "origin_country", "region")
+    unfiltered_inventory_suppressed = 0
+    if reranked and marketplace_matches and not any(filters.get(k) for k in _NARROWING):
+        unfiltered_inventory_suppressed = len(reranked)
+        reranked = []
+        # Worth watching: a high rate here means the rewriter is
+        # failing to extract on queries that DO have a real intent,
+        # and the marketplace is carrying the answer alone.
+        _log.info(
+            "search: suppressed %d unfiltered worker rows for query %r "
+            "(no profession/origin/region extracted, %d marketplace matches)",
+            unfiltered_inventory_suppressed, body.query, len(marketplace_matches),
+        )
 
     # U6 §2 — section ordering. Two rules from the spec:
     #   * profession_code extracted → workers is the intent → 'ads' first.
