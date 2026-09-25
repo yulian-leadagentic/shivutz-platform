@@ -22,13 +22,41 @@ test('mounts the sr-only aria-live region for search results', () => {
 });
 
 test('announces loading, error, no-match, and total count', () => {
-  const jsxBlock = src.match(/aria-atomic="true">([\s\S]{50,500}?)<\/div>/);
-  assert.ok(jsxBlock, 'region body must exist');
-  const body = jsxBlock[1];
-  assert.match(body, /loading/,  'loading branch present');
-  assert.match(body, /error/,    'error branch present');
-  assert.match(body, /resp\.total\s*===\s*0/, 'no-match branch present');
-  assert.match(body, /\$\{resp\.total\}/,     'total-count branch present');
+  // R31 §2 · this assertion used to be
+  //   /aria-atomic="true">([\s\S]{50,500}?)<\/div>/
+  // and had been FAILING since before R30 — the preflight runner is
+  // simply the first thing that ran it where anyone looked.
+  //
+  // Nothing was wrong with the region. The body outgrew the 500-char
+  // window when R28 §1 added the comment explaining why near_matches
+  // do not count as results, so the lazy quantifier could no longer
+  // reach a closing </div>. A test that breaks when a COMMENT is added
+  // is measuring the wrong thing.
+  //
+  // Anchor on the region and read a generous window forward; the four
+  // branch assertions below are what this test actually cares about.
+  const start = src.indexOf('aria-atomic="true">');
+  assert.ok(start !== -1, 'region body must exist');
+  const body = src.slice(start, start + 4000);
+  // The assertions below were written against the ORIGINAL region and
+  // two of them had drifted away from the implementation:
+  //
+  //   /error/          the state was renamed `error` → `searchError`,
+  //                    and /error/ is case-sensitive so it stopped
+  //                    matching the capital E.
+  //   /resp\.total/    R28 §1 deliberately replaced resp.total with
+  //                    exact + market, because near_matches are
+  //                    labelled separately and must NOT count as
+  //                    results. The test was still asserting the
+  //                    behaviour that section removed.
+  //
+  // Updated to the current implementation. What this test protects is
+  // unchanged: the live region must announce all four states, so a
+  // screen-reader user is never left listening to silence.
+  assert.match(body, /loading/,      'loading branch present');
+  assert.match(body, /searchError/,  'error branch present');
+  assert.match(body, /mainTotal === 0 && near === 0/, 'no-match branch present');
+  assert.match(body, /\$\{exact\}|exact === 1/,       'result-count branch present');
 });
 
 test('reads prof/region/origin from URL on mount', () => {

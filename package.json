@@ -1,0 +1,10 @@
+{
+  "name": "shivutz-platform",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Repo-root tooling. The services each have their own package.json; this one exists so the launch gate is a single command from the repo root.",
+  "type": "module",
+  "scripts": {
+    "preflight": "node scripts/preflight.mjs"
+  }
+}
