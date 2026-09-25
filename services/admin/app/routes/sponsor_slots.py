@@ -93,12 +93,55 @@ def list_slots(
 
 # ── Create ────────────────────────────────────────────────────────────────
 
+# ── R30 §4 · shelf prices, approved 24.09 (pre-VAT) ──────────────────
+#
+# These are the DEFAULTS a slot is booked at when the caller does not
+# name a price. They are not the price: `sponsor_ads_slots.price_nis`
+# is per-row and Yulian prices in negotiation, so an explicit
+# price_nis in the request always wins. The default exists so a
+# booking cannot silently land at 0.
+#
+# Approved table, by product name → the placements that carry it:
+#
+#   לידרבורד          ₪750   home_leaderboard
+#   בילבורד           ₪500   home_billboard
+#   רייל צדדי         ₪400   side_rail · listing_rail
+#   באנר קטגוריה      ₪350   marketplace_banner · home_banner · listing_inline
+#   ממוקד בתוצאות     ₪300   search_inline
+#   כרטיס קרוסלה      ₪250   home_carousel · marketplace_carousel
+#
+# ⚠️ listing_inline is a judgement call, not something the approved
+# table named. It is a 1200×250 strip — the same shape and role as
+# marketplace_banner — so it takes the banner price. If it should sit
+# with "ממוקד בתוצאות" at ₪300 instead, change it here; nothing else
+# reads these numbers.
+#
+# Exclusivity (+100%, whole-site for the category, per quarter) and the
+# 15% three-months-upfront discount are NOT applied here. Both are
+# commercial terms agreed per deal, and encoding them would turn a
+# negotiated figure into a computed one. They belong in `note`.
+SHELF_PRICE_NIS = {
+    "home_leaderboard":     750,
+    "home_billboard":       500,
+    "side_rail":            400,
+    "listing_rail":         400,
+    "marketplace_banner":   350,
+    "home_banner":          350,
+    "listing_inline":       350,
+    "search_inline":        300,
+    "home_carousel":        250,
+    "marketplace_carousel": 250,
+}
+
+
 class SlotCreate(BaseModel):
     placement:     str
     category_code: Optional[str] = None      # None → category-agnostic (home_*)
     starts_at:     datetime
     ends_at:       datetime
-    price_nis:     int = Field(ge=0, le=1_000_000)
+    # R30 §4 · omit to take the approved shelf price for the
+    # placement; an explicit value always wins.
+    price_nis:     Optional[int] = Field(default=None, ge=0, le=1_000_000)
     sponsor_ad_id: Optional[str] = None      # None → unsold, bookable later
     note:          Optional[str] = None
 
@@ -152,6 +195,19 @@ def _assert_no_overlap(cur, placement: str, category_code: Optional[str],
 def create_slot(body: SlotCreate, x_user_id: Optional[str] = Header(default=None)):
     if body.placement not in _ALLOWED_PLACEMENTS:
         raise HTTPException(status_code=400, detail="invalid_placement")
+    # R30 §4 · fall back to the approved shelf price rather than letting
+    # an omitted price book at 0.
+    price_nis = body.price_nis
+    if price_nis is None:
+        price_nis = SHELF_PRICE_NIS.get(body.placement)
+        if price_nis is None:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "price_required",
+                    "message": f"אין מחיר מדף ל-{body.placement}. ציין price_nis.",
+                },
+            )
     conn = get_db("org_db")
     try:
         cur = conn.cursor()
@@ -172,7 +228,7 @@ def create_slot(body: SlotCreate, x_user_id: Optional[str] = Header(default=None
                   price_nis, sponsor_ad_id, note)
                VALUES (UUID(), %s, %s, %s, %s, %s, %s, %s)""",
             (body.placement, body.category_code, body.starts_at, body.ends_at,
-             body.price_nis, body.sponsor_ad_id, (body.note or None)),
+             price_nis, body.sponsor_ad_id, (body.note or None)),
         )
         conn.commit()
         cur.execute(
