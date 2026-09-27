@@ -695,6 +695,12 @@ function LandingPageInner() {
     filters: SearchResponse['filters'];
     q:       string;
   } | null>(null);
+  // R31 · `demoView` is null in TWO different situations — in the
+  // dead window between cycles, and forever after the permanent stop.
+  // The slot has to reserve its height in the first and reserve
+  // nothing in the second, so the two need telling apart. This is
+  // true from the moment the loop has fixtures until the stop.
+  const [demoRunning, setDemoRunning] = useState(false);
   const demoStoppedRef = useRef(false);
   const demoCleanupRef = useRef<() => void>(() => {});
   // Callable from other effects (voice-active bridge below).
@@ -753,6 +759,7 @@ function LandingPageInner() {
       clearGhost();
       setMark('rest');
       setDemoView(null);
+      setDemoRunning(false);
       armField?.classList.remove('demo-armed');
     };
 
@@ -776,6 +783,10 @@ function LandingPageInner() {
         armField?.classList.remove('demo-armed');
         return;
       }
+      // Only now is there something to show, so only now is it right
+      // to reserve the slot's height. Priming that yields nothing
+      // must not leave 148px of empty on the page.
+      setDemoRunning(true);
 
       let idx = 0;
       while (!cancelled) {
@@ -1685,11 +1696,20 @@ function LandingPageInner() {
               rule (no announcement, no click surface). Fixed height
               on 390 so the surrounding layout doesn't jump between
               scanning/showing/fading states. */}
-          {demoView && !resp && !searchError && !loading && (
+          {/* R31 · the slot stays MOUNTED for the whole loop.
+              It used to render only when `demoView` was set, so every
+              cycle ended with setDemoView(null) unmounting it and the
+              page below — sponsors, "הרשם עכשיו" — jumped up by the
+              slot's full height, then back down when the next cycle
+              began. Measured on staging, the section cycled through
+              0 → 120 → 76 → 148 → 0 forever, identically at 390, 412,
+              768, 1200 and 1500. */}
+          {demoRunning && !resp && !searchError && !loading && (
             <section
               aria-hidden="true"
-              className={`demo-preview demo-phase-${demoView.phase} px-4 pt-3`}
+              className={`demo-preview ${demoView ? `demo-phase-${demoView.phase}` : 'demo-phase-idle'} px-4 pt-3`}
             >
+              {demoView && (
               <div className="max-w-6xl mx-auto">
                 <div className="demo-scan-wrap">
                   <div className="demo-scan" />
@@ -1723,6 +1743,7 @@ function LandingPageInner() {
                   ))}
                 </ul>
               </div>
+              )}
             </section>
           )}
 

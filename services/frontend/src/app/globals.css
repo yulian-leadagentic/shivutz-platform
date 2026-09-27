@@ -531,23 +531,32 @@ body {
   padding-inline-start: 6px;
 }
 
-/* Preview shell. R26 §4 · dropped the flat 168px floor. It was
-   added to stop layout jump between phases, but the scanning
-   phase is the only one where children collapse to 0 (tags +
-   cards are opacity:0 while the scan line animates). Confining
-   the floor to `demo-phase-scanning` means the visitor sees a
-   short reserved band only while there's actually nothing to show;
-   `showing` and `fading` size to their content (tags + up to 2
-   cards) and no longer paint 168px of empty on mobile. */
+/* Preview shell.
+   R26 §4 dropped the flat 168px floor — the thing that was there to
+   stop the layout jumping — on the reasoning that `scanning` is the
+   only phase whose children collapse to 0, so only it needs a floor.
+   That reasoning misses the other source of variance: `showing`
+   sizes to its CONTENT, and the content is `results.slice(0, 2)`,
+   so a one-result fixture is a whole card shorter than a two-result
+   one. Measured on staging, the section cycled 0 → 120 → 76 → 148
+   and back, forever, with everything below it — the sponsored cards,
+   "הרשם עכשיו" — riding up and down by as much as 148px.
+   R31 · so the floor comes back, and this time it covers every
+   phase, because every phase was moving. 148px is not a guess: it is
+   the measured height of the tallest phase (two cards), and it is
+   the same 148 at 390, 412, 768, 1200 and 1500 because the card text
+   truncates rather than wrapping. That also answers R26 §4's real
+   objection — 168 was over-reserved on mobile; 148 is exact. */
 .demo-preview {
   position: relative;
   overflow: hidden;
   pointer-events: none;
   transition: opacity .32s ease;
+  min-height: 148px;
 }
-.demo-preview.demo-phase-scanning {
-  min-height: 120px;
-}
+/* The dead window between cycles. The slot stays mounted and holds
+   its height; there is simply nothing painted in it. */
+.demo-preview.demo-phase-idle { opacity: 0; }
 .demo-preview.demo-phase-fading { opacity: 0; }
 
 /* Scan line — 3px, gradient shaft, cubic-bezier .35 0 .3 1 over
