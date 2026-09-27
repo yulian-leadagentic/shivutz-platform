@@ -30,28 +30,72 @@ const code = raw
   .filter((l) => !l.trim().startsWith('//'))
   .join('\n');
 
-test('showRail requires content next to the rail, not just an ad', () => {
+test('showRail requires a content COLUMN, not just an ad', () => {
   const m = code.match(/const\s+showRail\s*=\s*([^;]+);/);
   assert.ok(m, 'SponsorRailLayout must compute showRail');
   const expr = m[1];
   assert.match(expr, /\bad\b/, 'still needs an ad');
   assert.match(
     expr,
-    /hasContent/,
-    'showRail must also require that the content column rendered something — '
-    + 'an ad alone is what produced the 300×600 tower beside an empty column',
+    /contentTallEnough/,
+    'showRail must also require content at least as tall as the rail — '
+    + '"non-empty" was not enough: a 600px tower stood beside a 175px row',
   );
 });
 
-test('content presence is measured from the DOM, not assumed', () => {
+test('content height is measured from the DOM, not assumed', () => {
   // The children decide what they render, asynchronously, after their
   // own fetches. Only the laid-out element knows.
-  assert.match(code, /offsetHeight\s*>\s*0/, 'must measure the content cell');
+  assert.match(
+    code,
+    /offsetHeight\s*>=\s*RAIL_HEIGHT_PX/,
+    'must compare the content cell against the rail height',
+  );
   assert.match(
     code,
     /new ResizeObserver/,
     'billboard and carousel fill in late; a one-shot read latches 0 forever',
   );
+});
+
+test('the content column cannot stretch, so the rule cannot make itself true', () => {
+  // The trap: a grid item defaults to `align-self: stretch`. Without
+  // this the content column inflates to the rail's 600px the moment
+  // the rail renders, the height test then passes because the rail is
+  // there, and the rail stays — a rule that validates itself. This is
+  // exactly how the first measurement read contentH=600 on a page
+  // whose real content was 175.
+  const start = code.indexOf('export function SponsorRailLayout');
+  const after = code.slice(start + 1);
+  const nextDecl = after.search(/\n(?:export )?function /);
+  const fn = nextDecl === -1 ? after : after.slice(0, nextDecl);
+  assert.match(
+    fn,
+    /ref=\{contentRef\}[\s\S]{0,200}alignSelf:\s*'start'/,
+    "the measured content column must carry alignSelf: 'start'",
+  );
+});
+
+test('the rail sits in a gutter and never moves the content axis', () => {
+  // `1fr | 1152 | 1fr` reproduces `mx-auto max-w-6xl`, which is the
+  // box every other section on the page uses. Centring the whole
+  // 1152+24+300 span instead is what pushed the content column 146px
+  // right of the results header and the register section.
+  const start = code.indexOf('export function SponsorRailLayout');
+  const after = code.slice(start + 1);
+  const nextDecl = after.search(/\n(?:export )?function /);
+  const fn = nextDecl === -1 ? after : after.slice(0, nextDecl);
+  assert.match(
+    fn,
+    /minmax\(0, 1fr\) minmax\(0, \$\{RAIL_CONTENT_MAX_PX\}px\) minmax\(0, 1fr\)/,
+    'the grid must be 1fr | content | 1fr so the content stays centred',
+  );
+  assert.doesNotMatch(
+    fn,
+    /RAIL_LAYOUT_MAX_PX/,
+    'centring the combined span is the bug — the constant should be gone',
+  );
+  assert.match(code, /gridColumn:\s*3/, 'the rail belongs in the left gutter cell');
 });
 
 test('both layout states share one tree so children never remount', () => {

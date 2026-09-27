@@ -641,9 +641,36 @@ function SponsorCarousel({ placement, label, aboveFold = false }: { placement: s
 // Content column max-width when NO rail. Matches the previous
 // `max-w-6xl` most callers used (72rem = 1152px).
 const RAIL_CONTENT_MAX_PX = 1152;
-// Content max + gap + rail. When rail is visible the grid centres
-// the whole 1152 + 24 + 300 = 1476px inside the viewport.
-const RAIL_LAYOUT_MAX_PX  = RAIL_CONTENT_MAX_PX + 24 + 300;
+const RAIL_WIDTH_PX = 300;
+const RAIL_GAP_PX   = 24;
+// side_rail is 300×600 in the catalog, so a full card is 600 tall.
+const RAIL_HEIGHT_PX = RAIL_WIDTH_PX * 2;
+
+// R31 · the rail never moves the content.
+//
+// §24 centred the whole 1152 + 24 + 300 span in the viewport, which
+// pushed the content column 146px right of every OTHER section on the
+// page. Measured at 1815px, one page carried three centred containers
+// with three different right edges — and in RTL the right edge is
+// where the eye starts:
+//
+//   results header  (max-w-6xl)   329 … 1481
+//   this layout's content column  507 … 1627   ← 146px adrift
+//   "הרשם עכשיו"    (max-w-5xl)   393 … 1417
+//
+// Yulian's call: the content column stays exactly where
+// `max-w-6xl mx-auto` puts it, always, and the rail lives in the
+// left gutter — or not at all. So the grid is now three columns,
+// `1fr | 1152 | 1fr`, which reproduces `mx-auto max-w-6xl` precisely
+// while giving the rail a cell of its own to sit in.
+//
+// The rail therefore needs a gutter wide enough to hold it: 300 for
+// the card, 24 to keep it off the content, and 16 so it does not
+// kiss the window edge. Both gutters are (vw - 1152) / 2, so that is
+// 1152 + 2 × 340 = 1832. Below it there is no rail, which is the
+// cost of the decision — 1440–1830 loses the slot.
+const RAIL_MIN_VIEWPORT_PX =
+  RAIL_CONTENT_MAX_PX + 2 * (RAIL_WIDTH_PX + RAIL_GAP_PX + 16);
 // Sticky top for the rail cell. 96px = h-16 nav (64) + 32px buffer.
 // The sticky search bar (z-40) still paints over the rail if they
 // visually overlap — z-10 here stays LOWER than the search bar per
@@ -677,7 +704,7 @@ export function SponsorRailLayout({
   children: ReactNode;
   aboveFold?: boolean;
 }) {
-  const wide = useIsWideDesktop();
+  const wide = useIsWideDesktop(RAIL_MIN_VIEWPORT_PX);
   const [ad, setAd] = useState<SponsorAd | null>(null);
   const [checked, setChk] = useState(false);
   const ctx = useSponsorCtx();
@@ -700,12 +727,23 @@ export function SponsorRailLayout({
   // fetches. So measure the cell rather than asking the caller to
   // predict it. ResizeObserver because the billboard and carousel
   // fill in late; a one-shot read would latch 0 forever.
+  // R31 · and it must be an accompaniment to a COLUMN, not to a strip.
+  // The first pass only asked whether the content was non-empty, which
+  // let a 600px tower stand beside a 175px sponsored row — the second
+  // screenshot. Yulian's call: the rail appears only where the content
+  // is at least as tall as the rail itself.
+  //
+  // The content column carries `align-self: start` for this to be an
+  // honest measurement. As a grid item it would otherwise default to
+  // `stretch`, inflate to the rail's 600px, and satisfy the very test
+  // that decides whether the rail should be there — the rule would
+  // have made itself true.
   const contentRef = useRef<HTMLDivElement>(null);
-  const [hasContent, setHasContent] = useState(false);
+  const [contentTallEnough, setTallEnough] = useState(false);
   useEffect(() => {
     const el = contentRef.current;
     if (!el) return;
-    const check = () => setHasContent(el.offsetHeight > 0);
+    const check = () => setTallEnough(el.offsetHeight >= RAIL_HEIGHT_PX);
     check();
     const ro = new ResizeObserver(check);
     ro.observe(el);
@@ -727,37 +765,47 @@ export function SponsorRailLayout({
     return () => { cancelled = true; };
   }, [wide, aboveFold, ctx]);
 
-  const showRail = wide && checked && !!ad && hasContent;
+  const showRail = wide && checked && !!ad && contentTallEnough;
 
-  // ONE tree for both states, switching only the container's style.
+  // ONE tree, and ONE content box whether or not the rail is there.
   //
-  // The earlier version returned two different trees, which remounted
-  // `children` on every transition — and now that the rail waits on a
-  // content measurement, the transition happens on every load. A
-  // remount would re-run the billboard's and carousel's effects and
-  // refetch their ads, which is both wasteful and a dedupe hazard:
-  // SponsorProvider hands out each ad once.
+  // `1fr | 1152 | 1fr` reproduces `mx-auto max-w-6xl` exactly: the
+  // equal gutters centre the middle column and cap it at 1152, which
+  // is the same box every other section on the page uses. The rail
+  // takes a gutter cell, so it can never push the content off that
+  // axis — the whole point of the change.
   //
-  // `min-w-0` on the content column so long words / URLs don't force
-  // an overflow that would blow the grid layout up.
+  // Column 3 is the physically LEFT gutter (this is an RTL document,
+  // so grid columns lay out right-to-left), and `justify-self: start`
+  // is its right edge — the side facing the content. The gap is a
+  // margin on the rail rather than the grid's `gap`, because a grid
+  // `gap` would apply between the content and BOTH gutters and pull
+  // the content column off centre again.
+  //
+  // Both states also share one tree so `children` never remounts: the
+  // rail waits on a measurement, so the transition happens on nearly
+  // every load, and a remount would re-run the billboard's and
+  // carousel's effects and refetch their ads — wasteful, and a dedupe
+  // hazard because SponsorProvider hands out each ad exactly once.
+  //
+  // `min-w-0` so long words / URLs can't force an overflow that would
+  // blow the grid up.
   return (
     <div
-      className="mx-auto px-4"
-      style={
-        showRail
-          // Two-column — the grid centres the whole span (1152+24+300).
-          ? {
-              maxWidth: RAIL_LAYOUT_MAX_PX,
-              display: 'grid',
-              gridTemplateColumns: 'minmax(0, 1fr) 300px',
-              gap: 24,
-            }
-          // Single-column — same width/centring the callers had before.
-          : { maxWidth: RAIL_CONTENT_MAX_PX }
-      }
+      style={{
+        display: 'grid',
+        gridTemplateColumns:
+          `minmax(0, 1fr) minmax(0, ${RAIL_CONTENT_MAX_PX}px) minmax(0, 1fr)`,
+      }}
     >
-      <div className="min-w-0" ref={contentRef}>{children}</div>
-      {showRail && ad && <RailCell ad={ad} />}
+      <div
+        className="min-w-0 px-4"
+        ref={contentRef}
+        style={{ gridColumn: 2, alignSelf: 'start' }}
+      >
+        {children}
+      </div>
+      {showRail && ad && <RailCell ad={ad} gutter />}
     </div>
   );
 }
@@ -772,7 +820,15 @@ export function SponsorRailLayout({
  * the default `stretch` gives the cell full row height and there's
  * nothing to stick TO.
  */
-function RailCell({ ad, placement = 'side_rail' }: { ad: SponsorAd; placement?: string }) {
+function RailCell({
+  ad,
+  placement = 'side_rail',
+  // R31 · true only inside SponsorRailLayout, where this cell is a
+  // grid item in the page's left gutter. ListingRailSponsor renders
+  // the same card into a sidebar its own page owns, and must not pick
+  // up the gutter's placement or its 24px gap.
+  gutter = false,
+}: { ad: SponsorAd; placement?: string; gutter?: boolean }) {
   // R30 §12b · the placement was hardcoded to 'side_rail'. ListingRailSponsor
   // reuses this cell, so every listing_rail impression was being attributed
   // to the home-page rail — visible in promo_events as listing_rail rows
@@ -911,9 +967,15 @@ function RailCell({ ad, placement = 'side_rail' }: { ad: SponsorAd; placement?: 
       style={{
         top:        RAIL_STICKY_TOP_PX,
         alignSelf:  'start',
-        width:      300,
+        width:      RAIL_WIDTH_PX,
         maxHeight:  `calc(100vh - ${RAIL_STICKY_TOP_PX + 16}px)`,
         overflow:   'hidden',
+        // In the page gutter: column 3 is the physically LEFT cell
+        // (RTL lays grid columns right-to-left) and `start` is that
+        // cell's right edge, the side facing the content.
+        ...(gutter
+          ? { gridColumn: 3, justifySelf: 'start', marginInlineStart: RAIL_GAP_PX }
+          : {}),
       }}
       aria-label="מודעה ממומנת · צד"
     >
