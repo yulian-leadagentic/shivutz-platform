@@ -682,6 +682,36 @@ export function SponsorRailLayout({
   const [checked, setChk] = useState(false);
   const ctx = useSponsorCtx();
 
+  // R31 · the rail is an ACCOMPANIMENT. Alone, it is the page.
+  //
+  // Measured on staging's landing page: the content column contained
+  // exactly `<section></section>` — 0px. HomeSponsorBillboard and
+  // HomeSponsorCarousel had both returned null and `recent.length`
+  // was 0, so nothing rendered — but this layout only ever asked
+  // "is there a rail AD?", never "is there anything to put it beside".
+  // It promoted to two columns anyway and produced a 300×600 tower
+  // next to 1120×600 of white.
+  //
+  // That is not a staging-only state. On launch day `recent` is empty
+  // because nobody has posted yet, which is the same page.
+  //
+  // Only the DOM knows whether children rendered anything — the
+  // children decide that themselves, asynchronously, after their own
+  // fetches. So measure the cell rather than asking the caller to
+  // predict it. ResizeObserver because the billboard and carousel
+  // fill in late; a one-shot read would latch 0 forever.
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [hasContent, setHasContent] = useState(false);
+  useEffect(() => {
+    const el = contentRef.current;
+    if (!el) return;
+    const check = () => setHasContent(el.offsetHeight > 0);
+    check();
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   useEffect(() => {
     if (!wide) { setAd(null); setChk(true); return; }
     let cancelled = false;
@@ -697,32 +727,37 @@ export function SponsorRailLayout({
     return () => { cancelled = true; };
   }, [wide, aboveFold, ctx]);
 
-  const showRail = wide && checked && !!ad;
+  const showRail = wide && checked && !!ad && hasContent;
 
-  // Single-column path — same width/centring the callers had before.
-  if (!showRail) {
-    return (
-      <div className="mx-auto px-4" style={{ maxWidth: RAIL_CONTENT_MAX_PX }}>
-        {children}
-      </div>
-    );
-  }
-
-  // Two-column path — grid centres the whole span (1152 + 24 + 300).
+  // ONE tree for both states, switching only the container's style.
+  //
+  // The earlier version returned two different trees, which remounted
+  // `children` on every transition — and now that the rail waits on a
+  // content measurement, the transition happens on every load. A
+  // remount would re-run the billboard's and carousel's effects and
+  // refetch their ads, which is both wasteful and a dedupe hazard:
+  // SponsorProvider hands out each ad once.
+  //
   // `min-w-0` on the content column so long words / URLs don't force
   // an overflow that would blow the grid layout up.
   return (
     <div
       className="mx-auto px-4"
-      style={{
-        maxWidth: RAIL_LAYOUT_MAX_PX,
-        display: 'grid',
-        gridTemplateColumns: `minmax(0, 1fr) 300px`,
-        gap: 24,
-      }}
+      style={
+        showRail
+          // Two-column — the grid centres the whole span (1152+24+300).
+          ? {
+              maxWidth: RAIL_LAYOUT_MAX_PX,
+              display: 'grid',
+              gridTemplateColumns: 'minmax(0, 1fr) 300px',
+              gap: 24,
+            }
+          // Single-column — same width/centring the callers had before.
+          : { maxWidth: RAIL_CONTENT_MAX_PX }
+      }
     >
-      <div className="min-w-0">{children}</div>
-      <RailCell ad={ad} />
+      <div className="min-w-0" ref={contentRef}>{children}</div>
+      {showRail && ad && <RailCell ad={ad} />}
     </div>
   );
 }
@@ -782,22 +817,65 @@ function RailCell({ ad, placement = 'side_rail' }: { ad: SponsorAd; placement?: 
     // and the CTA pinned to the bottom spreads it over the height
     // WITHOUT stretching the text — the body keeps its natural leading
     // rather than being flex-grown into a sparse column.
-    <div className="flex flex-col h-full justify-between p-4" style={{ color: isDemo ? '#475569' : fg }}>
+    // R31 · §28b neutralised the demo card's BACKGROUND and left every
+    // element that depended on it being dark. Measured on staging:
+    //
+    //   CTA pill   bg-white/95 over #f8fafc → composites to #ffffff,
+    //              1.04:1 against the card. The button had no visible
+    //              boundary at all; only its label read, so it looked
+    //              like stray text. (WCAG 1.4.11 wants 3:1 for a UI
+    //              component boundary.)
+    //   chips      bg-white/15 over the same near-white — invisible for
+    //              the same reason. No seed row carries chips today, so
+    //              nothing had shown it yet.
+    //
+    // And `justify-between` across a 600px frame holding 67px of copy
+    // put 465px of nothing between the text and the CTA. §29 added that
+    // deliberately, to stop everything bunching at the top — but on a
+    // sparse DEMO card it just makes the emptiness look intentional
+    // instead of fixing it. A placeholder's job is to show the slot's
+    // extent, which the dashed frame already does; the label belongs in
+    // the middle of it, not pinned to the two ends.
+    //
+    // Real ads keep justify-between: an advertiser's copy spread over
+    // their own brand colour reads as a poster, not as a broken box.
+    <div
+      className={
+        'flex flex-col h-full p-4 '
+        + (isDemo ? 'justify-center items-center text-center gap-3' : 'justify-between')
+      }
+      style={{ color: isDemo ? '#475569' : fg }}
+    >
       <div>
         <h3 className="text-base font-bold leading-tight"><BidiText>{ad.headline_he}</BidiText></h3>
         {ad.body_he && (
           <p className="text-xs opacity-90 mt-2 leading-relaxed"><BidiText>{ad.body_he}</BidiText></p>
         )}
         {ad.chips_he && ad.chips_he.length > 0 && (
-          <div className="flex flex-wrap gap-1 mt-3">
+          <div className={'flex flex-wrap gap-1 mt-3 ' + (isDemo ? 'justify-center' : '')}>
             {ad.chips_he.slice(0, 3).map((c) => (
-              <span key={c} className="text-[10px] px-2 py-0.5 rounded-full bg-white/15">{c}</span>
+              <span
+                key={c}
+                className={
+                  'text-[10px] px-2 py-0.5 rounded-full '
+                  + (isDemo ? 'bg-slate-200 text-slate-700' : 'bg-white/15')
+                }
+              >
+                {c}
+              </span>
             ))}
           </div>
         )}
       </div>
       {ad.cta_url && (
-        <span className="inline-flex items-center justify-center bg-white/95 text-slate-900 text-xs font-semibold px-3 py-2 rounded-md">
+        <span
+          className={
+            'inline-flex items-center justify-center text-xs font-semibold px-3 py-2 rounded-md '
+            + (isDemo
+              ? 'bg-white border border-slate-500 text-slate-700'
+              : 'bg-white/95 text-slate-900')
+          }
+        >
           {ad.cta_label_he}
         </span>
       )}
