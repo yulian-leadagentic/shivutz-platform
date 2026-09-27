@@ -1400,7 +1400,23 @@ function LandingPageInner() {
                   fire rerunWithout which needs a real resp).
                   Keyed by demoView.q so each new cycle
                   remounts and re-fires the tag stagger animation. */}
-              {demoView && !resp && !searchError && !loading && (() => {
+              {demoRunning && !resp && !searchError && !loading && (() => {
+                // R31 · the same unmount, in a second place. This row
+                // lives INSIDE the sticky bar, so when it came and went
+                // with each cycle the bar shrank and grew and dragged
+                // the entire page with it — a measured 42px, which is
+                // this row's own height (a 26px tag plus py-2). Holding
+                // the space through the dead window is what makes the
+                // page finally stand still.
+                if (!demoView) {
+                  return (
+                    <div
+                      className="readout demo-readout px-3 py-2 min-h-[42px] opacity-0"
+                      aria-hidden="true"
+                      style={{ pointerEvents: 'none' }}
+                    />
+                  );
+                }
                 const f = demoView.filters;
                 const tags: string[] = [];
                 tags.push(f.ad_type === 'housing' ? 'דיור' : 'עובדים');
@@ -1413,7 +1429,7 @@ function LandingPageInner() {
                 return (
                   <div
                     key={demoView.q}
-                    className="readout demo-readout px-3 py-2 flex items-center flex-wrap gap-2 text-xs text-slate-800"
+                    className="readout demo-readout px-3 py-2 min-h-[42px] flex items-center flex-wrap gap-2 text-xs text-slate-800"
                     aria-hidden="true"
                     style={{ pointerEvents: 'none' }}
                   >
