@@ -554,10 +554,15 @@ body {
   transition: opacity .32s ease;
   min-height: 148px;
 }
-/* The dead window between cycles. The slot stays mounted and holds
-   its height; there is simply nothing painted in it. */
+/* Before the first cycle has produced anything. Happens once, on
+   load, while the visitor is reading the hero. */
 .demo-preview.demo-phase-idle { opacity: 0; }
-.demo-preview.demo-phase-fading { opacity: 0; }
+/* R31 · `fading` used to go to 0, and the view was cleared straight
+   after, so the band sat empty for the ~1.4s the next query spent
+   being typed. It now dims and KEEPS its cards until the next cycle
+   replaces them — the way a real search leaves its results on screen
+   while you retype. The band never reads as empty again. */
+.demo-preview.demo-phase-fading { opacity: .38; }
 
 /* Scan line — 3px, gradient shaft, cubic-bezier .35 0 .3 1 over
    1.9s. It travels from top to bottom of the preview shell so the

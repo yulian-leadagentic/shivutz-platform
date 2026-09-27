@@ -830,7 +830,18 @@ function LandingPageInner() {
           await sleep(18);
           if (cancelled) return;
         }
-        setDemoView(null);
+        // R31 · the cycle used to end by clearing the view, which left
+        // the reserved band EMPTY for the ~1.4s the next query spends
+        // being typed — the blank Yulian kept seeing. Reserving the
+        // height stopped the page jumping; it did not give the band
+        // anything to hold.
+        //
+        // A real search does not blank its results while you retype —
+        // the previous ones stay until new ones arrive. So the view
+        // survives the hand-off and the next cycle's `scanning` phase
+        // replaces it. `fading` now dims instead of vanishing, so the
+        // band reads as "these results are going stale" rather than
+        // going empty. Only the permanent stop clears it.
 
         idx = (idx + 1) % primed.length;
       }
