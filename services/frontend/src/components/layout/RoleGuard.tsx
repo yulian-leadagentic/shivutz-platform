@@ -64,6 +64,28 @@ const SYMMETRIC_PATHS = new Set([
   'dashboard', 'documents', 'tenders', 'users',
 ]);
 
+// R31 §1c · the section name and the entity_type claim are NOT the
+// same string. The /provider/* tree is section 'provider'; the JWT
+// says 'service_provider'. They never compare equal.
+//
+// The effect below was patched for that in R5 §1 and returns without
+// redirecting. The RENDER test was not, so `entityType !== expect` was
+// true for every provider on their own dashboard and they got the
+// need-contractor card — "אין לך חשבון קבלן" — which is the exact
+// screen R5 §1 created /provider/dashboard to stop showing them.
+// select-entity routes every service_provider membership straight to
+// /provider/dashboard, so this was every provider, every login.
+//
+// One predicate at every site, so they can no longer disagree. There
+// turned out to be three, not two: the admin cross-entity banner below
+// carried the same comparison, so an admin whose active entity is a
+// service_provider was told on their own section that "some data will
+// not load". The regression test pins all three.
+function entityMatches(entityType: string | null, expect: RoleSection): boolean {
+  if (expect === 'provider') return entityType === 'service_provider';
+  return entityType === expect;
+}
+
 export default function RoleGuard({ expect, children }: Props) {
   const router    = useRouter();
   const pathname  = usePathname();
@@ -106,7 +128,7 @@ export default function RoleGuard({ expect, children }: Props) {
     }
 
     // ── correct entity type — happy path ──────────────────────────
-    if (entityType === expect) return;
+    if (entityMatches(entityType, expect)) return;
 
     // R5 §1 · symmetric mirroring only applies between contractor and
     // corporation (the two-section product surface). A provider that
@@ -160,7 +182,7 @@ export default function RoleGuard({ expect, children }: Props) {
   if (
     role !== 'admin' &&
     hasEntityContext &&
-    entityType !== expect &&
+    !entityMatches(entityType, expect) &&
     expect !== 'admin'
   ) {
     return <NoAccessCard variant={expect === 'corporation' ? 'need-corporation' : 'need-contractor'} />;
@@ -180,7 +202,7 @@ export default function RoleGuard({ expect, children }: Props) {
     expect !== 'admin' &&
     hasEntityContext &&
     entityType &&
-    entityType !== expect;
+    !entityMatches(entityType, expect);
 
   if (showAdminCrossEntityBanner) {
     const activeLabel = (entityType && ENTITY_TYPE_HE[entityType]) || entityType || '';
