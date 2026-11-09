@@ -464,3 +464,115 @@ missing `marketplace_reveals` table that made it 500 locally.
   listing. They are idempotent per (viewer, listing). Blocked viewers 404 ahead of the insert and left nothing.
   To drop them: `DELETE FROM marketplace_reveals WHERE listing_id='3ba6303b-0a99-eddf-932a-79581d257c50';`
 - Nothing else. No schema change, no listing, no ad, no account.
+
+---
+
+# Addendum 2 · after the key rotation and the R1 refinement
+
+## 1 · The rewriter is really in real mode
+
+```
+[qrewrite] mode=real model=claude-haiku-4-5-20251001 timeout=3.0s
+```
+
+and **zero** `fallback:auth` lines in the logs, where previously every single call logged one.
+
+The banner alone would not prove much — it is printed at import from the presence of a key, not from a
+successful call. The result that does prove it is `canonical_query`, which only the LLM path rewrites:
+
+| Query | fake | real |
+|---|---|---|
+| `רצפים סינים` | `רצפים סינים` | `flooring workers from China` |
+| `חשמלאים בצפון` | `חשמלאים בצפון` | `electricians in the north` |
+| `דיור ל-20 פועלים בחיפה` | `דיור ל-20 פועלים בחיפה` | `housing for 20 workers in Haifa` |
+| `הסעות בצפון` | `הסעות בצפון` | `transportation in the north` |
+| `ביטוח לעובדים זרים` | `ביטוח לעובדים זרים` | `insurance for foreign workers` |
+| `השכרת ציוד` | `השכרת ציוד` | `equipment rental` |
+
+## 2 · §R in both modes, approved contractor, after R1
+
+Run in-process on staging with `FAKE_MODE` flipped per call, so nothing on the service was reconfigured and no
+redeploy was needed. The two modes cannot contaminate each other: only `rewrite_real` touches the Redis cache,
+and `rewrite_fake` never reads it.
+
+| Query | mode | Workers | Housing (ads+mkt) | Services | which pass | primary | extracted |
+|---|---|---|---|---|---|---|---|
+| `רצפים סינים` | fake | 1 | 0 | 0 | none | ads | flooring · CN |
+| `רצפים סינים` | **real** | 1 | 0 | 0 | none | ads | flooring · CN |
+| `חשמלאים בצפון` | fake | 0 | 0 | 0 | none | ads | electrician · north |
+| `חשמלאים בצפון` | **real** | 0 | 0 | 0 | none | ads | electrician · north |
+| `דיור ל-20 פועלים בחיפה` | fake | 0 | **4** (0+4) | 0 | OR | marketplace | qty 20 |
+| `דיור ל-20 פועלים בחיפה` | **real** | 0 | **1** (0+1) | 0 | OR | marketplace | qty 20 · **region north** |
+| `הסעות בצפון` | fake | 2 | 0 | 1 | AND | ads | north |
+| `הסעות בצפון` | **real** | 2 | 0 | 1 | AND | ads | north |
+| `ביטוח לעובדים זרים` | fake | 0 | 0 | 1 | AND | marketplace | — |
+| `ביטוח לעובדים זרים` | **real** | 0 | 0 | 1 | AND | marketplace | — |
+| `השכרת ציוד` | fake | **14** | 0 | 3 | **OR** | marketplace | — |
+| `השכרת ציוד` | **real** | **14** | 0 | 3 | **OR** | marketplace | — |
+
+**The counts differ on exactly one query**, and for a good reason. On `דיור ל-20 פועלים בחיפה` the real
+rewriter extracts `region: north` from `בחיפה` — Haifa is a city, and no city appears in
+`REGION_KEYWORDS`, so the regex extractor cannot make that leap. S3.1's soft region filter then does its job:
+housing drops from all four listings to the one in the north plus any with no region at all. Fewer rows, and
+the right ones. Measured against the pre-R32 baseline for that query (0), real mode is still an increase.
+
+The other five queries agree between modes because the regex extractor already gets them right — the keyword
+maps cover `רצפים`, `סינים`, `חשמלאים`, `צפון` directly.
+
+## 3 · Which pass produced `השכרת ציוד`'s three services — and the R1 refinement in effect
+
+**The OR fallback**, confirmed by calling `_search_marketplace` in-process and reading the flag rather than
+inferring it. `השכרת` matches no listing text (the equipment listing says `השכרה`, and the stemmer only strips
+`ים`/`ות`, so it does not bridge the two), which empties the AND; `ציוד` alone then reaches the three equipment
+listings through their category display name.
+
+So under R1 that query no longer suppresses: **Workers is back to 14**, services lead
+(`primary_section='marketplace'`), and the unfiltered worker list sits underneath in the broad-browse state the
+frontend already labels.
+
+Per-query, after R1, the suppression rule now fires exactly once:
+
+| Query | marketplace pass | narrowing extracted | workers suppressed |
+|---|---|---|---|
+| `רצפים סינים` | none | yes | no |
+| `חשמלאים בצפון` | none | yes | no |
+| `דיור ל-20 פועלים בחיפה` | OR | real: yes / fake: no | no |
+| `הסעות בצפון` | AND | yes (region) | no |
+| `ביטוח לעובדים זרים` | **AND** | no | **yes** |
+| `השכרת ציוד` | OR | no | **no — was yes before R1** |
+
+`ביטוח לעובדים זרים` is the one that still suppresses, and it is the case the rule was written for: a direct AND
+hit on an insurance service, nothing narrowing extracted, so the worker rows really are inventory.
+
+## 4 · §R, the whole round, one table
+
+Workers / Housing / Services, approved contractor.
+
+| Query | pre-R32 | post-R32, pre-R1 | after R1 (fake) | after R1 (real) |
+|---|---|---|---|---|
+| `רצפים סינים` | 1 / 0 / 0 | 1 / 0 / 0 | 1 / 0 / 0 | 1 / 0 / 0 |
+| `חשמלאים בצפון` | 0 / 0 / 0 | 0 / 0 / 0 | 0 / 0 / 0 | 0 / 0 / 0 |
+| `דיור ל-20 פועלים בחיפה` | 0 / 0 / 0 | 0 / **4** / 0 | 0 / 4 / 0 | 0 / **1** / 0 |
+| `הסעות בצפון` | 2 / 0 / 0 | 2 / 0 / **1** | 2 / 0 / 1 | 2 / 0 / 1 |
+| `ביטוח לעובדים זרים` | 0 / 0 / 1 | 0 / 0 / 1 | 0 / 0 / 1 | 0 / 0 / 1 |
+| `השכרת ציוד` | **14** / 0 / 0 | **0** / 0 / **3** | **14** / 0 / 3 | **14** / 0 / 3 |
+
+**Worker counts now match the pre-R32 baseline on every query.** The one that moved is back where it was, and
+it moved back for the right reason rather than by disabling the rule: suppression still fires on a direct hit
+(`ביטוח לעובדים זרים`), it just no longer fires on a fallback hit. Housing and services are up on two queries
+and down on none.
+
+## 5 · Something the working key exposed
+
+With the rewriter reaching Anthropic, the **reranker** now runs too — and it logs this on three of the six
+queries:
+
+```
+[qrerank] unparseable (0.36s) → sql order kept
+```
+
+So `query_reranker` is authenticating, spending a call, returning something the parser rejects, and falling
+back to SQL order. The ordering is not wrong, but the rerank is a no-op on those queries and is being paid for.
+This was invisible while the key was dead, because every call failed earlier in the chain.
+
+Out of scope here — `query_reranker.py` is on this round's do-not-touch list — but it wants a look.
