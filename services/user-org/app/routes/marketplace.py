@@ -13,6 +13,10 @@ from app.db import get_db
 from app.services.search_normalize import normalize_search_term
 from app.services.phone_normalize import normalize_or_400
 from app.services.seed_visibility import seed_where
+from app.services.visibility import (
+    contractor_approval_status,
+    marketplace_scope_wheres,
+)
 
 router = APIRouter()
 
@@ -146,6 +150,27 @@ def _serialize(row: dict, *, include_owner_fields: bool = False) -> dict:
     return result
 
 
+def _listing_scope(
+    x_entity_id:   Optional[str],
+    x_entity_type: Optional[str],
+    x_user_role:   Optional[str],
+) -> tuple[list, list]:
+    """R32 D1 · the corporation-housing scope for this caller.
+
+    Hits `contractors.approval_status` only when the caller actually is
+    a contractor — every other branch of `marketplace_scope_wheres` is
+    decided by the headers alone, so an anonymous browse stays a single
+    query.
+    """
+    entity_type = (x_entity_type or "").lower() or None
+    approval = None
+    if entity_type == "contractor" and x_entity_id:
+        approval = contractor_approval_status(x_entity_id)
+    return marketplace_scope_wheres(
+        x_entity_id, entity_type, x_user_role, approval,
+    )
+
+
 def _caller_owns(row: dict, x_entity_id: Optional[str], x_entity_type: Optional[str]) -> bool:
     """Whether the caller is the row's advertiser. Same test list_listings
     uses under `mine=true`: match on advertiser_entity_(id|type) with the
@@ -179,6 +204,7 @@ def list_listings(
     x_entity_id:  Optional[str] = Header(default=None),
     x_org_id:     Optional[str] = Header(default=None),
     x_entity_type: Optional[str] = Header(default=None),
+    x_user_role:  Optional[str] = Header(default=None),
 ):
     """Public listing. Pass mine=true to get only your own listings (auth required)."""
     conn = get_db()
@@ -186,6 +212,17 @@ def list_listings(
         cur = conn.cursor()
         conditions = ["ml.deleted_at IS NULL"]
         params: list = []
+
+        # R32 D1 · corporation housing is withheld from anonymous,
+        # service_provider and rejected/suspended contractor callers.
+        # Applied before `mine` so it cannot be sidestepped: a caller's
+        # own rows are never corporation housing unless the caller IS
+        # the corporation, and that branch is unscoped.
+        scope_wheres, scope_params = _listing_scope(
+            x_entity_id or x_org_id, x_entity_type, x_user_role,
+        )
+        conditions.extend(scope_wheres)
+        params.extend(scope_params)
 
         if mine:
             entity_id = x_entity_id or x_org_id
@@ -334,20 +371,30 @@ def get_listing(
     x_entity_id:   Optional[str] = Header(default=None),
     x_org_id:      Optional[str] = Header(default=None),
     x_entity_type: Optional[str] = Header(default=None),
+    x_user_role:   Optional[str] = Header(default=None),
 ):
+    # R32 D1 · a caller who may not see corporation housing gets the
+    # same 404 a deleted listing gets. 403 would confirm the row
+    # exists, which is the one bit of information the rule is meant to
+    # withhold — same opacity the reveal endpoint already uses.
+    scope_wheres, scope_params = _listing_scope(
+        x_entity_id or x_org_id, x_entity_type, x_user_role,
+    )
+    conditions = ["ml.id = %s", "ml.deleted_at IS NULL"] + scope_wheres
+    if seed_where("ml"):
+        conditions.append(seed_where("ml"))
     conn = get_db()
     try:
         cur = conn.cursor()
-        cur.execute("""
+        cur.execute(f"""
             SELECT ml.*,
                    c.company_name_he AS corporation_name_he,
                    c.company_name    AS corporation_name_en,
                    c.approval_status AS corporation_approval_status
               FROM marketplace_listings ml
               LEFT JOIN corporations c ON ml.corporation_id = c.id
-             WHERE ml.id = %s AND ml.deleted_at IS NULL
-        """ + (f" AND {seed_where('ml')}" if seed_where('ml') else "") + """
-        """, (listing_id,))
+             WHERE {' AND '.join(conditions)}
+        """, (listing_id, *scope_params))
         row = cur.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Listing not found")
@@ -382,6 +429,7 @@ def reveal_listing_contact(
     x_entity_id:   Optional[str] = Header(default=None),
     x_org_id:      Optional[str] = Header(default=None),
     x_entity_type: Optional[str] = Header(default=None),
+    x_user_role:   Optional[str] = Header(default=None),
 ):
     # Anonymous is 401. There's no meaningful signal we could give an
     # unauthenticated caller that wouldn't be a functional bypass of
@@ -410,7 +458,22 @@ def reveal_listing_contact(
         # Fetch the listing + corp name in one shot. 404 if the listing
         # is deleted / bogus id — same opacity as the reveal endpoint
         # on worker ads.
-        cur.execute("""
+        #
+        # R32 D1 · the scope rides in the same WHERE, so a caller who
+        # may not see corporation housing 404s HERE — before the
+        # marketplace_reveals audit insert below. That is deliberate:
+        # a reveal that was refused is not a reveal, and recording it
+        # would put rows in the audit table for contacts the caller
+        # never received.
+        scope_wheres, scope_params = _listing_scope(
+            caller_id, caller_type, x_user_role,
+        )
+        conditions = [
+            "ml.id = %s",
+            "ml.deleted_at IS NULL",
+            "ml.status = 'active'",
+        ] + scope_wheres
+        cur.execute(f"""
             SELECT ml.contact_phone, ml.contact_name,
                    ml.advertiser_entity_id, ml.advertiser_entity_type,
                    ml.corporation_id,
@@ -418,8 +481,8 @@ def reveal_listing_contact(
                    c.company_name    AS corporation_name_en
               FROM marketplace_listings ml
               LEFT JOIN corporations c ON ml.corporation_id = c.id
-             WHERE ml.id = %s AND ml.deleted_at IS NULL AND ml.status = 'active'
-        """, (listing_id,))
+             WHERE {' AND '.join(conditions)}
+        """, (listing_id, *scope_params))
         row = cur.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail={"code": "listing_not_found"})
