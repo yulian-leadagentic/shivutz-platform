@@ -373,6 +373,10 @@ function LandingPageInner() {
     if (next !== 'services') setCategoryFilter('');
     setServicesExpanded(false);
     writeTypeToUrl(next, category, 'push');
+    // E8 · one crossfade, then the attribute goes away again.
+    setSectionFade(true);
+    if (fadeTimerRef.current) clearTimeout(fadeTimerRef.current);
+    fadeTimerRef.current = setTimeout(() => setSectionFade(false), 200);
   }, [categoryFilter, writeTypeToUrl]);
 
   const selectCategory = useCallback((code: string) => {
@@ -380,6 +384,42 @@ function LandingPageInner() {
     setCategoryFilter(next);
     writeTypeToUrl('services', next, 'replace');
   }, [categoryFilter, writeTypeToUrl]);
+
+  // R32 S7 · two short-lived flags that drive CSS, not layout.
+  //
+  // E3 · `resultsFresh` is on only while a NEW result set is landing,
+  // so the cards rise once. A re-render or a tab switch leaves them
+  // still — motion that repeats on every interaction stops reading as
+  // "this is new" and starts reading as a stutter.
+  // E8 · `sectionFade` is on for the length of one crossfade after a
+  // type change. Both are attributes rather than React keys: a key
+  // change would remount the sections and re-fire every sponsor
+  // impression observer inside them.
+  const [resultsFresh, setResultsFresh] = useState(false);
+  const [sectionFade, setSectionFade]   = useState(false);
+  const freshTimerRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fadeTimerRef    = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // E9 · a zero-height sentinel above the sticky bar. While it is in
+  // view the bar is flat; once it scrolls away the bar lifts. An
+  // IntersectionObserver, so nothing runs per scroll frame.
+  const stickySentinelRef = useRef<HTMLDivElement>(null);
+  const [stuck, setStuck] = useState(false);
+
+  useEffect(() => () => {
+    if (freshTimerRef.current) clearTimeout(freshTimerRef.current);
+    if (fadeTimerRef.current)  clearTimeout(fadeTimerRef.current);
+  }, []);
+
+  useEffect(() => {
+    const el = stickySentinelRef.current;
+    if (!el || typeof IntersectionObserver === 'undefined') return;
+    const io = new IntersectionObserver(
+      ([entry]) => setStuck(!entry.isIntersecting),
+      { threshold: 0 },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
 
   // R32 S5.2 · the open listing panel, also a URL param so the panel
   // is shareable and Back closes it.
@@ -646,7 +686,14 @@ function LandingPageInner() {
     syncFiltersToUrl(fProf, fRegion, fOrigin);
     setLoading(true);
     setSearchError('');
-    try { setResp(await searchApi.query(query)); }
+    try {
+      setResp(await searchApi.query(query));
+      // E3 · the cards mount in the same commit that sets this, so
+      // the animation starts with them and not a frame later.
+      setResultsFresh(true);
+      if (freshTimerRef.current) clearTimeout(freshTimerRef.current);
+      freshTimerRef.current = setTimeout(() => setResultsFresh(false), 900);
+    }
     catch (e) { setSearchError(mapSearchError(e)); }
     finally { setLoading(false); }
   }
@@ -1403,9 +1450,20 @@ function LandingPageInner() {
             </div>
           )}
 
+          {/* R32 S7 E9 · the sentinel. Zero height and aria-hidden, so
+              it adds nothing to the page but a scroll position to
+              watch. */}
+          <div ref={stickySentinelRef} aria-hidden="true" className="h-0" />
           <div
             ref={stickyBarRef}
-            className="sticky top-16 z-40 bg-white/95 border-b border-slate-200 shadow-sm"
+            className={
+              'r32-sticky-bar sticky top-16 z-40 bg-white/95 border-b border-slate-200 ' +
+              // E9 · shadow-card is a Tailwind utility, and Tailwind's
+              // box-shadow utilities compose through --tw-shadow; a
+              // plain CSS rule of ours loses to them whatever the
+              // order. Toggle the utility, transition it from CSS.
+              (stuck ? 'shadow-card' : 'shadow-none')
+            }
           >
             {/* R30 §24 root · `backdrop-blur-sm` REMOVED from this
                 sticky wrapper. backdrop-filter creates a new
@@ -1420,7 +1478,7 @@ function LandingPageInner() {
             <div className="max-w-5xl mx-auto px-3 sm:px-4 py-1 sm:py-1.5">
               <form
                 onSubmit={(e) => { e.preventDefault(); cancelTyping(); runSearch(); }}
-                className={`ai-search-form flex items-center gap-2 sm:gap-3 rounded-xl border-2 border-slate-200 bg-white px-2 sm:px-3 py-1 focus-within:border-brand-600 focus-within:ring-2 focus-within:ring-brand-200 transition-colors motion-reduce:transition-none ${(resp || (demoView && !searchError && !loading)) ? 'is-joined' : ''}`}
+                className={`ai-search-form flex items-center gap-2 sm:gap-3 rounded-xl border-2 border-slate-200 bg-white px-2 sm:px-3 py-1 focus-within:border-brand-600 ${(resp || (demoView && !searchError && !loading)) ? 'is-joined' : ''}`}
                 role="search"
                 aria-label="חיפוש בפורטל"
               >
@@ -1498,6 +1556,9 @@ function LandingPageInner() {
                   type="submit"
                   disabled={loading || (q.trim().length < 2 && !anyFilter)}
                   className={
+                    // R32 S7 E1 · a 3% press, so the button acknowledges
+                    // the click before the results come back.
+                    'r32-press ' +
                     // SP — brand-600 (#f78203) + slate-900 text is the
                     // AA-passing pairing (measured from DOM: 6.93:1).
                     // White text on brand-600 fails at 2.6:1. Do not
@@ -1620,7 +1681,7 @@ function LandingPageInner() {
                         type="button"
                         onClick={() => rerunWithout(t.dim)}
                         aria-label={`הסר תג ${t.label}`}
-                        className="inline-flex items-center gap-1 rounded-full border border-brand-300 bg-white text-brand-900 hover:bg-brand-100 hover:border-brand-500 transition text-xs font-semibold px-2 py-0.5 min-h-[26px]"
+                        className="r32-chip inline-flex items-center gap-1 rounded-full border border-brand-300 bg-white text-brand-900 hover:bg-brand-100 hover:border-brand-500 transition text-xs font-semibold px-2 py-0.5 min-h-[26px]"
                       >
                         <span>{t.label}</span>
                         <X className="w-3 h-3 text-slate-500" aria-hidden="true" />
@@ -2110,7 +2171,11 @@ function LandingPageInner() {
                     primary_section to 'marketplace' when the query
                     was clearly a services intent (no profession
                     extracted, ads came up empty). */}
-                <div className="flex-1 flex flex-col gap-4 min-w-0">
+                <div
+                  className="flex-1 flex flex-col gap-4 min-w-0"
+                  data-fresh={resultsFresh ? '1' : undefined}
+                  data-section-fade={sectionFade ? '1' : undefined}
+                >
                   {searchError && (
                     <div className="text-sm text-red-800 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{searchError}</div>
                   )}
@@ -2137,7 +2202,7 @@ function LandingPageInner() {
                       nothing inside changes visually. */}
                   <div className={
                     (resp?.primary_section === 'marketplace' ? 'order-2' : 'order-1') +
-                    ' space-y-4'
+                    ' r32-section space-y-4'
                   }>
 
                   {/* SR — card-shaped skeleton while the LLM + rerank
@@ -2151,10 +2216,10 @@ function LandingPageInner() {
                   {loading && !resp && (
                     <ul className="space-y-3" aria-hidden="true">
                       {[0, 1, 2].map((i) => (
-                        <li key={i} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm animate-pulse">
-                          <div className="h-4 w-3/5 bg-slate-100 rounded-md mb-2" />
-                          <div className="h-3 w-2/5 bg-slate-100 rounded-md" />
-                          <div className="mt-4 h-9 w-40 bg-slate-100 rounded-lg" />
+                        <li key={i} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                          <div className="r32-skeleton h-4 w-3/5 rounded-md mb-2" />
+                          <div className="r32-skeleton h-3 w-2/5 rounded-md" />
+                          <div className="r32-skeleton mt-4 h-9 w-40 rounded-lg" />
                         </li>
                       ))}
                     </ul>
@@ -2253,7 +2318,7 @@ function LandingPageInner() {
                     && resp.results.length === 0
                     && (!resp.near_matches || resp.near_matches.length === 0)
                     && (
-                    <div className="bg-brand-50 border-2 border-brand-200 rounded-2xl p-6 text-center shadow-sm">
+                    <div className="r32-fade-in bg-brand-50 border-2 border-brand-200 rounded-2xl p-6 text-center shadow-sm">
                       <p className="text-base font-semibold text-slate-900 mb-3">
                         התחבר כדי לראות מודעות עובדים ודיור
                       </p>
@@ -2539,7 +2604,7 @@ function LandingPageInner() {
                     && typeCounts[typeFilter] === 0
                     && (workerAds.length > 0 || housingAds.length > 0 || allListings.length > 0)
                     && (
-                    <p className="order-1 text-sm text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                    <p className="r32-fade-in order-1 text-sm text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
                       אין תוצאות בלשונית הזו עבור החיפוש הנוכחי.
                     </p>
                   )}
@@ -2555,7 +2620,7 @@ function LandingPageInner() {
                   {showHousing && (housingAds.length > 0 || housingListings.length > 0) && (
                     <section
                       aria-label="תוצאות חיפוש — דיור"
-                      className="order-1 space-y-3"
+                      className="r32-section order-1 space-y-3"
                     >
                       <h2 className="text-base sm:text-lg font-bold text-slate-900">
                         דיור
@@ -2585,8 +2650,8 @@ function LandingPageInner() {
                       than leaving an empty section that reads as
                       "nothing here". */}
                   {showHousing && isProvider && housingAds.length === 0 && housingListings.length === 0 && (
-                    <section aria-label="דיור" className="order-1">
-                      <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 text-center shadow-sm">
+                    <section aria-label="דיור" className="r32-section order-1">
+                      <div className="r32-fade-in bg-slate-50 border border-slate-200 rounded-2xl p-6 text-center shadow-sm">
                         <p className="text-sm text-slate-700">
                           מודעות דיור של תאגידים מוצגות לקבלנים ולתאגידים בלבד.
                         </p>
@@ -2609,7 +2674,7 @@ function LandingPageInner() {
                       aria-label="שירותים נלווים"
                       className={
                         (resp.primary_section === 'marketplace' ? 'order-1' : 'order-2') +
-                        ' space-y-3'
+                        ' r32-section space-y-3'
                       }
                     >
                       {/* R5 §4 · when workers came up empty but services
@@ -2683,12 +2748,16 @@ function LandingPageInner() {
                                 className={
                                   'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ' +
                                   (isActive
-                                    ? 'bg-brand-600 text-white border-brand-600'
+                                    // SP · slate-900 on brand-600 measures
+                                    // 6.93:1; white on the same orange is
+                                    // 2.6:1 and fails AA. Same pairing the
+                                    // search button uses.
+                                    ? 'bg-brand-600 text-slate-900 border-brand-600'
                                     : 'bg-white text-slate-600 border-slate-200 hover:border-brand-300 hover:text-brand-800')
                                 }
                               >
                                 {cat.name_he}
-                                <span className={isActive ? 'text-white/80' : 'text-slate-400'}>{n}</span>
+                                <span className={isActive ? 'text-slate-700' : 'text-slate-400'}>{n}</span>
                               </button>
                             );
                           })}
@@ -3116,7 +3185,16 @@ function AdRow({
   // Cell 5 and gets stopPropagation so a click on it doesn't also
   // toggle the row.
   const [expanded, setExpanded] = useState(false);
-  const toggleExpanded = () => setExpanded((v) => !v);
+  // R32 S7 E6 · once opened, the panel stays mounted so closing can
+  // animate too — React would otherwise remove it before the
+  // transition had a frame to run in. Collapsed it is a 0fr grid row
+  // with overflow hidden, so it occupies no height and reaches no
+  // screen reader that follows the visual tree.
+  const [everExpanded, setEverExpanded] = useState(false);
+  const toggleExpanded = () => setExpanded((v) => {
+    if (!v) setEverExpanded(true);
+    return !v;
+  });
   const onRowKey = (e: React.KeyboardEvent<HTMLLIElement>) => {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
@@ -3256,7 +3334,9 @@ function AdRow({
           amenities, so we don't stack a second panel on top. Uses
           the same grid-column:1/-1 span pattern as the reveal-block
           — no new mechanism. */}
-      {expanded && !revealed && (
+      {everExpanded && !revealed && (
+        <div className={`r32-expand ${expanded ? 'is-open' : ''}`} aria-hidden={!expanded}>
+        <div className="r32-expand__inner">
         <div className="results-reveal-block">
           <div className="text-sm text-slate-800 space-y-2">
             {isWorker ? (
@@ -3313,6 +3393,8 @@ function AdRow({
               רוצה ליצור קשר? לחץ &quot;הצג פרטים&quot; בשורה זו.
             </p>
           </div>
+        </div>
+        </div>
         </div>
       )}
 

@@ -50,7 +50,7 @@ export default function ListingCard({
         e.preventDefault();
         onOpen(listing);
       }}
-      className="group block bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 overflow-hidden"
+      className="r32-card group block bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 overflow-hidden"
     >
       {/* Hero image — first image from images_json if any; otherwise the
           color header bar serves as a category indicator. */}

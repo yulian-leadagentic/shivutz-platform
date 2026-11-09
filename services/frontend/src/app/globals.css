@@ -1169,3 +1169,221 @@ bdi {
     box-shadow: 0 0 32px rgb(15 23 42 / 0.18);
   }
 }
+
+/* ═══ R32 S7 · motion ════════════════════════════════════════════════
+   CSS and Tailwind keyframes only — no animation library is in
+   package.json and this round does not add one. Every effect below
+   moves `transform` or `opacity` and nothing else, so none of them can
+   reflow the page: R31 spent a round fixing a landing that jumped, and
+   the measurement that round produced is the floor this one has to
+   stay under.
+
+   One easing for all of it, and one place to change it. */
+:root {
+  --r32-ease: cubic-bezier(.3, .7, .2, 1);
+}
+
+/* E1 · the search field answers focus with a soft ring rather than a
+   colour swap alone. box-shadow, so nothing around it moves. */
+.ai-search-form {
+  transition: box-shadow 150ms var(--r32-ease), border-color 150ms var(--r32-ease);
+}
+.ai-search-form:focus-within {
+  box-shadow: 0 0 0 4px #FDE9D8;
+}
+.r32-press:active {
+  transform: scale(.97);
+}
+.r32-press {
+  transition: transform 150ms var(--r32-ease);
+}
+
+/* E2 · the 'הבנתי' tags pop in on each new result set. The readout
+   is keyed on the response, so a new set remounts the row and the
+   animation runs again. 40ms apart, which reads as "these arrived
+   together" rather than as a queue. */
+@keyframes r32-chip-in {
+  from { opacity: 0; transform: scale(.9); }
+  to   { opacity: 1; transform: scale(1); }
+}
+.r32-chip {
+  animation: r32-chip-in 180ms var(--r32-ease) both;
+}
+.r32-chip:nth-child(1) { animation-delay: 0ms; }
+.r32-chip:nth-child(2) { animation-delay: 40ms; }
+.r32-chip:nth-child(3) { animation-delay: 80ms; }
+.r32-chip:nth-child(4) { animation-delay: 120ms; }
+.r32-chip:nth-child(n+5) { animation-delay: 160ms; }
+
+/* E3 · result cards rise 8px into place — but only on a NEW result
+   set. `data-fresh` is set when a response lands and cleared on a
+   timer, so re-renders and tab switches leave the cards still. Only
+   the first eight animate; past that the stagger is just a wait. */
+@keyframes r32-fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+[data-fresh="1"] .results-row,
+[data-fresh="1"] .r32-card {
+  animation: r32-fade-up 220ms var(--r32-ease) both;
+}
+[data-fresh="1"] .results-row:nth-child(1),
+[data-fresh="1"] .r32-card:nth-child(1) { animation-delay: 0ms; }
+[data-fresh="1"] .results-row:nth-child(2),
+[data-fresh="1"] .r32-card:nth-child(2) { animation-delay: 40ms; }
+[data-fresh="1"] .results-row:nth-child(3),
+[data-fresh="1"] .r32-card:nth-child(3) { animation-delay: 80ms; }
+[data-fresh="1"] .results-row:nth-child(4),
+[data-fresh="1"] .r32-card:nth-child(4) { animation-delay: 120ms; }
+[data-fresh="1"] .results-row:nth-child(5),
+[data-fresh="1"] .r32-card:nth-child(5) { animation-delay: 160ms; }
+[data-fresh="1"] .results-row:nth-child(6),
+[data-fresh="1"] .r32-card:nth-child(6) { animation-delay: 200ms; }
+[data-fresh="1"] .results-row:nth-child(7),
+[data-fresh="1"] .r32-card:nth-child(7) { animation-delay: 240ms; }
+[data-fresh="1"] .results-row:nth-child(8),
+[data-fresh="1"] .r32-card:nth-child(8) { animation-delay: 280ms; }
+/* Everything past the eighth appears at once, with no delay. */
+[data-fresh="1"] .results-row:nth-child(n+9),
+[data-fresh="1"] .r32-card:nth-child(n+9) { animation: none; }
+
+/* E4 · the type filter's active marker slides; the counts cross-fade
+   under it. */
+.result-type-filter__indicator {
+  transition: transform 200ms var(--r32-ease);
+}
+.result-type-filter__count {
+  transition: opacity 150ms var(--r32-ease);
+}
+
+/* E5 · skeletons shimmer instead of pulsing. A sweep reads as "being
+   fetched"; a pulse reads as "broken and blinking". The gradient
+   moves with `transform` inside an overflow-hidden box, so the
+   skeleton's own size never changes. */
+.r32-skeleton {
+  position: relative;
+  overflow: hidden;
+  background: #f1f5f9;          /* slate-100, the pulse's resting colour */
+}
+.r32-skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    rgb(255 255 255 / 0) 0%,
+    rgb(255 255 255 / 0.65) 50%,
+    rgb(255 255 255 / 0) 100%
+  );
+  animation: r32-shimmer 1.4s linear infinite;
+}
+@keyframes r32-shimmer {
+  to { transform: translateX(100%); }
+}
+
+/* E6 · the inline ad row opens and closes on grid-template-rows,
+   so no JavaScript measures a height and nothing jumps when the
+   content inside changes. */
+.r32-expand {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 220ms var(--r32-ease);
+}
+.r32-expand.is-open {
+  grid-template-rows: 1fr;
+}
+.r32-expand__inner {
+  overflow: hidden;
+  min-height: 0;
+}
+/* The block already had its own 240ms entrance from the reveal path.
+   Inside the expander that would run on top of the row growth, so the
+   grid transition owns this one. The reveal block keeps its own. */
+.r32-expand .results-reveal-block {
+  animation: none;
+}
+
+/* E7 · the drawer arrives from the edge it is anchored to, the sheet
+   from the bottom, and the backdrop fades. translateX(100%) on a panel
+   pinned to the inline-end moves it off-screen in LTR; `--seg-dir`
+   flips that for RTL, the same lever the tab indicator uses. */
+@keyframes r32-backdrop-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes r32-sheet-in {
+  from { opacity: 0; transform: translateY(100%); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes r32-drawer-in {
+  from { opacity: 0; transform: translateX(calc(var(--seg-dir, 1) * -100%)); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.listing-drawer__backdrop {
+  animation: r32-backdrop-in 200ms var(--r32-ease) both;
+}
+.listing-drawer__panel {
+  animation: r32-sheet-in 260ms var(--r32-ease) both;
+}
+@media (min-width: 1024px) {
+  .listing-drawer__panel {
+    animation-name: r32-drawer-in;
+  }
+}
+
+/* E8 · switching tabs crossfades the sections rather than swapping
+   them. Driven by an attribute the page sets for 200ms on a type
+   change, NOT by remounting the sections with a new `key`: a remount
+   would re-fire every sponsor slot's impression observer inside them,
+   and an impression counted twice is a billing question, not a
+   motion one. */
+@keyframes r32-section-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+[data-section-fade="1"] .r32-section {
+  animation: r32-section-in 150ms var(--r32-ease) both;
+}
+
+/* E9 · the sticky search bar lifts off the content once the hero has
+   scrolled past. Driven by an IntersectionObserver sentinel — no
+   scroll listener, so nothing runs on the main thread per frame. */
+.r32-sticky-bar {
+  transition: box-shadow 200ms var(--r32-ease);
+}
+/* The shadow itself is the `shadow-card` utility, toggled in JSX —
+   Tailwind's shadow utilities compose through --tw-shadow and win
+   over a plain rule here. This only owns the transition. */
+
+/* E10 · lock and empty states fade in rather than appearing. */
+.r32-fade-in {
+  animation: r32-section-in 200ms var(--r32-ease) both;
+}
+
+/* Reduced motion · everything above renders in its final state. The
+   transitions are cut to 1ms rather than 0 so a transitionend that
+   something might be waiting on still fires. */
+@media (prefers-reduced-motion: reduce) {
+  .r32-chip,
+  [data-fresh="1"] .results-row,
+  [data-fresh="1"] .r32-card,
+  .listing-drawer__backdrop,
+  .listing-drawer__panel,
+  [data-section-fade="1"] .r32-section,
+  .r32-fade-in,
+  .r32-skeleton::after {
+    animation: none;
+  }
+  .r32-skeleton::after { display: none; }
+  .ai-search-form,
+  .r32-press,
+  .result-type-filter__indicator,
+  .result-type-filter__count,
+  .r32-expand,
+  .r32-sticky-bar {
+    transition-duration: 1ms;
+  }
+  .r32-press:active { transform: none; }
+}
