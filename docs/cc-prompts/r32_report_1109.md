@@ -795,7 +795,8 @@ git rev-list --left-right --count origin/staging...origin/pivot/v2
 0	0
 ```
 
-Branch `pivot/v2`, 14 commits from `pre-r32`, everything pushed to both refs. Both `cc_prompt_R32_unified_search.md`
+Branch `pivot/v2`, everything from `pre-r32` onward pushed to both refs (`git log pre-r32..HEAD` for the list —
+a count written here only goes stale the moment another commit lands). Both `cc_prompt_R32_unified_search.md`
 and this report are tracked. No R32 source file is left uncommitted; the untracked files in the tree (brand icons,
 `tsbuildinfo`, other rounds' prompts) were there before this round started.
 
