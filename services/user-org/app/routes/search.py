@@ -301,7 +301,7 @@ def _search_marketplace(
     raw_query: str,
     scope_extra: Optional[tuple[list[str], list[object]]] = None,
     filters: Optional[dict] = None,
-) -> list[dict]:
+) -> tuple[list[dict], bool]:
     """Federated marketplace-listings pass — U6 §2 + R28 §2 + R32 S3.
 
     `scope_extra` (R32 D1): (wheres, params) from
@@ -330,6 +330,12 @@ def _search_marketplace(
     this exists for — `בחיפה` is a city the rewriter has no keyword
     for, so it stays in the AND and zeroes a result set that `דיור`
     alone would have filled.
+
+    Returns `(rows, via_fallback)`. R32 R1 (Yulian, 09.11): which pass
+    produced the rows decides whether they may suppress unfiltered
+    worker inventory. A row the AND found answers the whole query and
+    earns that; a row the OR found answered one word of it and does
+    not.
     """
     filters = filters or {}
     clauses = marketplace_text_token_clauses(
@@ -371,7 +377,7 @@ def _search_marketplace(
         cur.execute(sql, and_params)
         rows = cur.fetchall()
         if rows or len(clauses) < 2:
-            return [_serialize_marketplace_listing(r) for r in rows]
+            return [_serialize_marketplace_listing(r) for r in rows], False
 
         # S3.3 · the AND found nothing and more than one word was in
         # it. Run the same clauses ORed, ranked by how many of them
@@ -402,7 +408,7 @@ def _search_marketplace(
             "OR fallback returned %d",
             raw_query, len(clauses), len(rows),
         )
-        return [_serialize_marketplace_listing(r) for r in rows]
+        return [_serialize_marketplace_listing(r) for r in rows], True
     finally:
         conn.close()
 
@@ -582,7 +588,7 @@ def search(
     # for services). Empty-list is returned when nothing matches —
     # the frontend suppresses the section on empty rather than
     # rendering a hollow heading.
-    marketplace_matches = _search_marketplace(
+    marketplace_matches, marketplace_via_fallback = _search_marketplace(
         body.query,
         scope_extra=marketplace_scope_wheres(
             x_entity_id, x_entity_type, x_user_role, viewer_approval_status,
@@ -618,9 +624,23 @@ def search(
     # is the honest broad-browse path, and the FE already labels it
     # ("לא זיהינו מקצוע מסוים — מציג את כל ההיצע"). Inventory offered AS
     # inventory is fine; inventory dressed as a match is the lie.
+    #
+    # R32 R1 (Yulian, 09.11) · only the DIRECT pass earns the right to
+    # suppress. The OR fallback answers one word of the query, not the
+    # query — `השכרת ציוד` reaches three equipment listings through
+    # `ציוד` alone, which is not strong enough evidence to delete every
+    # worker ad the contractor could still have wanted. So when the
+    # hits exist only because of the fallback, the workers stay, in the
+    # labelled broad-browse state, and the services go first instead.
     _NARROWING = ("profession_code", "origin_country", "region")
+    _unfiltered_browse = bool(reranked) and not any(filters.get(k) for k in _NARROWING)
+    # Computed before `reranked` is cleared below, because both rules
+    # downstream need to know what the state was.
+    fallback_browse = (
+        _unfiltered_browse and bool(marketplace_matches) and marketplace_via_fallback
+    )
     unfiltered_inventory_suppressed = 0
-    if reranked and marketplace_matches and not any(filters.get(k) for k in _NARROWING):
+    if _unfiltered_browse and marketplace_matches and not marketplace_via_fallback:
         unfiltered_inventory_suppressed = len(reranked)
         reranked = []
         # Worth watching: a high rate here means the rewriter is
@@ -641,11 +661,17 @@ def search(
     # first: the ads pipeline runs through the LLM reranker which
     # already scored the query's intent; marketplace is the surprise
     # bonus, not the headline.
+    #
+    # R32 R1 · a third rule. When the worker rows survived only because
+    # the marketplace hits came from the fallback, both sections are on
+    # screen and the services are the better guess at what was asked —
+    # so they lead, and the unfiltered worker list sits underneath as
+    # the browse it is.
     marketplace_first = (
         not filters.get("profession_code")
         and not reranked
         and bool(marketplace_matches)
-    )
+    ) or fallback_browse
     primary_section = "marketplace" if marketplace_first else "ads"
 
     return {
