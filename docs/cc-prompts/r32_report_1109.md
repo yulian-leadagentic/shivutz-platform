@@ -564,8 +564,8 @@ and down on none.
 
 ## 5 · Something the working key exposed
 
-With the rewriter reaching Anthropic, the **reranker** now runs too — and it logs this on three of the six
-queries:
+With the rewriter reaching Anthropic, the **reranker** now runs too — and it logs this on two of the six
+queries (corrected: I first wrote three, having counted log lines across both modes rather than queries):
 
 ```
 [qrerank] unparseable (0.36s) → sql order kept
@@ -576,3 +576,86 @@ back to SQL order. The ordering is not wrong, but the rerank is a no-op on those
 This was invisible while the key was dead, because every call failed earlier in the chain.
 
 Out of scope here — `query_reranker.py` is on this round's do-not-touch list — but it wants a look.
+
+---
+
+# Addendum 3 · the reranker "unparseable" line, investigated
+
+Nothing was changed. `query_reranker.py` is on this round's do-not-touch list; this is the diagnosis and the
+options.
+
+## It is not a parse failure. The model returns an empty array.
+
+Captured on staging by spying on `_extract_id_list` and then re-issuing the same prompt directly:
+
+```
+query: השכרת ציוד
+candidates sent: 14
+raw reply: '```json\n[]\n```'      (14 chars)
+parsed ids: 0
+stop_reason: end_turn              → not truncation
+usage: input_tokens=1692, output_tokens=9
+content block types: ['text']
+```
+
+The parser is fine. It strips the fences, `json.loads("[]")` succeeds, the result is a list, the loop over zero
+items produces `[]` — and then `query_reranker.py:163` hits `if not ranked:` and prints **"unparseable"**.
+
+So `_extract_id_list` returns `[]` for two different outcomes — *"I could not parse this"* and *"I parsed it and
+the model named nothing"* — and the log reports both as the first. **That conflation is the whole defect.** It
+cost me a detour looking for a parser bug, and it would cost the next person the same.
+
+## Why the model answers `[]`
+
+Because it is right. The ranking prompt for `השכרת ציוד` ("equipment rental") is handed fourteen **worker** ads
+and asked to order them by relevance. None of them are relevant, so it returns none.
+
+That only happens on the queries where the ads pass returned the whole worker table, which is the
+unfiltered-inventory shape R30 §31b was written for. Measured per query:
+
+| Query | candidates sent to rerank | model reply | parsed |
+|---|---|---|---|
+| `ביטוח לעובדים זרים` | 14 | `` ```json\n[]\n``` `` | 0 |
+| `השכרת ציוד` | 14 | `` ```json\n[]\n``` `` | 0 |
+| `חשמלאים בצפון` | — below `RERANK_MIN` (5), skipped | — | — |
+| `הסעות בצפון` | — below `RERANK_MIN` (5), skipped | — | — |
+| `רצפים סינים` | — below `RERANK_MIN` (5), skipped | — | — |
+| `דיור ל-20 פועלים בחיפה` | — below `RERANK_MIN` (5), skipped | — | — |
+
+The reranker reaches the model on exactly the two queries that extract nothing narrowing, and on both it says
+"none of these". Every query that extracted a profession or a region has too few candidates to rerank at all.
+
+## What it costs
+
+Ordering: nothing. SQL order is kept, which is the right order for a list the model just called irrelevant.
+
+Tokens: ~1,692 input per such search, for a nine-token answer. Small per call, but it fires on precisely the
+broad queries a browsing contractor types, and the work is thrown away either by the empty reply or by R30's
+suppression a few lines later.
+
+Observability: the real cost. A log line that says "unparseable" when nothing failed to parse.
+
+## Three options, in the order I would take them
+
+1. **Tell the two outcomes apart.** Have `_extract_id_list` return `None` when it genuinely cannot parse and
+   `[]` when it parsed to nothing, then log `[qrerank] model ranked nothing` separately from
+   `[qrerank] unparseable`. Four lines in `query_reranker.py`. This is the one that is actually broken.
+2. **Do not rerank unfiltered inventory.** The rerank runs *before* R30's suppression, on candidates that are
+   about to be judged irrelevant anyway. Skipping it when the rewriter extracted no profession, origin or
+   region removes the call in exactly these cases — and that is a change in `search.py`, which this round
+   already owns, not in the reranker.
+3. **Leave the prompt alone.** It would be easy to add "if none are relevant, return them in the given order",
+   and it would silence the line — but it would also throw away the one genuinely useful thing the model said.
+
+## One thing worth your attention, given R1
+
+The reranker's `[]` is an independent judgement that the candidate list does not answer the query — arguably a
+stronger signal than "the marketplace matched something", which is what R30 §31b keys on today.
+
+After R1, `השכרת ציוד` shows its 14 worker ads (correctly, per your decision — the marketplace evidence came
+from the OR fallback and is too weak to delete them). But on that same query the reranker, looking only at the
+ads, independently returned "none of these are relevant".
+
+I am not re-opening R1: the marketplace-evidence question is settled and implemented. This is new evidence that
+arrived afterwards, and if you ever want a second suppression signal that does not depend on the marketplace at
+all, this is it.
