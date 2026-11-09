@@ -27,6 +27,7 @@ import LandingNav from '@/components/landing/LandingNav';
 import LandingFooter from '@/components/landing/LandingFooter';
 import LeadCaptureModal from '@/components/landing/LeadCaptureModal';
 import ListingCard from '@/components/marketplace/ListingCard';
+import { ListingDetailDrawer } from '@/components/marketplace/ListingDetailPanel';
 // Landing IA — mount the mock-driven floating bubble. Was orphan
 // code; mounting it here surfaces marketplace-activity ambient
 // cues on the public landing (see LiveActivityFeed for the future
@@ -380,11 +381,49 @@ function LandingPageInner() {
     writeTypeToUrl('services', next, 'replace');
   }, [categoryFilter, writeTypeToUrl]);
 
+  // R32 S5.2 · the open listing panel, also a URL param so the panel
+  // is shareable and Back closes it.
+  const [openListingId, setOpenListingId] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    return new URLSearchParams(window.location.search).get('listing');
+  });
+  // True when this session pushed the history entry the panel sits on,
+  // so closing can pop it. A visitor who arrived on a shared
+  // `?listing=` link has no such entry — going "back" would take them
+  // off the site, so that case rewrites the URL instead.
+  const pushedListingRef = useRef(false);
+
+  const openListing = useCallback((listing: { id: string }) => {
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    url.searchParams.set('listing', listing.id);
+    window.history.pushState(null, '', url.pathname + url.search + url.hash);
+    pushedListingRef.current = true;
+    setOpenListingId(listing.id);
+  }, []);
+
+  const closeListing = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    if (pushedListingRef.current) {
+      pushedListingRef.current = false;
+      window.history.back();   // popstate below clears the state
+      return;
+    }
+    const url = new URL(window.location.href);
+    url.searchParams.delete('listing');
+    window.history.replaceState(null, '', url.pathname + url.search + url.hash);
+    setOpenListingId(null);
+  }, []);
+
   // Back/forward: follow whatever the address bar now says.
   useEffect(() => {
     function onPop() {
       setTypeFilter(readTypeFromUrl());
-      setCategoryFilter(new URLSearchParams(window.location.search).get('category') ?? '');
+      const sp = new URLSearchParams(window.location.search);
+      setCategoryFilter(sp.get('category') ?? '');
+      const listing = sp.get('listing');
+      setOpenListingId(listing);
+      if (!listing) pushedListingRef.current = false;
     }
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
@@ -456,6 +495,7 @@ function LandingPageInner() {
           revealing={revealing === ad.id}
           boosted={!!boosted}
           onReveal={() => revealFor(ad.id)}
+          onCrossSearch={crossSearch}
           professions={professions}
           origins={origins}
           regions={regions}
@@ -609,6 +649,26 @@ function LandingPageInner() {
     try { setResp(await searchApi.query(query)); }
     catch (e) { setSearchError(mapSearchError(e)); }
     finally { setLoading(false); }
+  }
+
+  // R32 S5.4 · the cross-flow discovery move, run in place.
+  //
+  // R4 shipped this as a link to /marketplace?category=housing, which
+  // threw away the search the visitor had just done and landed them on
+  // a different page with a different matcher. The intent was always
+  // "you found the crew, now find the beds" — so it runs that second
+  // search here, on the same screen, and opens the tab that holds the
+  // answer. The region of the ad the visitor was reading carries over,
+  // because beds in the wrong district are not an answer.
+  function crossSearch(from: 'worker' | 'housing', region?: string | null) {
+    const regionLabel = region ? labelFor(regions, region) : '';
+    const query = from === 'worker'
+      ? (regionLabel ? `דיור ב${regionLabel}` : 'דיור לעובדים')
+      : (regionLabel ? `עובדים ב${regionLabel}` : 'עובדים');
+    closeListing();
+    selectType(from === 'worker' ? 'housing' : 'workers');
+    setQ(query);
+    void runSearch(query);
   }
 
   // H10 — refresh sponsor ads whenever the search response changes.
@@ -2512,7 +2572,7 @@ function LandingPageInner() {
                       {housingListings.length > 0 && (
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           {housingListings.map((listing) => (
-                            <ListingCard key={listing.id} listing={listing} />
+                            <ListingCard key={listing.id} listing={listing} onOpen={openListing} />
                           ))}
                         </div>
                       )}
@@ -2656,7 +2716,7 @@ function LandingPageInner() {
                       )}
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         {visibleServices.map((listing) => (
-                          <ListingCard key={listing.id} listing={listing} />
+                          <ListingCard key={listing.id} listing={listing} onOpen={openListing} />
                         ))}
                       </div>
 
@@ -2808,6 +2868,19 @@ function LandingPageInner() {
       </div>
 
       <LeadCaptureModal open={leadModalOpen} onClose={() => setLeadModalOpen(false)} />
+
+      {/* R32 S5.2 · the listing panel. Mounted at page level so the
+          drawer overlays everything, and keyed by id so moving from
+          one listing to another remounts the body rather than showing
+          the previous listing's reveal state under a new title. */}
+      {openListingId && (
+        <ListingDetailDrawer
+          key={openListingId}
+          listingId={openListingId}
+          onClose={closeListing}
+          onCrossSearch={(listing) => crossSearch('housing', listing.region)}
+        />
+      )}
 
       {/* Landing IA — floating activity bubble. Mock-driven Phase 1
           (see LiveActivityFeed source for the GET /api/marketplace/
@@ -3015,13 +3088,16 @@ function ResultsHeader({ kind }: { kind: 'worker' | 'housing' }) {
 // `data-l="…"` label so the mobile card still reads correctly with
 // the ResultsHeader hidden.
 function AdRow({
-  ad, revealed, revealing, boosted, onReveal, professions, origins, regions, nearMatchTag,
+  ad, revealed, revealing, boosted, onReveal, onCrossSearch, professions, origins, regions, nearMatchTag,
 }: {
   ad: AdSearchResult;
   revealed?: ContactReveal;
   revealing: boolean;
   boosted: boolean;
   onReveal: () => void;
+  // R32 S5.4 · run the cross-flow search in place instead of linking
+  // away. Optional so the near-match list can omit it.
+  onCrossSearch?: (from: 'worker' | 'housing', region?: string | null) => void;
   professions: Profession[];
   origins:     { code: string; name_he: string }[];
   regions:     { code: string; name_he: string }[];
@@ -3268,17 +3344,23 @@ function AdRow({
             <p className="text-xs text-slate-500 pt-1">
               נשמר לך — לא ייגבו חשיפות נוספות על מודעה זו.
             </p>
-            {/* R4 — cross-flow discovery link. Product decision, DO NOT remove. */}
-            <Link
-              href={isWorker ? '/marketplace?category=housing' : '/'}
-              className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-brand-700 hover:text-brand-900"
+            {/* R4 — cross-flow discovery. Product decision, DO NOT
+                remove. R32 S5.4 · it used to leave for
+                /marketplace?category=housing, which dropped the search
+                the visitor had just run. It now runs the second search
+                here and opens the tab holding the answer, carrying the
+                region of the ad being read. */}
+            <button
+              type="button"
+              onClick={() => onCrossSearch?.(isWorker ? 'worker' : 'housing', ad.region)}
+              className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-brand-800 hover:text-brand-900"
             >
               <Sparkles className="w-3.5 h-3.5" />
               {isWorker
-                ? 'צריך גם דיור לפועלים? עיין בשירותים נלווים'
-                : 'מחפש גם עובדים? חפש כאן'}
+                ? 'צריך גם דיור לפועלים? חפשו כאן'
+                : 'מחפשים גם עובדים? חפשו כאן'}
               <ArrowLeft className="w-3.5 h-3.5" />
-            </Link>
+            </button>
             {/* Housing extras — full gallery + amenities in the
                 opened row. Kept out of the closed row per §3.3
                 (40px height budget). */}

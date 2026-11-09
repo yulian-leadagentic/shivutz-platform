@@ -22,13 +22,34 @@ function daysAgo(dateStr: string): string {
   return `לפני ${Math.floor(diff / 30)} חודשים`;
 }
 
-export default function ListingCard({ listing }: { listing: MarketplaceListing }) {
+// R32 S5.2 · `onOpen` turns the card into an in-place opener. It stays
+// an <a> with a real href either way: a card the visitor can copy,
+// middle-click or open in a new tab is worth more than a tidy
+// <button>, and the href is the same URL the panel writes while it is
+// open. With `onOpen` the plain click is intercepted — modified
+// clicks fall through to the browser, as a link should.
+export default function ListingCard({
+  listing,
+  onOpen,
+}: {
+  listing: MarketplaceListing;
+  onOpen?: (listing: MarketplaceListing) => void;
+}) {
   const Icon = CATEGORY_ICONS[listing.category] ?? MoreHorizontal;
   const catHe = labelFor(CATEGORY_HE_FALLBACK, listing.category);
+  const href = onOpen
+    ? `/?type=services&listing=${encodeURIComponent(listing.id)}`
+    : `/marketplace/${listing.id}`;
 
   return (
     <Link
-      href={`/marketplace/${listing.id}`}
+      href={href}
+      onClick={(e) => {
+        if (!onOpen) return;
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+        e.preventDefault();
+        onOpen(listing);
+      }}
       className="group block bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 overflow-hidden"
     >
       {/* Hero image — first image from images_json if any; otherwise the

@@ -1120,3 +1120,52 @@ bdi {
   border-radius: 2px 2px 0 0;
   transform: translateX(calc(var(--seg-i, 0) * var(--seg-dir, 1) * 100%));
 }
+
+/* ─── R32 S5 · listing drawer ────────────────────────────────────────
+   Side drawer from the inline-end on desktop, bottom sheet on mobile.
+   Both are fixed overlays, so opening one cannot move the page behind
+   it — the zero-layout-shift rule this round inherited from R31.
+   The enter animations live with the rest of the motion work below. */
+.listing-drawer__backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgb(15 23 42 / 0.45);   /* slate-900 @ 45% */
+  z-index: 60;
+}
+.listing-drawer__panel {
+  position: fixed;
+  z-index: 61;
+  background: #f8fafc;                /* slate-50, same as the route */
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* Bottom sheet below lg. Capped so the results stay visible above
+     it — a sheet that covers everything is just a page. */
+  inset-inline: 0;
+  bottom: 0;
+  max-height: 88vh;
+  border-start-start-radius: 1rem;
+  border-start-end-radius: 1rem;
+  box-shadow: 0 -8px 32px rgb(15 23 42 / 0.18);
+}
+.listing-drawer__panel:focus-visible {
+  outline: 2px solid #f78203;
+  outline-offset: -2px;
+}
+@media (min-width: 1024px) {
+  .listing-drawer__panel {
+    inset-block: 0;
+    inset-inline-start: auto;
+    inset-inline-end: 0;
+    width: min(44rem, 92vw);
+    max-height: none;
+    /* Logical radii: the rounded edge is the one facing the page,
+       which is the inline-start side in both directions. A physical
+       `border-radius` here rounds the wrong corners in RTL. */
+    border-radius: 0;
+    border-start-start-radius: 1rem;
+    border-end-start-radius: 1rem;
+    /* Symmetric, so the shadow doesn't fall inside the viewport edge
+       when the drawer flips to the left in RTL. */
+    box-shadow: 0 0 32px rgb(15 23 42 / 0.18);
+  }
+}
