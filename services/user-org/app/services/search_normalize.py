@@ -17,12 +17,21 @@
 #   4. escape SQL LIKE wildcards % and _ so the input `100%` cannot
 #      accidentally match every row.
 #
-# What it explicitly does NOT do:
+# What `normalize_search_term` explicitly does NOT do:
 #
 #   - No stopword removal (Hebrew "או", "עם", ו- prefix).
 #   - No stemming.
 #   - No unicode normalization (NFC/NFD) — MySQL's utf8mb4_unicode_ci
 #     already handles case-fold equivalents.
+#
+# R32 S2 · `marketplace_text_conditions` below is the layer that DOES
+# stopword and stem work, and it is now the single matcher for services
+# text. Both the federated pass in search.py and `GET /marketplace
+# ?search=` call it, so the same query can no longer return a different
+# set depending on which door the user came through. Before R32 the
+# list endpoint matched three fields with no stemming and no stopwords,
+# and "עוד בשירותים נלווים ←" therefore led from a section with results
+# to a page without them.
 #
 # Return value: `(pattern, tokens)` where `pattern` is the full-string
 # LIKE fragment (e.g. `%ביטוח%`) and `tokens` is the list of
@@ -91,3 +100,127 @@ def normalize_search_term(raw: str | None) -> tuple[str, list[str]]:
     pattern = f"%{full}%"
     tokens = [f"%{w}%" for w in escaped_words]
     return pattern, tokens
+
+
+# ═══ R32 S2 · the one services text matcher ════════════════════════════
+#
+# Moved here verbatim from search.py, where it had grown inside
+# `_search_marketplace` and was therefore unavailable to the list
+# endpoint that the "see more" link led to.
+
+# R28 §2 · short Hebrew connective words that reduce a per-token AND
+# to zero when the caller types a natural phrase. `של`, `עם`, `לי`,
+# `את`, `זה`, `זו` etc. are dropped. English `for`/`the` thrown in for
+# the rare mixed query. Kept intentionally short — a fuller stopword
+# list would also drop things like `בית` which some ads use as a real
+# term.
+_MARKETPLACE_STOPWORDS = frozenset({
+    "של", "עם", "לי", "לך", "לו", "לה", "את", "אל", "זה", "זו",
+    "אני", "אתה", "הוא", "היא", "אנחנו", "כן", "לא",
+    "for", "the", "a", "an", "of", "to", "in", "on",
+})
+
+# R32 S3 · words that describe the *request* rather than the service.
+# The rewriter has already turned "דיור ל-20 פועלים" into
+# ad_type=housing + quantity=20; leaving `פועלים` in a conjunctive AND
+# over service titles then zeroes a result set the user would have
+# wanted. Separate from the stopwords above because these are content
+# words — they just aren't content about the service being sold.
+_MARKETPLACE_REQUEST_WORDS = frozenset({
+    "עובדים", "פועלים", "צריך", "אני", "מחפש", "מחפשים", "בשביל", "עבור",
+})
+
+# The four fields a services query matches against. `mc.name_he` (R28
+# §2) is why `דיור` finds listings titled `מתחם מגורים`: they sit in the
+# category whose display name is `דיור להשכרה`. Any caller of
+# `marketplace_text_conditions` therefore MUST have
+# `LEFT JOIN marketplace_categories mc ON mc.code = ml.category` in its
+# FROM clause.
+_MARKETPLACE_MATCH_FIELDS = ("ml.title", "ml.description", "ml.city", "mc.name_he")
+
+
+def _stem_he(word: str) -> str | None:
+    """R28 §2 · lightweight Hebrew stem for the search layer.
+
+    A heuristic, NOT morphology — it strips the two most common plural
+    suffixes (`ים` masc., `ות` fem.) so `קורסים`→`קורס` and
+    `הסעות`→`הסע` match seed data that stores the singular. Only
+    applied when the surviving base is still ≥3 chars; a shorter stem
+    starts matching partial substrings elsewhere.
+    """
+    if len(word) <= 4:
+        return None
+    if word.endswith("ים") and len(word) - 2 >= 3:
+        return word[:-2]
+    if word.endswith("ות") and len(word) - 2 >= 3:
+        return word[:-2]
+    return None
+
+
+def _unwrap(token: str) -> str:
+    """Strip the `%` wrappers `normalize_search_term` adds, so the bare
+    word can be tested against the stopword list and stemmed. Both
+    wrappers are re-applied by the caller."""
+    return token[1:-1] if token.startswith("%") and token.endswith("%") else token
+
+
+def marketplace_text_conditions(
+    raw_query: str | None,
+    *,
+    drop_words: frozenset[str] = frozenset(),
+) -> tuple[str, list[object]]:
+    """R32 S2 · one SQL predicate for a services text query.
+
+    Returns `(sql, params)`. `sql` is a single parenthesised predicate
+    to AND into a `FROM marketplace_listings ml` query, or `''` when
+    the query carries no usable word — in which case the caller must
+    drop the text filter entirely rather than emit an always-false
+    clause.
+
+    Matching, per surviving token: an OR across the four fields in
+    `_MARKETPLACE_MATCH_FIELDS`, each tried as the raw token and (when
+    one exists) its stem. Tokens are then ANDed, so every word the user
+    typed has to land somewhere — that conjunction is what makes a
+    two-word query precise, and what makes pruning the non-content
+    words matter.
+
+    `drop_words` (R32 S3) holds bare words the caller has already
+    consumed — region names, professions, numbers. They are removed
+    before the AND is built. A query that reduces to nothing but
+    dropped words keeps its original tokens: a vacuous AND is better
+    than pretending the user typed nothing.
+    """
+    _, tokens = normalize_search_term(raw_query)
+    if not tokens:
+        return "", []
+
+    kept: list[str] = []
+    for tok in tokens:
+        bare = _unwrap(tok)
+        if not bare:
+            continue
+        if bare in _MARKETPLACE_STOPWORDS:
+            continue
+        if bare in drop_words:
+            continue
+        kept.append(tok)
+    # Guard: if every word was dropped the query becomes vacuous.
+    # Better to fall back to the original tokens than to return zero.
+    if not kept:
+        kept = tokens
+
+    params: list[object] = []
+    per_token: list[str] = []
+    for tok in kept:
+        forms = [tok]
+        stem = _stem_he(_unwrap(tok))
+        if stem:
+            forms.append(f"%{stem}%")
+        field_clauses: list[str] = []
+        for field in _MARKETPLACE_MATCH_FIELDS:
+            for form in forms:
+                field_clauses.append(f"{field} LIKE %s ESCAPE '\\\\'")
+                params.append(form)
+        per_token.append("(" + " OR ".join(field_clauses) + ")")
+
+    return "(" + " AND ".join(per_token) + ")", params

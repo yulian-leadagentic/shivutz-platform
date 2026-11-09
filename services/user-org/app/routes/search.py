@@ -40,7 +40,7 @@ from app.services.visibility import (
     require_contractor_approved,  # noqa: F401 · re-exported for other routes
     viewer_scope_wheres,
 )
-from app.services.search_normalize import normalize_search_term
+from app.services.search_normalize import marketplace_text_conditions
 
 router = APIRouter()
 
@@ -226,34 +226,6 @@ def _serialize_marketplace_listing(row: dict) -> dict:
     }
 
 
-# R28 §2 · short Hebrew connective words that reduce a per-token AND
-# to zero when the caller types a natural phrase. `של`, `עם`, `לי`,
-# `את`, `זה`, `זו`, `אני` etc. are dropped. English `for`/`the`
-# thrown in for the rare mixed query. Kept intentionally short — a
-# fuller stopword list would also drop things like `בית` which some
-# ads use as a real term.
-_MARKETPLACE_STOPWORDS = frozenset({
-    "של", "עם", "לי", "לך", "לו", "לה", "את", "אל", "זה", "זו",
-    "אני", "אתה", "הוא", "היא", "אנחנו", "כן", "לא",
-    "for", "the", "a", "an", "of", "to", "in", "on",
-})
-
-# R28 §2 · lightweight Hebrew stem for the search layer. This is a
-# heuristic, NOT morphology — it strips the two most common plural
-# suffixes (`ים` masc., `ות` fem.) so `קורסים`→`קורס` and
-# `הסעות`→`הסע` match seed data that stores the singular. Only
-# applied when the surviving base is still ≥3 chars (a shorter stem
-# starts matching partial substrings elsewhere).
-def _stem_he(word: str) -> str | None:
-    if len(word) <= 4:
-        return None
-    if word.endswith("ים") and len(word) - 2 >= 3:
-        return word[:-2]
-    if word.endswith("ות") and len(word) - 2 >= 3:
-        return word[:-2]
-    return None
-
-
 def _search_marketplace(
     raw_query: str,
     scope_extra: Optional[tuple[list[str], list[object]]] = None,
@@ -266,41 +238,16 @@ def _search_marketplace(
     rejected/suspended contractor callers. Kept as an opaque pair so
     the rule lives in ONE place — do not inline the predicate here.
 
-    Per-token AND across FOUR fields now (was three): title,
-    description, city, and — added in R28 §2 — the category's
-    display name (`marketplace_categories.name_he`) via LEFT JOIN.
-    That single change is what returns rows for `דיור`: the
-    corresponding listings say `מתחם מגורים` in the title but sit
-    in the category whose `name_he` IS `דיור להשכרה`.
-
-    Per-token: an ORed pair of (raw · stem) so `קורסים` still finds
-    `קורס`. Stemming is a heuristic (`ים`/`ות` suffix strip on
-    words >4 chars); a stem that would collapse to <3 chars is
-    skipped rather than blast open the match window.
-
-    Stopwords: 2-char Hebrew connectives are dropped before the AND
-    so a natural phrase like `מגורים לעובדים` doesn't zero-out on
-    the second word.
+    R32 S2 · the text predicate itself now lives in
+    `search_normalize.marketplace_text_conditions`, shared with
+    `GET /marketplace?search=`. Four fields, raw + stem per token,
+    stopwords dropped, tokens ANDed. It is the same matcher on both
+    sides, so "עוד בשירותים נלווים ←" can no longer lead from a
+    section with results to a page without them.
     """
-    _, tokens = normalize_search_term(raw_query)
-    if not tokens:
+    text_sql, text_params = marketplace_text_conditions(raw_query)
+    if not text_sql:
         return []
-
-    # Strip the leading/trailing `%` normalize_search_term wraps
-    # around each token so we can look at the raw word for
-    # stopword + stem tests. Both wrappers get re-applied below.
-    def _raw(t: str) -> str:
-        return t[1:-1] if t.startswith("%") and t.endswith("%") else t
-
-    kept_tokens: list[str] = []
-    for tok in tokens:
-        raw = _raw(tok)
-        if raw and raw not in _MARKETPLACE_STOPWORDS:
-            kept_tokens.append(tok)
-    # Guard: if EVERY word was a stopword the query becomes vacuous.
-    # Better to fall back to the original tokens than to return zero.
-    if not kept_tokens:
-        kept_tokens = tokens
 
     conditions = ["ml.status = 'active'"]
     params: list[object] = []
@@ -308,25 +255,8 @@ def _search_marketplace(
         scope_wheres, scope_params = scope_extra
         conditions.extend(scope_wheres)
         params.extend(scope_params)
-    per_token: list[str] = []
-    for tok in kept_tokens:
-        raw = _raw(tok)
-        stem = _stem_he(raw)
-        # Each field gets an OR pair (token · stem). Stem is only
-        # added when it exists — for short tokens `stem is None` and
-        # the LIKE list has one entry per field, not two.
-        forms = [tok]
-        if stem:
-            forms.append(f"%{stem}%")
-        # 4 fields × up to 2 forms
-        # (title, description, city, category name_he).
-        field_clauses: list[str] = []
-        for f in ("ml.title", "ml.description", "ml.city", "mc.name_he"):
-            for form in forms:
-                field_clauses.append(f"{f} LIKE %s ESCAPE '\\\\'")
-                params.append(form)
-        per_token.append("(" + " OR ".join(field_clauses) + ")")
-    conditions.append("(" + " AND ".join(per_token) + ")")
+    conditions.append(text_sql)
+    params.extend(text_params)
 
     sql = f"""
         SELECT ml.*,

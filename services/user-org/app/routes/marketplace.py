@@ -10,7 +10,7 @@ import json
 import uuid
 
 from app.db import get_db
-from app.services.search_normalize import normalize_search_term
+from app.services.search_normalize import marketplace_text_conditions
 from app.services.phone_normalize import normalize_or_400
 from app.services.seed_visibility import seed_where
 from app.services.visibility import (
@@ -255,25 +255,17 @@ def list_listings(
             conditions.append("ml.capacity >= %s")
             params.append(min_capacity)
         if search:
-            # U6 §2b-1 — normalize before hitting LIKE. Raw user input
-            # was matched literally, so `ביטוח,` (with trailing comma,
-            # very common Hebrew habit) returned zero rows even though
-            # `ביטוח` did. The shared normalizer strips edge
-            # punctuation, splits multi-word queries into AND-of-LIKE
-            # tokens, and escapes `%`/`_` wildcards. When the input
-            # reduces to nothing (e.g. lone comma), we silently drop
-            # the search filter rather than returning zero rows.
-            _, tokens = normalize_search_term(search)
-            if tokens:
-                per_token = []
-                for tok in tokens:
-                    per_token.append(
-                        "(ml.title LIKE %s ESCAPE '\\\\' "
-                        "OR ml.description LIKE %s ESCAPE '\\\\' "
-                        "OR ml.city LIKE %s ESCAPE '\\\\')"
-                    )
-                    params.extend([tok, tok, tok])
-                conditions.append("(" + " AND ".join(per_token) + ")")
+            # R32 S2 · the same matcher the federated pass in search.py
+            # uses. This endpoint used to match three fields with no
+            # stem and no stopwords, so the identical query returned
+            # fewer rows here than in the search section that linked to
+            # it. When the input reduces to nothing (a lone comma) the
+            # predicate comes back empty and the filter is dropped
+            # rather than returning zero rows.
+            text_sql, text_params = marketplace_text_conditions(search)
+            if text_sql:
+                conditions.append(text_sql)
+                params.extend(text_params)
 
         # R30 · seed listings are never served in production. One gate,
         # shared with the sponsor-ads path; a no-op on staging where the
@@ -285,6 +277,11 @@ def list_listings(
         where = " AND ".join(conditions)
         params.extend([limit, offset])
 
+        # R32 S2 · the `mc` join is what `marketplace_text_conditions`
+        # needs for its fourth field (the category's display name).
+        # Without it `?search=דיור` could not find a listing titled
+        # `מתחם מגורים`, which is precisely the gap that made the
+        # search section and this endpoint disagree.
         cur.execute(f"""
             SELECT ml.*,
                    c.company_name_he AS corporation_name_he,
@@ -292,6 +289,7 @@ def list_listings(
                    c.approval_status AS corporation_approval_status
               FROM marketplace_listings ml
               LEFT JOIN corporations c ON ml.corporation_id = c.id
+              LEFT JOIN marketplace_categories mc ON mc.code = ml.category
              WHERE {where}
              ORDER BY ml.created_at DESC
              LIMIT %s OFFSET %s
