@@ -31,7 +31,12 @@ from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, Field
 
 from app.db import get_db
-from app.services.query_rewriter import rewrite
+from app.services.query_rewriter import (
+    ORIGIN_KEYWORDS,
+    PROFESSION_KEYWORDS,
+    REGION_KEYWORDS,
+    rewrite,
+)
 from app.services.query_reranker import rerank
 from app.services.visibility import (
     contractor_approval_status,
@@ -40,7 +45,10 @@ from app.services.visibility import (
     require_contractor_approved,  # noqa: F401 · re-exported for other routes
     viewer_scope_wheres,
 )
-from app.services.search_normalize import marketplace_text_conditions
+from app.services.search_normalize import (
+    marketplace_text_token_clauses,
+    normalize_search_term,
+)
 
 router = APIRouter()
 
@@ -226,11 +234,75 @@ def _serialize_marketplace_listing(row: dict) -> dict:
     }
 
 
+# R32 S3 · Hebrew one-letter prefixes that attach to a number
+# (`ל-20`, `ב20`). Stripped before the digits test so a quantity the
+# rewriter already extracted doesn't stay in the text AND as a word no
+# service title will ever contain.
+_QTY_PREFIXES = frozenset("לבמהוכש")
+
+
+def _is_quantity_word(bare: str) -> bool:
+    core = bare.strip("-־")
+    if len(core) > 1 and core[0] in _QTY_PREFIXES:
+        core = core[1:].lstrip("-־")
+    return bool(core) and core.isdigit()
+
+
+def _rewriter_consumed_words(raw_query: str) -> frozenset[str]:
+    """R32 S3.2 · the words the rewriter has already turned into filters.
+
+    The rewriter reads `20 פועלים בצפון` as quantity=20,
+    profession=general, region=north. Those three words then sit in the
+    services text AND as well, where no service title contains them, and
+    a query the user expects to surface transport and insurance returns
+    nothing at all.
+
+    The keyword maps in `query_rewriter` are read, never written — the
+    guardrail for this round. They hold substring stems (`פיגומ`,
+    `אוקראינ`), so a token is consumed when it CONTAINS a key, not when
+    it equals one: `חשמלאים` contains `חשמלאי`, `בצפון` contains `צפון`.
+
+    Housing words are deliberately absent. `דיור` is what reaches a
+    listing through its category display name — dropping it would undo
+    what R28 §2 fixed.
+    """
+    _, tokens = normalize_search_term(raw_query)
+    keys = (
+        tuple(PROFESSION_KEYWORDS)
+        + tuple(ORIGIN_KEYWORDS)
+        + tuple(REGION_KEYWORDS)
+    )
+    consumed: set[str] = set()
+    for tok in tokens:
+        bare = tok[1:-1] if tok.startswith("%") and tok.endswith("%") else tok
+        if not bare:
+            continue
+        if _is_quantity_word(bare):
+            consumed.add(bare)
+            continue
+        if any(key in bare for key in keys):
+            consumed.add(bare)
+    return frozenset(consumed)
+
+
+_MARKETPLACE_SELECT = """
+        SELECT ml.*,
+               c.company_name_he AS corporation_name_he,
+               c.company_name    AS corporation_name_en,
+               c.gov_registry_matched_at AS corp_verified_at"""
+
+_MARKETPLACE_FROM = """
+          FROM marketplace_listings ml
+          LEFT JOIN corporations c ON c.id = ml.corporation_id
+          LEFT JOIN marketplace_categories mc ON mc.code = ml.category"""
+
+
 def _search_marketplace(
     raw_query: str,
     scope_extra: Optional[tuple[list[str], list[object]]] = None,
+    filters: Optional[dict] = None,
 ) -> list[dict]:
-    """Federated marketplace-listings pass — U6 §2 + R28 §2.
+    """Federated marketplace-listings pass — U6 §2 + R28 §2 + R32 S3.
 
     `scope_extra` (R32 D1): (wheres, params) from
     `services.visibility.marketplace_scope_wheres`. Corporation
@@ -238,15 +310,32 @@ def _search_marketplace(
     rejected/suspended contractor callers. Kept as an opaque pair so
     the rule lives in ONE place — do not inline the predicate here.
 
-    R32 S2 · the text predicate itself now lives in
-    `search_normalize.marketplace_text_conditions`, shared with
+    R32 S2 · the text predicate lives in
+    `search_normalize.marketplace_text_token_clauses`, shared with
     `GET /marketplace?search=`. Four fields, raw + stem per token,
-    stopwords dropped, tokens ANDed. It is the same matcher on both
-    sides, so "עוד בשירותים נלווים ←" can no longer lead from a
-    section with results to a page without them.
+    stopwords dropped. It is the same matcher on both sides, so
+    "עוד בשירותים נלווים ←" can no longer lead from a section with
+    results to a page without them.
+
+    `filters` (R32 S3) · what the rewriter understood. Two uses:
+      * region becomes a soft filter — a listing with no region is
+        nationwide and must not disappear, same rule the ads pass
+        applies to `available_from`;
+      * the words the rewriter consumed are pruned out of the text AND
+        (see `_rewriter_consumed_words`).
+
+    Zero-result fallback: when two or more tokens survive and the AND
+    matches nothing, the same clauses run once more ORed, ranked by how
+    many of them each row matched. `דיור ל-20 פועלים בחיפה` is the case
+    this exists for — `בחיפה` is a city the rewriter has no keyword
+    for, so it stays in the AND and zeroes a result set that `דיור`
+    alone would have filled.
     """
-    text_sql, text_params = marketplace_text_conditions(raw_query)
-    if not text_sql:
+    filters = filters or {}
+    clauses = marketplace_text_token_clauses(
+        raw_query, drop_words=_rewriter_consumed_words(raw_query),
+    )
+    if not clauses:
         return []
 
     conditions = ["ml.status = 'active'"]
@@ -255,26 +344,65 @@ def _search_marketplace(
         scope_wheres, scope_params = scope_extra
         conditions.extend(scope_wheres)
         params.extend(scope_params)
-    conditions.append(text_sql)
-    params.extend(text_params)
 
-    sql = f"""
-        SELECT ml.*,
-               c.company_name_he AS corporation_name_he,
-               c.company_name    AS corporation_name_en,
-               c.gov_registry_matched_at AS corp_verified_at
-          FROM marketplace_listings ml
-          LEFT JOIN corporations c ON c.id = ml.corporation_id
-          LEFT JOIN marketplace_categories mc ON mc.code = ml.category
-         WHERE {' AND '.join(conditions)}
+    # S3.1 · soft region filter. `national` is the rewriter's way of
+    # saying "anywhere" (`כל הארץ`), and no listing carries it, so
+    # applying it as a predicate would narrow to region-NULL rows —
+    # the opposite of what the user asked for.
+    region = filters.get("region")
+    if region and region != "national":
+        conditions.append("(ml.region = %s OR ml.region IS NULL)")
+        params.append(region)
+
+    and_conditions = list(conditions)
+    and_params = list(params)
+    and_conditions.append("(" + " AND ".join(sql for sql, _ in clauses) + ")")
+    for _, token_params in clauses:
+        and_params.extend(token_params)
+
+    sql = f"""{_MARKETPLACE_SELECT}{_MARKETPLACE_FROM}
+         WHERE {' AND '.join(and_conditions)}
          ORDER BY ml.created_at DESC
          LIMIT {MARKETPLACE_LIMIT}
     """
     conn = get_db()
     try:
         cur = conn.cursor()
-        cur.execute(sql, params)
-        return [_serialize_marketplace_listing(r) for r in cur.fetchall()]
+        cur.execute(sql, and_params)
+        rows = cur.fetchall()
+        if rows or len(clauses) < 2:
+            return [_serialize_marketplace_listing(r) for r in rows]
+
+        # S3.3 · the AND found nothing and more than one word was in
+        # it. Run the same clauses ORed, ranked by how many of them
+        # each row matched, so the row that answered most of the query
+        # is first. Each clause is bound twice — once in the score,
+        # once in the WHERE — so the score params come first.
+        score = " + ".join(
+            f"CASE WHEN {sql_part} THEN 1 ELSE 0 END" for sql_part, _ in clauses
+        )
+        or_params: list[object] = []
+        for _, token_params in clauses:
+            or_params.extend(token_params)
+        or_params.extend(params)
+        for _, token_params in clauses:
+            or_params.extend(token_params)
+        or_conditions = list(conditions)
+        or_conditions.append("(" + " OR ".join(sql_part for sql_part, _ in clauses) + ")")
+        or_sql = f"""{_MARKETPLACE_SELECT},
+               ({score}) AS match_score{_MARKETPLACE_FROM}
+         WHERE {' AND '.join(or_conditions)}
+         ORDER BY match_score DESC, ml.created_at DESC
+         LIMIT {MARKETPLACE_LIMIT}
+    """
+        cur.execute(or_sql, or_params)
+        rows = cur.fetchall()
+        _log.info(
+            "search: marketplace AND returned 0 for %r (%d tokens), "
+            "OR fallback returned %d",
+            raw_query, len(clauses), len(rows),
+        )
+        return [_serialize_marketplace_listing(r) for r in rows]
     finally:
         conn.close()
 
@@ -459,6 +587,7 @@ def search(
         scope_extra=marketplace_scope_wheres(
             x_entity_id, x_entity_type, x_user_role, viewer_approval_status,
         ),
+        filters=filters,
     )
 
     # R30 §31b · inventory is not a result.

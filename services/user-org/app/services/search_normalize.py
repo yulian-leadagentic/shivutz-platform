@@ -164,6 +164,62 @@ def _unwrap(token: str) -> str:
     return token[1:-1] if token.startswith("%") and token.endswith("%") else token
 
 
+def marketplace_text_token_clauses(
+    raw_query: str | None,
+    *,
+    drop_words: frozenset[str] = frozenset(),
+) -> list[tuple[str, list[object]]]:
+    """R32 S3 · one `(clause, params)` pair per surviving token.
+
+    Each clause is an OR across the four fields in
+    `_MARKETPLACE_MATCH_FIELDS`, tried as the raw token and (when one
+    exists) its stem. Callers AND them for a precise pass and OR them
+    for a zero-result fallback, and `search.py` also reuses each clause
+    inside a CASE to score how many tokens a row matched — which is why
+    this returns the parts instead of a finished predicate.
+
+    `drop_words` holds bare words the caller has already consumed:
+    region names, professions, origins, numbers. Stopwords and the
+    request words in `_MARKETPLACE_REQUEST_WORDS` are always dropped.
+    A query that reduces to nothing but dropped words keeps its
+    original tokens — a vacuous AND is better than pretending the user
+    typed nothing.
+    """
+    _, tokens = normalize_search_term(raw_query)
+    if not tokens:
+        return []
+
+    kept: list[str] = []
+    for tok in tokens:
+        bare = _unwrap(tok)
+        if not bare:
+            continue
+        if bare in _MARKETPLACE_STOPWORDS:
+            continue
+        if bare in _MARKETPLACE_REQUEST_WORDS:
+            continue
+        if bare in drop_words:
+            continue
+        kept.append(tok)
+    if not kept:
+        kept = tokens
+
+    clauses: list[tuple[str, list[object]]] = []
+    for tok in kept:
+        forms = [tok]
+        stem = _stem_he(_unwrap(tok))
+        if stem:
+            forms.append(f"%{stem}%")
+        field_clauses: list[str] = []
+        params: list[object] = []
+        for field in _MARKETPLACE_MATCH_FIELDS:
+            for form in forms:
+                field_clauses.append(f"{field} LIKE %s ESCAPE '\\\\'")
+                params.append(form)
+        clauses.append(("(" + " OR ".join(field_clauses) + ")", params))
+    return clauses
+
+
 def marketplace_text_conditions(
     raw_query: str | None,
     *,
@@ -177,50 +233,14 @@ def marketplace_text_conditions(
     drop the text filter entirely rather than emit an always-false
     clause.
 
-    Matching, per surviving token: an OR across the four fields in
-    `_MARKETPLACE_MATCH_FIELDS`, each tried as the raw token and (when
-    one exists) its stem. Tokens are then ANDed, so every word the user
-    typed has to land somewhere — that conjunction is what makes a
-    two-word query precise, and what makes pruning the non-content
-    words matter.
-
-    `drop_words` (R32 S3) holds bare words the caller has already
-    consumed — region names, professions, numbers. They are removed
-    before the AND is built. A query that reduces to nothing but
-    dropped words keeps its original tokens: a vacuous AND is better
-    than pretending the user typed nothing.
+    Every word the user typed has to land somewhere; that conjunction
+    is what makes a two-word query precise, and what makes pruning the
+    non-content words matter.
     """
-    _, tokens = normalize_search_term(raw_query)
-    if not tokens:
+    clauses = marketplace_text_token_clauses(raw_query, drop_words=drop_words)
+    if not clauses:
         return "", []
-
-    kept: list[str] = []
-    for tok in tokens:
-        bare = _unwrap(tok)
-        if not bare:
-            continue
-        if bare in _MARKETPLACE_STOPWORDS:
-            continue
-        if bare in drop_words:
-            continue
-        kept.append(tok)
-    # Guard: if every word was dropped the query becomes vacuous.
-    # Better to fall back to the original tokens than to return zero.
-    if not kept:
-        kept = tokens
-
     params: list[object] = []
-    per_token: list[str] = []
-    for tok in kept:
-        forms = [tok]
-        stem = _stem_he(_unwrap(tok))
-        if stem:
-            forms.append(f"%{stem}%")
-        field_clauses: list[str] = []
-        for field in _MARKETPLACE_MATCH_FIELDS:
-            for form in forms:
-                field_clauses.append(f"{field} LIKE %s ESCAPE '\\\\'")
-                params.append(form)
-        per_token.append("(" + " OR ".join(field_clauses) + ")")
-
-    return "(" + " AND ".join(per_token) + ")", params
+    for _, token_params in clauses:
+        params.extend(token_params)
+    return "(" + " AND ".join(sql for sql, _ in clauses) + ")", params
