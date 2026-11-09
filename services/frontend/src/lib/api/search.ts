@@ -54,6 +54,11 @@ export type SearchPrimarySection = 'ads' | 'marketplace';
 // second round-trip. Non-contractor callers get null.
 export type ViewerApprovalStatus = 'approved' | 'pending' | 'rejected' | 'suspended' | null;
 
+// R32 S4 · the three result types the home-page filter separates, and
+// the filter's own value (`all` is the default, not a wire value).
+export type ResultType = 'workers' | 'housing' | 'services';
+export type ResultTypeValue = 'all' | ResultType;
+
 export interface SearchResponse {
   filters:                 SearchFilters;
   results:                 AdSearchResult[];
@@ -63,6 +68,11 @@ export interface SearchResponse {
   marketplace_matches?:    MarketplaceListing[];
   primary_section?:        SearchPrimarySection;
   viewer_approval_status?: ViewerApprovalStatus;
+  // R32 S1.5 · result types this viewer cannot see at all, derived by
+  // the server from the viewer alone. Each gets a lock instead of a
+  // count on the filter. Never count-derived, so a locked tab says
+  // nothing about whether anything was behind it.
+  hidden_types?:           ResultType[];
 }
 
 export interface ContactReveal {

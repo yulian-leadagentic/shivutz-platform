@@ -47,17 +47,38 @@ import {
   HomeSponsorLeaderboard,
   HomeSponsorBillboard,
   HomeSponsorCarousel,
+  MarketplaceSponsorBanner,
+  MarketplaceSponsorCarousel,
   SponsorRailLayout,
   SponsorProvider,
 } from '@/features/advertising/MarketplaceSponsors';
 import { LandingTrustBar } from '@/features/advertising/LandingTrustBar';
-import { searchApi, type SearchResponse, type AdSearchResult, type ContactReveal, type TrustLevel } from '@/lib/api/search';
+import { searchApi, type SearchResponse, type AdSearchResult, type ContactReveal, type TrustLevel, type ResultType, type ResultTypeValue } from '@/lib/api/search';
+import { marketplaceApi, type PublicMarketplaceCategory } from '@/lib/api/marketplace';
 import { apiFetch, ApiError } from '@/lib/api/client';
 import { mapApiError } from '@/lib/api/errors';
 import { enumApi } from '@/lib/api/enums';
 import { isLoggedIn, getAccessToken, getEntityType } from '@/lib/auth';
 import { readPendingReveal, clearPendingReveal } from '@/features/prospect/state';
+import ResultTypeFilter from '@/components/search/ResultTypeFilter';
 import type { Profession } from '@/types';
+
+// R32 S4 · the type filter's URL vocabulary, module-level so the lazy
+// state initializer can read it before the component body runs.
+const RESULT_TYPE_VALUES: readonly ResultTypeValue[] = ['all', 'workers', 'housing', 'services'];
+
+// How many service cards show before "הצג עוד". The server returns up
+// to MARKETPLACE_LIMIT (20); this cap is a display decision and lives
+// here rather than truncating the data.
+const SERVICES_PREVIEW_COUNT = 6;
+
+function readTypeFromUrl(): ResultTypeValue {
+  if (typeof window === 'undefined') return 'all';
+  const raw = new URLSearchParams(window.location.search).get('type');
+  return RESULT_TYPE_VALUES.includes(raw as ResultTypeValue)
+    ? (raw as ResultTypeValue)
+    : 'all';
+}
 
 // F1 §1 — the two chip-queries below were selected by staging
 // measurement (see docs/cc-prompts/cc_prompt_f1_first_screen.md).
@@ -296,6 +317,157 @@ function LandingPageInner() {
     const sp = new URLSearchParams(window.location.search);
     return !!(sp.get('prof') || sp.get('region') || sp.get('origin'));
   });
+
+  // R32 S4 · result-type filter + the services section's own state.
+  //
+  // Local state is the source of truth and the URL is written with the
+  // history API rather than `router.push`. The search response lives in
+  // this component's state, and R31 spent a round on remounts in this
+  // tree; a raw pushState changes the address bar without touching
+  // Next's router, so a tab click cannot cost the visitor their
+  // results. `popstate` below keeps state and URL in step for
+  // back/forward, and the lazy initializers make a shared link land on
+  // the right tab.
+  const [typeFilter, setTypeFilter] = useState<ResultTypeValue>(readTypeFromUrl);
+  const [categoryFilter, setCategoryFilter] = useState<string>(() => {
+    if (typeof window === 'undefined') return '';
+    return new URLSearchParams(window.location.search).get('category') ?? '';
+  });
+  const [servicesExpanded, setServicesExpanded] = useState(false);
+  const [categories, setCategories] = useState<PublicMarketplaceCategory[]>([]);
+
+  // S4.5 · dynamic category chips, fetched once. `housing` is excluded
+  // because it is its own type on the filter above, not a service
+  // category. Failure leaves the list empty and the chip row simply
+  // does not render.
+  useEffect(() => {
+    let cancelled = false;
+    marketplaceApi.listCategories()
+      .then((rows) => {
+        if (!cancelled) setCategories(rows.filter((c) => c.code !== 'housing'));
+      })
+      .catch(() => { if (!cancelled) setCategories([]); });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Write `type` / `category` into the address bar. `push` for a type
+  // change so Back restores the previous tab; `replace` for a category
+  // chip, which is a refinement inside the services tab rather than a
+  // place of its own.
+  const writeTypeToUrl = useCallback((next: ResultTypeValue, category: string, mode: 'push' | 'replace') => {
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    next === 'all' ? url.searchParams.delete('type') : url.searchParams.set('type', next);
+    category      ? url.searchParams.set('category', category) : url.searchParams.delete('category');
+    const href = url.pathname + url.search + url.hash;
+    if (mode === 'push') window.history.pushState(null, '', href);
+    else                 window.history.replaceState(null, '', href);
+  }, []);
+
+  const selectType = useCallback((next: ResultTypeValue) => {
+    setTypeFilter(next);
+    // Leaving the services tab drops the category refinement; keeping
+    // it would make a later return to services silently filtered.
+    const category = next === 'services' ? categoryFilter : '';
+    if (next !== 'services') setCategoryFilter('');
+    setServicesExpanded(false);
+    writeTypeToUrl(next, category, 'push');
+  }, [categoryFilter, writeTypeToUrl]);
+
+  const selectCategory = useCallback((code: string) => {
+    const next = categoryFilter === code ? '' : code;
+    setCategoryFilter(next);
+    writeTypeToUrl('services', next, 'replace');
+  }, [categoryFilter, writeTypeToUrl]);
+
+  // Back/forward: follow whatever the address bar now says.
+  useEffect(() => {
+    function onPop() {
+      setTypeFilter(readTypeFromUrl());
+      setCategoryFilter(new URLSearchParams(window.location.search).get('category') ?? '');
+    }
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
+
+  // R32 S4 · everything the filter and the three sections need, split
+  // out of one response. Housing is deliberately one bucket: an ad
+  // from a corporation and a marketplace listing from the same
+  // corporation are the same thing to a contractor looking for beds,
+  // and two headings for one need was the reason "דיור" read as two
+  // half-empty sections.
+  const workerAds       = resp?.results.filter((a) => a.ad_type === 'worker')  ?? [];
+  const housingAds      = resp?.results.filter((a) => a.ad_type === 'housing') ?? [];
+  const allListings     = resp?.marketplace_matches ?? [];
+  const housingListings = allListings.filter((l) => l.category === 'housing');
+  const serviceListings = allListings.filter((l) => l.category !== 'housing');
+  // Counts are of matches only. near_matches are explicitly NOT
+  // matches — the backend relaxed a filter to find them — so counting
+  // them on a tab would promise more than the tab delivers.
+  const typeCounts = {
+    workers:  workerAds.length,
+    housing:  housingAds.length + housingListings.length,
+    services: serviceListings.length,
+  };
+  const hiddenTypes: ResultType[] = resp?.hidden_types ?? [];
+  const lockedType = typeFilter !== 'all' && hiddenTypes.includes(typeFilter as ResultType);
+  // The chips refine inside the services tab; the tab's own count
+  // stays unfiltered so it doesn't appear to shrink as you narrow.
+  const shownServices = categoryFilter
+    ? serviceListings.filter((l) => l.category === categoryFilter)
+    : serviceListings;
+  const visibleServices = servicesExpanded
+    ? shownServices
+    : shownServices.slice(0, SERVICES_PREVIEW_COUNT);
+  const showWorkers  = typeFilter === 'all' || typeFilter === 'workers';
+  const showHousing  = typeFilter === 'all' || typeFilter === 'housing';
+  const showServices = typeFilter === 'all' || typeFilter === 'services';
+  // `filters.ad_type` is a single value, so a near-match set is always
+  // one kind — show it under the tab it belongs to.
+  const nearType: ResultType = resp?.filters?.ad_type === 'housing' ? 'housing' : 'workers';
+  const showNear = typeFilter === 'all' || typeFilter === nearType;
+
+  // H10 §3.1 — sponsor slots go in AFTER positions 3 and 8, only when
+  // there are ≥4 rows (below that an ad has no context to sit in), and
+  // never before the first result: a sponsor at position 0 turns a
+  // results screen into an ad screen. Sponsors are never counted in
+  // any total.
+  //
+  // R30 §31c · when primary_section is 'marketplace' the services
+  // section has already rendered sponsoredAds[0] at its top, so the
+  // in-list injection starts at index 1 — R29 §5's "an ad in two
+  // placements shows once", applied within a single page.
+  //
+  // R32 S4.3 · lifted out of the results <ul> when housing moved to
+  // its own section, so both lists inject on the same rules.
+  function adRowsWithSponsors(rows: AdSearchResult[]): React.ReactNode[] {
+    const topSlotTaken = resp?.primary_section === 'marketplace';
+    let sponsorIdx = topSlotTaken ? 1 : 0;
+    const canInject = rows.length >= 4 && sponsoredAds.length > sponsorIdx;
+    const AFTER_POSITIONS = [3, 8]; // 1-indexed slot boundaries
+    const nodes: React.ReactNode[] = [];
+    rows.forEach((ad, i) => {
+      const boosted = ad.featured_until && new Date(ad.featured_until) > new Date();
+      nodes.push(
+        <AdRow
+          key={ad.id}
+          ad={ad}
+          revealed={reveals[ad.id]}
+          revealing={revealing === ad.id}
+          boosted={!!boosted}
+          onReveal={() => revealFor(ad.id)}
+          professions={professions}
+          origins={origins}
+          regions={regions}
+        />
+      );
+      if (canInject && AFTER_POSITIONS.includes(i + 1) && sponsorIdx < sponsoredAds.length) {
+        const spAd = sponsoredAds[sponsorIdx++];
+        nodes.push(<SponsorSlot key={`sp-${spAd.id}`} ad={spAd} />);
+      }
+    });
+    return nodes;
+  }
 
   // QA-2 — when arriving via a LiveActivityFeed CTA that targets the
   // landing search (`?focus=search#search-hero`), focus the input so
@@ -1883,6 +2055,22 @@ function LandingPageInner() {
                     <div className="text-sm text-red-800 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{searchError}</div>
                   )}
 
+                  {/* R32 S4.1 · type filter, directly above the
+                      results. No `order` class, so it sits ahead of
+                      the two ordered blocks whichever way the server
+                      flipped them. Hidden while the first search is
+                      still in flight — counts of nothing are noise,
+                      and the tabs appearing with the results is one
+                      less thing moving on the page. */}
+                  {resp && !loading && (
+                    <ResultTypeFilter
+                      value={typeFilter}
+                      counts={typeCounts}
+                      hiddenTypes={hiddenTypes}
+                      onChange={selectType}
+                    />
+                  )}
+
                   {/* ── Ads block ─────────────────────────────────
                       One flex-item wrapper so its `order` toggles as
                       a unit. Inner spacing is back to space-y-4 so
@@ -2001,7 +2189,7 @@ function LandingPageInner() {
                       the reason ("log in to unlock") is stated on the
                       results page and the visitor doesn't leave
                       thinking the site simply has no worker inventory. */}
-                  {isAnon && resp
+                  {(showWorkers || showHousing) && isAnon && resp
                     && resp.results.length === 0
                     && (!resp.near_matches || resp.near_matches.length === 0)
                     && (
@@ -2023,7 +2211,7 @@ function LandingPageInner() {
                       own 1=0 to the scope; the response echoes the
                       approval status so we can show the account-status
                       copy in-place instead of the amber "no matches". */}
-                  {!isAnon && entityType === 'contractor'
+                  {showWorkers && !isAnon && entityType === 'contractor'
                     && resp?.viewer_approval_status
                     && resp.viewer_approval_status !== 'approved'
                     && resp.results.length === 0
@@ -2044,7 +2232,7 @@ function LandingPageInner() {
                       anti-enumeration, not a match failure). Publish
                       CTA turns the dead end into a productive next
                       step: the corp is the party who lists workers. */}
-                  {isCorp && resp
+                  {showWorkers && isCorp && resp
                     && resp.results.length === 0
                     && (!resp.near_matches || resp.near_matches.length === 0)
                     && (
@@ -2070,7 +2258,8 @@ function LandingPageInner() {
                       corp variant fired above, OR when marketplace
                       has hits (per R5 §4 — same-search services
                       section IS the message). */}
-                  {!isAnon
+                  {showWorkers
+                    && !isAnon
                     && !isCorp
                     && !(entityType === 'contractor'
                          && resp?.viewer_approval_status
@@ -2126,80 +2315,24 @@ function LandingPageInner() {
                     );
                   })()}
 
-                  {resp && resp.results.length > 0 && (() => {
-                    // H9 §1.4 — group by ad_type so mixed sets don't
-                    // render housing rows under a "כמות" column
-                    // header. In practice `filters.ad_type` is a
-                    // single value so results are homogeneous, but
-                    // the grouping still handles edge cases + keeps
-                    // the header:body invariant honest.
-                    const byKind = {
-                      worker:  resp.results.filter((a) => a.ad_type === 'worker'),
-                      housing: resp.results.filter((a) => a.ad_type === 'housing'),
-                    } as const;
-                    const groups = (['worker', 'housing'] as const).filter((k) => byKind[k].length > 0);
-                    return (
-                      <>
-                        {groups.map((kind) => (
-                          <ul
-                            key={kind}
-                            role="table"
-                            aria-label={kind === 'worker' ? 'תוצאות חיפוש — עובדים' : 'תוצאות חיפוש — דיור'}
-                            className="results-table"
-                          >
-                            <ResultsHeader kind={kind} />
-                            {(() => {
-                              // H10 §3.1 — inject sponsor slots
-                              // AFTER positions 3 and 8, only when
-                              // there are ≥ 4 results (below that
-                              // the ad has no context to sit in),
-                              // never before the first result (a
-                              // sponsor at position 0 turns the
-                              // results screen into an ad screen).
-                              // Sponsors NEVER counted in the total.
-                              const rows = byKind[kind];
-                              // R30 §31c · when primary_section is
-                              // 'marketplace' the services section has
-                              // already rendered sponsoredAds[0] at its
-                              // top. Start from 1 so the same advertiser
-                              // does not appear twice on one screen —
-                              // R29 §5's "an ad in two placements shows
-                              // once", applied within a single page.
-                              const topSlotTaken = resp.primary_section === 'marketplace';
-                              let sponsorIdx = topSlotTaken ? 1 : 0;
-                              const canInject =
-                                rows.length >= 4 && sponsoredAds.length > sponsorIdx;
-                              const AFTER_POSITIONS = [3, 8]; // 1-indexed slot boundaries
-                              const nodes: React.ReactNode[] = [];
-                              rows.forEach((ad, i) => {
-                                const revealed = reveals[ad.id];
-                                const boosted  = ad.featured_until && new Date(ad.featured_until) > new Date();
-                                nodes.push(
-                                  <AdRow
-                                    key={ad.id}
-                                    ad={ad}
-                                    revealed={revealed}
-                                    revealing={revealing === ad.id}
-                                    boosted={!!boosted}
-                                    onReveal={() => revealFor(ad.id)}
-                                    professions={professions}
-                                    origins={origins}
-                                    regions={regions}
-                                  />
-                                );
-                                const position = i + 1;
-                                if (canInject && AFTER_POSITIONS.includes(position) && sponsorIdx < sponsoredAds.length) {
-                                  const spAd = sponsoredAds[sponsorIdx++];
-                                  nodes.push(<SponsorSlot key={`sp-${spAd.id}`} ad={spAd} />);
-                                }
-                              });
-                              return nodes;
-                            })()}
-                          </ul>
-                        ))}
-                      </>
-                    );
-                  })()}
+                  {/* R32 S4.3 · worker ads only. Housing ads moved to
+                      the combined "דיור" section below, next to the
+                      marketplace housing listings, because for a
+                      contractor looking for beds they answer the same
+                      question. The per-kind grouping that used to live
+                      here is gone with them; `adRowsWithSponsors`
+                      carries the sponsor-injection rules both lists
+                      need. */}
+                  {showWorkers && workerAds.length > 0 && (
+                    <ul
+                      role="table"
+                      aria-label="תוצאות חיפוש — עובדים"
+                      className="results-table"
+                    >
+                      <ResultsHeader kind="worker" />
+                      {adRowsWithSponsors(workerAds)}
+                    </ul>
+                  )}
 
                   {/* NM — near-matches. Rendered ONLY when the backend
                       returned a second-pass set with a named relaxed
@@ -2211,7 +2344,7 @@ function LandingPageInner() {
                       color alone. Never runs when exact is empty
                       without near_matches — the amber empty-state
                       above stays as-is for that case. */}
-                  {resp && resp.near_matches && resp.near_matches.length > 0 && resp.relaxed && (() => {
+                  {showNear && resp && resp.near_matches && resp.near_matches.length > 0 && resp.relaxed && (() => {
                     const relaxed  = resp.relaxed;
                     const near     = resp.near_matches;
                     const hasExact = resp.results.length > 0;
@@ -2336,6 +2469,74 @@ function LandingPageInner() {
                   </div>
                   {/* ── /Ads block ────────────────────────────────*/}
 
+                  {/* R32 S4 · a tab the search had nothing for, while
+                      the search itself did return something. The
+                      global empty states above only fire when the
+                      whole response is empty, so without this a tab
+                      with a zero count would just render blank. */}
+                  {typeFilter !== 'all'
+                    && !lockedType
+                    && typeCounts[typeFilter] === 0
+                    && (workerAds.length > 0 || housingAds.length > 0 || allListings.length > 0)
+                    && (
+                    <p className="order-1 text-sm text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                      אין תוצאות בלשונית הזו עבור החיפוש הנוכחי.
+                    </p>
+                  )}
+
+                  {/* ── Housing · one section (R32 S4.3) ──────────
+                      Housing ads and marketplace housing listings
+                      under a single "דיור" heading, ads first. Each
+                      keeps its own component — an ad is a row in the
+                      results table, a listing is a card, because they
+                      carry different fields; only the grouping
+                      changed. Two headings for one need is what made
+                      housing read as two half-empty sections. */}
+                  {showHousing && (housingAds.length > 0 || housingListings.length > 0) && (
+                    <section
+                      aria-label="תוצאות חיפוש — דיור"
+                      className="order-1 space-y-3"
+                    >
+                      <h2 className="text-base sm:text-lg font-bold text-slate-900">
+                        דיור
+                        <span className="ms-2 text-xs font-normal text-slate-500">
+                          {typeCounts.housing === 1 ? 'תוצאה אחת' : `${typeCounts.housing} תוצאות`}
+                        </span>
+                      </h2>
+                      {housingAds.length > 0 && (
+                        <ul role="table" aria-label="מודעות דיור" className="results-table">
+                          <ResultsHeader kind="housing" />
+                          {adRowsWithSponsors(housingAds)}
+                        </ul>
+                      )}
+                      {housingListings.length > 0 && (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          {housingListings.map((listing) => (
+                            <ListingCard key={listing.id} listing={listing} />
+                          ))}
+                        </div>
+                      )}
+                    </section>
+                  )}
+
+                  {/* R32 S4.2 · a service provider who opens the
+                      housing tab. D1 makes corporation housing
+                      contractor-and-corporation only, so say so rather
+                      than leaving an empty section that reads as
+                      "nothing here". */}
+                  {showHousing && isProvider && housingAds.length === 0 && housingListings.length === 0 && (
+                    <section aria-label="דיור" className="order-1">
+                      <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 text-center shadow-sm">
+                        <p className="text-sm text-slate-700">
+                          מודעות דיור של תאגידים מוצגות לקבלנים ולתאגידים בלבד.
+                        </p>
+                        <p className="text-sm text-slate-500 mt-1">
+                          כחשבון ספק שירות תוכלו לפרסם ולחפש בשירותים הנלווים.
+                        </p>
+                      </div>
+                    </section>
+                  )}
+
                   {/* ── Marketplace matches (U6 §2) ───────────────
                       Federated section that surfaces `marketplace_listings`
                       hits ALONGSIDE the ads results. Rendered ONLY when
@@ -2343,7 +2544,7 @@ function LandingPageInner() {
                       not drawn (no floating "שירותים נלווים" heading
                       over zero cards). Uses ListingCard so cards match
                       /marketplace's own visual language exactly. */}
-                  {resp?.marketplace_matches && resp.marketplace_matches.length > 0 && (
+                  {showServices && serviceListings.length > 0 && resp && (
                     <section
                       aria-label="שירותים נלווים"
                       className={
@@ -2366,18 +2567,73 @@ function LandingPageInner() {
                         <h2 className="text-base sm:text-lg font-bold text-slate-900">
                           שירותים נלווים
                           <span className="ms-2 text-xs font-normal text-slate-500">
-                            {resp.marketplace_matches.length === 1
+                            {serviceListings.length === 1
                               ? 'תוצאה אחת'
-                              : `${resp.marketplace_matches.length} תוצאות`}
+                              : `${serviceListings.length} תוצאות`}
                           </span>
                         </h2>
-                        <Link
-                          href={`/marketplace?search=${encodeURIComponent(q || '')}`}
-                          className="text-xs font-semibold text-brand-700 hover:text-brand-900"
-                        >
-                          עוד ב״שירותים נלווים״ ←
-                        </Link>
+                        {/* R32 S4.4 · was a link to /marketplace?search=,
+                            which ran a weaker matcher and threw the
+                            search away. It is now the services tab of
+                            this same result set. Hidden once that tab
+                            is already the one you are on. */}
+                        {typeFilter !== 'services' && (
+                          <button
+                            type="button"
+                            onClick={() => selectType('services')}
+                            className="text-xs font-semibold text-brand-700 hover:text-brand-900"
+                          >
+                            עוד ב״שירותים נלווים״ ←
+                          </button>
+                        )}
                       </div>
+
+                      {/* R32 S4.6 · the two placements that used to
+                          live on /marketplace. They are keyed by
+                          placement name (`marketplace_banner` /
+                          `marketplace_carousel`), not by path, so the
+                          move keeps their attribution bucket intact —
+                          see the report for the one semantic question
+                          it raises. Only on the services tab: on "הכל"
+                          they would sit between two other sections. */}
+                      {typeFilter === 'services' && (
+                        <>
+                          <MarketplaceSponsorBanner />
+                          <MarketplaceSponsorCarousel />
+                        </>
+                      )}
+
+                      {/* R32 S4.5 · category chips, from the live
+                          category table so a renamed or newly added
+                          category shows up without a deploy. Filtering
+                          is client-side over the result set already in
+                          memory. */}
+                      {typeFilter === 'services' && categories.length > 0 && (
+                        <div className="flex flex-wrap gap-2" role="group" aria-label="סינון לפי קטגוריה">
+                          {categories.map((cat) => {
+                            const isActive = categoryFilter === cat.code;
+                            const n = serviceListings.filter((l) => l.category === cat.code).length;
+                            if (n === 0 && !isActive) return null;
+                            return (
+                              <button
+                                key={cat.code}
+                                type="button"
+                                aria-pressed={isActive}
+                                onClick={() => selectCategory(cat.code)}
+                                className={
+                                  'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ' +
+                                  (isActive
+                                    ? 'bg-brand-600 text-white border-brand-600'
+                                    : 'bg-white text-slate-600 border-slate-200 hover:border-brand-300 hover:text-brand-800')
+                                }
+                              >
+                                {cat.name_he}
+                                <span className={isActive ? 'text-white/80' : 'text-slate-400'}>{n}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
                       {/* R30 §31c · when the services ARE the answer
                           (primary_section === 'marketplace'), a relevant
                           sponsor belongs at the top of this section — not
@@ -2399,10 +2655,32 @@ function LandingPageInner() {
                         </ul>
                       )}
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        {resp.marketplace_matches.slice(0, 6).map((listing) => (
+                        {visibleServices.map((listing) => (
                           <ListingCard key={listing.id} listing={listing} />
                         ))}
                       </div>
+
+                      {/* R32 S4.4 · "show more" expands in place. The
+                          server already sent up to 20; the preview cap
+                          is ours, so this costs no request and takes
+                          nobody off the page. */}
+                      {!servicesExpanded && shownServices.length > SERVICES_PREVIEW_COUNT && (
+                        <button
+                          type="button"
+                          onClick={() => setServicesExpanded(true)}
+                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-brand-800 hover:border-brand-300 hover:bg-brand-50 transition-colors min-h-[44px]"
+                        >
+                          הצג עוד ({shownServices.length - SERVICES_PREVIEW_COUNT})
+                        </button>
+                      )}
+
+                      {/* A chip that filters down to nothing still has
+                          to say so, or the grid just looks broken. */}
+                      {categoryFilter && shownServices.length === 0 && (
+                        <p className="text-sm text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                          אין שירותים בקטגוריה הזו עבור החיפוש הנוכחי.
+                        </p>
+                      )}
                     </section>
                   )}
 

@@ -1099,3 +1099,24 @@ body {
 bdi {
   unicode-bidi: isolate;
 }
+
+/* ─── R32 S4 · result-type filter ───────────────────────────────────
+   The active marker is ONE element moved with a transform, so the
+   slide never touches layout. `--seg-dir` is what makes it work in
+   both directions: translateX is physical (positive = right) while
+   the tab order follows the writing direction, so RTL needs the sign
+   flipped. Set on :root rather than computed in JS — the direction is
+   a document property, not component state. */
+:root           { --seg-dir:  1; }
+[dir="rtl"]     { --seg-dir: -1; }
+
+.result-type-filter__indicator {
+  position: absolute;
+  bottom: -1px;                 /* sits on the container's own border */
+  inset-inline-start: 0;
+  height: 2px;
+  width: calc(100% / var(--seg-count, 4));
+  background: #f78203;          /* brand-600 — fill, never label text */
+  border-radius: 2px 2px 0 0;
+  transform: translateX(calc(var(--seg-i, 0) * var(--seg-dir, 1) * 100%));
+}
