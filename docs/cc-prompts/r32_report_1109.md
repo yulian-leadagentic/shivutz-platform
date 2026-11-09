@@ -659,3 +659,76 @@ ads, independently returned "none of these are relevant".
 I am not re-opening R1: the marketplace-evidence question is settled and implemented. This is new evidence that
 arrived afterwards, and if you ever want a second suppression signal that does not depend on the marketplace at
 all, this is it.
+
+---
+
+# Addendum 4 · both reranker fixes, applied and verified on staging
+
+Commit `d461b56`. Yulian asked for both options from addendum 3.
+
+## Fix 1 · the parser tells its two outcomes apart
+
+`_extract_id_list` returns `None` only when the response genuinely cannot be parsed, and a list — possibly
+empty — when it can. The caller branches on `is None` for `[qrerank] unparseable`, and an empty ranking gets its
+own message that echoes the first 40 characters of the reply, so `[]` and a list of hallucinated ids are
+distinguishable without re-running anything.
+
+Verified against seven inputs on staging:
+
+| reply | returns | reading |
+|---|---|---|
+| `` ```json\n[]\n``` `` | `[]` | parsed, nothing named ← **the case that used to say "unparseable"** |
+| `[]` | `[]` | parsed, nothing named |
+| `["<a valid id>"]` | `['<a valid id>']` | ranked 1 |
+| `["not-a-real-id"]` | `[]` | parsed, nothing *valid* named |
+| `I cannot help with that` | `None` | could not parse |
+| `` (empty) | `None` | could not parse |
+| `{"ids": []}` | `None` | could not parse — an object is not a ranking |
+
+## Fix 2 · the call is skipped when its answer would be discarded
+
+The rerank moved below the marketplace pass, so the decision can be made with the marketplace result in hand.
+On an unfiltered browse that the marketplace answered, the worker rows are either deleted by R30 §31b or shown
+as a browse — and a browse belongs in SQL order (featured first, then recency) regardless.
+
+I chose this over the simpler "skip when nothing narrowing was extracted", because that would also skip a
+genuine broad-intent query the marketplace did *not* answer, which is a case where the rerank still earns its
+keep.
+
+**Measured on staging, as Anthropic calls rather than function entries:**
+
+| Query | `rerank()` entered | reached the model |
+|---|---|---|
+| `רצפים סינים` | yes | no — 1 candidate, below `RERANK_MIN` |
+| `חשמלאים בצפון` | yes | no — 0 candidates |
+| `דיור ל-20 פועלים בחיפה` | yes | no — below `RERANK_MIN` |
+| `הסעות בצפון` | yes | no — 2 candidates |
+| `ביטוח לעובדים זרים` | **no** | no — skipped by fix 2 (direct hit → suppressed) |
+| `השכרת ציוד` | **no** | no — skipped by fix 2 (fallback → browse) |
+
+**Anthropic calls across the six queries: 0, down from 2.** The four that still enter `rerank()` cost nothing —
+they return at the `RERANK_MIN` guard before any client is constructed.
+
+A correction on my own measurement: the first verification counted `rerank()` *entries* and reported
+"4, was 2", which reads like an increase. It was counting the wrong thing — four of those entries never reach
+the network. The number that matters is model calls, and it went 2 → 0.
+
+## Counts are unchanged by the refactor
+
+| Query | Workers | Housing | Services |
+|---|---|---|---|
+| `רצפים סינים` | 1 | 0 | 0 |
+| `חשמלאים בצפון` | 0 | 0 | 0 |
+| `דיור ל-20 פועלים בחיפה` | 0 | 1 | 0 |
+| `הסעות בצפון` | 2 | 0 | 1 |
+| `ביטוח לעובדים זרים` | 0 | 0 | 1 |
+| `השכרת ציוד` | 14 | 0 | 3 |
+
+Identical to addendum 2's real-mode column, which is the point: this was a cost and observability fix, not a
+behaviour change.
+
+## The trade, recorded
+
+A broad query whose worker rows the model *could* have ranked usefully now keeps SQL order. That is the price of
+not paying for a call whose result was discarded every time it was measured. It is in the code comment at the
+branch, not only here, so the next person to read it sees the decision rather than guessing at it.
