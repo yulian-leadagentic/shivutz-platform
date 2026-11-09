@@ -36,5 +36,39 @@ const nextConfig = {
       { source: '/api/:path*', destination: `${gateway}/api/:path*` },
     ];
   },
+  // R32 S6 · D2 — /marketplace becomes the services tab of the home
+  // page. The search, the filter, the listing panel and the reveal all
+  // live on `/` now, and a second page running a weaker matcher is the
+  // thing this round removed.
+  //
+  // Every old URL keeps working. The order matters: Next takes the
+  // first match, so the `search` variant has to precede the bare one.
+  //
+  // 307, not 308, for this round. We switch to permanent after a week
+  // on staging — a permanent redirect is cached by browsers and is
+  // very hard to take back if any of this needs reverting.
+  //
+  // The two page files under app/marketplace stay in place and still
+  // render, so dropping these three rules is all it takes to undo D2.
+  async redirects() {
+    return [
+      {
+        source: '/marketplace',
+        has: [{ type: 'query', key: 'search', value: '(?<search>.*)' }],
+        destination: '/?type=services&q=:search',
+        permanent: false,
+      },
+      {
+        source: '/marketplace',
+        destination: '/?type=services',
+        permanent: false,
+      },
+      {
+        source: '/marketplace/:id',
+        destination: '/?type=services&listing=:id',
+        permanent: false,
+      },
+    ];
+  },
 };
 module.exports = nextConfig;

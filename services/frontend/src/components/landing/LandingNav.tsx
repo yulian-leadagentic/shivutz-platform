@@ -101,9 +101,13 @@ export default function LandingNav(_: LandingNavProps) {
           {/* U1 §3 — /marketplace is live and public (no auth). The
               old "בקרוב" span was a dead label pointing at a working
               page, which reads as a broken product; making it a real
-              Link removes the friction. */}
+              Link removes the friction.
+              R32 S6.2 · D2 folded that page into the home page's
+              services tab. /marketplace still redirects here, but the
+              nav points straight at the destination rather than
+              spending a hop on every click. */}
           <Link
-            href="/marketplace"
+            href="/?type=services"
             className={`text-sm font-medium transition-colors ${linkCls}`}
           >
             שירותים נלווים
@@ -223,9 +227,10 @@ export default function LandingNav(_: LandingNavProps) {
           >
             איך זה עובד
           </Link>
-          {/* U1 §3 — mobile mirror of the desktop change above. */}
+          {/* U1 §3 — mobile mirror of the desktop change above.
+              R32 S6.2 · same destination swap. */}
           <Link
-            href="/marketplace"
+            href="/?type=services"
             onClick={() => setMenuOpen(false)}
             className="block text-sm font-medium text-slate-700 py-2.5 hover:text-brand-600"
           >
