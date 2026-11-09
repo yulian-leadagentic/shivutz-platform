@@ -349,10 +349,10 @@ real and nobody is currently measuring it.
 1. **Update the decision doc.** `decision_search_visibility_19_09.md` is not in the repo — it lives on the
    project, so the D1 matrix change (service provider loses housing; pending contractor gains it) has to be
    applied there by hand. The `visibility.py` docstring is already updated.
-2. **`railway login`** on this machine if you want the §R battery and the §V matrix re-run against staging as an
-   approved contractor. Without it there is no way to get a per-persona view of staging; with it, the R13
-   direct-HTTP-inside-the-container pattern covers every row in a few minutes. Alternatively name a throwaway QA
-   phone with an approved contractor on staging and I will drive it through the UI.
+2. ~~`railway login`~~ **— done. Both batteries have been re-run on staging as every viewer; see the addendum.**
+   Two things it turned up need you: **staging's `ANTHROPIC_API_KEY` is rejected by Anthropic on every call**, so
+   the search has been running on its regex fallback (check whether production shares that key), and one worker
+   count moved — `השכרת ציוד` 14 → 0 — which needs a yes or no from you.
 3. **Decide the sponsor placement question** in S4 above: `marketplace_banner` / `marketplace_carousel` now render
    on `/`, not on a marketplace page. Rename or leave.
 4. **Switch the redirects to 308** after a week on staging — three `permanent: false` → `true` in
@@ -365,3 +365,102 @@ real and nobody is currently measuring it.
 `marketplace_listings`, and both rows in `ads` had `expires_at` pushed to 2027-12-31 so the ads path returned
 anything at all. Remove with
 `DELETE FROM marketplace_listings WHERE id LIKE 'r32-%';` — say the word and I will.
+
+---
+
+# Addendum · staging acceptance as authenticated viewers (after `railway login`)
+
+Run through `railway ssh --service user-org`, direct HTTP at `localhost:3002` with explicit `x-entity-*` headers.
+Staging inventory at the time: 8 contractors (all approved), 14 live worker ads, 4 live housing ads, 16
+marketplace listings of which 4 are corporation housing.
+
+## §R · staging · approved contractor · before → after
+
+"Before" is reconstructed rather than remembered: the ads pass for an approved contractor was not changed this
+round, so it is run through the app's own `_build_where`; only the marketplace matcher is reimplemented as it
+stood at `pre-r32` (all tokens ANDed, no pruning, no region filter, no OR fallback). R30 §31b's suppression is
+then applied using the **old** marketplace count.
+
+| Query | Workers | Housing (ads+mkt) | Services |
+|---|---|---|---|
+| `רצפים סינים` | 1 → 1 | 0 → 0 | 0 → 0 |
+| `חשמלאים בצפון` | 0 → 0 | 0 → 0 | 0 → 0 |
+| `דיור ל-20 פועלים בחיפה` | 0 → 0 | **0 (0+0) → 4 (0+4)** | 0 → 0 |
+| `הסעות בצפון` | 2 → 2 | 0 → 0 | **0 → 1** |
+| `ביטוח לעובדים זרים` | 0 → 0 | 0 → 0 | 1 → 1 |
+| `השכרת ציוד` | **14 → 0** | 0 → 0 | **0 → 3** |
+
+### One worker count changed, and the standing rule says stop and report
+
+`השכרת ציוד`: **Workers 14 → 0.**
+
+This is not the ads pass changing. It is **R30 §31b firing for the first time on this query**. That rule says: if
+the rewriter extracted nothing narrowing (no profession, origin or region) **and** the marketplace matched, the
+unfiltered worker rows are inventory rather than an answer, so they are dropped. Before this round the services
+side matched 0 for `השכרת ציוד`, so the rule never triggered and the query returned the entire worker table — 14
+ads about workers, for a question about renting equipment. S2 and S3 made the services side match 3, so the rule
+now does what it was written to do.
+
+So the count moved because a pre-existing rule finally had something to fire on. **It is still a change in the
+Workers column, and it is your call to confirm**: either this is R30 working as intended (my reading — "inventory
+dressed as a match is the lie"), or the suppression should not apply when the marketplace hits come from the new
+OR fallback rather than from a direct match.
+
+The housing increase on `דיור ל-20 פועלים בחיפה` (**0 → 4**) is S3 end to end: `ל-20` and `פועלים` are pruned as
+rewriter-consumed, the remaining `דיור` + `בחיפה` AND still matches nothing, and the OR fallback then finds the
+four housing listings through the category display name, ranked by matched-token count.
+
+### Rewriter mode
+
+§R asks for `LLM_REWRITER_FAKE_MODE` off and on. On staging it is **unset**, and `ANTHROPIC_API_KEY` **is** set —
+so the code selects real mode, and then every single call logs:
+
+```
+[qrewrite] mode=real model=claude-haiku-4-5-20251001 timeout=3.0s
+[qrewrite] fallback:auth (0.04s) — AuthenticationError
+```
+
+The key is present but Anthropic rejects it, so `rewrite()` falls back to the regex extractor on every query.
+**Both halves of §R therefore currently produce the same numbers**, because staging is running the fake extractor
+whether you ask for it or not. The tables above are honest, but they are fake-mode tables.
+
+This is not an R32 regression — it predates the round — but it means staging search has been running on the regex
+fallback for an unknown stretch, and nobody would notice from the outside because the fallback returns plausible
+results. **Worth checking whether production shares the key.**
+
+## §V · staging · full matrix
+
+| Viewer | housing ads | housing mkt | worker ads | hidden_types | corp housing in `/search` | in `GET /marketplace` | `GET /{id}` | `POST /{id}/reveal` |
+|---|---|---|---|---|---|---|---|---|
+| anonymous | 0 | 0 | 0 | workers,housing | ✗ | ✗ | **404** | 401 |
+| contractor approved | 0 | 4 | 1 | — | ✓ | ✓ | 200 | **200, contact returned** |
+| contractor pending | 0 | **4** | **0** | workers | ✓ | ✓ | 200 | 403 |
+| corporation (not owner) | 0 | 4 | 0 (own only) | — | ✓ | ✓ | 200 | 200, contact returned |
+| corporation (owner) | 0 | 4 | 0 (own only) | — | ✓ | ✓ | 200 | 200, contact returned |
+| service provider | 0 | 0 | 0 | workers,housing | **✗** | **✗** | **404** | **404** |
+| admin | 0 | 4 | 1 | — | ✓ | ✓ | 200 | 401 |
+
+Every cell matches D1. The non-housing service listing stayed visible to **every** viewer including anonymous.
+
+Two columns need a word so they are not misread:
+
+- **`housing ads` is 0 for everyone**, including admin, even though staging has 4 live housing ads. That is R30
+  §31b again: the probe query `דיור` extracts nothing narrowing and the marketplace matches, so the housing *ads*
+  are suppressed in favour of the housing *listings*. Pre-existing, and identical before the round.
+- **admin `POST /reveal` → 401** is pre-existing: the endpoint requires an entity id and type, and an admin
+  picking "מנהל מערכת" has neither. Not a D1 effect.
+
+The local run's one gap is now closed: `POST /{id}/reveal` returns **200 with contact details** for an allowed
+viewer on staging, so the D1 scope in that endpoint's `WHERE` lets the right people through — it was only the
+missing `marketplace_reveals` table that made it 500 locally.
+
+### What this run touched on staging
+
+- **One seed contractor** (`b9b3bf0f-621c-469f-ab69-18e405efa0dc`, `קבוצת הרצל`, `is_seed=1`) was flipped
+  `approved → pending` for the few seconds the pending row took, then restored inside a `finally`. Verified
+  afterwards: 8 approved contractors, which is what it was before. A seed row was chosen deliberately so that no
+  real contractor's approval status moved at all.
+- **Audit rows in `marketplace_reveals`** for the four viewers allowed through, against one corporation housing
+  listing. They are idempotent per (viewer, listing). Blocked viewers 404 ahead of the insert and left nothing.
+  To drop them: `DELETE FROM marketplace_reveals WHERE listing_id='3ba6303b-0a99-eddf-932a-79581d257c50';`
+- Nothing else. No schema change, no listing, no ad, no account.
