@@ -460,9 +460,14 @@ missing `marketplace_reveals` table that made it 500 locally.
   `approved → pending` for the few seconds the pending row took, then restored inside a `finally`. Verified
   afterwards: 8 approved contractors, which is what it was before. A seed row was chosen deliberately so that no
   real contractor's approval status moved at all.
-- **Audit rows in `marketplace_reveals`** for the four viewers allowed through, against one corporation housing
-  listing. They are idempotent per (viewer, listing). Blocked viewers 404 ahead of the insert and left nothing.
-  To drop them: `DELETE FROM marketplace_reveals WHERE listing_id='3ba6303b-0a99-eddf-932a-79581d257c50';`
+- **Audit rows in `marketplace_reveals`**, against one corporation housing listing. They are idempotent per
+  (viewer, listing). Blocked viewers 404 ahead of the insert and left nothing.
+
+  > **Corrected at close-out (addendum 5).** It was **three** rows, not four — admin 401s before the insert
+  > because it carries no entity id. And **do not run the one-liner this paragraph originally gave**
+  > (`DELETE … WHERE listing_id='3ba6303b-…'`): that listing also carries a genuine reveal from
+  > 22 September by a real contractor, and the blunt delete would have taken it with the QA rows. The rows
+  > were removed by timestamp instead; see addendum 5.
 - Nothing else. No schema change, no listing, no ad, no account.
 
 ---
@@ -732,3 +737,82 @@ behaviour change.
 A broad query whose worker rows the model *could* have ranked usefully now keeps SQL order. That is the price of
 not paying for a call whose result was discarded every time it was measured. It is in the code comment at the
 branch, not only here, so the next person to read it sees the decision rather than guessing at it.
+
+---
+
+# Addendum 5 · close-out
+
+## The cleanup one-liner in this report was wrong. Do not reuse it.
+
+Addendum 2 offered `DELETE FROM marketplace_reveals WHERE listing_id='3ba6303b-0a99-eddf-932a-79581d257c50';`
+to remove the QA audit rows. Inspecting the table before running it showed why that would have been a mistake:
+
+```
+2026-09-22 11:45:49 | contractor  73ac1629-… | listing 3ba6303b-…   ← real, 48 days old
+2026-09-27 14:08:31 | contractor  73ac1629-… | listing 94b55830-…   ← real, different listing
+2026-11-09 12:55:18 | contractor  18df8bfc-… | listing 3ba6303b-…   ← QA
+2026-11-09 12:55:18 | corporation 3e20211f-… | listing 3ba6303b-…   ← QA
+2026-11-09 12:55:19 | corporation 9294d2f4-… | listing 3ba6303b-…   ← QA
+```
+
+**A real contractor revealed that same listing on 22 September.** The one-liner keys on `listing_id` alone, so
+it would have deleted that row along with the three from this round — destroying genuine reveal history on the
+word of a cleanup instruction I wrote myself.
+
+What was actually run, scoped by timestamp:
+
+```sql
+DELETE FROM marketplace_reveals
+ WHERE listing_id = '3ba6303b-0a99-eddf-932a-79581d257c50'
+   AND revealed_at >= '2026-11-09 00:00:00';
+```
+
+`deleted rows: 3`, and both September rows verified still present afterwards. The table has a `revealed_at`
+column, which is what makes the narrow delete possible — worth knowing, since an earlier probe in this round
+guessed `created_at` and failed.
+
+Two corrections fall out of this: it was **three** QA rows, not four (admin 401s before the insert, carrying no
+entity id), and the audit table is **not** QA-only — it holds real history.
+
+## Local fixtures removed
+
+- 13 `r32-*` rows deleted from `marketplace_listings` on the local MySQL. The table is back to 0 rows, which is
+  where it started.
+- Both local ads had their `expires_at` restored to the values they had before this round
+  (`2026-09-01 06:32:46` and `2026-10-31 09:09:26`). Both are in the past, so the local ads path returns nothing
+  again — that is the state I found. To make them live for local testing:
+  `UPDATE ads SET expires_at='2027-12-31 23:59:59' WHERE deleted_at IS NULL;`
+
+One divergence is deliberately left in place: the local `user-org` container is running the **current repo code**,
+copied in with `docker cp`, because its image predates U3 and has no `visibility.py` at all. A
+`docker compose up -d --force-recreate user-org` reverts it to that stale image. See
+[[project-local-stack-state]] in memory for the rest of the local environment's condition.
+
+## Repo state
+
+```
+git rev-list --left-right --count origin/staging...origin/pivot/v2
+0	0
+```
+
+Branch `pivot/v2`, 14 commits from `pre-r32`, everything pushed to both refs. Both `cc_prompt_R32_unified_search.md`
+and this report are tracked. No R32 source file is left uncommitted; the untracked files in the tree (brand icons,
+`tsbuildinfo`, other rounds' prompts) were there before this round started.
+
+The stale worktree CLAUDE.md warns about — `.claude/.claude/worktrees/reverent-agnesi-5081e9`, pinned to
+`4352f1b` from 10 August — is still there. It is not mine and I have not touched it, but it is still the trap
+the file describes.
+
+## Still open, and all of them are yours
+
+| # | Item | Why it needs you |
+|---|---|---|
+| 1 | Update `decision_search_visibility_19_09.md` on the project | It is not in the repo. The D1 matrix change — provider loses housing, pending contractor gains it — exists in `visibility.py`'s docstring and nowhere else. |
+| 2 | Sponsor placement naming | `marketplace_banner` / `marketplace_carousel` now render on `/`, not on a marketplace page. Attribution still lands in the `marketplace` bucket, so reporting is continuous — but the names describe a page that no longer exists. Rename or accept. |
+| 3 | The orange-on-white rule | `page.tsx` measures slate-900 on brand-600 at 6.93:1 and white at 2.6:1; the design-system note says brand-800 with white. Both pass AA by their own route, and both are live on different surfaces. |
+| 4 | Switch the three redirects to 308 | After a week on staging. Three `permanent: false` → `true` in `next.config.js`. |
+| 5 | Check the production Anthropic key | Staging's was rejected on every call until you rotated it. If production shares it, production search has been running on the regex fallback too, invisibly. |
+| 6 | The pre-existing CLS spike on `/` | 0.067–0.115, intermittent, from the hero gradient and the `איך זה עובד?` row. Not S7 — S7's own A/B was 0.0009 / 0.0049, identical before and after — but at 390 it crosses the 0.1 threshold and nobody is measuring it. |
+| 7 | `_search_marketplace` has no seed gate | `GET /marketplace` hides seed rows in production; the federated search pass does not. One line, but it is an R30 policy call. |
+
+No env vars and no migrations were needed for this round. R32 added no DB columns.
