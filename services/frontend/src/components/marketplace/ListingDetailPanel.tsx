@@ -109,8 +109,16 @@ export default function ListingDetailPanel({
       });
     } catch (e) {
       // R15 §3c · 401 sends anon to login; 403 shows the "בחשבון בבדיקה" copy.
-      const err = e as { status?: number } | undefined;
-      if (err?.status === 401) {
+      //
+      // R32 S5 · the status is on `ApiError.cause.status`, not on the
+      // error itself. The old check read `e.status`, which is always
+      // undefined, so an anonymous visitor who asked for contact
+      // details was told to make sure their account was approved —
+      // advice with no account behind it. Both shapes are read here so
+      // a plain `{status}` rejection still works.
+      const err = e as { status?: number; cause?: { status?: number } } | undefined;
+      const status = err?.cause?.status ?? err?.status;
+      if (status === 401) {
         // R32 S5 · the search and the open panel both live in the
         // query string, so returnTo has to carry it or the visitor
         // comes back from login to a blank home page.
