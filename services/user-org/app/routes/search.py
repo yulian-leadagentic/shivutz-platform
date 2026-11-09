@@ -579,8 +579,11 @@ def search(
     # the closest-to-target dimension (quantity DESC or the default
     # boosted+recency); running them through the LLM reranker would
     # cost real money to produce a worse order for a suggestive list.
+    #
+    # R32 · the rerank call moved BELOW the marketplace pass so it can
+    # be skipped when its output is going to be thrown away. See the
+    # branch after the suppression rule.
     serialised_exact = [_emit_ad(r) for r in exact_rows]
-    reranked         = rerank(body.query, serialised_exact)
     serialised_near  = [_emit_ad(r) for r in near_rows]
 
     # U6 §2 — federated marketplace pass. Runs ALWAYS, on the raw
@@ -633,24 +636,43 @@ def search(
     # hits exist only because of the fallback, the workers stay, in the
     # labelled broad-browse state, and the services go first instead.
     _NARROWING = ("profession_code", "origin_country", "region")
-    _unfiltered_browse = bool(reranked) and not any(filters.get(k) for k in _NARROWING)
-    # Computed before `reranked` is cleared below, because both rules
-    # downstream need to know what the state was.
+    _unfiltered_browse = (
+        bool(serialised_exact) and not any(filters.get(k) for k in _NARROWING)
+    )
     fallback_browse = (
         _unfiltered_browse and bool(marketplace_matches) and marketplace_via_fallback
     )
     unfiltered_inventory_suppressed = 0
-    if _unfiltered_browse and marketplace_matches and not marketplace_via_fallback:
-        unfiltered_inventory_suppressed = len(reranked)
-        reranked = []
-        # Worth watching: a high rate here means the rewriter is
-        # failing to extract on queries that DO have a real intent,
-        # and the marketplace is carrying the answer alone.
-        _log.info(
-            "search: suppressed %d unfiltered worker rows for query %r "
-            "(no profession/origin/region extracted, %d marketplace matches)",
-            unfiltered_inventory_suppressed, body.query, len(marketplace_matches),
-        )
+
+    # R32 · rerank only when the order it produces will be used.
+    #
+    # It used to run before any of this, on candidates that were about
+    # to be deleted by the rule below — ~1,700 input tokens to order a
+    # list nobody would see. And when the rows DO survive as a browse,
+    # the reranker was answering `[]` anyway: asked to rank fourteen
+    # worker ads against "equipment rental" it correctly says none are
+    # relevant, and the SQL order (featured first, then recency) stands.
+    #
+    # The trade, stated plainly: a broad query whose worker rows the
+    # model COULD have ranked usefully now keeps SQL order instead.
+    # That is the deliberate price of not paying for a call whose
+    # result, every time we have measured it, was discarded.
+    if _unfiltered_browse and marketplace_matches:
+        if marketplace_via_fallback:
+            reranked = serialised_exact
+        else:
+            unfiltered_inventory_suppressed = len(serialised_exact)
+            reranked = []
+            # Worth watching: a high rate here means the rewriter is
+            # failing to extract on queries that DO have a real intent,
+            # and the marketplace is carrying the answer alone.
+            _log.info(
+                "search: suppressed %d unfiltered worker rows for query %r "
+                "(no profession/origin/region extracted, %d marketplace matches)",
+                unfiltered_inventory_suppressed, body.query, len(marketplace_matches),
+            )
+    else:
+        reranked = rerank(body.query, serialised_exact)
 
     # U6 §2 — section ordering. Two rules from the spec:
     #   * profession_code extracted → workers is the intent → 'ads' first.

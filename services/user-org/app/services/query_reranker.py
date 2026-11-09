@@ -72,12 +72,21 @@ def _summarise(ad: dict) -> str:
     return " ".join(parts)
 
 
-def _extract_id_list(text: str, valid_ids: set[str]) -> list[str]:
+def _extract_id_list(text: str, valid_ids: set[str]) -> Optional[list[str]]:
     """Parse a JSON array of IDs from an LLM response and drop anything
     that isn't in the candidate set — the model sometimes hallucinates
-    UUIDs on the retry path."""
+    UUIDs.
+
+    R32 · `None` means the response could not be parsed. A list — which
+    may be empty — means it could. Before this both came back as `[]`,
+    and the caller logged every empty ranking as "unparseable". The
+    model's commonest empty answer is a perfectly well-formed `[]`
+    meaning "none of these are relevant to that query", so the log was
+    reporting a parser failure that had not happened, and the next
+    reader goes looking for a bug in here. Two events, two messages.
+    """
     if not text:
-        return []
+        return None
     stripped = re.sub(r"^```(?:json)?\s*", "", text.strip(), flags=re.IGNORECASE)
     stripped = re.sub(r"\s*```$", "", stripped)
     try:
@@ -85,13 +94,13 @@ def _extract_id_list(text: str, valid_ids: set[str]) -> list[str]:
     except json.JSONDecodeError:
         m = re.search(r"\[[\s\S]*\]", text)
         if not m:
-            return []
+            return None
         try:
             data = json.loads(m.group(0))
         except json.JSONDecodeError:
-            return []
+            return None
     if not isinstance(data, list):
-        return []
+        return None
     out: list[str] = []
     seen: set[str] = set()
     for item in data:
@@ -160,8 +169,18 @@ def rerank(query: str, candidates: list[dict]) -> list[dict]:
         elapsed = time.perf_counter() - t0
         text = resp.content[0].text
         ranked = _extract_id_list(text, valid_ids)
-        if not ranked:
+        if ranked is None:
             print(f"[qrerank] unparseable ({elapsed:.2f}s) → sql order kept")
+            return candidates
+        if not ranked:
+            # R32 · the model parsed fine and named nothing. Usually a
+            # literal `[]`, which is it saying none of these candidates
+            # answer the query — most often because the SQL pass had no
+            # narrowing filter to apply and handed over the whole table.
+            # The reply is echoed so a hallucinated-id case (parsed,
+            # non-empty, none valid) is distinguishable at a glance.
+            print(f"[qrerank] model ranked nothing ({elapsed:.2f}s, "
+                  f"reply {text.strip()[:40]!r}) → sql order kept")
             return candidates
 
         # Append any candidates the LLM dropped, in their original order —
