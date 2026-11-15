@@ -1162,6 +1162,12 @@ def admin_close(
     conn = get_db()
     try:
         cur = conn.cursor()
+        # R37 · asked first. The UPDATE alone answered 200 "closed" for
+        # an id that matches nothing, and its row count cannot tell
+        # "no such request" from "already closed this second".
+        cur.execute("SELECT id FROM foreign_tenders WHERE id=%s", (tender_id,))
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail="tender_not_found")
         cur.execute(
             "UPDATE foreign_tenders SET status='closed', closed_at=NOW() WHERE id=%s",
             (tender_id,),
