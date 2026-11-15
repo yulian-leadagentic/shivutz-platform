@@ -3,9 +3,14 @@
 
 /marketplace is public since U1 §3. The catalogue was empty so the
 click-through landed on the empty state. This script seeds ~16
-demo listings across the four active categories (housing / equipment
-/ services / other) plus two `subcategory` slices under services
-(transport + insurance).
+demo listings across the active categories: housing, equipment,
+transport, insurance and courses.
+
+R37 Part 3: transport and insurance used to be `subcategory` slices
+under `services`, and the two courses sat under `other`. Migration 101
+gave them categories of their own and moved the seeded rows; the rows
+here follow, and a re-run now writes `category` too, so the script and
+the table cannot drift apart again.
 
 All demo listings are marked is_seed=TRUE. Cleanup:
   DELETE FROM marketplace_listings WHERE is_seed = TRUE;
@@ -72,30 +77,30 @@ LISTINGS = [
      "מבנה נקי ותקין, שירותים ומקלחות משותפות, מטבחון בכל קומה. אישור אכלוס עדכני.",
      "נתניה", "sharon", "housing", None, 750, "per_month", 12, False, 21, "מחלקת שירות"),
 
-    # ── הסעות · 4 (category='services', subcategory='transport') ──
+    # ── הסעות · 4 (category='transport') ──
     ("הסעות יומיות לאתרי בנייה — מיניבוס 20 מקומות",
      "שירות בוקר וערב מהמגורים לאתרים במרכז. נהג קבוע, ביטוח מלא ליוסעים, גמישות בשעות.",
-     None, "center", "services", "transport", 3200, "per_month", 20, None, 0, "מוקד הסעות"),
+     None, "center", "transport", "transport", 3200, "per_month", 20, None, 0, "מוקד הסעות"),
     ("הסעת עובדים בוקר וערב, קו קבוע",
      "קו קבוע השרון–אזור התעשייה. עצירות מוגדרות, GPS למעקב. חוזה חודשי בלבד.",
-     None, "sharon", "services", "transport", 2400, "per_month", 14, None, 3, "מוקד הסעות"),
+     None, "sharon", "transport", "transport", 2400, "per_month", 14, None, 3, "מוקד הסעות"),
     ("שירות הסעות גמיש לפי דרישה",
      "הזמנה בהתראה של 12 שעות. מתאים לפרויקטים קצרים או משמרות לא סדירות. תמחור לפי יום.",
-     None, "south", "services", "transport", 450, "fixed", 16, None, 0, "מוקד הזמנות"),
+     None, "south", "transport", "transport", 450, "fixed", 16, None, 0, "מוקד הזמנות"),
     ("הסעות לאתרים מרוחקים, כולל סופ״ש",
      "מסלולים ארוכים לפרויקטים בגליל ובעמקים. אפשרות ללינה של הנהג באתר. הזמנה מראש.",
-     None, "north", "services", "transport", 3800, "per_month", 20, None, 10, "מחלקת שירות"),
+     None, "north", "transport", "transport", 3800, "per_month", 20, None, 10, "מחלקת שירות"),
 
-    # ── ביטוח · 3 (category='services', subcategory='insurance') ──
+    # ── ביטוח · 3 (category='insurance') ──
     ("ביטוח רפואי לעובדים זרים — כיסוי מלא",
      "כיסוי לאשפוזים, ניתוחים ובדיקות שגרתיות. תעריף לעובד לחודש, ללא מינימום גודל צוות.",
-     None, None, "services", "insurance", 180, "per_month", None, None, 0, "מוקד שירות"),
+     None, None, "insurance", "insurance", 180, "per_month", None, None, 0, "מוקד שירות"),
     ("ביטוח תאונות עבודה וצד ג׳",
      "מותאם לצוותי בנייה. כולל אחריות מקצועית כלפי מזמיני עבודה. חבילה חודשית פר עובד.",
-     None, None, "services", "insurance", 240, "per_month", None, None, 0, "מוקד הזמנות"),
+     None, None, "insurance", "insurance", 240, "per_month", None, None, 0, "מוקד הזמנות"),
     ("חבילת ביטוח משולבת לתאגידים",
      "חבילה שמאחדת ביטוח רפואי, תאונות עבודה, וצד ג׳. חסכון של עד 20% מול חבילות נפרדות.",
-     None, None, "services", "insurance", 390, "per_month", None, None, 0, "מחלקת מכירות"),
+     None, None, "insurance", "insurance", 390, "per_month", None, None, 0, "מחלקת מכירות"),
 
     # ── ציוד · 3 ────────────────────────────────────────────────
     ("פיגומים להשכרה — מערכת מודולרית",
@@ -111,10 +116,10 @@ LISTINGS = [
     # ── אחר · 2 ────────────────────────────────────────────────
     ("קורס בטיחות בגובה — הסמכה תקפה",
      "קורס בן יום עסקים, כולל תעודה. מתאים לעובדים חדשים או להסמכה שנתית. הכשרה בסיסית.",
-     None, None, "other", None, 350, "fixed", None, None, 0, "רכז הכשרות"),
+     None, None, "courses", None, 350, "fixed", None, None, 0, "רכז הכשרות"),
     ("קורס עברית בסיסית לעובדים",
      "שבועיים אחר-הצהריים, קבוצות של עד 12. דגש על אוצר מילים לאתר בנייה ותקשורת עם המנהל.",
-     None, None, "other", None, 950, "fixed", None, None, 0, "מוקד הרשמה"),
+     None, None, "courses", None, 950, "fixed", None, None, 0, "מוקד הרשמה"),
 ]
 
 
@@ -254,6 +259,7 @@ def main() -> int:
                            'active', 1, %s, %s,
                            NULL)
                    ON DUPLICATE KEY UPDATE
+                     category=VALUES(category),
                      subcategory=VALUES(subcategory),
                      title=VALUES(title),
                      description=VALUES(description),
