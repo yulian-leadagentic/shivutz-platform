@@ -116,11 +116,11 @@ export default function CorpTendersPage() {
           {/* ── Open tenders to bid on ── */}
           <section className="space-y-3">
             <h2 className="font-bold text-slate-900">
-              בקשות פתוחים להצעה {biddableOpen.length > 0 && <span className="text-slate-400 font-normal">({biddableOpen.length})</span>}
+              בקשות פתוחות להצעה {biddableOpen.length > 0 && <span className="text-slate-400 font-normal">({biddableOpen.length})</span>}
             </h2>
             {biddableOpen.length === 0 ? (
               <div className="bg-white border border-slate-200 rounded-2xl py-8 text-center text-slate-500 text-sm">
-                אין כרגע בקשות פתוחים שטרם הגשת אליהם הצעה.
+                אין כרגע בקשות פתוחות שטרם הגשת אליהן הצעה.
               </div>
             ) : biddableOpen.map((t) => {
               const total = t.items.reduce((s, i) => s + i.quantity, 0);
