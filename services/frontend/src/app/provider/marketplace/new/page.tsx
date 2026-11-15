@@ -14,36 +14,34 @@
 //
 // The corporation form keeps the housing-only "מרוהטת" flag; a provider
 // cannot publish housing, so the flag is not offered here.
+//
+// R34 §4b · the category choice follows the plans. A provider publishes
+// only where it has a running plan (R33 B), so those categories are the
+// picker; the rest are listed as locked, each with the way to open it.
+// One category with a plan is shown as a fixed chip. Housing is never
+// offered, and ?category=housing is dropped.
 
-import { useEffect, useId, useState } from 'react';
+import { useCallback, useEffect, useId, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ArrowRight, Loader2 } from 'lucide-react';
+import { AlertCircle, ArrowRight, Loader2, Lock, Plus } from 'lucide-react';
 import { ApiError } from '@/lib/api/client';
 import { marketplaceApi } from '@/lib/api/marketplace';
-import { marketplaceSubscriptionsApi } from '@/lib/api/marketplaceSubscriptions';
+import { marketplaceSubscriptionsApi, type CatalogCategory } from '@/lib/api/marketplaceSubscriptions';
+import { isProviderCategory } from '@/lib/providerCategories';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import ImageUploader from '@/components/marketplace/ImageUploader';
 
-type Category = { value: string; label: string };
+// A category the provider has a running plan in, with the plan's size
+// and how much of it is in use.
+type OpenCategory   = { value: string; label: string; used: number; total: number };
+// An active category with no running plan: shown, not selectable.
+type LockedCategory = { value: string; label: string };
 
-// Housing rides on a corporation's licence and is published from the
-// corporation area only. The server answers a provider's housing listing
-// with 403 provider_category_forbidden; leaving it out of the picker
-// just spares the provider that round trip.
-const CORPORATION_ONLY_CATEGORY = 'housing';
-
-// Shown only when the catalog request fails or has nothing a provider
-// may use, because an empty picker reads as a broken page. The real
-// list is GET /marketplace/subscriptions/catalog; add categories in
-// /admin/marketplace, not here.
-const FALLBACK_CATEGORIES: Category[] = [
-  { value: 'equipment', label: 'ציוד' },
-  { value: 'services',  label: 'שירותים' },
-  { value: 'other',     label: 'אחר' },
-];
+const ADD_PLAN = '/provider/marketplace/subscribe';
+const BILLING  = '/provider/billing';
 
 const PRICE_UNITS = [
   { value: 'per_month',  label: 'לחודש' },
@@ -73,12 +71,12 @@ export default function NewProviderListingPage() {
   // first draft the provider can still edit.
   //
   // A housing hint is dropped rather than honoured. '' means "nothing
-  // chosen yet"; the catalog effect below replaces it, and any hint the
-  // catalog does not list, with the first category a provider may use.
+  // chosen yet"; the effect below replaces it, and any hint the provider
+  // has no plan in, with the first category it can publish in.
   const hint = searchParams?.get('category') || '';
 
   const [form, setForm] = useState({
-    category:       hint === CORPORATION_ONLY_CATEGORY ? '' : hint,
+    category:       isProviderCategory(hint) ? hint : '',
     title:          '',
     description:    '',
     city:           searchParams?.get('city') || '',
@@ -93,33 +91,56 @@ export default function NewProviderListingPage() {
   const [images, setImages] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [error,  setError]  = useState('');
-  // R33 B.1 · set when the server refused the listing for want of a
-  // plan (402): where to add one, shown as a link under the message.
-  const [buyUrl, setBuyUrl] = useState<string | null>(null);
+  // R33 B.1 · set when the server refused the listing for want of room
+  // in a plan (402): the page that fixes it, as a link under the message.
+  const [fix, setFix] = useState<{ href: string; label: string } | null>(null);
 
-  const [categories,  setCategories]  = useState<Category[]>([]);
+  const [open,        setOpen]        = useState<OpenCategory[]>([]);
+  const [locked,      setLocked]      = useState<LockedCategory[]>([]);
   const [catsLoading, setCatsLoading] = useState(true);
+  const [catsFailed,  setCatsFailed]  = useState(false);
 
-  // Once, on mount: the catalog changes rarely and writing an ad is a
-  // short session.
-  useEffect(() => {
-    let cancelled = false;
-    marketplaceSubscriptionsApi
-      .catalog()
-      .then((rows): Category[] => rows.map((c) => ({ value: c.code, label: c.name_he })))
-      .catch((): Category[] => [])
-      .then((rows) => {
-        if (cancelled) return;
-        const allowed = rows.filter((c) => c.value !== CORPORATION_ONLY_CATEGORY);
-        const list    = allowed.length > 0 ? allowed : FALLBACK_CATEGORIES;
-        setCategories(list);
-        // Runs once, when the list arrives, so it can never undo a
-        // category the provider picked by hand afterwards.
-        setForm((f) => (list.some((c) => c.value === f.category) ? f : { ...f, category: list[0].value }));
-        setCatsLoading(false);
-      });
-    return () => { cancelled = true; };
+  // The provider's plans decide the picker; the catalog only adds the
+  // locked categories and the display order. So a catalog failure costs
+  // the locked list, and a plans failure is an error with a retry: a
+  // guessed list would offer categories the server then refuses.
+  const loadCategories = useCallback(async () => {
+    setCatsLoading(true); setCatsFailed(false);
+    try {
+      const [plans, catalog] = await Promise.all([
+        marketplaceSubscriptionsApi.mine(),
+        marketplaceSubscriptionsApi.catalog().catch((): CatalogCategory[] => []),
+      ]);
+      const order = new Map(catalog.map((c, i) => [c.code, i]));
+      const withPlan: OpenCategory[] = plans
+        .filter((s) => s.is_current && isProviderCategory(s.category_code))
+        .map((s) => ({
+          value: s.category_code,
+          label: s.category_name_he || s.category_code,
+          used:  s.slots_used ?? 0,
+          total: s.slot_count,
+        }))
+        .sort((a, b) => (order.get(a.value) ?? Infinity) - (order.get(b.value) ?? Infinity));
+      setOpen(withPlan);
+      setLocked(
+        catalog
+          .filter((c) => isProviderCategory(c.code) && !withPlan.some((o) => o.value === c.code))
+          .map((c) => ({ value: c.code, label: c.name_he })),
+      );
+      // Only replaces a category the provider cannot publish in, so it
+      // never undoes one picked by hand.
+      setForm((f) => (withPlan.some((c) => c.value === f.category) ? f : { ...f, category: withPlan[0]?.value ?? '' }));
+    } catch {
+      setCatsFailed(true);
+    } finally {
+      setCatsLoading(false);
+    }
   }, []);
+  useEffect(() => { void loadCategories(); }, [loadCategories]);
+
+  const selected     = open.find((c) => c.value === form.category);
+  const selectedFull = !!selected && selected.used >= selected.total;
+  const noPlan       = !catsLoading && !catsFailed && open.length === 0;
 
   function update(field: string, value: string) {
     setForm((f) => ({ ...f, [field]: value }));
@@ -128,7 +149,7 @@ export default function NewProviderListingPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!form.title.trim()) { setError('כותרת היא שדה חובה'); return; }
-    setSaving(true); setError(''); setBuyUrl(null);
+    setSaving(true); setError(''); setFix(null);
     try {
       await marketplaceApi.create({
         category:       form.category,
@@ -147,11 +168,16 @@ export default function NewProviderListingPage() {
       router.push('/provider/dashboard#my-listings');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'שגיאה בפרסום');
-      // No plan in this category, or the plan is full. The server
-      // sends the page that fixes it; anything else has no link.
+      // No plan in this category, or the plan is full. The picker
+      // above already keeps both from happening, so this is a plan that
+      // changed while the form was open. The server sends the page that
+      // fixes it; anything else has no link.
       if (err instanceof ApiError && err.cause.status === 402) {
-        const details = err.cause.details as { buy_url?: string | null } | undefined;
-        setBuyUrl(details?.buy_url || `/provider/marketplace/subscribe?category=${encodeURIComponent(form.category)}`);
+        const details = err.cause.details as { code?: string; buy_url?: string | null } | undefined;
+        const category = encodeURIComponent(form.category);
+        setFix(details?.code === 'no_slots_available'
+          ? { href: details.buy_url || `${BILLING}?category=${category}`, label: 'מנוי ותשלום' }
+          : { href: details?.buy_url || `${ADD_PLAN}?category=${category}`, label: 'הוספת מסלול בקטגוריה' });
       }
     } finally { setSaving(false); }
   }
@@ -175,6 +201,20 @@ export default function NewProviderListingPage() {
         </div>
       </div>
 
+      {noPlan ? (
+        <Card>
+          <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
+            <p className="text-base font-semibold text-slate-900">אין לך מסלול פעיל</p>
+            <p className="text-sm text-slate-600">כדי לפרסם מודעה יש להוסיף מסלול בקטגוריה.</p>
+            <Button asChild size="lg">
+              <Link href={isProviderCategory(hint) && hint ? `${ADD_PLAN}?category=${encodeURIComponent(hint)}` : ADD_PLAN}>
+                <Plus className="h-4 w-4" aria-hidden="true" />
+                הוספת מסלול
+              </Link>
+            </Button>
+          </CardContent>
+        </Card>
+      ) : (
       <form onSubmit={handleSubmit}>
         <Card>
           <CardHeader className="pb-3">
@@ -196,13 +236,23 @@ export default function NewProviderListingPage() {
                       טוען
                     </span>
                   ))
-                ) : categories.length === 1 ? (
+                ) : catsFailed ? (
+                  <div role="alert" className="flex w-full flex-wrap items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+                    <span className="flex items-center gap-2">
+                      <AlertCircle className="h-4 w-4 shrink-0" aria-hidden="true" />
+                      לא הצלחנו לטעון את המסלולים שלך.
+                    </span>
+                    <Button type="button" variant="outline" className="min-h-11" onClick={() => void loadCategories()}>
+                      נסו שוב
+                    </Button>
+                  </div>
+                ) : open.length === 1 ? (
                   // A picker with a single option reads like a load bug.
                   <span className={`${PILL} border-brand-200 bg-brand-50 font-semibold text-brand-800`}>
-                    {categories[0].label}
+                    {open[0].label}
                   </span>
                 ) : (
-                  categories.map((c) => (
+                  open.map((c) => (
                     <button
                       key={c.value}
                       type="button"
@@ -219,6 +269,46 @@ export default function NewProviderListingPage() {
                   ))
                 )}
               </div>
+
+              {selected && (
+                <p className={`text-xs ${selectedFull ? 'text-amber-800' : 'text-slate-500'}`}>
+                  {selected.used} מתוך {selected.total} מודעות בשימוש במסלול.
+                  {selectedFull && (
+                    <>
+                      {' '}כדי לפרסם מודעה נוספת יש לשדרג את המסלול או להשהות מודעה קיימת.{' '}
+                      <Link
+                        href={`${BILLING}?category=${encodeURIComponent(selected.value)}`}
+                        className="font-semibold underline underline-offset-2"
+                      >
+                        מנוי ותשלום
+                      </Link>
+                    </>
+                  )}
+                </p>
+              )}
+
+              {locked.length > 0 && (
+                <div className="pt-2">
+                  <p className="text-xs font-medium text-slate-500">קטגוריות ללא מסלול פעיל</p>
+                  <ul className="mt-1 divide-y divide-slate-100 rounded-lg border border-dashed border-slate-300">
+                    {locked.map((c) => (
+                      <li key={c.value} className="flex flex-wrap items-center justify-between gap-x-3 px-3">
+                        <span className="flex items-center gap-2 text-sm text-slate-500">
+                          <Lock className="h-4 w-4 shrink-0" aria-hidden="true" />
+                          {c.label}
+                        </span>
+                        <Link
+                          href={`${ADD_PLAN}?category=${encodeURIComponent(c.value)}`}
+                          aria-label={`הוספת מסלול בקטגוריה ${c.label}`}
+                          className="inline-flex min-h-11 items-center text-sm font-semibold text-brand-800 underline underline-offset-2 focus-visible:rounded"
+                        >
+                          הוספת מסלול בקטגוריה
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </fieldset>
 
             <Input
@@ -278,11 +368,11 @@ export default function NewProviderListingPage() {
             {error && (
               <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
                 {error}
-                {buyUrl && (
+                {fix && (
                   <>
                     {' '}
-                    <Link href={buyUrl} className="font-semibold underline underline-offset-2">
-                      הוספת מסלול בקטגוריה
+                    <Link href={fix.href} className="font-semibold underline underline-offset-2">
+                      {fix.label}
                     </Link>
                   </>
                 )}
@@ -290,7 +380,7 @@ export default function NewProviderListingPage() {
             )}
 
             <div className="flex gap-3 pt-2">
-              <Button type="submit" size="lg" disabled={saving || !form.category} className="flex-1 sm:flex-none">
+              <Button type="submit" size="lg" disabled={saving || !selected || selectedFull} className="flex-1 sm:flex-none">
                 {saving ? <><Loader2 className="h-4 w-4 motion-safe:animate-spin" aria-hidden="true" />מפרסם…</> : 'פרסם מודעה'}
               </Button>
               <Button asChild size="lg" variant="ghost">
@@ -300,6 +390,7 @@ export default function NewProviderListingPage() {
           </CardContent>
         </Card>
       </form>
+      )}
     </div>
   );
 }
