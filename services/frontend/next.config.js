@@ -68,6 +68,15 @@ const nextConfig = {
         destination: '/?type=services&listing=:id',
         permanent: false,
       },
+      // R33 B.4 · the corporation "buy a plan" page is gone: a
+      // corporation publishes housing only, and housing rides its
+      // licence. The URL answers with a redirect so an old bookmark
+      // lands on the listings. There is no page file behind it.
+      {
+        source: '/corporation/marketplace/subscribe',
+        destination: '/corporation/marketplace',
+        permanent: false,
+      },
     ];
   },
 };
