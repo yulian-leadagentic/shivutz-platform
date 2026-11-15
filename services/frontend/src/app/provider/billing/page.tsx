@@ -11,15 +11,17 @@
 // (routes/marketplace_subscriptions.py):
 //   * renewal on / off   a flag on the plan.
 //   * upgrade            the same plan on a bigger tier of the category.
-//                        Free while the launch promo runs; afterwards
-//                        the server refuses it, because there is no
-//                        online payment for these plans yet (5b).
+//                        Free while the launch promo runs. A plan that
+//                        was paid for is not offered it: what the move
+//                        costs mid-period is not decided (R37 4.1.2).
 //   * cancel             the plan ends now and its listings are paused,
-//                        not deleted.
+//                        not deleted. Not offered on a paid plan either;
+//                        its owner turns renewal off instead.
 //
 // R37 4.1.1 · the card block under the plans is the shared
 // PaymentCardBlock: the card on file, and adding or replacing it on
-// Cardcom's page.
+// Cardcom's page. Under it, the charges made for the plans and their
+// invoices (R37 4.1.2).
 
 import { Suspense, useCallback, useEffect, useId, useMemo, useState } from 'react';
 import Link from 'next/link';
@@ -37,6 +39,7 @@ import { paidTiers } from '@/lib/providerCategories';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { PaymentCardBlock } from '@/components/billing/PaymentCardBlock';
+import { MarketplaceCharges } from '@/components/billing/MarketplaceCharges';
 
 function fmtPrice(nis: number): string {
   return `₪${Number(nis).toLocaleString('he-IL', { maximumFractionDigits: 2 })}`;
@@ -301,6 +304,8 @@ function ProviderBillingInner() {
 
           <PaymentCardBlock />
 
+          <MarketplaceCharges />
+
           {ended.length > 0 && (
             <section aria-labelledby="ended-plans" className="space-y-2">
               <h2 id="ended-plans" className="text-sm font-semibold text-slate-700">מסלולים שהסתיימו</h2>
@@ -374,6 +379,10 @@ function PlanCard({
   const used  = plan.slots_used ?? 0;
   const total = plan.slot_count;
   const full  = used >= total;
+  // A plan a charge paid for. Moving it to a bigger tier and ending it
+  // early are both undecided for a paid plan, and the server refuses
+  // both, so neither is offered.
+  const paidPlan = !!plan.payment_transaction_id;
   const share = total > 0 ? Math.min(100, Math.round((used / total) * 100)) : 0;
 
   return (
@@ -420,6 +429,11 @@ function PlanCard({
           הפרסום ללא עלות לתקופת ניסיון. לא נחייב אותך ללא הודעה מראש.
         </p>
       )}
+      {paidPlan && plan.auto_renew && (
+        <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-700">
+          במועד החידוש יחויב הכרטיס השמור במחיר המסלול באותו מועד. כיבוי החידוש האוטומטי מונע את החיוב.
+        </p>
+      )}
 
       <div className="mt-3 flex min-h-11 items-center justify-between gap-3 border-t border-slate-100 pt-2">
         <span id={renewLabelId} className="text-sm font-medium text-slate-900">חידוש אוטומטי</span>
@@ -451,7 +465,7 @@ function PlanCard({
             </Link>
           </Button>
         )}
-        {tiers.length > 0 && (
+        {tiers.length > 0 && !paidPlan && (
           <Button
             type="button"
             variant="outline"
@@ -464,18 +478,20 @@ function PlanCard({
             שדרוג המסלול
           </Button>
         )}
-        <Button
-          type="button"
-          variant="ghost"
-          className={`${TAP} text-red-700 hover:bg-red-50 hover:text-red-800`}
-          disabled={busy}
-          onClick={onCancel}
-        >
-          ביטול המסלול
-        </Button>
+        {!paidPlan && (
+          <Button
+            type="button"
+            variant="ghost"
+            className={`${TAP} text-red-700 hover:bg-red-50 hover:text-red-800`}
+            disabled={busy}
+            onClick={onCancel}
+          >
+            ביטול המסלול
+          </Button>
+        )}
       </div>
 
-      {tiers.length > 0 && (
+      {tiers.length > 0 && !paidPlan && (
         <ul id={upgradeListId} hidden={!upgradeOpen} className="mt-3 space-y-2">
           {tiers.map((t) => (
             <li key={t.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 px-3 py-3">

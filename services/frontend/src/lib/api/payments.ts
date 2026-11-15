@@ -68,6 +68,27 @@ export const subscriptionApi = {
     ),
 };
 
+/** R37 4.1.2 · one charge for a marketplace plan. */
+export interface MarketplaceCharge {
+  id: string;
+  kind: 'purchase' | 'renewal';
+  status: 'charged' | 'refunded' | 'declined';
+  category_code: string;
+  category_name_he: string | null;
+  amount_nis: number;
+  invoice_number: string | null;
+  invoice_url: string | null;
+  /** 'fake' when the payment service ran in test mode: no money moved. */
+  mode: 'fake' | 'real';
+  created_at: string | null;
+  refunded_at: string | null;
+}
+
+export const marketplaceChargesApi = {
+  /** The caller's own plan charges, newest first. */
+  mine: () => apiFetch<MarketplaceCharge[]>('/payments/marketplace/charges/mine'),
+};
+
 export interface CardSetupResult {
   /** completed: the card is saved. pending: Cardcom has no final answer
    *  yet. failed: Cardcom reported a failure, nothing was saved. */

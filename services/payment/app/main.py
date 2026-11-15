@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from app.db import get_db, init_db
 from app.errors import register_error_handlers
-from app.routes import payment_methods, webhooks, settings, subscriptions
+from app.routes import payment_methods, webhooks, settings, subscriptions, marketplace_charges
 # L5 §3 — read fake-mode state from the same module that gates Cardcom
 # network calls, so the startup log tells the operator exactly what
 # the payment service is doing with real money.
@@ -104,3 +104,4 @@ app.include_router(settings.router,        prefix="/payments/settings",        t
 app.include_router(payment_methods.router, prefix="/payments/payment-methods", tags=["payment-methods"])
 app.include_router(webhooks.router,        prefix="/webhooks",                 tags=["webhooks"])
 app.include_router(subscriptions.router,   prefix="/payments/subscriptions",   tags=["subscriptions"])
+app.include_router(marketplace_charges.router, prefix="/payments/marketplace",  tags=["marketplace-charges"])

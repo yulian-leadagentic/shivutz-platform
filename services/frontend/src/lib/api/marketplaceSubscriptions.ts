@@ -113,9 +113,18 @@ export const marketplaceSubscriptionsApi = {
       body: JSON.stringify({ tier_id }),
     }),
 
-  /** Purchase + activate. FAKE-payment until Cardcom is configured. */
+  /** Buy a plan. A provider during the launch promo pays nothing. After
+   *  it the card on file is charged the tier's price, and the plan
+   *  comes back only if the charge succeeded; the answer then carries
+   *  what was charged and the invoice. A 402 means no card on file
+   *  (details.code 'no_payment_method', details.add_card_url) or a
+   *  declined card ('card_declined'). */
   purchase: (tier_id: string, auto_renew: boolean) =>
-    apiFetch<Subscription>('/marketplace/subscriptions', {
+    apiFetch<Subscription & {
+      charged_nis?: number | null;
+      invoice_number?: string | null;
+      invoice_url?: string | null;
+    }>('/marketplace/subscriptions', {
       method: 'POST',
       body: JSON.stringify({ tier_id, auto_renew }),
     }),

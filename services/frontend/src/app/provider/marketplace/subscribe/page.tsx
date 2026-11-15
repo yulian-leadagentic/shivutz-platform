@@ -12,8 +12,13 @@
 // before it confirms (the quote): during the launch promo nothing is
 // charged and the plan runs until the promo ends, the same row
 // registration writes. The dialog says "לתקופת ניסיון" and no date
-// (R37 D1); the quote's promo_end only decides whether it says so. After the promo there is no online payment for
-// these plans yet, and the server says so instead of selling one.
+// (R37 D1); the quote's promo_end only decides whether it says so.
+//
+// R37 4.1.2 · after the promo the plan is paid for. The dialog then
+// says what will be charged and that the plan renews, and it opens only
+// if there is a card on file; without one the page points at "מנוי
+// ותשלום", where a card is added. The server charges the card and
+// answers with the plan only if the charge went through.
 //
 // Prices shown are the tiers' own, from /admin/marketplace. Nothing
 // here is hard-coded.
@@ -30,6 +35,8 @@ import {
   type Subscription,
   type SubscriptionQuote,
 } from '@/lib/api/marketplaceSubscriptions';
+import { ApiError } from '@/lib/api/client';
+import { paymentApi } from '@/lib/api/payments';
 import { isProviderCategory, paidTiers } from '@/lib/providerCategories';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
@@ -63,6 +70,10 @@ function ProviderSubscribeInner() {
   const [loadFailed, setLoadFailed] = useState(false);
   const [error, setError]     = useState<string | null>(null);
   const [added, setAdded]     = useState<string | null>(null);   // category code just added
+  // What the plan just added cost, when it was paid for.
+  const [paid, setPaid]       = useState<{ nis: number; invoiceUrl: string | null; invoiceNumber: string | null } | null>(null);
+  // Set when a paid purchase cannot go ahead for want of a card.
+  const [needCard, setNeedCard] = useState<string | null>(null);  // where a card is added
   const [quoting, setQuoting] = useState<string | null>(null);   // tier id being quoted
   const [pending, setPending] = useState<SubscriptionQuote | null>(null);
   const [buying, setBuying]   = useState(false);
@@ -99,9 +110,20 @@ function ProviderSubscribeInner() {
   );
 
   async function ask(tier: CatalogTier) {
-    setError(null); setAdded(null); setQuoting(tier.id);
+    setError(null); setAdded(null); setPaid(null); setNeedCard(null); setQuoting(tier.id);
     try {
-      setPending(await marketplaceSubscriptionsApi.quote(tier.id));
+      const quote = await marketplaceSubscriptionsApi.quote(tier.id);
+      // A purchase that will be charged needs a card first. Asked
+      // before the dialog, so nobody confirms a charge that cannot be
+      // made.
+      if (!quote.promo_end) {
+        const cards = await paymentApi.methods();
+        if (!cards.some((c) => c.status === 'active')) {
+          setNeedCard(`/provider/billing?category=${encodeURIComponent(tier.category_code)}`);
+          return;
+        }
+      }
+      setPending(quote);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'לא הצלחנו לבדוק את המסלול. נסו שוב.');
     } finally {
@@ -113,13 +135,23 @@ function ProviderSubscribeInner() {
     if (!pending) return;
     setBuying(true); setError(null);
     try {
-      await marketplaceSubscriptionsApi.purchase(pending.tier.tier_id, true);
+      const plan = await marketplaceSubscriptionsApi.purchase(pending.tier.tier_id, true);
       setAdded(pending.tier.category_code);
+      setPaid(plan.charged_nis != null
+        ? { nis: plan.charged_nis, invoiceUrl: plan.invoice_url ?? null, invoiceNumber: plan.invoice_number ?? null }
+        : null);
       setPending(null);
       await load();
     } catch (e) {
       setPending(null);
-      setError(e instanceof Error ? e.message : 'הוספת המסלול נכשלה. נסו שוב.');
+      const details = e instanceof ApiError
+        ? (e.cause.details as { code?: string; add_card_url?: string } | undefined)
+        : undefined;
+      if (details?.code === 'no_payment_method') {
+        setNeedCard(details.add_card_url || '/provider/billing');
+      } else {
+        setError(e instanceof Error ? e.message : 'הוספת המסלול נכשלה. נסו שוב.');
+      }
     } finally {
       setBuying(false);
     }
@@ -131,7 +163,11 @@ function ProviderSubscribeInner() {
         `מחיר המסלול ${fmtPrice(Number(pending.tier.price_nis))} לתקופה של ${pending.tier.duration_days} ימים.`,
         pending.promo_end
           ? 'הפרסום ללא עלות לתקופת ניסיון. לא נחייב אותך ללא הודעה מראש.'
-          : '',
+          : [
+              `באישור יחויב הכרטיס השמור שלך ב-${fmtPrice(Number(pending.tier.price_nis))}.`,
+              `המסלול מתחדש אוטומטית בכל ${pending.tier.duration_days} ימים, בחיוב הכרטיס במחיר המסלול באותו מועד.`,
+              'אפשר לכבות את החידוש האוטומטי בעמוד מנוי ותשלום.',
+            ].join(' '),
       ].filter(Boolean).join(' ')
     : '';
 
@@ -151,11 +187,35 @@ function ProviderSubscribeInner() {
         </div>
       )}
 
+      {needCard && (
+        <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          <span className="flex items-start gap-2">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+            כדי להוסיף מסלול בתשלום יש להוסיף קודם כרטיס אשראי.
+          </span>
+          <Button asChild size="sm">
+            <Link href={needCard}>הוספת כרטיס</Link>
+          </Button>
+        </div>
+      )}
+
       {added && (
         <div role="status" className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
           <span className="flex items-center gap-2">
             <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden="true" />
-            המסלול נוסף. אפשר לפרסם בקטגוריה.
+            <span>
+              המסלול נוסף. אפשר לפרסם בקטגוריה.
+              {paid && <> הכרטיס חויב ב-<span dir="ltr">{fmtPrice(paid.nis)}</span>.</>}
+              {paid?.invoiceUrl && (
+                <>
+                  {' '}
+                  <a href={paid.invoiceUrl} target="_blank" rel="noopener noreferrer" className="font-semibold underline underline-offset-2">
+                    חשבונית{paid.invoiceNumber ? ` ${paid.invoiceNumber}` : ''}
+                    <span className="sr-only"> נפתח בחלון חדש</span>
+                  </a>
+                </>
+              )}
+            </span>
           </span>
           <Button asChild size="sm">
             <Link href={`/provider/marketplace/new?category=${encodeURIComponent(added)}`}>פרסום מודעה</Link>
@@ -241,7 +301,7 @@ function ProviderSubscribeInner() {
         open={!!pending}
         title="הוספת מסלול"
         message={confirmMessage}
-        confirmLabel="אישור"
+        confirmLabel={pending && !pending.promo_end ? 'אישור וחיוב' : 'אישור'}
         variant="primary"
         busy={buying}
         onConfirm={confirm}

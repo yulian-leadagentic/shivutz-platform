@@ -177,6 +177,164 @@ TIER = {"id": "tier-1", "category_code": "equipment", "slot_count": 5, "duration
         "price_nis": Decimal("149.00"), "tier_active": 1, "category_active": 1}
 
 
+class _Answer:
+    """What httpx.post gives back."""
+    def __init__(self, status_code, body):
+        self.status_code, self._body = status_code, body
+
+    def json(self):
+        if self._body is None:
+            raise ValueError("no json")
+        return self._body
+
+
+CHARGED = _Answer(200, {"status": "charged", "subscription_id": "paid-sub", "amount_nis": 149.0,
+                        "invoice_number": "3105", "invoice_url": "https://cardcom/doc/3105"})
+
+
+def _paid_rules(promo, lock=1, existing_after_lock=()):
+    """A provider's purchase once the promo is over. The "no plan here
+    yet" check runs twice, before the lock and under it."""
+    seen = []
+
+    def existing(_params):
+        seen.append(1)
+        return list(existing_after_lock) if len(seen) > 1 else []
+
+    rules = [r for r in _purchase_rules(promo=promo) if "AND category_code = %s" not in r[0]
+             and "SELECT * FROM marketplace_subscriptions" not in r[0]]
+    return [
+        ("AND category_code = %s AND status = 'active' AND expires_at > NOW()", existing),
+        ("SELECT GET_LOCK", [{"got": lock}]),
+        ("SELECT RELEASE_LOCK", [{"released": 1}]),
+        ("INSERT INTO payment_db.marketplace_charges", []),
+        ("SELECT * FROM marketplace_subscriptions WHERE id=%s",
+         lambda params: [{"id": params[0], "status": "active", "price_nis": Decimal("149.00")}]),
+    ] + rules
+
+
+class PaidPurchaseTest(unittest.TestCase):
+    """R37 4.1.2 · after the promo a provider's plan is charged for, and
+    only the payment service activates it."""
+
+    def _buy(self, cursor, answer=CHARGED, **body):
+        post = mock.Mock(return_value=answer) if not isinstance(answer, Exception) else mock.Mock(side_effect=answer)
+        self.conn = _conn(cursor)
+        with mock.patch.object(subs, "get_db", side_effect=lambda: self.conn), \
+             mock.patch.object(subs, "PAYMENT_FAKE_MODE", False), \
+             mock.patch.object(subs.httpx, "post", post):
+            self.post = post
+            return subs.purchase_subscription(PurchaseRequest(tier_id="tier-1", **body), **PROVIDER)
+
+    def _refused(self, cursor, answer, status, code):
+        with self.assertRaises(HTTPException) as ctx:
+            self._buy(cursor, answer)
+        self.assertEqual(ctx.exception.status_code, status)
+        if code:
+            self.assertEqual(ctx.exception.detail["code"], code)
+        return ctx.exception.detail
+
+    def test_the_purchase_is_written_down_with_the_tier_rows_price_then_charged(self):
+        for promo in (PAST, None, "not-a-date"):
+            cur = Cursor(_paid_rules(promo))
+            out = self._buy(cur)
+            sql, params = cur.ran("INSERT INTO payment_db.marketplace_charges")[0]
+            self.assertIn("'purchase'", sql)
+            self.assertIn("'pending'", sql)
+            # (id, entity type, entity, tier, category, slots, days, amount, auto_renew)
+            self.assertEqual(params[1:], ("service_provider", "prov-1", "tier-1", "equipment", 5, 30,
+                                          Decimal("149.00"), True), promo)
+            (url,), kwargs = self.post.call_args
+            self.assertTrue(url.endswith(f"/payments/marketplace/charges/{params[0]}/pay"))
+            self.assertEqual(kwargs["headers"], {"x-entity-id": "prov-1", "x-entity-type": "service_provider"})
+            self.assertEqual((out["id"], out["charged_nis"], out["invoice_number"]), ("paid-sub", 149.0, "3105"))
+
+    def test_user_org_writes_no_plan_itself(self):
+        cur = Cursor(_paid_rules(PAST))
+        self._buy(cur)
+        self.assertEqual(cur.ran("INSERT INTO marketplace_subscriptions"), [])
+
+    def test_the_request_cannot_name_the_amount(self):
+        cur = Cursor(_paid_rules(PAST))
+        self._buy(cur, price_nis=1, amount_nis=1, amount=1)
+        _, params = cur.ran("INSERT INTO payment_db.marketplace_charges")[0]
+        self.assertEqual(params[7], Decimal("149.00"))
+        self.assertNotIn("json", self.post.call_args.kwargs)
+
+    def test_renewal_off_at_purchase_is_carried_to_the_charge(self):
+        cur = Cursor(_paid_rules(PAST))
+        self._buy(cur, auto_renew=False)
+        _, params = cur.ran("INSERT INTO payment_db.marketplace_charges")[0]
+        self.assertIs(params[8], False)
+
+    def test_a_declined_card_activates_nothing_and_says_so_in_hebrew(self):
+        declined = _Answer(402, {"error": {"code": "http_402", "message": "x", "details": {
+            "code": "card_declined", "message": "החיוב לא אושר: כרטיס חסום. המסלול לא הופעל.", "reason": "כרטיס חסום"}}})
+        cur = Cursor(_paid_rules(PAST))
+        detail = self._refused(cur, declined, 402, "card_declined")
+        self.assertIn("המסלול לא הופעל", detail["message"])
+        self.assertEqual(detail["reason"], "כרטיס חסום")
+        self.assertEqual(cur.ran("SELECT * FROM marketplace_subscriptions WHERE id=%s"), [])
+        self.assertEqual(cur.ran("INSERT INTO marketplace_subscriptions"), [])
+
+    def test_no_card_on_file_points_at_the_page_that_adds_one(self):
+        no_card = _Answer(402, {"error": {"code": "http_402", "message": "x", "details": {
+            "code": "no_payment_method", "message": "אין כרטיס אשראי שמור."}}})
+        detail = self._refused(Cursor(_paid_rules(PAST)), no_card, 402, "no_payment_method")
+        self.assertEqual(detail["add_card_url"], "/provider/billing")
+
+    def test_cardcom_unreachable_is_passed_on_as_502(self):
+        down = _Answer(502, {"error": {"code": "http_502", "message": "x", "details": {
+            "code": "payment_provider_unreachable", "message": "לא הצלחנו להתחבר לחברת הסליקה."}}})
+        self._refused(Cursor(_paid_rules(PAST)), down, 502, "payment_provider_unreachable")
+
+    def test_no_answer_from_the_payment_service_says_to_look_before_trying_again(self):
+        import httpx
+        detail = self._refused(Cursor(_paid_rules(PAST)), httpx.ConnectError("refused"), 502, "payment_no_answer")
+        self.assertIn("מנוי ותשלום", detail["message"])
+
+    def test_an_answer_that_is_not_a_charge_is_not_a_plan(self):
+        for answer in (_Answer(500, None), _Answer(404, {"error": {"message": "charge_not_found"}}),
+                       _Answer(200, {"status": "charging", "subscription_id": None})):
+            cur = Cursor(_paid_rules(PAST))
+            self._refused(cur, answer, 502, "payment_failed")
+            self.assertEqual(cur.ran("SELECT * FROM marketplace_subscriptions WHERE id=%s"), [])
+
+    def test_a_second_click_while_the_first_is_being_charged_is_turned_away(self):
+        cur = Cursor(_paid_rules(PAST, lock=0))
+        self._refused(cur, CHARGED, 409, "purchase_in_progress")
+        self.assertEqual(cur.ran("INSERT INTO"), [])
+        self.post.assert_not_called()
+        self.assertEqual(cur.ran("SELECT RELEASE_LOCK"), [])   # not ours to release
+
+    def test_a_plan_that_appeared_while_waiting_stops_the_purchase_before_any_charge(self):
+        cur = Cursor(_paid_rules(PAST, existing_after_lock=[{"id": "just-bought"}]))
+        with self.assertRaises(HTTPException) as ctx:
+            self._buy(cur)
+        self.assertEqual((ctx.exception.status_code, ctx.exception.detail), (409, "already_subscribed_to_category"))
+        self.assertEqual(cur.ran("INSERT INTO"), [])
+        self.post.assert_not_called()
+
+    def test_the_lock_is_released_whatever_happened(self):
+        import httpx
+        for answer in (CHARGED, _Answer(402, {"error": {"details": {"code": "card_declined", "message": "לא"}}}),
+                       httpx.ReadTimeout("slow")):
+            cur = Cursor(_paid_rules(PAST))
+            try:
+                self._buy(cur, answer)
+            except HTTPException:
+                pass
+            (_, got), = cur.ran("SELECT GET_LOCK")
+            (_, released), = cur.ran("SELECT RELEASE_LOCK")
+            self.assertEqual(got, released)
+            self.assertLessEqual(len(got[0]), 64)
+
+    def test_the_second_look_for_a_plan_is_on_a_fresh_read(self):
+        cur = Cursor(_paid_rules(PAST))
+        self._buy(cur)
+        self.assertGreaterEqual(self.conn.rollback.call_count, 1)
+
+
 def _purchase_rules(tier=TIER, promo=FUTURE, existing=(), provider_status="active"):
     return [
         ("FROM org_db.service_providers", [{"status": provider_status}] if provider_status else []),
@@ -219,14 +377,15 @@ class PurchaseTest(unittest.TestCase):
         self.assertEqual(reg_sql, buy_sql)
         self.assertEqual(reg_params[1:], buy_params[1:])   # all but the generated id
 
-    def test_provider_after_the_promo_stops_at_payment(self):
-        for promo in (PAST, None, "not-a-date"):
-            cur = Cursor(_purchase_rules(promo=promo))
-            with self.assertRaises(HTTPException) as ctx:
-                self._buy(cur, fake_mode=False, **PROVIDER)
-            self.assertEqual(ctx.exception.status_code, 503, promo)
-            self.assertEqual(ctx.exception.detail["code"], "cardcom_not_configured")
-            self.assertEqual(cur.ran("INSERT INTO"), [])
+    def test_a_contractor_still_stops_at_payment(self):
+        tier2 = [("FROM org_db.contractors", [{"verification_tier": "tier_2"}])]
+        cur = Cursor(tier2 + _purchase_rules(promo=PAST))
+        with self.assertRaises(HTTPException) as ctx:
+            self._buy(cur, fake_mode=False,
+                      x_entity_id="con-1", x_entity_type="contractor", x_org_id="con-1")
+        self.assertEqual(ctx.exception.status_code, 503)
+        self.assertEqual(ctx.exception.detail["code"], "cardcom_not_configured")
+        self.assertEqual(cur.ran("INSERT INTO"), [])
 
     def test_provider_cannot_buy_housing(self):
         cur = Cursor(_purchase_rules(tier={**TIER, "category_code": "housing"}))

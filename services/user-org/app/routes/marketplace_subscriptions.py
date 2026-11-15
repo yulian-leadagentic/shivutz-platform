@@ -13,21 +13,31 @@ That swap is intentionally local to this file.
 R33 B.3 · service providers buy here too, to add a category after
 registration. During the launch promo their purchase writes the same
 promo row registration writes (services/provider_plans.py) and charges
-nothing, with or without PAYMENT_FAKE_MODE. After the promo a provider
-is in the same position as everyone else: there is no Cardcom charging
-for marketplace subscriptions yet, so the purchase answers 503.
+nothing, with or without PAYMENT_FAKE_MODE.
+
+R37 4.1.2 · after the promo a provider's plan is paid for. This route
+still decides whether the purchase may happen. When it may, it writes
+the purchase down (payment_db.marketplace_charges, with the tier row's
+price) and asks the payment service to charge the provider's card. The
+payment service writes the plan row itself, and only after Cardcom
+confirmed the charge. A declined card, a missing card or an unreachable
+Cardcom leave no plan. Contractors and corporations are where they
+were: no online payment for them here, 503.
 
 R34 5a · the plan's owner can also manage it: turn renewal back on,
-move to a bigger plan in the same category, and cancel. Nothing here
-charges or refunds. An upgrade is free while the launch promo runs and
-answers 503 afterwards, like a purchase. Cancelling is offered only for
-a plan nothing was paid for, because what a paid plan is owed on
-cancellation has not been decided.
+move to a bigger plan in the same category, and cancel. An upgrade is
+free while the launch promo runs. Afterwards it is refused: what moving
+to a bigger plan costs in the middle of a paid period has not been
+decided. Cancelling is offered only for a plan nothing was paid for,
+because what a paid plan is owed on cancellation has not been decided
+either.
 """
+import hashlib
 import os
 import uuid
 from typing import Optional
 
+import httpx
 from fastapi import APIRouter, HTTPException, Header
 from pydantic import BaseModel, Field
 from decimal import Decimal
@@ -41,6 +51,13 @@ from app.services.provider_plans import (
 router = APIRouter()
 
 PAYMENT_FAKE_MODE = os.getenv("PAYMENT_FAKE_MODE", "0") == "1"
+PAYMENT_SVC = os.getenv("PAYMENT_SERVICE_URL", "http://payment:3009")
+# Where a purchase that has to be paid for is written down. The payment
+# service charges from this row and nothing else (migration 104).
+CHARGES_TABLE = "payment_db.marketplace_charges"
+# Cardcom is given 15 seconds by the payment service; this is the wait
+# for the whole exchange.
+PAYMENT_WAIT_SECONDS = 40.0
 
 # The answer wherever a charge would be needed: buying a plan, and
 # moving to a bigger one once the launch promo is over.
@@ -217,6 +234,102 @@ def _serialize(row: dict) -> dict:
     return out
 
 
+# ── A purchase that is paid for ───────────────────────────────────────
+
+_NOT_ACTIVATED = "המסלול לא הופעל."
+
+
+def _payment_refusal(resp) -> dict:
+    """The payment service's own answer, code and Hebrew message, when it
+    gave one."""
+    try:
+        error = resp.json().get("error") or {}
+    except ValueError:
+        error = {}
+    details = error.get("details")
+    if isinstance(details, dict) and details.get("message"):
+        return details
+    return {"code": "payment_failed", "message": f"התשלום לא בוצע. {_NOT_ACTIVATED}"}
+
+
+def _buy_with_charge(conn, cur, entity_type: str, entity_id: str, tier: dict, auto_renew: bool) -> dict:
+    """R37 4.1.2 · write the purchase down, have it charged, and answer
+    with the plan the payment service activated.
+
+    `tier` is the row the caller already checked. Its price is the
+    amount; nothing from the request is.
+    """
+    # One purchase at a time per advertiser and category, so that two
+    # clicks cannot both get past the "no plan here yet" check and both
+    # be charged.
+    lock = "mpbuy:" + hashlib.sha1(
+        f"{entity_type}:{entity_id}:{tier['category_code']}".encode()
+    ).hexdigest()
+    cur.execute("SELECT GET_LOCK(%s, 0) AS got", (lock,))
+    if not (cur.fetchone() or {}).get("got"):
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "purchase_in_progress",
+                    "message": "רכישת מסלול בקטגוריה זו כבר מתבצעת. המתינו לסיומה."},
+        )
+    try:
+        # Asked again, holding the lock, on a fresh read: the check the
+        # caller made may be older than a purchase that just finished.
+        conn.rollback()
+        if _get_active_subscription(cur, entity_type, entity_id, tier["category_code"]):
+            raise HTTPException(status_code=409, detail="already_subscribed_to_category")
+
+        charge_id = str(uuid.uuid4())
+        cur.execute(
+            f"""INSERT INTO {CHARGES_TABLE}
+                    (id, kind, entity_type, entity_id, tier_id, category_code,
+                     slot_count, duration_days, amount_nis, auto_renew, status)
+                VALUES (%s, 'purchase', %s, %s, %s, %s, %s, %s, %s, %s, 'pending')""",
+            (charge_id, entity_type, entity_id, tier["id"], tier["category_code"],
+             tier["slot_count"], tier["duration_days"], tier["price_nis"], auto_renew),
+        )
+        conn.commit()
+
+        try:
+            resp = httpx.post(
+                f"{PAYMENT_SVC}/payments/marketplace/charges/{charge_id}/pay",
+                headers={"x-entity-id": entity_id, "x-entity-type": entity_type},
+                timeout=PAYMENT_WAIT_SECONDS,
+            )
+        except httpx.HTTPError:
+            # No answer. The charge may still have gone through, in which
+            # case the plan is there; the message says where to look.
+            raise HTTPException(
+                status_code=502,
+                detail={"code": "payment_no_answer",
+                        "message": "לא התקבלה תשובה משירות התשלומים. "
+                                   "לפני ניסיון נוסף כדאי לבדוק בעמוד מנוי ותשלום אם המסלול נוסף."},
+            )
+
+        if resp.status_code in (402, 502, 503):
+            detail = _payment_refusal(resp)
+            if detail.get("code") == "no_payment_method":
+                detail["add_card_url"] = "/provider/billing"
+            raise HTTPException(status_code=resp.status_code, detail=detail)
+        paid = resp.json() if resp.status_code == 200 else {}
+        if paid.get("status") != "charged" or not paid.get("subscription_id"):
+            raise HTTPException(
+                status_code=502,
+                detail={"code": "payment_failed", "message": f"התשלום לא הושלם. {_NOT_ACTIVATED}"},
+            )
+
+        conn.rollback()   # a fresh read: the plan row was written by the payment service
+        cur.execute("SELECT * FROM marketplace_subscriptions WHERE id=%s", (paid["subscription_id"],))
+        plan = _serialize(cur.fetchone())
+        plan["charged_nis"] = paid.get("amount_nis")
+        plan["invoice_number"] = paid.get("invoice_number")
+        plan["invoice_url"] = paid.get("invoice_url")
+        return plan
+    finally:
+        cur.execute("SELECT RELEASE_LOCK(%s)", (lock,))
+        cur.fetchone()
+
+
 # ── Request models ───────────────────────────────────────────────────
 
 class QuoteRequest(BaseModel):
@@ -358,14 +471,13 @@ def purchase_subscription(
     x_entity_type: Optional[str] = Header(default=None),
     x_org_id:      Optional[str] = Header(default=None),
 ):
-    """Create + activate a subscription.
+    """Buy a plan.
 
-    PAYMENT_FAKE_MODE path (current): instantly activates with no
-    payment redirect. Useful for staging + local until real Cardcom
-    creds are provisioned.
-
-    Real-Cardcom path (future): create a 'pending' subscription, return
-    a Cardcom LowProfile URL, activate via webhook on ResponseCode=0.
+    A provider during the launch promo: the promo row, nothing charged.
+    A provider after it: the card on file is charged the tier's price
+    and the plan is activated only if the charge succeeds (R37 4.1.2).
+    A contractor or corporation: no online payment here yet, 503 (the
+    PAYMENT_FAKE_MODE branch below is for local work only).
     """
     entity_type, entity_id = _resolve_advertiser(x_entity_id, x_entity_type, x_org_id)
     _require_advertiser_approved(entity_type, entity_id)
@@ -411,10 +523,13 @@ def purchase_subscription(
             cur.execute("SELECT * FROM marketplace_subscriptions WHERE id=%s", (sub_id,))
             return _serialize(cur.fetchone())
 
-        # Everyone else, and a provider once the promo is over, has to
-        # pay, and there is no charging for marketplace subscriptions
-        # yet (R34 5b). Checked here, after the request is known to be
-        # a valid one, so a bad tier id reads as a bad tier id.
+        # R37 4.1.2 · the promo is over and the plan is paid for.
+        if entity_type == "service_provider":
+            return _buy_with_charge(conn, cur, entity_type, entity_id, tier, bool(body.auto_renew))
+
+        # A contractor or a corporation has to pay too, and there is no
+        # charging for them here. Checked after the request is known to
+        # be a valid one, so a bad tier id reads as a bad tier id.
         if not PAYMENT_FAKE_MODE:
             raise HTTPException(status_code=503, detail=_NO_ONLINE_PAYMENT)
 
@@ -569,9 +684,10 @@ def upgrade_subscription(
     snapshot change.
 
     A provider during the launch promo pays nothing, as it would have
-    paid nothing had it picked this tier at registration. Anyone else,
-    and a provider after the promo, would owe the difference, and there
-    is no charging for these plans yet: 503, the answer a purchase gets.
+    paid nothing had it picked this tier at registration. After the
+    promo the move would have to be paid for, and what it costs in the
+    middle of a paid period is not decided: refused, 409, for a
+    provider. A contractor or corporation gets 503 as before.
     """
     entity_type, entity_id = _resolve_advertiser(x_entity_id, x_entity_type, x_org_id)
     _require_advertiser_approved(entity_type, entity_id)
@@ -611,6 +727,12 @@ def upgrade_subscription(
 
         promo_end = launch_promo_end(cur) if entity_type == "service_provider" else None
         if not promo_end:
+            if entity_type == "service_provider":
+                raise HTTPException(
+                    status_code=409,
+                    detail={"code": "paid_upgrade_unsupported",
+                            "message": "שדרוג של מסלול בתשלום אינו זמין כרגע. פנו לתמיכה."},
+                )
             raise HTTPException(status_code=503, detail=_NO_ONLINE_PAYMENT)
 
         cur.execute(

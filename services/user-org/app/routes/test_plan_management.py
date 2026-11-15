@@ -116,10 +116,14 @@ class UpgradeTest(unittest.TestCase):
     def test_an_unknown_tier_is_404(self):
         self._refused(Cursor(_manage_rules(tier=None)), 404, "tier_not_found", **PROVIDER)
 
-    def test_after_the_promo_there_is_nothing_to_charge_with(self):
+    def test_after_the_promo_a_providers_upgrade_is_refused_and_nothing_is_charged(self):
+        # R37 4.1.2 · a purchase is charged after the promo; an upgrade
+        # is not, because what it costs mid-period is not decided. The
+        # refusal no longer says "no online payment", which stopped
+        # being true.
         for promo in (PAST, None):
             for fake_mode in (False, True):
-                self._refused(Cursor(_manage_rules(promo=promo)), 503, "cardcom_not_configured",
+                self._refused(Cursor(_manage_rules(promo=promo)), 409, "paid_upgrade_unsupported",
                               fake_mode=fake_mode, **PROVIDER)
 
     def test_the_promo_is_the_providers_only(self):
