@@ -5,13 +5,14 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   Loader2, MapPin, Users, CheckCircle2, Phone, Calendar,
-  Home, Wrench, Briefcase, MoreHorizontal, AlertCircle, Share2,
+  AlertCircle, Share2,
   Building2, Sparkles, X,
 } from 'lucide-react';
 import { marketplaceApi } from '@/lib/api';
 import type { MarketplaceListing } from '@/types';
 import { Button } from '@/components/ui/button';
 import { CATEGORY_HE_FALLBACK, PRICE_UNIT_HE, labelFor } from '@/lib/labels';
+import { categoryStyle } from '@/lib/categoryStyle';
 import {
   ListingInlineSponsor,
   ListingRailSponsor,
@@ -29,9 +30,6 @@ import { postAdEvent } from '@/lib/adEvents';
 // just `/`), and the "back to all listings" link becomes a close
 // button when there is no page to go back to.
 
-const CATEGORY_ICONS: Record<string, React.ElementType> = {
-  housing: Home, equipment: Wrench, services: Briefcase, other: MoreHorizontal,
-};
 const STATUS_HE: Record<string, { label: string; color: string }> = {
   active:  { label: 'זמין', color: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
   rented:  { label: 'מושכר', color: 'text-amber-700 bg-amber-50 border-amber-200' },
@@ -193,12 +191,11 @@ export default function ListingDetailPanel({
     );
   }
 
-  const Icon = CATEGORY_ICONS[listing.category] ?? MoreHorizontal;
+  const look = categoryStyle(listing.category);
+  const Icon = look.icon;
   const catHe = labelFor(CATEGORY_HE_FALLBACK, listing.category);
   const statusInfo = STATUS_HE[listing.status];
-  const catColor = listing.category === 'housing' ? 'bg-brand-500' :
-                   listing.category === 'equipment' ? 'bg-amber-500' :
-                   listing.category === 'services'  ? 'bg-emerald-500' : 'bg-slate-400';
+  const catColor = look.bar;
 
   return (
     <div className="grid lg:grid-cols-3 gap-6">
@@ -241,11 +238,7 @@ export default function ListingDetailPanel({
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div className="flex-1 min-w-0">
               <div className="flex flex-wrap gap-2 mb-3">
-                <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full ${
-                  listing.category === 'housing'   ? 'bg-brand-100 text-brand-700' :
-                  listing.category === 'equipment' ? 'bg-amber-100 text-amber-700' :
-                  listing.category === 'services'  ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'
-                }`}>
+                <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full ${look.chip}`}>
                   <Icon className="h-3 w-3" />
                   {catHe}
                 </span>

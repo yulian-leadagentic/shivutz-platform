@@ -260,7 +260,7 @@ export interface MarketplaceListing {
   corporation_id?: string;
   corporation_name?: string;
   is_corporation_verified?: boolean;
-  category: 'housing' | 'equipment' | 'services' | 'other';
+  category: 'insurance' | 'transport' | 'housing' | 'equipment' | 'scaffolding' | 'courses' | 'services' | 'other';
   subcategory?: string;
   title: string;
   description?: string;

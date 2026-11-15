@@ -23,7 +23,10 @@ function emptyTierInput(): TierInput {
     name_en: '',
     slot_count: 5,
     duration_days: 30,
-    price_nis: 0,
+    // D4 (Yulian, 15.11): the default price of a provider plan. Only a
+    // starting value for the field; what is saved is what the admin
+    // leaves in it.
+    price_nis: 200,
     sort_order: 100,
     is_active: true,
   };

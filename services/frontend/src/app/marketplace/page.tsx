@@ -4,13 +4,15 @@ import { Suspense, useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import {
-  Search, Loader2, Home, Wrench, Briefcase, MoreHorizontal,
-  Building2, Filter, X, Tag,
+  Search, Loader2,
+  Building2, Filter, X,
 } from 'lucide-react';
 import { marketplaceApi } from '@/lib/api';
 import type { MarketplaceListing } from '@/types';
 import { useEnums } from '@/features/enums/EnumsContext';
 import ListingCard from '@/components/marketplace/ListingCard';
+import { CATEGORY_HE_FALLBACK } from '@/lib/labels';
+import { categoryStyle } from '@/lib/categoryStyle';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import Logo from '@/components/Logo';
@@ -29,21 +31,16 @@ type CategoryOption = { value: string; label: string; icon: typeof Filter };
 // wins — but we keep the fallback so a network blip doesn't strand the
 // filter bar with nothing but "הכל". Do NOT delete: this is the safety
 // net the guardrail calls out.
+//
+// R37 Part 3 · the fallback is our list, in the home chips' order.
 const FALLBACK_CATEGORIES: CategoryOption[] = [
   { value: '', label: 'הכל', icon: Filter },
-  { value: 'housing', label: 'דיור', icon: Home },
-  { value: 'equipment', label: 'ציוד', icon: Wrench },
-  { value: 'services', label: 'שירותים', icon: Briefcase },
-  { value: 'other', label: 'אחר', icon: MoreHorizontal },
+  ...['insurance', 'transport', 'housing', 'equipment', 'scaffolding', 'courses'].map((code) => ({
+    value: code,
+    label: CATEGORY_HE_FALLBACK[code],
+    icon:  categoryStyle(code).icon,
+  })),
 ];
-
-// Icon-per-code for known codes; unknown codes get a neutral tag icon.
-const CATEGORY_ICON: Record<string, typeof Filter> = {
-  housing:   Home,
-  equipment: Wrench,
-  services:  Briefcase,
-  other:     MoreHorizontal,
-};
 
 function SkeletonCard() {
   return (
@@ -122,7 +119,7 @@ function MarketplacePageInner() {
           .map((r) => ({
             value: r.code,
             label: r.name_he,
-            icon:  CATEGORY_ICON[r.code] ?? Tag,
+            icon:  categoryStyle(r.code).icon,
           }));
         if (mapped.length === 0) return;
         setCategories([{ value: '', label: 'הכל', icon: Filter }, ...mapped]);

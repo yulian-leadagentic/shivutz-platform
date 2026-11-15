@@ -46,11 +46,19 @@ export const PRICE_UNIT_HE: Record<string, string> = {
 // loaded. The live admin table wins when it does. Kept here so the
 // same fallback is used everywhere — `/marketplace` and the corp
 // "new listing" form both used to define it separately.
+//
+// R37 Part 3 · the names are the home page's six chips. `services` and
+// `other` are no longer on that list; they stay here for the rows that
+// still carry them.
 export const CATEGORY_HE_FALLBACK: Record<string, string> = {
-  housing:   'דיור',
-  equipment: 'ציוד',
-  services:  'שירותים',
-  other:     'אחר',
+  insurance:   'ביטוח',
+  transport:   'הסעות',
+  housing:     'דיור לעובדים',
+  equipment:   'ציוד וכלי עבודה',
+  scaffolding: 'פיגומים',
+  courses:     'קורסים והסמכות',
+  services:    'שירותים',
+  other:       'אחר',
 };
 
 // Subscription tier — short form used in dashboard chips and admin
