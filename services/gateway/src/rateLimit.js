@@ -31,6 +31,10 @@ const LIMITS = {
   user:        parseInt(process.env.RATE_LIMIT_USER  || '200'),
   contractor:  parseInt(process.env.RATE_LIMIT_USER  || '200'),
   corporation: parseInt(process.env.RATE_LIMIT_USER  || '200'),
+  // R37 D8 (Yulian, 15.11): the same ceiling as a contractor and a
+  // corporation. A role missing from this table gets the anonymous
+  // ceiling, which is where a logged-in provider had been.
+  service_provider: parseInt(process.env.RATE_LIMIT_USER || '200'),
   admin:       parseInt(process.env.RATE_LIMIT_ADMIN || '500'),
 };
 
@@ -49,6 +53,7 @@ const TELEMETRY_LIMITS = {
   user:        parseInt(process.env.RATE_LIMIT_TELEMETRY_USER || '400'),
   contractor:  parseInt(process.env.RATE_LIMIT_TELEMETRY_USER || '400'),
   corporation: parseInt(process.env.RATE_LIMIT_TELEMETRY_USER || '400'),
+  service_provider: parseInt(process.env.RATE_LIMIT_TELEMETRY_USER || '400'),
   admin:       parseInt(process.env.RATE_LIMIT_TELEMETRY_USER || '400'),
 };
 
