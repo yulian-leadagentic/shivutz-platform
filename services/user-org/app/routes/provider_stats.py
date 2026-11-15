@@ -31,11 +31,16 @@ Privacy and authorization, the two rules this file exists to keep:
      first place; reveal rows do carry the viewer, and are only ever
      COUNTed here.
 
-A day is a calendar day as the database sees it: CURDATE() and
-DATE(at) in the same session. The window is whole days ending today,
-so the per-day series adds up to the totals exactly, and a direct
-`SELECT COUNT(*) ... WHERE at >= CURDATE() - INTERVAL 29 DAY` gives the
-number the dashboard shows.
+A day is a calendar day in Israel (Asia/Jerusalem), whatever clock the
+database keeps. The database runs in UTC, and R34 counted days on its
+clock: "today" turned over at 02:00 or 03:00 local time and a view at
+01:30 was filed under yesterday (R34 finding 6). Now the window is
+whole local days ending today. Rows are read grouped by UTC hour and
+put into local days here, so the summer-time change inside a window is
+handled by the time zone database and not by a fixed offset. Totals and
+the per-day series are built from the same rows, so they still add up
+exactly. A direct check is
+`SELECT COUNT(*) ... WHERE at >= <local midnight of the first day, as UTC>`.
 
 No joins across tables: marketplace_listings is utf8mb4_unicode_ci and
 the three tables read here were created under the server default, so a
@@ -43,7 +48,8 @@ join on the id columns is an illegal mix of collations. The listing ids
 are read once and bound as parameters instead.
 """
 import json
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta, timezone
+from zoneinfo import ZoneInfo
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Header
@@ -80,6 +86,37 @@ def _regions_of(listing: dict) -> list:
     if isinstance(raw, list) and raw:
         return [r for r in raw if isinstance(r, str)]
     return [listing["region"]] if listing.get("region") else []
+
+
+_LOCAL = ZoneInfo("Asia/Jerusalem")
+_HOUR_FORMAT = "%Y-%m-%d %H:00:00"
+
+
+def local_window(now_utc: datetime, days: int) -> tuple[date, date, datetime]:
+    """The window as (first local day, today's local day, the UTC
+    instant the first day begins)."""
+    today = now_utc.replace(tzinfo=timezone.utc).astimezone(_LOCAL).date()
+    since = today - timedelta(days=days - 1)
+    since_utc = (
+        datetime.combine(since, time.min, tzinfo=_LOCAL)
+        .astimezone(timezone.utc).replace(tzinfo=None)
+    )
+    return since, today, since_utc
+
+
+def by_local_day(rows: list[dict], id_key: str, metrics: tuple) -> list[dict]:
+    """Rows grouped by UTC hour (`hour`, 'YYYY-MM-DD HH:00:00') folded
+    into rows per local day (`day`), the shape build_stats reads."""
+    folded: dict = {}
+    for row in rows:
+        hour = row["hour"]
+        if isinstance(hour, str):
+            hour = datetime.strptime(hour, _HOUR_FORMAT)
+        day = hour.replace(tzinfo=timezone.utc).astimezone(_LOCAL).date()
+        slot = folded.setdefault((row[id_key], day), dict.fromkeys(metrics, 0))
+        for metric in metrics:
+            slot[metric] += int(row.get(metric) or 0)
+    return [{id_key: key, "day": day, **counts} for (key, day), counts in folded.items()]
 
 
 def demand_scope(listings: list[dict], primary_category: Optional[str]) -> tuple[dict, str]:
@@ -214,10 +251,14 @@ def provider_stats(
     conn = get_db()
     try:
         cur = conn.cursor()
-        # CURDATE() rides along so "today" is the database's today, the
-        # same clock DATE(at) is read on below.
+        # The database's clock rides along, in UTC, with how far this
+        # session's own time is from UTC (0 on a UTC server). Every
+        # timestamp below is compared and bucketed in UTC through that
+        # offset, so the answer does not depend on the session's zone.
         cur.execute(
-            """SELECT primary_category, CURDATE() AS today
+            """SELECT primary_category,
+                      UTC_TIMESTAMP() AS now_utc,
+                      TIMESTAMPDIFF(SECOND, UTC_TIMESTAMP(), NOW()) AS tz_offset_s
                  FROM service_providers
                 WHERE id = %s AND deleted_at IS NULL
                 LIMIT 1""",
@@ -226,8 +267,10 @@ def provider_stats(
         provider = cur.fetchone()
         if not provider:
             raise HTTPException(status_code=404, detail="provider_not_found")
-        today: date = provider["today"]
-        since = today - timedelta(days=days - 1)
+        offset_s = int(provider.get("tz_offset_s") or 0)
+        since, today, since_utc = local_window(provider["now_utc"], days)
+        # The window's start as this session writes timestamps.
+        since_at = since_utc + timedelta(seconds=offset_s)
 
         cur.execute(
             """SELECT id, title, category, region, regions, status
@@ -247,7 +290,7 @@ def provider_stats(
             placeholders = ",".join(["%s"] * len(listing_ids))
             cur.execute(
                 f"""SELECT target_id,
-                           DATE(at)                             AS day,
+                           DATE_FORMAT(at - INTERVAL %s SECOND, '%%Y-%%m-%%d %%H:00:00') AS hour,
                            SUM(event_type='listing_impression') AS impressions,
                            SUM(event_type='listing_open')       AS opens
                       FROM promo_events
@@ -255,26 +298,26 @@ def provider_stats(
                        AND target_id IN ({placeholders})
                        AND event_type IN ('listing_impression', 'listing_open')
                        AND at >= %s
-                     GROUP BY target_id, day""",
-                (*listing_ids, since),
+                     GROUP BY target_id, hour""",
+                (offset_s, *listing_ids, since_at),
             )
-            event_rows = cur.fetchall()
+            event_rows = by_local_day(cur.fetchall(), "target_id", ("impressions", "opens"))
 
             # The provider's own row is left out: revealing your own
             # listing is not a lead.
             cur.execute(
                 f"""SELECT listing_id,
-                           DATE(revealed_at) AS day,
+                           DATE_FORMAT(revealed_at - INTERVAL %s SECOND, '%%Y-%%m-%%d %%H:00:00') AS hour,
                            COUNT(*)          AS reveals
                       FROM marketplace_reveals
                      WHERE listing_id IN ({placeholders})
                        AND revealed_at >= %s
                        AND NOT (viewer_entity_type = 'service_provider'
                                 AND viewer_entity_id = %s)
-                     GROUP BY listing_id, day""",
-                (*listing_ids, since, x_entity_id),
+                     GROUP BY listing_id, hour""",
+                (offset_s, *listing_ids, since_at, x_entity_id),
             )
-            reveal_rows = cur.fetchall()
+            reveal_rows = by_local_day(cur.fetchall(), "listing_id", ("reveals",))
 
         scope, scope_source = demand_scope(listings, provider.get("primary_category"))
         searches = 0
@@ -287,7 +330,7 @@ def provider_stats(
                      WHERE searched_at >= %s
                        AND (viewer_type IS NULL OR viewer_type NOT IN ({viewers}))
                        AND {scope_sql}""",
-                (since, *_NON_CUSTOMER_VIEWERS, *scope_params),
+                (since_at, *_NON_CUSTOMER_VIEWERS, *scope_params),
             )
             searches = int(cur.fetchone()["n"] or 0)
 

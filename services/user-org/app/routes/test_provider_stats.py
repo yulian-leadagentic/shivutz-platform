@@ -8,7 +8,7 @@ caller's own id. The SQL is not executed here; that is a staging check.
 """
 import json
 import unittest
-from datetime import date
+from datetime import date, datetime, timedelta
 from unittest import mock
 
 from fastapi import HTTPException
@@ -221,12 +221,63 @@ class RouteAuthTest(unittest.TestCase):
         self.assertEqual(len(cursor.calls), 1)
 
 
+class LocalDayTest(unittest.TestCase):
+    """R37 Part 5 item 8 · a day on the dashboard is a day in Israel."""
+
+    def test_winter_the_day_starts_at_22_utc(self):
+        # 15 Nov, 23:30 in Israel (UTC+2)
+        since, today, since_utc = provider_stats.local_window(datetime(2026, 11, 15, 21, 30), 7)
+        self.assertEqual((since, today), (date(2026, 11, 9), date(2026, 11, 15)))
+        self.assertEqual(since_utc, datetime(2026, 11, 8, 22, 0))
+
+    def test_after_local_midnight_it_is_tomorrow_although_utc_has_not_turned(self):
+        # 16 Nov, 00:30 in Israel; still the 15th in UTC
+        since, today, _ = provider_stats.local_window(datetime(2026, 11, 15, 22, 30), 7)
+        self.assertEqual((since, today), (date(2026, 11, 10), date(2026, 11, 16)))
+
+    def test_summer_the_day_starts_at_21_utc(self):
+        since, today, since_utc = provider_stats.local_window(datetime(2026, 7, 10, 12, 0), 7)
+        self.assertEqual((since, today), (date(2026, 7, 4), date(2026, 7, 10)))
+        self.assertEqual(since_utc, datetime(2026, 7, 3, 21, 0))
+
+    def test_a_window_across_the_end_of_summer_time(self):
+        # Clocks went back on 25 Oct 2026. The window's first day is in
+        # summer time (UTC+3), today is in winter time (UTC+2).
+        since, today, since_utc = provider_stats.local_window(datetime(2026, 11, 15, 10, 0), 30)
+        self.assertEqual((since, today), (date(2026, 10, 17), date(2026, 11, 15)))
+        self.assertEqual(since_utc, datetime(2026, 10, 16, 21, 0))
+
+    def test_hours_are_put_into_local_days(self):
+        rows = [
+            {"target_id": "l1", "hour": "2026-11-14 21:00:00", "impressions": 2, "opens": 0},   # 23:00 on the 14th
+            {"target_id": "l1", "hour": "2026-11-14 22:00:00", "impressions": 3, "opens": 1},   # 00:00 on the 15th
+            {"target_id": "l1", "hour": "2026-11-15 10:00:00", "impressions": 1, "opens": 1},
+            {"target_id": "l2", "hour": datetime(2026, 7, 1, 21, 0), "impressions": 5, "opens": 0},  # 00:00 on 2 Jul
+        ]
+        out = {(r["target_id"], r["day"]): (r["impressions"], r["opens"])
+               for r in provider_stats.by_local_day(rows, "target_id", ("impressions", "opens"))}
+        self.assertEqual(out, {
+            ("l1", date(2026, 11, 14)): (2, 0),
+            ("l1", date(2026, 11, 15)): (4, 2),
+            ("l2", date(2026, 7, 2)):   (5, 0),
+        })
+
+    def test_the_day_the_clocks_go_back_has_25_hours_and_loses_none(self):
+        # 25 Oct 2026 in Israel runs from 21:00 UTC on the 24th to 22:00 UTC on the 25th.
+        rows = [{"listing_id": "l1", "hour": datetime(2026, 10, 24, 21, 0) + timedelta(hours=h), "reveals": 1}
+                for h in range(25)]
+        out = provider_stats.by_local_day(rows, "listing_id", ("reveals",))
+        self.assertEqual(out, [{"listing_id": "l1", "day": date(2026, 10, 25), "reveals": 25}])
+
+
 class RouteQueryBindingTest(unittest.TestCase):
+    # 15 Nov 2026, 10:00 UTC: noon in Israel.
+    NOW_UTC = datetime(2026, 11, 15, 10, 0)
     TODAY = date(2026, 11, 15)
 
-    def _run(self, days=7, **cursor_kwargs):
+    def _run(self, days=7, tz_offset_s=0, **cursor_kwargs):
         cursor = _RecordingCursor(
-            provider={"primary_category": "transport", "today": self.TODAY},
+            provider={"primary_category": "transport", "now_utc": self.NOW_UTC, "tz_offset_s": tz_offset_s},
             **cursor_kwargs,
         )
         conn = _conn(cursor)
@@ -243,11 +294,12 @@ class RouteQueryBindingTest(unittest.TestCase):
     def test_every_query_is_bound_to_the_caller(self):
         out, cursor = self._run(
             listings=[_listing("l1", region="north"), _listing("l2", status="paused")],
-            events=[{"target_id": "l1", "day": date(2026, 11, 14), "impressions": 6, "opens": 2}],
-            reveals=[{"listing_id": "l1", "day": date(2026, 11, 15), "reveals": 1}],
+            events=[{"target_id": "l1", "hour": "2026-11-14 09:00:00", "impressions": 6, "opens": 2}],
+            reveals=[{"listing_id": "l1", "hour": "2026-11-15 08:00:00", "reveals": 1}],
             searches=9,
         )
-        since = date(2026, 11, 9)
+        # The window's first local day, 9 Nov, begins at 22:00 UTC on the 8th.
+        since = datetime(2026, 11, 8, 22, 0)
 
         _, params = self._call(cursor, "service_providers")
         self.assertEqual(params, ("p1",))
@@ -259,10 +311,11 @@ class RouteQueryBindingTest(unittest.TestCase):
 
         sql, params = self._call(cursor, "promo_events")
         self.assertIn("target_type = 'marketplace_listing'", sql)
-        self.assertEqual(params, ("l1", "l2", since))
+        self.assertEqual(params, (0, "l1", "l2", since))
+        self.assertIn("GROUP BY target_id, hour", sql)
 
         sql, params = self._call(cursor, "marketplace_reveals")
-        self.assertEqual(params, ("l1", "l2", since, "p1"))
+        self.assertEqual(params, (0, "l1", "l2", since, "p1"))
 
         sql, params = self._call(cursor, "search_log")
         self.assertEqual(sql.count("%s"), len(params))
@@ -287,6 +340,27 @@ class RouteQueryBindingTest(unittest.TestCase):
             "categories": [{"code": "transport", "name": "הסעות", "regions": ["north"]}],
         })
 
+    def test_a_view_after_local_midnight_counts_for_the_new_day(self):
+        # 22:30 UTC on the 14th is 00:30 on the 15th in Israel. On the
+        # database's clock it was still the 14th.
+        out, _ = self._run(
+            listings=[_listing("l1")],
+            events=[{"target_id": "l1", "hour": "2026-11-14 22:00:00", "impressions": 4, "opens": 0}],
+        )
+        by_day = {d["day"]: d["impressions"] for d in out["series"]}
+        self.assertEqual((by_day["2026-11-14"], by_day["2026-11-15"]), (0, 4))
+        self.assertEqual(out["totals"]["impressions"], sum(by_day.values()))
+
+    def test_a_session_that_is_not_on_utc_is_brought_back_to_utc(self):
+        # A database session two hours ahead of UTC writes its
+        # timestamps two hours ahead; the bounds follow and the hour
+        # buckets are shifted back in the query itself.
+        out, cursor = self._run(tz_offset_s=7200, listings=[_listing("l1")])
+        _, params = self._call(cursor, "promo_events")
+        self.assertEqual(params, (7200, "l1", datetime(2026, 11, 9, 0, 0)))
+        _, params = self._call(cursor, "search_log")
+        self.assertEqual(params[0], datetime(2026, 11, 9, 0, 0))
+
     def test_no_listings_skips_the_listing_queries_and_uses_the_trade(self):
         out, cursor = self._run(days=30, listings=[], searches=4)
         tables = " ".join(sql for sql, _ in cursor.calls)
@@ -302,7 +376,7 @@ class RouteQueryBindingTest(unittest.TestCase):
     def test_response_carries_counts_only(self):
         out, _ = self._run(
             listings=[_listing("l1")],
-            reveals=[{"listing_id": "l1", "day": self.TODAY, "reveals": 3}],
+            reveals=[{"listing_id": "l1", "hour": "2026-11-15 09:00:00", "reveals": 3}],
         )
         blob = json.dumps(out, ensure_ascii=False)
         for forbidden in ("viewer", "session", "actor", "query", "phone"):
