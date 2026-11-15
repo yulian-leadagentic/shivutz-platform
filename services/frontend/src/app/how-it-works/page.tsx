@@ -251,7 +251,7 @@ export default function HowItWorksPage() {
           </li>
           <li className="flex items-start gap-2">
             <CheckCircle2 className="h-4 w-4 text-emerald-600 mt-1 shrink-0" />
-            <span>ספק שירותים? הרשמה חופשית ופרסום ללא עלות עד סוף 2026.</span>
+            <span>ספק שירותים? הרשמה ופרסום ללא עלות לתקופת ניסיון.</span>
           </li>
         </ul>
         <div className="pt-2 flex flex-wrap gap-3">
