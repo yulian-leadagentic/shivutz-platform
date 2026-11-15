@@ -143,7 +143,7 @@ export default function NewListingPage() {
         </button>
         <div>
           <h1 className="text-2xl font-bold text-slate-900">מודעה חדשה</h1>
-          <p className="text-sm text-slate-500">פרסום ללא עלות למנויים</p>
+          <p className="text-sm text-slate-500">פרסום דיור לעובדים במסגרת המנוי שלך</p>
         </div>
       </div>
 

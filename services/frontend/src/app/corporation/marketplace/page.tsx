@@ -106,7 +106,7 @@ export default function CorporationMarketplacePage() {
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">המודעות שלי</h1>
-          <p className="text-sm text-slate-500 mt-1">ניהול פרסומים בשירותים נלווים — דיור, ציוד ושירותים</p>
+          <p className="text-sm text-slate-500 mt-1">ניהול פרסומים בשירותים נלווים · דיור לעובדים</p>
         </div>
         <div className="flex gap-2">
           <Link href="/corporation/marketplace/new">
