@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Loader2, Plus, Trash2, Save, Power, PowerOff } from 'lucide-react';
+import { AlertTriangle, Loader2, Plus, Trash2, Save, Power, PowerOff } from 'lucide-react';
 import {
   marketplaceAdminApi,
   type MarketplaceCategory,
@@ -73,7 +73,7 @@ export default function MarketplaceAdminPage() {
       <div>
         <h1 className="text-xl font-bold text-slate-900">ניהול קטגוריות שירותים נלווים</h1>
         <p className="text-sm text-slate-500 mt-1">
-          הקטגוריות מוצגות לבעלי המנוי בעת רכישה. כל קטגוריה כוללת מסלולי מנוי משלה (כמות מודעות וזמן פרסום).
+          כאן נקבעות הקטגוריות של השירותים הנלווים ומחיר כל מסלול. ספק שירות יכול לפרסם בקטגוריה רק כשיש לו מסלול פעיל בה.
         </p>
       </div>
 
@@ -98,7 +98,14 @@ export default function MarketplaceAdminPage() {
           categoryCode={selectedCode}
           tiers={tiers}
           loading={loadingTiers}
-          onChange={() => selectedCode && loadTiers(selectedCode)}
+          onChange={() => {
+            if (selectedCode) loadTiers(selectedCode);
+            // R33 B.6 · a tier added, switched off or repriced can
+            // change whether its category still has a paid plan, which
+            // is what the warning in the list says. Re-read the list
+            // quietly, without the spinner loadCategories() shows.
+            marketplaceAdminApi.listCategories().then(setCategories).catch(() => {});
+          }}
         />
       </div>
     </div>
@@ -202,6 +209,12 @@ function CategoriesPanel({
                     <div className="min-w-0">
                       <p className="font-medium text-slate-900 truncate">{c.name_he}</p>
                       <p className="text-xs text-slate-500 font-mono truncate" dir="ltr">{c.code}</p>
+                      {c.active_paid_tiers === 0 && (
+                        <p className="mt-1.5 flex items-start gap-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-medium leading-snug text-amber-900">
+                          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                          <span>אין מסלול פעיל, ספקים לא יכולים לפרסם כאן</span>
+                        </p>
+                      )}
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                       {!c.is_active && <Badge variant="secondary">מושבת</Badge>}

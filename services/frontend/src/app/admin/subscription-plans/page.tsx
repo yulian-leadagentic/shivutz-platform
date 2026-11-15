@@ -169,7 +169,7 @@ export default function SubscriptionPlansPage() {
                 admin screens. Say so, so nobody re-hunts them here. */}
             {et === 'service_provider' && (
               <p className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
-                מסלולי השירותים הנלווים (₪149 / ₪399) מנוהלים ב-<Link href="/admin/marketplace" className="text-brand-700 hover:underline">קטגוריות שירותים נלווים</Link>.
+                מסלולי השירותים הנלווים (₪149 / ₪399) מנוהלים ב-<Link href="/admin/marketplace" className="text-brand-700 hover:underline">שירותים נלווים · קטגוריות ומחירים</Link>.
                 מחירי הפרסום בסלוטים מנוהלים ב-<Link href="/admin/sponsors" className="text-brand-700 hover:underline">חסויות</Link>.
                 כאן קובעים רק את מחיר המושב הנוסף לצוות הספק.
               </p>

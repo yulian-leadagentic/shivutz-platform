@@ -90,11 +90,20 @@ def list_categories(
     conn = get_db()
     try:
         cur = conn.cursor()
+        # R33 B.6 · `active_paid_tiers` drives the warning on the admin
+        # screen. A provider can publish in a category only while it
+        # holds a plan there, and a plan can only be bought from an
+        # active tier with a real price, so a category where this is 0
+        # is one no provider can publish in. Same test registration and
+        # the purchase endpoint apply (services/provider_plans.py).
         cur.execute(
-            """SELECT code, name_he, name_en, name_ar, icon_slug,
-                      sort_order, is_active, created_at, updated_at
-                 FROM marketplace_categories
-                ORDER BY sort_order, code"""
+            """SELECT c.code, c.name_he, c.name_en, c.name_ar, c.icon_slug,
+                      c.sort_order, c.is_active, c.created_at, c.updated_at,
+                      (SELECT COUNT(*) FROM marketplace_subscription_tiers t
+                        WHERE t.category_code = c.code
+                          AND t.is_active = TRUE AND t.price_nis > 0) AS active_paid_tiers
+                 FROM marketplace_categories c
+                ORDER BY c.sort_order, c.code"""
         )
         return [_serialize(r) for r in cur.fetchall()]
     finally:

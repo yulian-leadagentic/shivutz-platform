@@ -12,6 +12,9 @@ export interface MarketplaceCategory {
   is_active:  boolean;
   created_at: string;
   updated_at: string;
+  /** R33 B.6 · active tiers with a price above 0. At 0 no provider
+   *  can hold a plan in this category, so none can publish in it. */
+  active_paid_tiers: number;
 }
 
 export interface MarketplaceTier {
