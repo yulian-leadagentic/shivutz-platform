@@ -14,6 +14,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { MarketplaceChargesAdmin } from '@/components/admin/MarketplaceChargesAdmin';
 
 // ── Empty-row helper ────────────────────────────────────────────────────
 
@@ -111,6 +112,9 @@ export default function MarketplaceAdminPage() {
           }}
         />
       </div>
+
+      {/* R37 4.1.5 · what was charged for the plans above, and refunds. */}
+      <MarketplaceChargesAdmin />
     </div>
   );
 }

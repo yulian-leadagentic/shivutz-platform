@@ -7,12 +7,18 @@
 
 Neither takes an amount, a tier or an entity from the request: the
 entity is the gateway's, the rest is on the charge row.
+
+R37 4.1.5 · and for a platform admin only:
+
+  GET  /payments/marketplace/charges              every plan charge
+  POST /payments/marketplace/charges/{id}/refund  return one in full
 """
 from typing import Optional
 
 from fastapi import APIRouter, Header, HTTPException
 
-from app.services import marketplace_charges
+from app.services import marketplace_charges, marketplace_refunds
+from app.services.admin_check import is_admin
 
 router = APIRouter()
 
@@ -53,3 +59,33 @@ def my_charges(
 ):
     entity_type, entity_id = _caller(x_entity_id, x_org_id, x_entity_type)
     return marketplace_charges.mine(entity_type, entity_id)
+
+
+@router.get("/charges")
+def all_charges(
+    x_user_role:     Optional[str] = Header(default=None),
+    x_user_is_admin: Optional[str] = Header(default=None),
+):
+    if not is_admin(x_user_is_admin, x_user_role):
+        raise HTTPException(status_code=403, detail="admin_only")
+    return marketplace_refunds.list_for_admin()
+
+
+@router.post("/charges/{charge_id}/refund")
+async def refund_charge(
+    charge_id: str,
+    x_user_id:       Optional[str] = Header(default=None),
+    x_user_role:     Optional[str] = Header(default=None),
+    x_user_is_admin: Optional[str] = Header(default=None),
+):
+    """Return a plan charge to the card it was made on, in full. The
+    plan itself is not changed."""
+    if not is_admin(x_user_is_admin, x_user_role):
+        raise HTTPException(status_code=403, detail="admin_only")
+    charge = marketplace_charges.load(charge_id)
+    if not charge:
+        raise HTTPException(status_code=404, detail="charge_not_found")
+    try:
+        return await marketplace_refunds.refund(charge, x_user_id)
+    except marketplace_refunds.RefundRefused as refused:
+        raise HTTPException(status_code=refused.status, detail=refused.detail)

@@ -22,6 +22,9 @@
 --                            activated; whether money moved is not known.
 --             not_attempted  no card on file, or this environment cannot
 --                            charge. Cardcom was not called.
+--             refunding      an admin asked for the charge back and Cardcom
+--                            is being asked. Like 'charging': a row that
+--                            stays here needs a look at Cardcom.
 --             refunded       an admin returned the charge (4.1.5).
 --
 -- The row's id is also the id sent to Cardcom with the charge

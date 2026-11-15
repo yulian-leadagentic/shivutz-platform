@@ -89,6 +89,42 @@ export const marketplaceChargesApi = {
   mine: () => apiFetch<MarketplaceCharge[]>('/payments/marketplace/charges/mine'),
 };
 
+/** R37 4.1.5 · a plan charge as a platform admin sees it. */
+export interface AdminMarketplaceCharge {
+  id: string;
+  kind: 'purchase' | 'renewal';
+  /** 'charging' / 'refunding' that stay are charges or refunds whose
+   *  outcome is not known; 'error' is a charge Cardcom never answered. */
+  status: 'charged' | 'refunded' | 'declined' | 'error' | 'charging' | 'refunding';
+  entity_type: string;
+  entity_id: string;
+  advertiser_name: string | null;
+  subscription_id: string | null;
+  category_code: string;
+  category_name_he: string | null;
+  amount_nis: number;
+  invoice_number: string | null;
+  invoice_url: string | null;
+  failure_reason: string | null;
+  mode: 'fake' | 'real';
+  created_at: string | null;
+  refunded_at: string | null;
+  refunded_by_user_id: string | null;
+}
+
+export const marketplaceChargesAdminApi = {
+  /** Every plan charge, newest first. Admin only. */
+  list: () => apiFetch<AdminMarketplaceCharge[]>('/payments/marketplace/charges'),
+
+  /** Return a charge to the card it was made on, in full. The plan is
+   *  not changed. Admin only; a charge is refunded once. */
+  refund: (chargeId: string) =>
+    apiFetch<AdminMarketplaceCharge>(
+      `/payments/marketplace/charges/${encodeURIComponent(chargeId)}/refund`,
+      { method: 'POST' },
+    ),
+};
+
 export interface CardSetupResult {
   /** completed: the card is saved. pending: Cardcom has no final answer
    *  yet. failed: Cardcom reported a failure, nothing was saved. */
