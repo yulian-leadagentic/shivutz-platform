@@ -271,16 +271,16 @@ export default function HowItWorksPage() {
         </div>
       </section>
 
-      {/* R30 §10 · verification section — הצעה, לאישור Yulian.
+      {/* R30 §10 · verification section.
           Every paragraph MUST describe what the code actually does
-          today, not aspirational copy. The service_provider paragraph
-          in particular is worded to reflect the ״format-only ח.פ
-          check, no registry lookup" reality documented in
-          providers.py:11,98 and migration 077:181-182 — because
-          promising verification we don't perform is a broken
-          promise the visitor will discover the first time they hit
-          a fraudulent provider. When Yulian returns copy edits, swap
-          the three <p> strings; do not re-shape the structure. */}
+          today, not aspirational copy, because promising verification
+          we don't perform is a broken promise the visitor discovers
+          the first time they meet a fraudulent provider.
+          R34 · the three strings are Yulian's (15.11). The provider
+          line reads "נבדק" because R34 P2 made it so: providers.py now
+          verifies format and check digit. It is still NOT a registry
+          lookup, so if this paragraph is ever strengthened to
+          "מאומת", the lookup has to exist first. */}
       <section
         aria-labelledby="how-we-verify"
         className="bg-white border border-slate-200 rounded-2xl p-6 md:p-8 space-y-5"
@@ -310,7 +310,7 @@ export default function HowItWorksPage() {
           <div className="border-r-4 border-emerald-500 pr-3">
             <p className="font-semibold text-slate-900 mb-1">ספקי שירותים נלווים</p>
             <p>
-              נבדק פורמט של ח.פ / ע.מ בלבד (9 ספרות). אין הצלבה מול מרשם ממשלתי, וסימון ״ספק מאומת״ ניתן ידנית על ידי צוות TagidAI. יש לקחת זאת בחשבון בפנייה לספק.
+              נבדק עוסק מורשה או ח.פ.
             </p>
           </div>
         </div>
