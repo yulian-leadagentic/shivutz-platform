@@ -278,6 +278,9 @@ export interface MarketplaceListing {
   contact_phone?: string;
   contact_name?: string;
   images_json?: string[];
+  /** Who advertises it. A corporation, a service provider or a
+   *  contractor; null on rows older than the column. */
+  advertiser_entity_type?: 'corporation' | 'service_provider' | 'contractor' | null;
   /** R34 4c · the answers to the category's own questions. */
   attributes?: Record<string, unknown> | null;
   /** Region codes the listing serves; ['national'] is everywhere. */

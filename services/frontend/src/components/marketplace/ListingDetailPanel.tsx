@@ -31,6 +31,14 @@ import { postAdEvent } from '@/lib/adEvents';
 // just `/`), and the "back to all listings" link becomes a close
 // button when there is no page to go back to.
 
+// R37 · what the "פורסם על ידי" line says before the advertiser's name
+// is revealed. It said "תאגיד" for every listing, a provider's too.
+const ADVERTISER_HE: Record<string, string> = {
+  corporation:      'תאגיד',
+  service_provider: 'ספק שירות',
+  contractor:       'קבלן',
+};
+
 const STATUS_HE: Record<string, { label: string; color: string }> = {
   active:  { label: 'זמין', color: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
   rented:  { label: 'מושכר', color: 'text-amber-700 bg-amber-50 border-amber-200' },
@@ -389,7 +397,8 @@ export default function ListingDetailPanel({
             <div>
               <p className="text-xs text-slate-400 mb-0.5">פורסם על ידי</p>
               <p className="text-sm font-semibold text-slate-900">
-                {revealed?.corporation_name || listing.corporation_name || 'תאגיד'}
+                {revealed?.corporation_name || listing.corporation_name
+                  || ADVERTISER_HE[listing.advertiser_entity_type ?? ''] || 'תאגיד'}
               </p>
               {!!listing.is_corporation_verified && (
                 <p className="text-xs text-emerald-700 mt-0.5 inline-flex items-center gap-1">
