@@ -119,7 +119,10 @@ async function run() {
                      '/api/marketplace/admin/categories', '/api/marketplace/admin/tiers/x']) {
     expect(isAdminOnlyPath(url), `${url} is not admin-only`);
   }
+  // The plan catalog is public (the sign-up page shows it to visitors).
+  // It used to sit under the admin prefix; it must never go back there.
   for (const url of ['/api/marketplace', '/api/marketplace/categories', '/api/marketplace/my/subscriptions',
+                     '/api/marketplace/subscriptions/catalog',
                      '/api/search', '/api/organizations/providers/me']) {
     expect(!isAdminOnlyPath(url), `${url} became admin-only`);
   }

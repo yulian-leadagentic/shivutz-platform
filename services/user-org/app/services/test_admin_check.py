@@ -200,6 +200,29 @@ class SourceLockTest(unittest.TestCase):
                         bad.append(f"{path.relative_to(APP)}:{node.lineno} {node.name}")
         self.assertEqual(bad, [])
 
+    def test_every_route_in_the_admin_router_is_gated(self):
+        # The gateway refuses /api/marketplace/admin/* to anyone who is
+        # not an admin, so a public route in this router is unreachable
+        # for the public. That is how the plan catalog broke the day
+        # the gateway rule was tightened: it lived here with no gate.
+        # A route that does not call _require_admin belongs elsewhere.
+        text = (APP / "routes" / "marketplace_admin.py").read_text(encoding="utf8")
+        ungated, routes = [], 0
+        for node in ast.walk(ast.parse(text)):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            if not any("router." in ast.unparse(d) for d in node.decorator_list):
+                continue
+            routes += 1
+            calls = {
+                getattr(n.func, "id", None)
+                for n in ast.walk(node) if isinstance(n, ast.Call)
+            }
+            if "_require_admin" not in calls:
+                ungated.append(node.name)
+        self.assertEqual(ungated, [])
+        self.assertGreaterEqual(routes, 7)
+
     def test_no_admin_gate_is_left_on_the_role_header(self):
         found = {}
         for path, text in _sources():

@@ -142,6 +142,54 @@ class PurchaseRequest(BaseModel):
     auto_renew: bool = True
 
 
+# ── GET /marketplace/subscriptions/catalog ───────────────────────────
+# Active categories with their active tiers, in one call. Public: the
+# provider sign-up page shows the plans to a visitor who has no account
+# yet, and the listing forms read the category list from it.
+#
+# R33 A1 · this lived at /marketplace/admin/catalog, the one route in
+# the admin router with no admin gate. It only worked for the public
+# because GET under /api/marketplace is public and that rule reached
+# into the admin prefix. Closing that hole closed this route with it,
+# so it moved here, to a path that says what it is.
+
+@router.get("/subscriptions/catalog")
+def public_catalog():
+    """Return active categories with their active tiers (no auth — the
+    flow checks subscription state separately on purchase)."""
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT c.code, c.name_he, c.name_en, c.name_ar, c.icon_slug, c.sort_order
+                 FROM marketplace_categories c
+                WHERE c.is_active = TRUE
+                ORDER BY c.sort_order, c.code"""
+        )
+        cats = [_serialize(r) for r in cur.fetchall()]
+        if not cats:
+            return []
+
+        codes = tuple(c["code"] for c in cats)
+        placeholders = ",".join(["%s"] * len(codes))
+        cur.execute(
+            f"""SELECT id, category_code, name_he, name_en, slot_count, duration_days,
+                       price_nis, sort_order
+                  FROM marketplace_subscription_tiers
+                 WHERE is_active = TRUE AND category_code IN ({placeholders})
+                 ORDER BY sort_order, price_nis""",
+            codes,
+        )
+        by_cat: dict[str, list] = {}
+        for row in cur.fetchall():
+            by_cat.setdefault(row["category_code"], []).append(_serialize(row))
+        for c in cats:
+            c["tiers"] = by_cat.get(c["code"], [])
+        return cats
+    finally:
+        conn.close()
+
+
 # ── POST /marketplace/subscriptions/quote ────────────────────────────
 
 @router.post("/subscriptions/quote")

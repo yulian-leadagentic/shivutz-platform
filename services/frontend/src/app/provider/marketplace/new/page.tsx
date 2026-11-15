@@ -36,7 +36,7 @@ const CORPORATION_ONLY_CATEGORY = 'housing';
 
 // Shown only when the catalog request fails or has nothing a provider
 // may use, because an empty picker reads as a broken page. The real
-// list is GET /marketplace/admin/catalog; add categories in
+// list is GET /marketplace/subscriptions/catalog; add categories in
 // /admin/marketplace, not here.
 const FALLBACK_CATEGORIES: Category[] = [
   { value: 'equipment', label: 'ציוד' },

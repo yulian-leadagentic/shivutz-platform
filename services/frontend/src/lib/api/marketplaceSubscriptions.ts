@@ -68,7 +68,7 @@ export interface CatalogCategory {
 export const marketplaceSubscriptionsApi = {
   /** Public list of categories + active tiers — drives the subscribe page. */
   catalog: () =>
-    apiFetch<CatalogCategory[]>('/marketplace/admin/catalog'),
+    apiFetch<CatalogCategory[]>('/marketplace/subscriptions/catalog'),
 
   /** Quote a tier (preview before commit). */
   quote: (tier_id: string) =>

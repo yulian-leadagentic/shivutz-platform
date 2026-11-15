@@ -11,7 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import ImageUploader from '@/components/marketplace/ImageUploader';
 
 // FALLBACK ONLY. The real category list is loaded at mount time from
-// GET /marketplace/admin/catalog (public endpoint, returns only
+// GET /marketplace/subscriptions/catalog (public endpoint, returns only
 // is_active categories ordered by sort_order). Kept here so an API
 // failure still shows the four historical categories instead of an
 // empty picker (empty reads as broken). Do NOT extend by editing this
