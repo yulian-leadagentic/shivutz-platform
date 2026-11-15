@@ -298,7 +298,7 @@ export default function HowItWorksPage() {
           <div className="border-r-4 border-amber-500 pr-3">
             <p className="font-semibold text-slate-900 mb-1">קבלנים</p>
             <p>
-              נבדקים מול פנקס הקבלנים של משרד הבינוי והשיכון. הרשומים בפנקס עוברים אימות אוטומטי בעת ההרשמה, וקבלני tier_2 נבדקים מחדש כל שישה חודשים.
+              נבדקים מול פנקס הקבלנים של משרד הבינוי והשיכון. הרשומים בפנקס עוברים אימות אוטומטי בעת ההרשמה. קבלנים נבדקים מחדש כל שישה חודשים.
             </p>
           </div>
           <div className="border-r-4 border-brand-500 pr-3">
