@@ -9,7 +9,8 @@ import {
   Building2, Sparkles, X,
 } from 'lucide-react';
 import { marketplaceApi } from '@/lib/api';
-import type { MarketplaceListing } from '@/types';
+import type { ListingAttributeField, MarketplaceListing } from '@/types';
+import { useEnums } from '@/features/enums/EnumsContext';
 import { Button } from '@/components/ui/button';
 import { CATEGORY_HE_FALLBACK, PRICE_UNIT_HE, labelFor } from '@/lib/labels';
 import { categoryStyle } from '@/lib/categoryStyle';
@@ -36,6 +37,19 @@ const STATUS_HE: Record<string, { label: string; color: string }> = {
   sold:    { label: 'נמכר', color: 'text-slate-600 bg-slate-100 border-slate-200' },
   paused:  { label: 'מושהה', color: 'text-slate-500 bg-slate-50 border-slate-200' },
 };
+
+// R34 4c · one answer as text. A ticked box reads "כן"; an unticked one
+// is not stored, so it never reaches here.
+function attributeText(f: ListingAttributeField): string {
+  if (Array.isArray(f.value)) return f.value.join(' · ');
+  if (typeof f.value === 'boolean') return f.value ? 'כן' : 'לא';
+  if (f.type === 'money') return `₪${Number(f.value).toLocaleString('he-IL')}`;
+  if (f.type === 'date' && typeof f.value === 'string') {
+    const [y, m, d] = f.value.slice(0, 10).split('-');
+    return `${d}.${m}.${y}`;
+  }
+  return String(f.value);
+}
 
 function daysAgo(dateStr: string): string {
   const diff = Math.floor((Date.now() - new Date(dateStr).getTime()) / 86_400_000);
@@ -76,6 +90,7 @@ export default function ListingDetailPanel({
 }: ListingDetailPanelProps) {
   const router = useRouter();
   const [listing, setListing] = useState<MarketplaceListing | null>(null);
+  const { regionMap } = useEnums();
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState('');
   const [copied, setCopied]   = useState(false);
@@ -292,6 +307,11 @@ export default function ListingDetailPanel({
           </div>
 
           {/* Price */}
+          {listing.price == null && !!listing.price_unit && !(listing.price_unit in PRICE_UNIT_HE) && (
+            <div className="pt-2 border-t border-slate-100">
+              <span className="text-lg font-semibold text-slate-700">{listing.price_unit}</span>
+            </div>
+          )}
           {(listing.price != null || listing.price_unit === 'negotiable') && (
             <div className="pt-2 border-t border-slate-100">
               {listing.price != null ? (
@@ -309,6 +329,32 @@ export default function ListingDetailPanel({
             </div>
           )}
         </div>
+
+        {/* R34 4c · what this category asks and this listing answered.
+            Labels and order are the category's (the server sends them
+            with the listing), so a field added to a category shows up
+            here with no change to this file. */}
+        {((listing.attribute_fields?.length ?? 0) > 0 || (listing.regions?.length ?? 0) > 0) && (
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-card p-6">
+            <h3 className="text-base font-bold text-slate-900 mb-3">פרטי השירות</h3>
+            <dl className="grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-[auto_1fr]">
+              {(listing.regions?.length ?? 0) > 0 && (
+                <>
+                  <dt className="text-slate-500">אזורי שירות</dt>
+                  <dd className="font-medium text-slate-900">
+                    {listing.regions!.map((code) => regionMap[code] ?? code).join(' · ')}
+                  </dd>
+                </>
+              )}
+              {(listing.attribute_fields ?? []).map((f) => (
+                <div key={f.key} className="contents">
+                  <dt className="text-slate-500">{f.label}</dt>
+                  <dd className="font-medium text-slate-900">{attributeText(f)}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        )}
 
         {/* Description */}
         {listing.description && (

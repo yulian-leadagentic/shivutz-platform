@@ -54,6 +54,8 @@ export const marketplaceApi = {
     contact_name?: string;
     subcategory?: string;
     images_json?: string[];
+    attributes?: Record<string, unknown>;
+    regions?: string[];
   }) =>
     apiFetch<{ id: string; status: string; subscription_id?: string; slots_used?: number; slot_count?: number }>('/marketplace', {
       method: 'POST',
@@ -74,6 +76,8 @@ export const marketplaceApi = {
     contact_name: string;
     status: string;
     images_json: string[];
+    attributes: Record<string, unknown>;
+    regions: string[];
   }>) =>
     apiFetch<{ id: string; updated: boolean }>(`/marketplace/${id}`, {
       method: 'PATCH',

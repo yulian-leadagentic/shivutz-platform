@@ -267,7 +267,10 @@ export interface MarketplaceListing {
   city?: string;
   region?: string;
   price?: number;
-  price_unit?: 'per_month' | 'per_night' | 'fixed' | 'negotiable';
+  // One of the PRICE_UNIT_HE codes on a housing listing; on a
+  // provider's listing, the unit its category's form offers, as text
+  // (R34 4c). `labelFor` shows either.
+  price_unit?: string;
   capacity?: number;
   is_furnished?: boolean;
   available_from?: string;
@@ -275,8 +278,22 @@ export interface MarketplaceListing {
   contact_phone?: string;
   contact_name?: string;
   images_json?: string[];
+  /** R34 4c · the answers to the category's own questions. */
+  attributes?: Record<string, unknown> | null;
+  /** Region codes the listing serves; ['national'] is everywhere. */
+  regions?: string[] | null;
+  /** The answers with the category's labels, in its order. Sent with a
+   *  single listing (GET /marketplace/{id}), not with lists. */
+  attribute_fields?: ListingAttributeField[];
   created_at: string;
   updated_at: string;
+}
+
+export interface ListingAttributeField {
+  key:   string;
+  label: string;
+  type:  'text' | 'int' | 'money' | 'bool' | 'select' | 'multi' | 'date';
+  value: string | number | boolean | string[];
 }
 
 export interface LeadFormData {

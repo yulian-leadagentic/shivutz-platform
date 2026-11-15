@@ -20,6 +20,14 @@
 // picker; the rest are listed as locked, each with the way to open it.
 // One category with a plan is shown as a fixed chip. Housing is never
 // offered, and ?category=housing is dropped.
+//
+// R34 §4c · what the form asks follows the category. Every category
+// gets the common fields: title, description, the regions served,
+// contact name and phone, photos. Under them come the category's own
+// questions, drawn from its field_schema (data on the category row, in
+// the catalog). The housing-style fields this form inherited (city, one
+// region, a monthly price, capacity, "available from") are gone: a
+// category that has a price asks for it in its own terms.
 
 import { useCallback, useEffect, useId, useState } from 'react';
 import Link from 'next/link';
@@ -27,8 +35,14 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { AlertCircle, ArrowRight, Loader2, Lock, Plus } from 'lucide-react';
 import { ApiError } from '@/lib/api/client';
 import { marketplaceApi } from '@/lib/api/marketplace';
-import { marketplaceSubscriptionsApi, type CatalogCategory } from '@/lib/api/marketplaceSubscriptions';
+import {
+  marketplaceSubscriptionsApi,
+  type CatalogCategory,
+  type CategoryFieldSchema,
+} from '@/lib/api/marketplaceSubscriptions';
 import { isProviderCategory } from '@/lib/providerCategories';
+import { useEnums } from '@/features/enums/EnumsContext';
+import CategoryFields, { toAttributes, type FieldValues } from '@/components/marketplace/CategoryFields';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -43,12 +57,8 @@ type LockedCategory = { value: string; label: string };
 const ADD_PLAN = '/provider/marketplace/subscribe';
 const BILLING  = '/provider/billing';
 
-const PRICE_UNITS = [
-  { value: 'per_month',  label: 'לחודש' },
-  { value: 'per_night',  label: 'ללילה' },
-  { value: 'fixed',      label: 'מחיר קבוע' },
-  { value: 'negotiable', label: 'למשא ומתן' },
-];
+// The regions catalogue's code for "the whole country".
+const ANYWHERE = 'national';
 
 // Input.tsx's look for the two controls it does not cover, so a select
 // beside an Input in a two-column row lines up with it.
@@ -62,13 +72,14 @@ export default function NewProviderListingPage() {
   const router       = useRouter();
   const searchParams = useSearchParams();
   const descriptionId = useId();
-  const priceUnitId   = useId();
+  const { regions: regionOptions } = useEnums();
 
   // R5 §2b · the dashboard button and the welcome email pass
   // ?category=<code>. R10 §4 · /register/provider also passes the
-  // contact name, phone and city the provider typed a minute earlier,
-  // so the very next screen does not ask for them again. All of it is a
-  // first draft the provider can still edit.
+  // contact name and phone the provider typed a minute earlier, so the
+  // very next screen does not ask for them again. All of it is a first
+  // draft the provider can still edit. (It passes the city too; the
+  // form asks for regions now, so the city is not read.)
   //
   // A housing hint is dropped rather than honoured. '' means "nothing
   // chosen yet"; the effect below replaces it, and any hint the provider
@@ -79,15 +90,16 @@ export default function NewProviderListingPage() {
     category:       isProviderCategory(hint) ? hint : '',
     title:          '',
     description:    '',
-    city:           searchParams?.get('city') || '',
-    region:         '',
-    price:          '',
-    price_unit:     'per_month',
-    capacity:       '',
-    available_from: '',
     contact_name:   searchParams?.get('contact_name')  || '',
     contact_phone:  searchParams?.get('contact_phone') || '',
   });
+  // Region codes the listing serves. 'national' stands for all of them.
+  const [regions, setRegions] = useState<string[]>([]);
+  // The answers to the chosen category's questions, as typed, and the
+  // server's complaint about each, when it has one.
+  const [answers,     setAnswers]     = useState<FieldValues>({});
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [schemas,     setSchemas]     = useState<Record<string, CategoryFieldSchema | null>>({});
   const [images, setImages] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [error,  setError]  = useState('');
@@ -112,6 +124,7 @@ export default function NewProviderListingPage() {
         marketplaceSubscriptionsApi.catalog().catch((): CatalogCategory[] => []),
       ]);
       const order = new Map(catalog.map((c, i) => [c.code, i]));
+      setSchemas(Object.fromEntries(catalog.map((c) => [c.code, c.field_schema ?? null])));
       const withPlan: OpenCategory[] = plans
         .filter((s) => s.is_current && isProviderCategory(s.category_code))
         .map((s) => ({
@@ -142,25 +155,50 @@ export default function NewProviderListingPage() {
   const selectedFull = !!selected && selected.used >= selected.total;
   const noPlan       = !catsLoading && !catsFailed && open.length === 0;
 
+  const schema = schemas[form.category] ?? null;
+
   function update(field: string, value: string) {
     setForm((f) => ({ ...f, [field]: value }));
+  }
+
+  // Another category asks other questions: the answers start over.
+  function pickCategory(code: string) {
+    if (code === form.category) return;
+    update('category', code);
+    setAnswers({}); setFieldErrors({});
+  }
+
+  function answer(key: string, value: string | boolean | string[]) {
+    setAnswers((a) => ({ ...a, [key]: value }));
+    setFieldErrors((e) => {
+      if (!(key in e)) return e;
+      const rest = { ...e };
+      delete rest[key];
+      return rest;
+    });
+  }
+
+  // "כל הארץ" and a list of regions are two different answers; picking
+  // one clears the other.
+  function toggleRegion(code: string) {
+    setRegions((r) => {
+      if (code === ANYWHERE) return r.includes(ANYWHERE) ? [] : [ANYWHERE];
+      const rest = r.filter((x) => x !== ANYWHERE);
+      return rest.includes(code) ? rest.filter((x) => x !== code) : [...rest, code];
+    });
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!form.title.trim()) { setError('כותרת היא שדה חובה'); return; }
-    setSaving(true); setError(''); setFix(null);
+    setSaving(true); setError(''); setFix(null); setFieldErrors({});
     try {
       await marketplaceApi.create({
         category:       form.category,
         title:          form.title.trim(),
         description:    form.description || undefined,
-        city:           form.city || undefined,
-        region:         form.region || undefined,
-        price:          form.price ? parseFloat(form.price) : undefined,
-        price_unit:     form.price_unit || undefined,
-        capacity:       form.capacity ? parseInt(form.capacity) : undefined,
-        available_from: form.available_from || undefined,
+        regions:        regions.length > 0 ? regions : undefined,
+        attributes:     schema ? toAttributes(schema, answers) : undefined,
         contact_phone:  form.contact_phone || undefined,
         contact_name:   form.contact_name || undefined,
         images_json:    images.length > 0 ? images : undefined,
@@ -168,6 +206,12 @@ export default function NewProviderListingPage() {
       router.push('/provider/dashboard#my-listings');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'שגיאה בפרסום');
+      // The server checks the answers against the category's schema and
+      // names each one it will not take.
+      if (err instanceof ApiError && err.cause.status === 400) {
+        const details = err.cause.details as { fields?: Record<string, string> } | undefined;
+        if (details?.fields) setFieldErrors(details.fields);
+      }
       // No plan in this category, or the plan is full. The picker
       // above already keeps both from happening, so this is a plan that
       // changed while the form was open. The server sends the page that
@@ -257,7 +301,7 @@ export default function NewProviderListingPage() {
                       key={c.value}
                       type="button"
                       aria-pressed={form.category === c.value}
-                      onClick={() => update('category', c.value)}
+                      onClick={() => pickCategory(c.value)}
                       className={`${PILL} font-medium focus-visible:rounded-full ${
                         form.category === c.value
                           ? 'border-brand-600 bg-brand-600 text-slate-900'
@@ -331,32 +375,33 @@ export default function NewProviderListingPage() {
               />
             </div>
 
-            <div className={PAIR}>
-              <Input label="עיר" placeholder="תל אביב" value={form.city} onChange={(e) => update('city', e.target.value)} />
-              <Input label="אזור" placeholder="מרכז" value={form.region} onChange={(e) => update('region', e.target.value)} />
-            </div>
-
-            <div className={PAIR}>
-              <Input label="מחיר (₪)" type="number" min={0} placeholder="3500" value={form.price} onChange={(e) => update('price', e.target.value)} />
-              <div className="flex flex-col gap-1.5">
-                <label htmlFor={priceUnitId} className={LABEL}>יחידת תמחור</label>
-                <select
-                  id={priceUnitId}
-                  value={form.price_unit}
-                  onChange={(e) => update('price_unit', e.target.value)}
-                  className={`${CONTROL} h-9`}
-                >
-                  {PRICE_UNITS.map((u) => (
-                    <option key={u.value} value={u.value}>{u.label}</option>
-                  ))}
-                </select>
+            <fieldset className="min-w-0 space-y-2">
+              <legend className={LABEL}>אזורי שירות</legend>
+              <div className="flex flex-wrap gap-2">
+                {regionOptions.map((r) => {
+                  const on = regions.includes(r.code);
+                  return (
+                    <button
+                      key={r.code}
+                      type="button"
+                      aria-pressed={on}
+                      onClick={() => toggleRegion(r.code)}
+                      className={`${PILL} font-medium focus-visible:rounded-full ${
+                        on
+                          ? 'border-brand-600 bg-brand-600 text-slate-900'
+                          : 'border-slate-200 text-slate-600 hover:border-brand-300'
+                      }`}
+                    >
+                      {r.name_he}
+                    </button>
+                  );
+                })}
               </div>
-            </div>
+            </fieldset>
 
-            <div className={PAIR}>
-              <Input label="קיבולת (מספר עובדים)" type="number" min={1} placeholder="7" value={form.capacity} onChange={(e) => update('capacity', e.target.value)} />
-              <Input label="פנוי מתאריך" type="date" value={form.available_from} onChange={(e) => update('available_from', e.target.value)} />
-            </div>
+            {schema && (
+              <CategoryFields schema={schema} values={answers} errors={fieldErrors} onChange={answer} />
+            )}
 
             <div className={PAIR}>
               <Input label="שם איש קשר" placeholder="משה לוי" value={form.contact_name} onChange={(e) => update('contact_name', e.target.value)} />

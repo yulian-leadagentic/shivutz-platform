@@ -134,6 +134,11 @@ export default function ListingCard({
         {listing.price_unit === 'negotiable' && !listing.price && (
           <span className="text-sm font-medium text-slate-600">מחיר למשא ומתן</span>
         )}
+        {/* R34 4c · a category that quotes instead of pricing stores
+            that as the unit ("הצעת מחיר") with no amount. */}
+        {listing.price == null && !!listing.price_unit && !(listing.price_unit in PRICE_UNIT_HE) && (
+          <span className="text-sm font-medium text-slate-600">{listing.price_unit}</span>
+        )}
 
         {/* Corporation footer — R15 §3a · corporation_name rides the
             reveal endpoint on the detail page. The card only carries

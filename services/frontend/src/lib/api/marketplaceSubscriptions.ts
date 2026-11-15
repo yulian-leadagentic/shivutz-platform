@@ -65,6 +65,31 @@ export interface CatalogTier {
   sort_order:    number;
 }
 
+// R34 4c · what a category asks of a listing. Data, kept on the
+// category row and validated by the server
+// (services/user-org/app/services/listing_attributes.py).
+export interface CategoryField {
+  key:       string;
+  label:     string;
+  type:      'text' | 'int' | 'money' | 'bool' | 'select' | 'multi' | 'date';
+  options?:  string[];
+  required?: boolean;
+  /** Shown only while that other (bool) field is ticked. */
+  show_if?:  string;
+}
+
+export interface CategoryFieldSchema {
+  fields:       CategoryField[];
+  require_any?: string[][];
+  price?: {
+    amount?:   string;
+    unit?:     string;
+    first_of?: [string, string][];
+    /** The category quotes instead of pricing; shown as is. */
+    note?:     string;
+  };
+}
+
 export interface CatalogCategory {
   code:        string;
   name_he:     string;
@@ -73,6 +98,7 @@ export interface CatalogCategory {
   icon_slug?:  string | null;
   sort_order:  number;
   tiers:       CatalogTier[];
+  field_schema?: CategoryFieldSchema | null;
 }
 
 export const marketplaceSubscriptionsApi = {
