@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
   Loader2, Plus, Pencil, Trash2, PauseCircle, PlayCircle,
-  Home, AlertTriangle, CreditCard, ShieldCheck,
+  Home, AlertTriangle, ShieldCheck,
 } from 'lucide-react';
 import { marketplaceApi } from '@/lib/api';
 import {
@@ -109,11 +109,6 @@ export default function CorporationMarketplacePage() {
           <p className="text-sm text-slate-500 mt-1">ניהול פרסומים בשירותים נלווים — דיור, ציוד ושירותים</p>
         </div>
         <div className="flex gap-2">
-          <Link href="/corporation/marketplace/subscribe">
-            <Button variant="outline">
-              <CreditCard className="h-4 w-4 me-2" />רכוש / נהל מנוי
-            </Button>
-          </Link>
           <Link href="/corporation/marketplace/new">
             <Button><Plus className="h-4 w-4 me-2" />פרסם מודעה חדשה</Button>
           </Link>
@@ -126,8 +121,13 @@ export default function CorporationMarketplacePage() {
         </div>
       )}
 
-      {/* Subscriptions panel — what categories the corp can publish in
-          and how many slots are used / available. */}
+      {/* R33 B.4 · a corporation publishes housing only, and housing
+          rides its licence: there is nothing for it to buy, so the
+          subscribe page and both links to it are gone. This panel now
+          shows only for a corporation that still holds a plan from
+          before that rule; for everyone else it had one thing to say,
+          "buy a plan", and no plan to sell. */}
+      {activeSubs.length > 0 && (
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
@@ -136,20 +136,6 @@ export default function CorporationMarketplacePage() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {loading ? (
-            <div className="flex justify-center py-4 text-slate-400">
-              <Loader2 className="animate-spin h-4 w-4" />
-            </div>
-          ) : activeSubs.length === 0 ? (
-            <div className="text-center py-4 space-y-2">
-              <p className="text-sm text-slate-600">אין מנוי פעיל. רכוש מנוי כדי לפרסם מודעות בשירותים נלווים.</p>
-              <Link href="/corporation/marketplace/subscribe">
-                <Button size="sm">
-                  <CreditCard className="h-3.5 w-3.5 me-1" />רכוש מנוי
-                </Button>
-              </Link>
-            </div>
-          ) : (
             <ul className="divide-y divide-slate-100 -my-2">
               {activeSubs.map((s) => (
                 <li key={s.id} className="py-3 flex items-center justify-between gap-3 flex-wrap">
@@ -168,9 +154,9 @@ export default function CorporationMarketplacePage() {
                 </li>
               ))}
             </ul>
-          )}
         </CardContent>
       </Card>
+      )}
 
       <Card>
         <CardHeader className="pb-3">
