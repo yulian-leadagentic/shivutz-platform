@@ -9,6 +9,8 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Loader2, Save, Infinity as InfIcon } from 'lucide-react';
 import { apiFetch } from '@/lib/api/client';
+import { marketplaceSubscriptionsApi } from '@/lib/api/marketplaceSubscriptions';
+import { isProviderCategory, paidTiers } from '@/lib/providerCategories';
 import { ENTITY_TYPE_HE, TIER_HE_SHORT } from '@/lib/labels';
 
 // R30 §20a · Yulian filed on 22.09: "אני רואה רק קבלן ותאגיד".
@@ -72,6 +74,23 @@ function toDraft(p: Plan): Draft {
 
 export default function SubscriptionPlansPage() {
   const [plans, setPlans] = useState<Plan[]>([]);
+  // The prices of the provider plans, for the pointer line below. Read
+  // from the tiers themselves; when they cannot be read the line simply
+  // names no price.
+  const [providerPrices, setProviderPrices] = useState<number[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    marketplaceSubscriptionsApi.catalog()
+      .then((cats) => {
+        if (cancelled) return;
+        const prices = cats
+          .filter((c) => isProviderCategory(c.code))
+          .flatMap((c) => paidTiers(c).map((t) => t.price_nis));
+        setProviderPrices([...new Set(prices)].sort((a, b) => a - b));
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
@@ -165,11 +184,13 @@ export default function SubscriptionPlansPage() {
           <section key={et} className="space-y-3">
             <h2 className="text-base font-bold text-slate-800">{ENTITY_LABEL[et] ?? et}</h2>
             {/* R30 §20b · pointer row: the ancillary-services plans
-                (₪149 / ₪399) and the sponsor pricing live on other
-                admin screens. Say so, so nobody re-hunts them here. */}
+                and the sponsor pricing live on other admin screens.
+                Say so, so nobody re-hunts them here. */}
             {et === 'service_provider' && (
               <p className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
-                מסלולי השירותים הנלווים (₪149 / ₪399) מנוהלים ב-<Link href="/admin/marketplace" className="text-brand-700 hover:underline">שירותים נלווים · קטגוריות ומחירים</Link>.
+                מסלולי השירותים הנלווים{providerPrices.length > 0 && (
+                  <> (<span dir="ltr">{providerPrices.map((p) => `₪${p.toLocaleString('he-IL')}`).join(' / ')}</span>)</>
+                )} מנוהלים ב-<Link href="/admin/marketplace" className="text-brand-700 hover:underline">שירותים נלווים · קטגוריות ומחירים</Link>.
                 מחירי הפרסום בסלוטים מנוהלים ב-<Link href="/admin/sponsors" className="text-brand-700 hover:underline">חסויות</Link>.
                 כאן קובעים רק את מחיר המושב הנוסף לצוות הספק.
               </p>
