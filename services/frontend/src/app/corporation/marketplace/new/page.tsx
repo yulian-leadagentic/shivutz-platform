@@ -1,11 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { Loader2, ArrowRight } from 'lucide-react';
 import { marketplaceApi } from '@/lib/api';
 import { marketplaceSubscriptionsApi } from '@/lib/api/marketplaceSubscriptions';
-import { useAuth } from '@/lib/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -32,40 +31,26 @@ const PRICE_UNITS = [
 ];
 
 export default function NewListingPage() {
-  const router       = useRouter();
-  const searchParams = useSearchParams();
-  const { entityType } = useAuth();
-  // R5 §2b · providers pre-select via ?category=<code> from the
-  // dashboard button. Falls back to housing (the corp-side default)
-  // when absent. Validated when categories load — if the passed
-  // code isn't in the active catalog the useEffect below drops us
-  // to the first available.
-  //
-  // R10 §4 · additional prefill from /register/provider hand-off:
-  // ?category + ?business_name + ?contact_name + ?contact_phone
-  // (+ optional ?email, ?city). Whoever just typed their phone
-  // number thirty seconds ago in the register OTP screen should
-  // NOT be asked for it again on the very next page. All prefill
-  // fields are still editable — this is a first-draft convenience,
-  // not a lock.
-  const hintedCategory     = searchParams?.get('category')      || null;
-  const hintedContactName  = searchParams?.get('contact_name')  || '';
-  const hintedContactPhone = searchParams?.get('contact_phone') || '';
-  const hintedCity         = searchParams?.get('city')          || '';
+  const router = useRouter();
+  // R34 §4a · corporation-only. Providers have their own form at
+  // /provider/marketplace/new, and the ?category / ?contact_name /
+  // ?contact_phone / ?city prefill that used to be read here went with
+  // them: it served the /register/provider hand-off, and no link to
+  // this route ever carried those params.
 
   const [form, setForm] = useState({
-    category:      hintedCategory || 'housing',
+    category:      'housing',
     title:         '',
     description:   '',
-    city:          hintedCity,
+    city:          '',
     region:        '',
     price:         '',
     price_unit:    'per_month',
     capacity:      '',
     is_furnished:  false,
     available_from:'',
-    contact_phone: hintedContactPhone,
-    contact_name:  hintedContactName,
+    contact_phone: '',
+    contact_name:  '',
   });
   const [images, setImages]  = useState<string[]>([]);
   const [saving, setSaving]  = useState(false);
@@ -88,27 +73,20 @@ export default function NewListingPage() {
         // corp user, so keep the fallback in that case too.
         //
         // U8 §2 — corporations can only publish housing (Yulian 14.09).
-        // R5 §2b · providers use the SAME page but see the full active
-        // catalog. Server-side gate in marketplace.py enforces both
-        // sides; this filter is UX-only. Contractors don't publish, so
-        // they'll never see this page.
+        // The server-side gate in marketplace.py enforces it; this
+        // filter is UX-only.
         const full = mapped.length > 0 ? mapped : FALLBACK_CATEGORIES;
-        setCategories(entityType === 'service_provider' ? full : full.filter((c) => c.value === 'housing'));
+        setCategories(full.filter((c) => c.value === 'housing'));
       })
       .catch(() => {
         if (cancelled) return;
-        setCategories(entityType === 'service_provider'
-          ? FALLBACK_CATEGORIES
-          : FALLBACK_CATEGORIES.filter((c) => c.value === 'housing'));
+        setCategories(FALLBACK_CATEGORIES.filter((c) => c.value === 'housing'));
       })
       .finally(() => {
         if (!cancelled) setCatsLoading(false);
       });
     return () => { cancelled = true; };
-    // Re-evaluate the filter when we learn the entity type (may hydrate
-    // after mount) or when a hinted category arrives via URL.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entityType]);
+  }, []);
 
   // If the initial 'housing' default isn't in the loaded list (e.g.
   // admin renamed the codes), switch to the first available so the
@@ -179,9 +157,10 @@ export default function NewListingPage() {
                 When the filtered list has ONE item we render it as
                 a static chip + explanatory note ("housing is included
                 in the license, no extra charge"), because a picker
-                with a single option reads like a load bug. Multi-
-                option branch stays for the day contractor/provider
-                gains reuse this form via role. */}
+                with a single option reads like a load bug. The
+                multi-option branch is only reached with an empty
+                list (housing switched off in the catalog), where
+                it renders nothing. */}
             <div className="space-y-2">
               <label className="text-sm font-medium text-slate-700">קטגוריה *</label>
               <div className="flex flex-wrap gap-2">
