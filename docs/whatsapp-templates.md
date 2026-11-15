@@ -1,25 +1,31 @@
-# WhatsApp templates for Meta approval (via Vonage)
+# WhatsApp templates for Meta approval
 
-This document is the **source-of-truth wording sheet** for the WhatsApp message templates we need to register with Meta through the Vonage dashboard. Each template here corresponds to a current SMS body in `services/notification/src/consumers/handlers.js` (or the auth-side OTP body in `services/auth/src/routes/auth.js`).
+> **Status after R35 (15.11.2026).** WhatsApp runs on Meta's Cloud API directly. Vonage is SMS only and has no part in WhatsApp any more.
+>
+> **R35 uses no template.** The only WhatsApp messages the platform sends are replies to a message the user sent first, so every one of them falls inside the 24-hour customer service window, where Meta delivers free text. A template is needed only when the platform writes first (OTP, notifications), and that is a later round.
+>
+> Until a template below is approved and wired in, those sends go by SMS: the OTP uses WhatsApp only when `WHATSAPP_OTP_TEMPLATE_NAME` is set, and the event notifications skip WhatsApp altogether. The sender's template branch (`services/notification/src/messaging/metaWhatsapp.js`) is a skeleton that fills body parameters only. An AUTHENTICATION template also needs its copy-code button component, to be added when the first one is approved.
+
+This document is the **source-of-truth wording sheet** for the WhatsApp message templates we need to register with Meta, in WhatsApp Manager. Each template here corresponds to a current SMS body in `services/notification/src/consumers/handlers.js` (or the auth-side OTP body in `services/auth/src/routes/auth.js`).
 
 ## How to use this file
 
 For each template below:
 
 1. Copy the **template name** (snake_case, latin) — that's the name we'll set on `notification_templates.whatsapp_template_name` and on `WHATSAPP_OTP_TEMPLATE_NAME` env var.
-2. Copy the **body** into the Vonage dashboard → Application → Messages → WhatsApp Templates.
+2. Copy the **body** into WhatsApp Manager → Message templates → Create template.
 3. Pick the **category** (Meta requires one of: AUTHENTICATION / UTILITY / MARKETING).
 4. The **parameters** are positional — Meta uses `{{1}}`, `{{2}}` etc. The order matches the list in this doc.
 5. **Language**: Hebrew (`he`).
 6. Submit → wait ~24h for Meta approval.
 
-Until a template is approved, the code falls back to SMS automatically. Approval is **opt-in per template** — you can roll out one at a time.
+Until a template is approved and its name is configured, the message goes by SMS. Approval is **opt-in per template**, so they can be rolled out one at a time.
 
 ---
 
 ## P2 — OTP (authentication)
 
-This is the **only template required for P2**. Once approved, opted-in users start receiving OTPs via WhatsApp instead of SMS.
+This is the **only template required for P2**. Once it is approved, set `WHATSAPP_OTP_TEMPLATE_NAME` to its name on the notification service; from then on opted-in users receive OTPs via WhatsApp, with SMS as the fallback when the WhatsApp send fails. While the variable is unset, every OTP goes by SMS.
 
 ### `tagidai_otp_he`
 
@@ -31,7 +37,7 @@ This is the **only template required for P2**. Once approved, opted-in users sta
   בתוקף 10 דקות. אל תשתף קוד זה.
   ```
 - **Parameters**: `{{1}}` = 6-digit OTP code
-- **Meta notes**: AUTHENTICATION templates are simpler to approve and have no copy restrictions beyond "must contain the code". Meta will also require a "Copy code" button on the template — Vonage's dashboard exposes this as a button type.
+- **Meta notes**: AUTHENTICATION templates are simpler to approve and have no copy restrictions beyond "must contain the code". Meta will also require a "Copy code" button on the template; WhatsApp Manager adds it as part of the authentication template form.
 
 ---
 
@@ -237,7 +243,7 @@ These are the SMS bodies currently in `handlers.js`. Each becomes one template. 
 
 ## Numbers per template
 
-Meta has caps on how many messages a single template can send per 24h, based on your business verification tier. Vonage's dashboard surfaces the limits. The OTP template will be the hottest — pre-warm the tier before launch.
+Meta has caps on how many messages a single template can send per 24h, based on your business verification tier. WhatsApp Manager shows the current limit for the number. The OTP template will be the hottest, so pre-warm the tier before launch.
 
 ## When templates change
 

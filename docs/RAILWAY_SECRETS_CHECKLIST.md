@@ -131,6 +131,36 @@ provider in staging if possible.
 
 ---
 
+## WhatsApp: Meta Cloud API
+
+R35. WhatsApp runs on Meta's Cloud API; Vonage is SMS only. All of
+these go on the notification service and nothing else reads them. The
+callback URL to enter in Meta is the gateway's public domain plus
+`/api/webhooks/whatsapp` (staging: `https://staging.tagidai.com/api/webhooks/whatsapp`).
+A Meta app has one webhook URL, so one app and its number serve one
+environment at a time.
+
+| Variable | Set on | Notes |
+|---|---|---|
+| `WHATSAPP_ACCESS_TOKEN` | notification | ⚠️ Permanent System User token, not the 24-hour token from the API Setup page |
+| `WHATSAPP_PHONE_NUMBER_ID` | notification | The id of the number, not the number itself, e.g. `123456789012345` |
+| `WHATSAPP_WABA_ID` | notification | WhatsApp Business Account id, e.g. `123456789012345`. Not read by the code yet |
+| `WHATSAPP_APP_SECRET` | notification | ⚠️ App secret of the Meta app. Verifies `X-Hub-Signature-256` on the webhook |
+| `WHATSAPP_VERIFY_TOKEN` | notification | 🎲 A random string we choose. The same value is entered in Meta's webhook configuration |
+| `WHATSAPP_API_VERSION` | notification | Graph API version, e.g. `v26.0` (the current one on 15.11.2026) |
+| `WHATSAPP_OTP_TEMPLATE_NAME` | notification | Leave unset until Meta approves an OTP template. Unset means every OTP goes by SMS |
+
+Without `WHATSAPP_ACCESS_TOKEN` and `WHATSAPP_PHONE_NUMBER_ID` nothing is
+sent over WhatsApp. Without `WHATSAPP_APP_SECRET` every webhook POST is
+refused with 401, and without `WHATSAPP_VERIFY_TOKEN` Meta's verification
+GET gets 403.
+
+No code reads these any more. Delete them from the notification service
+in both environments: `VONAGE_APPLICATION_ID`, `VONAGE_PRIVATE_KEY`,
+`VONAGE_WHATSAPP_NUMBER`.
+
+---
+
 ## Cardcom (⚠️ different per env)
 
 Use Cardcom's TEST terminal in staging, real terminal in production.
