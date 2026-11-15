@@ -469,6 +469,17 @@ function LandingPageInner() {
     return () => window.removeEventListener('popstate', onPop);
   }, []);
 
+  // R37 · a link to /marketplace/<id> followed inside the app (a
+  // provider's own listing, for one) is redirected here by the router,
+  // and this component is rendered before the address bar holds the new
+  // URL. The read of window.location above then finds no `listing` and
+  // the panel stayed shut; only a full page load opened it. The
+  // router's own view of the query string does have the id.
+  const listingParam = params.get('listing');
+  useEffect(() => {
+    if (listingParam) setOpenListingId(listingParam);
+  }, [listingParam]);
+
   // R32 S4 · everything the filter and the three sections need, split
   // out of one response. Housing is deliberately one bucket: an ad
   // from a corporation and a marketplace listing from the same
