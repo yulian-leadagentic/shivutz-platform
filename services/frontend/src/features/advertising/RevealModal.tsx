@@ -160,7 +160,7 @@ export function RevealModal({
             <div>
               <h2 id="reveal-modal-title" className="text-lg font-bold text-slate-900">כדי לראות פרטי קשר</h2>
               <p id="reveal-modal-desc" className="text-sm text-slate-600 mt-1 leading-relaxed">
-                חפשו אצלנו בחינם. חשיפת פרטי הקשר של תאגידים דורשת חשבון עם מנוי פעיל — 14 ימי ניסיון חינם.
+                חפשו אצלנו בחינם. חשיפת פרטי הקשר של תאגידים דורשת חשבון עם מנוי פעיל. המנוי חינם לתקופת ניסיון.
               </p>
             </div>
             <div className="space-y-2">
@@ -169,7 +169,7 @@ export function RevealModal({
                 className="w-full bg-brand-600 hover:bg-brand-800 text-slate-900 text-sm font-semibold px-4 py-2.5 rounded-lg inline-flex items-center justify-center gap-2"
               >
                 <UserPlus className="w-4 h-4" />
-                הרשם כקבלן — 14 יום חינם
+                הרשמה כקבלן · חינם לתקופת ניסיון
               </Link>
               <Link
                 href={`/login?returnTo=${encodeURIComponent(returnHref(block.adId, q))}`}

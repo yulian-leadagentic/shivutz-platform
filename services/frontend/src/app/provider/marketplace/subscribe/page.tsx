@@ -11,7 +11,8 @@
 // What the purchase does is the server's call, and the page asks
 // before it confirms (the quote): during the launch promo nothing is
 // charged and the plan runs until the promo ends, the same row
-// registration writes. After the promo there is no online payment for
+// registration writes. The dialog says "לתקופת ניסיון" and no date
+// (R37 D1); the quote's promo_end only decides whether it says so. After the promo there is no online payment for
 // these plans yet, and the server says so instead of selling one.
 //
 // Prices shown are the tiers' own, from /admin/marketplace. Nothing
@@ -129,7 +130,7 @@ function ProviderSubscribeInner() {
         `מסלול "${pending.tier.name_he}" בקטגוריית ${pending.tier.category_name_he}: עד ${pending.tier.slot_count} מודעות.`,
         `מחיר המסלול ${fmtPrice(Number(pending.tier.price_nis))} לתקופה של ${pending.tier.duration_days} ימים.`,
         pending.promo_end
-          ? `הפרסום ללא עלות עד ${fmtDate(pending.promo_end)}. לא נחייב אותך ללא הודעה מראש.`
+          ? 'הפרסום ללא עלות לתקופת ניסיון. לא נחייב אותך ללא הודעה מראש.'
           : '',
       ].filter(Boolean).join(' ')
     : '';

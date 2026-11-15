@@ -515,25 +515,21 @@ export default function ProviderRegisterPage() {
                               </label>
                             );
                           })}
-                          {/* R30 §8 · promo sentence gets an EXPLICIT
-                              end date from NEXT_PUBLIC_FREE_LAUNCH_UNTIL
-                              (the same env var FreeLaunchBanner reads).
-                              When the env is unset we render NOTHING —
-                              never "עד סיום המבצע" without a date, per
-                              §8: "המשתמש מוסר פרטי עסק בלי לדעת מתי
-                              מתחיל החיוב". Formatted DD.MM.YYYY, matches
-                              the display in FreeLaunchBanner. */}
+                          {/* R37 D1 (Yulian, 15.11) · what is free is free
+                              "לתקופת ניסיון": no date and no day count in
+                              the sentence. R30 §8 printed the end date
+                              here. NEXT_PUBLIC_FREE_LAUNCH_UNTIL (the
+                              variable FreeLaunchBanner reads) still
+                              decides whether the sentence shows: unset,
+                              unreadable or past, it does not. */}
                           {(() => {
                             const raw = process.env.NEXT_PUBLIC_FREE_LAUNCH_UNTIL?.trim();
                             if (!raw) return null;
                             const d = new Date(raw);
-                            if (Number.isNaN(d.getTime())) return null;
-                            const dd = String(d.getDate()).padStart(2, '0');
-                            const mm = String(d.getMonth() + 1).padStart(2, '0');
-                            const yyyy = d.getFullYear();
+                            if (Number.isNaN(d.getTime()) || new Date() >= d) return null;
                             return (
                               <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
-                                הפרסום ללא עלות עד {dd}.{mm}.{yyyy}. לא נחייב אותך ללא הודעה מראש.
+                                הפרסום ללא עלות לתקופת ניסיון. לא נחייב אותך ללא הודעה מראש.
                               </p>
                             );
                           })()}

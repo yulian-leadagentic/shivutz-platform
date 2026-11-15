@@ -263,11 +263,10 @@ async function handle(routingKey, payload, sendEmail) {
       if (payload.promo_end_iso) {
         const promoEnd = new Date(payload.promo_end_iso);
         if (!isNaN(promoEnd.getTime()) && promoEnd > new Date()) {
-          const promoDateHe = promoEnd.toLocaleDateString('he-IL');
           promoBlock = (
             '<p style="color: #334155; font-size: 14px; line-height: 1.7; margin: 0 0 16px; ' +
             'padding: 12px 14px; background: #fff7ed; border-inline-start: 3px solid #F78203; border-radius: 6px;">' +
-            'במסגרת מבצע ההשקה, הפרסום שלך ללא עלות עד ' + promoDateHe + '. ' +
+            'הפרסום שלך ללא עלות לתקופת ניסיון. ' +
             'לא נחייב אותך ללא הודעה מראש.' +
             '</p>'
           );
