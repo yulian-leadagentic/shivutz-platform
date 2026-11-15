@@ -16,34 +16,14 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Wrench, Plus, Loader2, ExternalLink, Layers } from 'lucide-react';
 
-import { ApiError, apiFetch } from '@/lib/api/client';
+import { ApiError } from '@/lib/api/client';
 import { marketplaceApi } from '@/lib/api/marketplace';
 import type { MarketplaceListing } from '@/types';
 import { TrustBadge } from '@/components/ads/TrustBadge';
 import ProviderStats from '@/components/provider/ProviderStats';
+import { useProviderMe } from '@/components/provider/ProviderShell';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-
-interface ProviderMe {
-  id:                string;
-  name:              string;
-  business_number:   string | null;
-  // R5 §2b · trade the provider self-selected at signup. Passed to
-  // the listing-creation form as ?category=<code> so it's the
-  // default without a second pick.
-  primary_category:  string | null;
-  contact_name:      string;
-  contact_phone:     string;
-  email:             string | null;
-  city:              string | null;
-  region:            string | null;
-  website:           string | null;
-  description:       string | null;
-  logo_url:          string | null;
-  status:            'pending' | 'active' | 'suspended';
-  verified_at:       string | null;
-  created_at:        string;
-}
 
 // The labels the corporation's own listings page uses.
 const STATUS_HE: Record<MarketplaceListing['status'], string> = {
@@ -54,10 +34,13 @@ const STATUS_HE: Record<MarketplaceListing['status'], string> = {
 };
 
 export default function ProviderDashboardPage() {
-  const [me,       setMe]       = useState<ProviderMe | null>(null);
+  // R37 · the profile comes from the shell, which already fetched it
+  // for the top bar. This page asks only for the listings.
+  const { me, loading: meLoading, failed: meFailed } = useProviderMe();
   const [listings, setListings] = useState<MarketplaceListing[]>([]);
-  const [loading,  setLoading]  = useState(true);
+  const [listingsLoading, setListingsLoading] = useState(true);
   const [error,    setError]    = useState<string | null>(null);
+  const loading = meLoading || listingsLoading;
   // R34 5a · pausing a listing frees its place in the plan; publishing
   // it again takes one, and the server refuses when the category has
   // no running plan or the plan is full (402, with the page that helps).
@@ -93,16 +76,11 @@ export default function ProviderDashboardPage() {
   useEffect(() => {
     (async () => {
       try {
-        const [meResp, listingsResp] = await Promise.all([
-          apiFetch<ProviderMe>('/organizations/providers/me'),
-          marketplaceApi.list({ mine: true }),
-        ]);
-        setMe(meResp);
-        setListings(listingsResp);
+        setListings(await marketplaceApi.list({ mine: true }));
       } catch (err) {
         setError(err instanceof Error ? err.message : 'שגיאה בטעינה');
       } finally {
-        setLoading(false);
+        setListingsLoading(false);
       }
     })();
   }, []);
@@ -115,7 +93,7 @@ export default function ProviderDashboardPage() {
     );
   }
 
-  if (error || !me) {
+  if (error || meFailed || !me) {
     return (
       <div className="min-h-[60vh] flex items-center justify-center px-4">
         <div className="max-w-md text-center">
@@ -136,7 +114,8 @@ export default function ProviderDashboardPage() {
             <Wrench className="h-6 w-6" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-slate-900">{me.name}</h1>
+            {/* The business name is in the bar above; the page says what it is. */}
+            <h1 className="text-2xl font-bold text-slate-900">לוח בקרה</h1>
             <div className="mt-1 flex items-center gap-2 text-sm text-slate-500">
               <TrustBadge
                 entity="service_provider"

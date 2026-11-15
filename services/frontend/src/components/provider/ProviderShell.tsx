@@ -11,7 +11,7 @@
 // pages. A 256px column holding three links would only move the empty
 // space to the other side of the screen.
 
-import { useEffect, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { CreditCard, LayoutDashboard, LogOut, Megaphone, Menu, X } from 'lucide-react';
@@ -20,6 +20,37 @@ import { apiFetch } from '@/lib/api/client';
 import { clearTokens } from '@/lib/auth';
 import { ENTITY_TYPE_HE } from '@/lib/labels';
 import { cn } from '@/lib/utils';
+
+export interface ProviderMe {
+  id:                string;
+  name:              string;
+  business_number:   string | null;
+  // R5 §2b · trade the provider self-selected at signup. Passed to
+  // the listing-creation form as ?category=<code> so it's the
+  // default without a second pick.
+  primary_category:  string | null;
+  contact_name:      string;
+  contact_phone:     string;
+  email:             string | null;
+  city:              string | null;
+  region:            string | null;
+  website:           string | null;
+  description:       string | null;
+  logo_url:          string | null;
+  status:            'pending' | 'active' | 'suspended';
+  verified_at:       string | null;
+  created_at:        string;
+}
+
+// R37 · the provider's own profile, fetched once by the shell and handed
+// to whatever page is inside it. The shell and the dashboard each made
+// the same request, and each then printed the business name.
+interface ProviderMeState { me: ProviderMe | null; loading: boolean; failed: boolean }
+const ProviderMeContext = createContext<ProviderMeState>({ me: null, loading: true, failed: false });
+
+export function useProviderMe(): ProviderMeState {
+  return useContext(ProviderMeContext);
+}
 
 const DASHBOARD     = '/provider/dashboard';
 const BILLING       = '/provider/billing';
@@ -41,18 +72,24 @@ export default function ProviderShell({ children }: { children: React.ReactNode 
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
   const [hash, setHash] = useState('');
-  const [businessName, setBusinessName] = useState<string | null>(null);
+  const [me, setMe] = useState<ProviderMe | null>(null);
   const [nameLoading, setNameLoading] = useState(true);
+  const [meFailed, setMeFailed] = useState(false);
+  const businessName = me?.name ?? null;
+  const meState = useMemo(
+    () => ({ me, loading: nameLoading, failed: meFailed }),
+    [me, nameLoading, meFailed],
+  );
   const toggleRef = useRef<HTMLButtonElement>(null);
 
-  // Same call the dashboard makes. A failure here must not cost the
-  // provider the page under it, so the bar falls back to the role label
-  // on its own.
+  // The one request for the provider's profile. A failure here must
+  // not cost the provider the page under it: the bar falls back to the
+  // role label, and a page that needs the profile shows its own error.
   useEffect(() => {
     let cancelled = false;
-    apiFetch<{ name: string }>('/organizations/providers/me')
-      .then((me) => { if (!cancelled) setBusinessName(me.name); })
-      .catch(() => {})
+    apiFetch<ProviderMe>('/organizations/providers/me')
+      .then((row) => { if (!cancelled) setMe(row); })
+      .catch(() => { if (!cancelled) setMeFailed(true); })
       .finally(() => { if (!cancelled) setNameLoading(false); });
     return () => { cancelled = true; };
   }, []);
@@ -207,7 +244,9 @@ export default function ProviderShell({ children }: { children: React.ReactNode 
         </nav>
       </header>
 
-      <main className="mx-auto max-w-5xl px-4 py-6">{children}</main>
+      <main className="mx-auto max-w-5xl px-4 py-6">
+        <ProviderMeContext.Provider value={meState}>{children}</ProviderMeContext.Provider>
+      </main>
     </div>
   );
 }
