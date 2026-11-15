@@ -89,7 +89,7 @@ export const CODE_TO_HE: Record<string, string> = {
   entity_id_and_type_required: 'חסר מידע על הישות',
 
   // ── organizations / registration ───────────────────────────
-  invalid_business_number:  'מספר ע.מ / ח.פ אינו תקין',
+  invalid_business_number:  'מספר ח.פ / ע.מ אינו תקין. בדקו את הספרות.',
   business_number_taken:    'מספר ע.מ / ח.פ זה כבר רשום במערכת',
   company_blocked:          'החברה רשומה במצב לא פעיל ברשם החברות',
   contractor_not_found:     'הקבלן לא נמצא',

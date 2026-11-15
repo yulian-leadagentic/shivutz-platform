@@ -38,6 +38,12 @@ from fastapi import APIRouter, HTTPException, Header
 from pydantic import BaseModel, EmailStr
 
 from app.db import get_db
+from app.integrations.israeli_id import (
+    BN_CHECKSUM,
+    BN_FORMAT,
+    BN_REQUIRED,
+    check_business_number,
+)
 from app.publisher import publish_event
 from app.services.phone_normalize import normalize_or_400
 
@@ -50,8 +56,8 @@ class ProviderCreate(BaseModel):
     contact_name: str                    # owner full name (also used as user.full_name)
     contact_phone: str                   # owner mobile (used as user.phone for SMS login)
     # R5 §2a · ח.פ / ע.מ was optional pre-17.09; Yulian promoted it to
-    # required. Format-only check (9 digits) — providers aren't in
-    # ראשם החברות so we deliberately DON'T lookup like corporations do.
+    # required. R34 P2 · format and check digit are verified; there is
+    # still no registry lookup (see register_provider).
     business_number: str
     # R5 §2b · trade the provider self-selected at signup. Validated
     # against the live marketplace_categories table below so a stale
@@ -101,20 +107,40 @@ async def register_provider(data: ProviderCreate):
     # sees the same canonical value.
     data.contact_phone = normalize_or_400(data.contact_phone)
 
-    # R5 §2a · format-only ח.פ check (9 digits). No registry lookup —
-    # provider is deliberately outside the corp registry (that's why the
-    # entity type exists in the first place).
-    bn = (data.business_number or "").strip()
-    if not bn:
+    # R34 P2 · the ח.פ / ע.מ check is now real: format AND check digit.
+    # Until this round it was format-only (nine digits of anything),
+    # while contractors and corporations had been going through
+    # `is_valid_israeli_id` all along. The public copy is about to say
+    # "נבדק", and a claim like that has to be true on the day it ships.
+    # Still no registry lookup: a sole proprietor's ע.מ is not in the
+    # companies register, so there is nothing to look it up against.
+    #
+    # `bn` is the canonical nine-digit form from here on. Everything
+    # below — the three duplicate guards and the INSERT — uses it.
+    bn, bn_error = check_business_number(data.business_number)
+    if bn_error == BN_REQUIRED:
         raise HTTPException(status_code=400, detail={
             "code":    "business_number_required",
             "message": "ח.פ / ע.מ הוא שדה חובה",
         })
-    if not bn.isdigit() or len(bn) != 9:
+    if bn_error == BN_FORMAT:
         raise HTTPException(status_code=400, detail={
             "code":    "invalid_business_number",
             "message": "ח.פ / ע.מ חייב להיות 9 ספרות",
         })
+    if bn_error == BN_CHECKSUM:
+        raise HTTPException(status_code=400, detail={
+            "code":    "invalid_business_number",
+            "message": "מספר ח.פ / ע.מ אינו תקין. בדקו את הספרות.",
+        })
+    # An eight-digit entry was padded to nine. Rows written before this
+    # round, and contractor / corporation rows (which store what was
+    # typed), may hold the unpadded form, so the duplicate guards have
+    # to match either spelling or padding becomes a way around them.
+    # Every spelling of the same number: "012345674", "12345674".
+    _leading_zeros = len(bn) - len(bn.lstrip("0"))
+    bn_spellings = tuple(bn[k:] for k in range(_leading_zeros + 1))
+    _bn_in = ", ".join(["%s"] * len(bn_spellings))
 
     # R5 §2b · primary_category must be an active marketplace_category.
     # Validated live so an admin renaming the category set can't leave
@@ -198,11 +224,11 @@ async def register_provider(data: ProviderCreate):
                 promo_end = None
         promo_active = promo_end is not None and promo_end > datetime.utcnow()
         cur.execute(
-            """SELECT id, name FROM service_providers
-                WHERE business_number = %s
+            f"""SELECT id, name FROM service_providers
+                WHERE business_number IN ({_bn_in})
                   AND deleted_at IS NULL
                 LIMIT 1""",
-            (bn,),
+            bn_spellings,
         )
         existing = cur.fetchone()
         if existing:
@@ -220,8 +246,8 @@ async def register_provider(data: ProviderCreate):
         # Same ח.פ registered as contractor?
         cur.execute(
             "SELECT id, company_name_he FROM contractors "
-            "WHERE business_number = %s AND deleted_at IS NULL LIMIT 1",
-            (bn,),
+            f"WHERE business_number IN ({_bn_in}) AND deleted_at IS NULL LIMIT 1",
+            bn_spellings,
         )
         c_existing = cur.fetchone()
         if c_existing:
@@ -236,8 +262,8 @@ async def register_provider(data: ProviderCreate):
         # Same ח.פ registered as corporation?
         cur.execute(
             "SELECT id, company_name_he FROM corporations "
-            "WHERE business_number = %s AND deleted_at IS NULL LIMIT 1",
-            (bn,),
+            f"WHERE business_number IN ({_bn_in}) AND deleted_at IS NULL LIMIT 1",
+            bn_spellings,
         )
         corp_existing = cur.fetchone()
         if corp_existing:

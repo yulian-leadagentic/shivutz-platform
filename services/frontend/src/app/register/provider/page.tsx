@@ -49,6 +49,7 @@ import Logo from '@/components/Logo';
 import { ConsentLine } from '@/components/register/ConsentLine';
 import { checkIsraeliPhone } from '@/lib/phone';
 import { checkEmail } from '@/lib/email';
+import { checkBusinessNumber, BUSINESS_NUMBER_ERROR_INVALID } from '@/lib/businessNumber';
 
 type Phase = 'phone' | 'otp' | 'form' | 'done';
 
@@ -273,14 +274,17 @@ export default function ProviderRegisterPage() {
     }
     if (!name.trim())        { setField('name',         'שם העסק הוא שדה חובה'); return; }
     if (!contactName.trim()) { setField('contact_name', 'שם איש קשר הוא שדה חובה'); return; }
-    // R5 §2a · ח.פ was optional until Yulian's 17.09 call. Format check
-    // only (9 digits) — providers aren't in ראשם החברות so we
-    // deliberately don't cross-check a registry; that's the whole point
-    // of the service_provider entity type. Server-side validation in
-    // providers.py is the source of truth; client is convenience.
-    const bn = businessNumber.trim();
-    if (!bn)                    { setField('business_number', 'ח.פ / ע.מ הוא שדה חובה'); return; }
-    if (!/^\d{9}$/.test(bn))    { setField('business_number', 'ח.פ / ע.מ חייב להיות 9 ספרות'); return; }
+    // R34 P2 · format AND check digit, the same rule providers.py
+    // applies. Until this round both sides accepted any nine digits.
+    // Still no registry cross-check: a sole proprietor's ע.מ is not in
+    // the companies register. The server is the source of truth; this
+    // is here so a mistyped digit is caught beside the field.
+    const bnCheck = checkBusinessNumber(businessNumber);
+    if (!bnCheck.valid || !bnCheck.normalized) {
+      setField('business_number', bnCheck.message ?? BUSINESS_NUMBER_ERROR_INVALID);
+      return;
+    }
+    const bn = bnCheck.normalized;
     // R10 §5 · email now required. Yulian's decisions doc §5:
     // "בלי אימייל אין לאן לשלוח" (welcome email needs a target).
     // R30 §9 · use the shared helper so the error copy matches the
@@ -630,9 +634,18 @@ export default function ProviderRegisterPage() {
                           setBizNumber(e.target.value.replace(/\D/g, '').slice(0, 9));
                           if (fieldErrors.business_number) clearField('business_number');
                         }}
+                        // R34 P2 · check on blur as well as on submit, so
+                        // the visitor hears about a wrong digit while the
+                        // number is still in front of them. An empty
+                        // field stays quiet until submit.
+                        onBlur={() => {
+                          if (!businessNumber.trim()) return;
+                          const check = checkBusinessNumber(businessNumber);
+                          if (!check.valid && check.message) setField('business_number', check.message);
+                        }}
                         dir="ltr"
                         inputMode="numeric"
-                        pattern="\d{9}"
+                        pattern="\d{8,9}"
                         maxLength={9}
                         required
                         error={fieldErrors.business_number}
