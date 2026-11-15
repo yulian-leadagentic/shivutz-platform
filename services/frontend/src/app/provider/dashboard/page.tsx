@@ -127,7 +127,7 @@ export default function ProviderDashboardPage() {
         <Card>
           <CardHeader>
             <CardTitle className="text-lg">המודעות שלי</CardTitle>
-            <CardDescription>מודעות שפרסמת בשוק. חינם עד סוף 2026.</CardDescription>
+            <CardDescription>מודעות שפרסמת בשוק. חינם לתקופת ניסיון.</CardDescription>
           </CardHeader>
           <CardContent>
             {listings.length === 0 ? (
