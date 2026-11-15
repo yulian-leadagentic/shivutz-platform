@@ -439,7 +439,7 @@ function PlanCard({
       </div>
 
       <dl className="mt-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
-        <dt className="text-slate-500">{plan.auto_renew ? 'מועד חידוש' : 'בתוקף עד'}</dt>
+        <dt className="text-slate-500">{paidPlan && plan.auto_renew ? 'מועד חידוש' : 'בתוקף עד'}</dt>
         <dd className="font-medium text-slate-900">{fmtDate(plan.expires_at)}</dd>
         <dt className="text-slate-500">מחיר המסלול</dt>
         <dd className="font-medium text-slate-900">

@@ -116,7 +116,6 @@ export function PaymentCardBlock({
   useEffect(() => {
     if (!setupId || handled.current === setupId) return;
     handled.current = setupId;
-    box.current?.scrollIntoView({ block: 'center' });
     void check(setupId);
     const rest = new URLSearchParams(params?.toString() ?? '');
     rest.delete('card_setup');
@@ -124,6 +123,12 @@ export function PaymentCardBlock({
     const query = rest.toString();
     router.replace(query ? `${pathname}?${query}` : (pathname ?? '/'), { scroll: false });
   }, [setupId, check, params, pathname, router]);
+
+  // The answer about a card is shown inside this block, which sits
+  // under the plans. Brought into view when there is one to read.
+  useEffect(() => {
+    if (notice) box.current?.scrollIntoView({ block: 'center' });
+  }, [notice]);
 
   async function open() {
     setOpening(true);
