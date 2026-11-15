@@ -19,6 +19,7 @@ import { useEffect, useId, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowRight, Loader2 } from 'lucide-react';
+import { ApiError } from '@/lib/api/client';
 import { marketplaceApi } from '@/lib/api/marketplace';
 import { marketplaceSubscriptionsApi } from '@/lib/api/marketplaceSubscriptions';
 import { Button } from '@/components/ui/button';
@@ -92,6 +93,9 @@ export default function NewProviderListingPage() {
   const [images, setImages] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [error,  setError]  = useState('');
+  // R33 B.1 · set when the server refused the listing for want of a
+  // plan (402): where to add one, shown as a link under the message.
+  const [buyUrl, setBuyUrl] = useState<string | null>(null);
 
   const [categories,  setCategories]  = useState<Category[]>([]);
   const [catsLoading, setCatsLoading] = useState(true);
@@ -124,7 +128,7 @@ export default function NewProviderListingPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!form.title.trim()) { setError('כותרת היא שדה חובה'); return; }
-    setSaving(true); setError('');
+    setSaving(true); setError(''); setBuyUrl(null);
     try {
       await marketplaceApi.create({
         category:       form.category,
@@ -143,6 +147,12 @@ export default function NewProviderListingPage() {
       router.push('/provider/dashboard#my-listings');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'שגיאה בפרסום');
+      // No plan in this category, or the plan is full. The server
+      // sends the page that fixes it; anything else has no link.
+      if (err instanceof ApiError && err.cause.status === 402) {
+        const details = err.cause.details as { buy_url?: string | null } | undefined;
+        setBuyUrl(details?.buy_url || `/provider/marketplace/subscribe?category=${encodeURIComponent(form.category)}`);
+      }
     } finally { setSaving(false); }
   }
 
@@ -268,6 +278,14 @@ export default function NewProviderListingPage() {
             {error && (
               <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
                 {error}
+                {buyUrl && (
+                  <>
+                    {' '}
+                    <Link href={buyUrl} className="font-semibold underline underline-offset-2">
+                      הוספת מסלול בקטגוריה
+                    </Link>
+                  </>
+                )}
               </div>
             )}
 

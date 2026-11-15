@@ -14,7 +14,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Wrench, Plus, Loader2, ExternalLink } from 'lucide-react';
+import { Wrench, Plus, Loader2, ExternalLink, Layers } from 'lucide-react';
 
 import { apiFetch } from '@/lib/api/client';
 import { marketplaceApi } from '@/lib/api/marketplace';
@@ -107,11 +107,19 @@ export default function ProviderDashboardPage() {
             </div>
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Link href="/marketplace">
             <Button variant="outline" size="sm">
               <ExternalLink className="h-4 w-4" />
               שוק המודעות
+            </Button>
+          </Link>
+          {/* R33 B.3 · a provider publishes only where it has a plan;
+              this is where it adds one in another category. */}
+          <Link href="/provider/marketplace/subscribe">
+            <Button variant="outline" size="sm">
+              <Layers className="h-4 w-4" />
+              הוספת קטגוריה
             </Button>
           </Link>
           <Link href={me.primary_category ? `/provider/marketplace/new?category=${encodeURIComponent(me.primary_category)}` : '/provider/marketplace/new'}>

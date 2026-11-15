@@ -15,7 +15,7 @@ export interface SubscriptionTierBrief {
 
 export interface Subscription {
   id:                       string;
-  advertiser_entity_type:   'contractor' | 'corporation';
+  advertiser_entity_type:   'contractor' | 'corporation' | 'service_provider';
   advertiser_entity_id:     string;
   category_code:            string;
   category_name_he?:        string;
@@ -27,6 +27,8 @@ export interface Subscription {
   expires_at:               string;
   auto_renew:               boolean;
   status:                   'active' | 'expired' | 'cancelled';
+  /** Why nothing was paid, when nothing was: 'launch_free_promo', 'r33_backfill'. */
+  promo_note?:              string | null;
   cardcom_token_ref?:       string | null;
   payment_transaction_id?:  string | null;
   cancelled_at?:            string | null;
@@ -40,7 +42,11 @@ export interface Subscription {
 export interface SubscriptionQuote {
   tier:     SubscriptionTierBrief;
   existing_subscription: Subscription | null;
-  advertiser: { entity_type: 'contractor' | 'corporation'; entity_id: string };
+  advertiser: { entity_type: 'contractor' | 'corporation' | 'service_provider'; entity_id: string };
+  /** R33 B.3 · providers only: YYYY-MM-DD when the launch promo is on,
+   *  meaning this purchase charges nothing and runs until that date.
+   *  null when a purchase would have to be paid for. */
+  promo_end?: string | null;
 }
 
 // Public — used by the subscribe page to list available bundles.
