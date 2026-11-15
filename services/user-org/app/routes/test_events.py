@@ -49,15 +49,23 @@ class ActorTest(unittest.TestCase):
 
 
 class _FakeCursor:
-    def __init__(self, live_ads=(), live_listings=()):
+    def __init__(self, live_ads=(), live_listings=(), owners=None):
         self.live = {"sponsor_ads": set(live_ads), "marketplace_listings": set(live_listings)}
+        # listing id -> the entity that advertises it (R37: own views)
+        self.owners = dict(owners or {})
         self.selects: list = []
+        self.own_checks: list = []
         self.inserted: list = []
         self._rows: list = []
 
     def execute(self, sql, params=()):
         if sql.lstrip().startswith("INSERT INTO promo_events"):
             self.inserted.append(tuple(params))
+            return
+        if "advertiser_entity_id = %s" in sql:
+            *ids, entity = params
+            self.own_checks.append((tuple(ids), entity))
+            self._rows = [{"id": i} for i in ids if self.owners.get(i) == entity]
             return
         for table, live in self.live.items():
             if f"FROM {table}" in sql:
@@ -179,6 +187,77 @@ class BatchTest(_HandlerCase):
             EventBatch(events=[
                 _event("listing_impression", "marketplace_listing", f"l{i}") for i in range(21)
             ])
+
+
+class OwnViewsTest(_HandlerCase):
+    """R37 Part 5 item 7 · a logged-in owner's own impressions and
+    opens are not counted."""
+
+    def _single(self, cursor, event, **headers):
+        get_db, limiter, conn = self._patched(cursor)
+        with get_db, limiter:
+            asyncio.run(events.record_event(
+                event, _Request(),
+                x_entity_id=headers.get("x_entity_id"),
+                x_entity_type=headers.get("x_entity_type"),
+            ))
+        return conn
+
+    def _batch(self, cursor, batch, **headers):
+        get_db, limiter, conn = self._patched(cursor)
+        with get_db, limiter:
+            asyncio.run(events.record_events_batch(
+                EventBatch(events=batch), _Request(),
+                x_entity_id=headers.get("x_entity_id"),
+                x_entity_type=headers.get("x_entity_type"),
+            ))
+        return conn
+
+    def test_the_owners_own_open_is_accepted_and_not_written(self):
+        cursor = _FakeCursor(live_listings={"l1"}, owners={"l1": "prov-1"})
+        conn = self._single(cursor, _event("listing_open", "marketplace_listing", "l1"),
+                            x_entity_id="prov-1", x_entity_type="service_provider")
+        self.assertEqual(cursor.inserted, [])
+        conn.commit.assert_not_called()
+        self.assertEqual(cursor.own_checks, [(("l1",), "prov-1")])
+
+    def test_somebody_elses_open_is_written(self):
+        cursor = _FakeCursor(live_listings={"l1"}, owners={"l1": "prov-1"})
+        self._single(cursor, _event("listing_open", "marketplace_listing", "l1"),
+                     x_entity_id="con-7", x_entity_type="contractor")
+        self.assertEqual(len(cursor.inserted), 1)
+
+    def test_an_anonymous_view_is_written_and_no_owner_is_looked_up(self):
+        cursor = _FakeCursor(live_listings={"l1"}, owners={"l1": "prov-1"})
+        self._single(cursor, _event("listing_impression", "marketplace_listing", "l1"))
+        self.assertEqual(len(cursor.inserted), 1)
+        self.assertEqual(cursor.own_checks, [])
+
+    def test_a_batch_drops_only_the_callers_own_listings(self):
+        cursor = _FakeCursor(live_ads={"ad1"}, live_listings={"mine", "theirs"},
+                             owners={"mine": "prov-1", "theirs": "prov-2"})
+        self._batch(cursor, [
+            _event("impression",         "sponsor_ad",          "ad1"),
+            _event("listing_impression", "marketplace_listing", "mine"),
+            _event("listing_open",       "marketplace_listing", "mine"),
+            _event("listing_impression", "marketplace_listing", "theirs"),
+        ], x_entity_id="prov-1", x_entity_type="service_provider")
+        self.assertEqual([(r[1], r[3]) for r in cursor.inserted],
+                         [("impression", "ad1"), ("listing_impression", "theirs")])
+
+    def test_a_batch_of_only_own_listings_writes_nothing(self):
+        cursor = _FakeCursor(live_listings={"mine"}, owners={"mine": "prov-1"})
+        conn = self._batch(cursor, [_event("listing_impression", "marketplace_listing", "mine")],
+                           x_entity_id="prov-1", x_entity_type="service_provider")
+        self.assertEqual(cursor.inserted, [])
+        conn.commit.assert_not_called()
+
+    def test_a_sponsor_ad_is_never_put_through_the_owner_check(self):
+        cursor = _FakeCursor(live_ads={"ad1"})
+        self._single(cursor, _event("impression", "sponsor_ad", "ad1"),
+                     x_entity_id="prov-1", x_entity_type="service_provider")
+        self.assertEqual(len(cursor.inserted), 1)
+        self.assertEqual(cursor.own_checks, [])
 
 
 class SingleTest(_HandlerCase):

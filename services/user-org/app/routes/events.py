@@ -152,6 +152,27 @@ def _live_target_ids(cur, target_type: str, target_ids: list[str]) -> set:
     return {row[0] if not isinstance(row, dict) else row["id"] for row in cur.fetchall()}
 
 
+def _own_listing_ids(cur, target_ids: list[str], x_entity_id: Optional[str]) -> set:
+    """R37 · the listings among `target_ids` that the caller itself
+    advertises. Their impressions and opens are not recorded: a provider
+    checking its own listing is not an audience, and on a new listing
+    its own visits were most of the number.
+
+    Only a logged-in caller can be recognised: the gateway attaches
+    x-entity-id from the token on this otherwise public route. An owner
+    browsing logged out is counted like anyone else, and no actor is
+    stored either way, so this cannot be applied after the fact."""
+    if not x_entity_id or not target_ids:
+        return set()
+    placeholders = ",".join(["%s"] * len(target_ids))
+    cur.execute(
+        f"""SELECT id FROM marketplace_listings
+             WHERE id IN ({placeholders}) AND advertiser_entity_id = %s""",
+        (*target_ids, x_entity_id),
+    )
+    return {row[0] if not isinstance(row, dict) else row["id"] for row in cur.fetchall()}
+
+
 def _actor(target_type: str, x_entity_id: Optional[str], x_entity_type: Optional[str]) -> tuple:
     """(actor_entity_id, actor_entity_type) for the row. Listing events
     carry no actor at all, see the module docstring."""
@@ -240,6 +261,10 @@ async def record_event(
         cur = conn.cursor()
         if not _live_target_ids(cur, body.target_type, [body.target_id]):
             raise HTTPException(status_code=400, detail={"code": "target_not_found"})
+        # R37 · the caller's own listing: accepted, not recorded. A 204
+        # like any other, so the page that sent it sees nothing odd.
+        if body.target_type == "marketplace_listing" and _own_listing_ids(cur, [body.target_id], x_entity_id):
+            return
 
         clean_meta = _clean_metadata(body.metadata)
 
@@ -313,6 +338,12 @@ async def record_events_batch(
             live |= {(target_type, i) for i in _live_target_ids(cur, target_type, ids)}
         if not live:
             return  # 204
+        # R37 · the caller's own listings drop out of the batch; the
+        # rest of it is recorded as usual.
+        own = _own_listing_ids(
+            cur, [i for t, i in live if t == "marketplace_listing"], x_entity_id,
+        )
+        live -= {("marketplace_listing", i) for i in own}
 
         import uuid as _uuid
         rows = [
