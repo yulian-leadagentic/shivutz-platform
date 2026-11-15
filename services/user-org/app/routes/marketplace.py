@@ -507,6 +507,78 @@ def reveal_listing_contact(
         conn.close()
 
 
+# ── A plan with room for one more listing ─────────────────────────────────────
+
+def _plan_with_free_slot(cur, entity_type: str, entity_id: str, category: str):
+    """The advertiser's running plan in `category`, if it can take one
+    more listing: (plan id, slot_count, slots already used).
+
+    402 no_active_subscription when there is no running plan there,
+    402 no_slots_available when it is full. Shared by the two ways a
+    listing becomes published: creating it, and turning a paused one
+    back on.
+
+    Locking the row would matter only at very high concurrency; for now
+    a serialized read is fine.
+    """
+    cur.execute(
+        """SELECT id, slot_count
+             FROM marketplace_subscriptions
+            WHERE advertiser_entity_type = %s
+              AND advertiser_entity_id   = %s
+              AND category_code          = %s
+              AND status                 = 'active'
+              AND expires_at             > NOW()
+            ORDER BY expires_at DESC LIMIT 1""",
+        (entity_type, entity_id, category),
+    )
+    sub = cur.fetchone()
+    is_provider = entity_type == "service_provider"
+    if not sub:
+        raise HTTPException(
+            status_code=402,  # 402 Payment Required, the closest fit
+            detail={
+                "code": "no_active_subscription",
+                "message": (
+                    "אין לך מסלול פעיל בקטגוריה זו. כדי לפרסם בה יש להוסיף מסלול."
+                    if is_provider
+                    else "אין מנוי פעיל בקטגוריה זו. רכוש מנוי כדי לפרסם."
+                ),
+                "category": category,
+                # Where this caller gets a plan. Only providers have
+                # such a page; the form turns it into a link.
+                "buy_url": f"/provider/marketplace/subscribe?category={category}" if is_provider else None,
+            },
+        )
+
+    cur.execute(
+        """SELECT COUNT(*) AS n FROM marketplace_listings
+            WHERE subscription_id = %s
+              AND deleted_at IS NULL
+              AND status = 'active'""",
+        (sub["id"],),
+    )
+    used = int(cur.fetchone()["n"])
+    if used >= sub["slot_count"]:
+        # R33 B · 402, not 409: the way out is a bigger plan, the same
+        # answer as having no plan at all. The listings already
+        # published are untouched; only this one is refused.
+        raise HTTPException(
+            status_code=402,
+            detail={
+                "code": "no_slots_available",
+                "message": "כל מקומות הפרסום במנוי הזה מנוצלים. השבת מודעה קיימת או שדרג את המנוי.",
+                "category": category,
+                "slot_count": sub["slot_count"],
+                "slots_used": used,
+                # R34 5a · the plan exists, so the page that helps is
+                # the one where it can be upgraded.
+                "buy_url": f"/provider/billing?category={category}" if is_provider else None,
+            },
+        )
+    return sub["id"], sub["slot_count"], used
+
+
 # ── POST /marketplace ──────────────────────────────────────────────────────────
 
 @router.post("", status_code=201)
@@ -614,68 +686,9 @@ def create_listing(
         used = 0
 
         if not is_corp_housing:
-            # Find an active subscription that covers this category + has a
-            # free slot. Locking the row would matter only at very high
-            # concurrency; for now a serialized read is fine.
-            cur.execute(
-                """SELECT id, slot_count
-                     FROM marketplace_subscriptions
-                    WHERE advertiser_entity_type = %s
-                      AND advertiser_entity_id   = %s
-                      AND category_code          = %s
-                      AND status                 = 'active'
-                      AND expires_at             > NOW()
-                    ORDER BY expires_at DESC LIMIT 1""",
-                (entity_type, entity_id, body.category),
+            sub_id, slot_count, used = _plan_with_free_slot(
+                cur, entity_type, entity_id, body.category,
             )
-            # Where this caller buys a plan. Only providers have such a
-            # page; the form turns it into a link next to the message.
-            buy_url = (
-                f"/provider/marketplace/subscribe?category={body.category}"
-                if entity_type == "service_provider" else None
-            )
-            sub = cur.fetchone()
-            if not sub:
-                raise HTTPException(
-                    status_code=402,  # 402 Payment Required — closest fit
-                    detail={
-                        "code": "no_active_subscription",
-                        "message": (
-                            "אין לך מסלול פעיל בקטגוריה זו. כדי לפרסם בה יש להוסיף מסלול."
-                            if entity_type == "service_provider"
-                            else "אין מנוי פעיל בקטגוריה זו. רכוש מנוי כדי לפרסם."
-                        ),
-                        "category": body.category,
-                        "buy_url": buy_url,
-                    },
-                )
-
-            cur.execute(
-                """SELECT COUNT(*) AS n FROM marketplace_listings
-                    WHERE subscription_id = %s
-                      AND deleted_at IS NULL
-                      AND status = 'active'""",
-                (sub["id"],),
-            )
-            used = int(cur.fetchone()["n"])
-            if used >= sub["slot_count"]:
-                # R33 B · 402, not 409: the way out is a bigger plan,
-                # the same answer as having no plan at all. The listings
-                # already published are untouched; only this new one is
-                # refused.
-                raise HTTPException(
-                    status_code=402,
-                    detail={
-                        "code": "no_slots_available",
-                        "message": "כל מקומות הפרסום במנוי הזה מנוצלים. השבת מודעה קיימת או שדרג את המנוי.",
-                        "category": body.category,
-                        "slot_count": sub["slot_count"],
-                        "slots_used": used,
-                        "buy_url": buy_url,
-                    },
-                )
-            sub_id     = sub["id"]
-            slot_count = sub["slot_count"]
 
         # `corporation_id` is preserved for the V0 read path until 2.2
         # rewrites browse to use advertiser_entity_*; for contractor
@@ -739,7 +752,8 @@ def update_listing(
     try:
         cur = conn.cursor()
         cur.execute(
-            """SELECT id, corporation_id, advertiser_entity_id
+            """SELECT id, corporation_id, advertiser_entity_id, advertiser_entity_type,
+                      category, status
                  FROM marketplace_listings WHERE id=%s AND deleted_at IS NULL""",
             (listing_id,),
         )
@@ -754,6 +768,24 @@ def update_listing(
             raise HTTPException(status_code=403, detail="Forbidden")
 
         updates, params = [], []
+        # R34 5a · a listing going back to 'active' takes a slot, the
+        # way a new one does, and is filed under the plan that has it.
+        # Until now this was a plain column write: pausing listings
+        # freed their slots, new ones could be created in them, and
+        # the paused ones could then be switched back on, past the
+        # plan's size. It also let a listing return after its plan was
+        # cancelled. Corporation listings are not on a plan (housing
+        # rides the licence) and are left as they were.
+        if (
+            body.status == "active"
+            and row["status"] != "active"
+            and row["advertiser_entity_type"] in ("contractor", "service_provider")
+        ):
+            plan_id, _, _ = _plan_with_free_slot(
+                cur, row["advertiser_entity_type"], row["advertiser_entity_id"], row["category"],
+            )
+            updates.append("subscription_id=%s")
+            params.append(plan_id)
         for field, val in body.model_dump(exclude_none=True).items():
             if field == "images_json":
                 # images_json is a JSON column; cap and serialize.

@@ -127,7 +127,7 @@ class CreateListingTest(unittest.TestCase):
         detail = ctx.exception.detail
         self.assertEqual(detail["code"], "no_slots_available")
         self.assertEqual((detail["slot_count"], detail["slots_used"]), (5, 5))
-        self.assertEqual(detail["buy_url"], "/provider/marketplace/subscribe?category=services")
+        self.assertEqual(detail["buy_url"], "/provider/billing?category=services")
         self.assertEqual(cur.ran("INSERT INTO"), [])
         self.assertEqual(cur.ran("UPDATE"), [])
         self.assertEqual(cur.ran("DELETE"), [])

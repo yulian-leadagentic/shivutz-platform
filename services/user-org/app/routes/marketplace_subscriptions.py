@@ -16,6 +16,13 @@ promo row registration writes (services/provider_plans.py) and charges
 nothing, with or without PAYMENT_FAKE_MODE. After the promo a provider
 is in the same position as everyone else: there is no Cardcom charging
 for marketplace subscriptions yet, so the purchase answers 503.
+
+R34 5a · the plan's owner can also manage it: turn renewal back on,
+move to a bigger plan in the same category, and cancel. Nothing here
+charges or refunds. An upgrade is free while the launch promo runs and
+answers 503 afterwards, like a purchase. Cancelling is offered only for
+a plan nothing was paid for, because what a paid plan is owed on
+cancellation has not been decided.
 """
 import os
 import uuid
@@ -33,6 +40,13 @@ from app.services.provider_plans import (
 router = APIRouter()
 
 PAYMENT_FAKE_MODE = os.getenv("PAYMENT_FAKE_MODE", "0") == "1"
+
+# The answer wherever a charge would be needed: buying a plan, and
+# moving to a bigger one once the launch promo is over.
+_NO_ONLINE_PAYMENT = {
+    "code": "cardcom_not_configured",
+    "message": "תשלום אונליין עדיין לא הופעל בסביבה זו. פנה למנהל המערכת.",
+}
 
 
 # ── Helpers ──────────────────────────────────────────────────────────
@@ -150,6 +164,28 @@ def _count_active_listings(cur, subscription_id: str) -> int:
     return int(row["n"] if row else 0)
 
 
+def _own_running_plan(cur, sub_id: str, entity_type: str, entity_id: str) -> dict:
+    """The caller's plan `sub_id`, if it is still running. 404 when it
+    is not the caller's, 409 when it has ended or was cancelled."""
+    cur.execute(
+        """SELECT s.*, (s.status = 'active' AND s.expires_at > NOW()) AS is_current
+             FROM marketplace_subscriptions s
+            WHERE s.id = %s
+              AND s.advertiser_entity_type = %s
+              AND s.advertiser_entity_id   = %s""",
+        (sub_id, entity_type, entity_id),
+    )
+    plan = cur.fetchone()
+    if not plan:
+        raise HTTPException(status_code=404, detail="subscription_not_found")
+    if not plan["is_current"]:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "subscription_not_active", "message": "המסלול הזה כבר אינו פעיל."},
+        )
+    return plan
+
+
 def _require_provider_can_buy(tier: dict):
     """R33 B.3 · what a provider may hold a plan in. `tier` needs
     category_code, price_nis and is_active (the tier's own flag)."""
@@ -189,6 +225,10 @@ class QuoteRequest(BaseModel):
 class PurchaseRequest(BaseModel):
     tier_id:    str  = Field(min_length=1)
     auto_renew: bool = True
+
+
+class UpgradeRequest(BaseModel):
+    tier_id: str = Field(min_length=1)
 
 
 # ── GET /marketplace/subscriptions/catalog ───────────────────────────
@@ -371,13 +411,7 @@ def purchase_subscription(
         # yet (R34 5b). Checked here, after the request is known to be
         # a valid one, so a bad tier id reads as a bad tier id.
         if not PAYMENT_FAKE_MODE:
-            raise HTTPException(
-                status_code=503,
-                detail={
-                    "code": "cardcom_not_configured",
-                    "message": "תשלום אונליין עדיין לא הופעל בסביבה זו. פנה למנהל המערכת.",
-                },
-            )
+            raise HTTPException(status_code=503, detail=_NO_ONLINE_PAYMENT)
 
         sub_id = str(uuid.uuid4())
         # FAKE-mode payment marker — replaced with real cardcom_token_ref
@@ -426,9 +460,12 @@ def list_my_subscriptions(
     try:
         cur = conn.cursor()
         cur.execute(
-            """SELECT s.*, c.name_he AS category_name_he, c.name_en AS category_name_en
+            """SELECT s.*, c.name_he AS category_name_he, c.name_en AS category_name_en,
+                      t.name_he AS tier_name_he,
+                      (s.status = 'active' AND s.expires_at > NOW()) AS is_current
                  FROM marketplace_subscriptions s
                  JOIN marketplace_categories c ON c.code = s.category_code
+                 LEFT JOIN marketplace_subscription_tiers t ON t.id = s.tier_id
                 WHERE s.advertiser_entity_type = %s
                   AND s.advertiser_entity_id   = %s
                 ORDER BY (s.status='active') DESC, s.expires_at DESC""",
@@ -438,6 +475,11 @@ def list_my_subscriptions(
 
         # Annotate active subscriptions with current slot usage
         for r in rows:
+            # R34 5a · `status` stays 'active' after expires_at passes
+            # (nothing flips it), so a page that reads `status` alone
+            # shows a lapsed plan as running. `is_current` is the test
+            # publishing itself applies.
+            r["is_current"] = bool(r["is_current"])
             if r["status"] == "active":
                 r["slots_used"] = _count_active_listings(cur, r["id"])
                 r["slots_available"] = max(0, r["slot_count"] - r["slots_used"])
@@ -476,5 +518,160 @@ def cancel_auto_renew(
         if cur.rowcount == 0:
             raise HTTPException(status_code=404, detail="subscription_not_found")
         conn.commit()
+    finally:
+        conn.close()
+
+
+# ── POST /marketplace/my/subscriptions/{id}/auto-renew ──────────────
+
+@router.post("/my/subscriptions/{sub_id}/auto-renew", status_code=204)
+def enable_auto_renew(
+    sub_id: str,
+    x_entity_id:   Optional[str] = Header(default=None),
+    x_entity_type: Optional[str] = Header(default=None),
+    x_org_id:      Optional[str] = Header(default=None),
+):
+    """R34 5a · turn renewal back on, on a plan that is still running."""
+    entity_type, entity_id = _resolve_advertiser(x_entity_id, x_entity_type, x_org_id)
+
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        _own_running_plan(cur, sub_id, entity_type, entity_id)
+        cur.execute(
+            "UPDATE marketplace_subscriptions SET auto_renew = TRUE WHERE id = %s",
+            (sub_id,),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+# ── POST /marketplace/my/subscriptions/{id}/upgrade ─────────────────
+
+@router.post("/my/subscriptions/{sub_id}/upgrade")
+def upgrade_subscription(
+    sub_id: str,
+    body: UpgradeRequest,
+    x_entity_id:   Optional[str] = Header(default=None),
+    x_entity_type: Optional[str] = Header(default=None),
+    x_org_id:      Optional[str] = Header(default=None),
+):
+    """R34 5a · move a running plan to a bigger tier of its category.
+
+    The plan row is kept: its listings stay linked to it and its end
+    date does not move. Only the tier, the slot count and the price
+    snapshot change.
+
+    A provider during the launch promo pays nothing, as it would have
+    paid nothing had it picked this tier at registration. Anyone else,
+    and a provider after the promo, would owe the difference, and there
+    is no charging for these plans yet: 503, the answer a purchase gets.
+    """
+    entity_type, entity_id = _resolve_advertiser(x_entity_id, x_entity_type, x_org_id)
+    _require_advertiser_approved(entity_type, entity_id)
+
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        plan = _own_running_plan(cur, sub_id, entity_type, entity_id)
+
+        cur.execute(
+            """SELECT t.id, t.category_code, t.slot_count, t.duration_days, t.price_nis,
+                      t.is_active AS tier_active, c.is_active AS category_active
+                 FROM marketplace_subscription_tiers t
+                 JOIN marketplace_categories c ON c.code = t.category_code
+                WHERE t.id = %s""",
+            (body.tier_id,),
+        )
+        tier = cur.fetchone()
+        if not tier:
+            raise HTTPException(status_code=404, detail="tier_not_found")
+        if not tier["tier_active"] or not tier["category_active"]:
+            raise HTTPException(status_code=410, detail="tier_unavailable")
+        if tier["category_code"] != plan["category_code"]:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "tier_category_mismatch", "message": "אפשר לשדרג רק למסלול באותה קטגוריה."},
+            )
+        if entity_type == "service_provider":
+            _require_provider_can_buy({**tier, "is_active": tier["tier_active"]})
+        # Bigger only. A smaller plan could leave more listings
+        # published than it has room for, and nobody asked for that.
+        if tier["slot_count"] <= plan["slot_count"]:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "not_an_upgrade", "message": "שדרוג אפשרי רק למסלול עם יותר מודעות."},
+            )
+
+        promo_end = launch_promo_end(cur) if entity_type == "service_provider" else None
+        if not promo_end:
+            raise HTTPException(status_code=503, detail=_NO_ONLINE_PAYMENT)
+
+        cur.execute(
+            """UPDATE marketplace_subscriptions
+                  SET tier_id = %s, slot_count = %s, duration_days = %s, price_nis = %s
+                WHERE id = %s""",
+            (tier["id"], tier["slot_count"], tier["duration_days"], tier["price_nis"], sub_id),
+        )
+        conn.commit()
+
+        cur.execute("SELECT * FROM marketplace_subscriptions WHERE id=%s", (sub_id,))
+        return _serialize(cur.fetchone())
+    finally:
+        conn.close()
+
+
+# ── POST /marketplace/my/subscriptions/{id}/cancel ──────────────────
+
+@router.post("/my/subscriptions/{sub_id}/cancel")
+def cancel_subscription(
+    sub_id: str,
+    x_entity_id:   Optional[str] = Header(default=None),
+    x_entity_type: Optional[str] = Header(default=None),
+    x_org_id:      Optional[str] = Header(default=None),
+):
+    """R34 5a · end a running plan now.
+
+    An advertiser publishes in a category only while it has a running
+    plan there (R33 B), so the listings on this plan stop being
+    published with it. They are paused, not deleted: the owner can
+    publish them again once a plan in the category has room.
+    """
+    entity_type, entity_id = _resolve_advertiser(x_entity_id, x_entity_type, x_org_id)
+
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        plan = _own_running_plan(cur, sub_id, entity_type, entity_id)
+        # Ending a plan that was paid for raises a question nobody has
+        # answered (does it run to the end of the period, is anything
+        # returned). Promo plans carry no payment reference.
+        if plan.get("cardcom_token_ref") or plan.get("payment_transaction_id"):
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "paid_plan_cancel_unsupported",
+                    "message": "ביטול מסלול ששולם אינו זמין כאן. פנה לתמיכה.",
+                },
+            )
+
+        cur.execute(
+            """UPDATE marketplace_listings
+                  SET status = 'paused'
+                WHERE subscription_id = %s
+                  AND deleted_at IS NULL
+                  AND status = 'active'""",
+            (sub_id,),
+        )
+        paused = cur.rowcount
+        cur.execute(
+            """UPDATE marketplace_subscriptions
+                  SET status = 'cancelled', cancelled_at = NOW(), auto_renew = FALSE
+                WHERE id = %s""",
+            (sub_id,),
+        )
+        conn.commit()
+        return {"id": sub_id, "status": "cancelled", "listings_paused": paused}
     finally:
         conn.close()
