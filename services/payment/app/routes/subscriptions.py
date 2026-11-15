@@ -27,6 +27,7 @@ from app.db import get_db
 from app.services.cardcom import (
     PAYMENT_FAKE_MODE,
     charge_token,
+    expiry_mmyy,
     CardcomDeclinedError,
     CardcomNetworkError,
 )
@@ -272,6 +273,7 @@ async def start_subscription(
         try:
             charge = await charge_token(
                 provider_token  = decrypt_token(pm["provider_token"]),
+                card_expiry     = expiry_mmyy(pm),
                 base_amount     = price,
                 vat_amount      = 0,  # subscription_plans prices are VAT-included per Yulian
                 deal_id         = f"sub:{entity_type}:{entity_id}:start",
@@ -579,6 +581,7 @@ async def purchase_seats(
         try:
             charge = await charge_token(
                 provider_token  = decrypt_token(pm["provider_token"]),
+                card_expiry     = expiry_mmyy(pm),
                 base_amount     = amount,
                 vat_amount      = 0,
                 deal_id         = deal_id,
@@ -863,6 +866,7 @@ async def renewal_batch(x_internal_secret: Optional[str] = Header(default=None))
         try:
             charge = await charge_token(
                 provider_token  = decrypt_token(pm["provider_token"]),
+                card_expiry     = expiry_mmyy(pm),
                 base_amount     = price,
                 vat_amount      = 0,
                 deal_id         = f"sub:{sub['entity_type']}:{sub['entity_id']}:renewal",
