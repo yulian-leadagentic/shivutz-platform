@@ -23,6 +23,10 @@ const services = {
   // answered 404. Listed first: the mounts are made in this order and
   // the first match serves the request.
   '/api/webhooks/cardcom-recurring': process.env.PAYMENT_SERVICE_URL || 'http://payment:3009',
+  // R37 4.1 · Cardcom's call when a card page is finished, also handled
+  // by payment. A prefix needs a path boundary to match, so this rule
+  // and the one above do not overlap.
+  '/api/webhooks/cardcom': process.env.PAYMENT_SERVICE_URL || 'http://payment:3009',
   '/api/webhooks':      process.env.NOTIFICATION_SERVICE_URL  || 'http://notification:3006',
   '/api/admin':         process.env.ADMIN_SERVICE_URL         || 'http://admin:3007',
   '/api/payments':      process.env.PAYMENT_SERVICE_URL       || 'http://payment:3009',

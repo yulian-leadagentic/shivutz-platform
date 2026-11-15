@@ -1,7 +1,12 @@
 """Cardcom webhook receiver.
-Cardcom sends application/x-www-form-urlencoded.
-Always return 200 OK — never fail silently without returning 200.
-MUST verify via GetLpResult — never trust webhook body alone.
+
+POST /cardcom is Cardcom's call when a card page is finished. Nothing in
+its body is believed (R37 4.1.6). One value is read from it, the id of
+the page, and only to find OUR pending row for that page
+(payment_card_setups). Whose card it is comes from that row; whether a
+card was saved comes from asking Cardcom (GetLpResult). An id we never
+issued is ignored. A repeated call finds the row finished and changes
+nothing. The answer is always 200 and says nothing about the outcome.
 
 L5 §5 also adds POST /cardcom-recurring for Cardcom-driven monthly
 charge notifications. That path IS signature-verified (HMAC-SHA256
@@ -10,91 +15,67 @@ provider_transaction_id via payment_events UNIQUE.
 """
 import hashlib
 import hmac
+import json
 import logging
 import os
 from datetime import datetime, timedelta
+from urllib.parse import parse_qs
 
 from fastapi import APIRouter, Header, HTTPException, Request
 
 from app.db import get_db
-from app.services.cardcom import (
-    get_low_profile_result,
-    CardcomApiError,
-    CardcomNetworkError,
-)
+from app.services import card_setup
 from app.services.payment_events import record_event
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+_PAGE_ID_KEYS = ("LowProfileId", "lowprofileid", "lowprofilecode", "LowProfileCode")
+
+
+async def _page_id(request: Request) -> str | None:
+    """The card page's id, wherever Cardcom put it: the query string, a
+    JSON body or a form body."""
+    for key in _PAGE_ID_KEYS:
+        if request.query_params.get(key):
+            return request.query_params[key].strip()
+    raw = (await request.body()).decode("utf-8", errors="replace").strip()
+    if not raw:
+        return None
+    fields: dict = {}
+    if raw.startswith("{"):
+        try:
+            parsed = json.loads(raw)
+            fields = parsed if isinstance(parsed, dict) else {}
+        except ValueError:
+            fields = {}
+    else:
+        fields = {k: v[0] for k, v in parse_qs(raw).items() if v}
+    for key in _PAGE_ID_KEYS:
+        if fields.get(key):
+            return str(fields[key]).strip()
+    return None
+
+
 @router.post("/cardcom")
 async def cardcom_webhook(request: Request):
     try:
-        form = await request.form()
-        low_profile_id = (
-            form.get("lowprofilecode")
-            or form.get("LowProfileId")
-            or form.get("LowProfileCode")
-        )
-        response_code = form.get("ResponseCode") or form.get("responsecode")
-
-        logger.info(
-            "[webhook/cardcom] received LowProfileId=%s ResponseCode=%s",
-            low_profile_id, response_code
-        )
-
+        low_profile_id = await _page_id(request)
         if not low_profile_id:
             return {"received": True}  # test ping or empty call
 
-        # Verify with Cardcom — REQUIRED, never skip
-        try:
-            result = await get_low_profile_result(low_profile_id)
-        except (CardcomApiError, CardcomNetworkError) as e:
-            logger.error("[webhook/cardcom] GetLpResult failed: %s", e)
-            return {"received": True, "verified": False}
+        setup = card_setup.load(low_profile_id=low_profile_id[:64])
+        if not setup:
+            logger.warning("[webhook/cardcom] no setup of ours for this page id, ignored")
+            return {"received": True}
 
-        if not result.get("token"):
-            logger.warning("[webhook/cardcom] no token in result for id=%s", low_profile_id)
-            return {"received": True, "token_saved": False}
+        out = await card_setup.complete(setup)
+        logger.info("[webhook/cardcom] setup=%s status=%s", setup["id"], out["status"])
+    except Exception as e:  # noqa: BLE001
+        logger.error("[webhook/cardcom] not completed: %s", e)
 
-        entity_id = result.get("entity_id")
-        if not entity_id:
-            logger.error("[webhook/cardcom] no entity_id (ReturnValue) in result")
-            return {"received": True, "token_saved": False}
-
-        # Convention: entity_id passed as "corporation:{uuid}" or "contractor:{uuid}"
-        entity_type      = "corporation"
-        actual_entity_id = entity_id
-        if ":" in entity_id:
-            parts = entity_id.split(":", 1)
-            entity_type      = parts[0]
-            actual_entity_id = parts[1]
-
-        # Import here to avoid circular imports
-        from app.routes.payment_methods import SaveTokenInput, save_payment_method
-
-        body = SaveTokenInput(
-            entity_type      = entity_type,
-            entity_id        = actual_entity_id,
-            provider_token   = result["token"],
-            last_4_digits    = result.get("last_4_digits") or "0000",
-            card_brand       = result.get("card_brand"),
-            card_holder_name = result.get("card_holder_name"),
-            expiry_month     = int(result.get("expiry_month") or 12),
-            expiry_year      = int(result.get("expiry_year") or 2030),
-        )
-
-        try:
-            save_payment_method(body)
-            logger.info("[webhook/cardcom] token saved for %s/%s", entity_type, actual_entity_id)
-        except Exception as e:
-            logger.error("[webhook/cardcom] failed to save token: %s", e)
-
-    except Exception as e:
-        logger.error("[webhook/cardcom] unhandled error: %s", e)
-
-    # ALWAYS return 200 to Cardcom
+    # ALWAYS 200 to Cardcom, and the same body whatever happened.
     return {"received": True}
 
 

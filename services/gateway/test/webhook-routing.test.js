@@ -62,17 +62,27 @@ for (const p of [
 // The rule is for one path, not for everything that starts with it.
 check('a longer name that merely starts the same way is not the Cardcom path',
   target('/api/webhooks/cardcom-recurring-old') === NOTIFICATION);
-// Not routed to payment today, and not public either: the LowProfile
-// result webhook (payment's /webhooks/cardcom) is a separate decision.
-// Pinned so that changing it is a deliberate edit of this line.
-check('/api/webhooks/cardcom (the card-page result webhook) has no rule of its own yet',
-  target('/api/webhooks/cardcom') === NOTIFICATION);
+// R37 4.1 · the card-page result webhook (payment's /webhooks/cardcom).
+// It had no rule and was not public, so nothing Cardcom sent after a
+// card page could arrive. It now goes to payment, by a rule of its own.
+check('/api/webhooks/cardcom (the card-page result webhook) goes to the payment service',
+  target('/api/webhooks/cardcom') === PAYMENT, target('/api/webhooks/cardcom'));
+check('with a query string too, the way Cardcom may send the page id',
+  target('/api/webhooks/cardcom?LowProfileId=abc') === PAYMENT);
+check('the two Cardcom rules are separate: neither path is served by the other rule',
+  (upstreamFor('/api/webhooks/cardcom') || {}).prefix === '/api/webhooks/cardcom' &&
+  (upstreamFor('/api/webhooks/cardcom-recurring') || {}).prefix === '/api/webhooks/cardcom-recurring');
+check('a longer name that merely starts like the card-page path is not it',
+  target('/api/webhooks/cardcomx') === NOTIFICATION);
 
 // 3 · order
 const order = Object.keys(services);
 check('the Cardcom rule is listed before /api/webhooks',
   order.indexOf('/api/webhooks/cardcom-recurring') !== -1 &&
   order.indexOf('/api/webhooks/cardcom-recurring') < order.indexOf('/api/webhooks'));
+check('so is the card-page rule',
+  order.indexOf('/api/webhooks/cardcom') !== -1 &&
+  order.indexOf('/api/webhooks/cardcom') < order.indexOf('/api/webhooks'));
 check('no prefix is listed after a broader prefix that would swallow it', (() => {
   for (let i = 0; i < order.length; i += 1) {
     for (let j = 0; j < i; j += 1) {
@@ -109,6 +119,8 @@ check('the Cardcom path is still in the public list (Cardcom carries no user tok
 const publicList = (source.match(/const PUBLIC_PREFIXES = \[([\s\S]*?)\];/) || [])[1] || '';
 check('/api/webhooks/whatsapp is in the public list', /'\/api\/webhooks\/whatsapp'/.test(publicList));
 check('/api/webhooks/vonage is still in the public list', /'\/api\/webhooks\/vonage'/.test(publicList));
+check('/api/webhooks/cardcom is in the public list (Cardcom carries no user token)',
+  /'\/api\/webhooks\/cardcom'\s*,/.test(publicList));
 check('the whole /api/webhooks prefix is not public: each webhook is listed by name',
   !/'\/api\/webhooks'\s*,/.test(publicList));
 

@@ -77,7 +77,7 @@ app.get('/readyz', (_, res) => res.json({ status: 'ready', service: 'gateway' })
 // is actually stale. Read via `curl /api/__version`.
 app.get('/api/__version', (_, res) => res.json({
   service: 'gateway',
-  build:   'stg-2026-11-15-r37',  // bump when you push a new gateway change
+  build:   'stg-2026-11-15-r37-p41',  // bump when you push a new gateway change
   routes:  Object.keys(services), // deployed prefix list — proves which routes shipped
 }));
 
@@ -215,6 +215,13 @@ const PUBLIC_PREFIXES = [
   // signature is the security boundary (see payment/webhooks.py) —
   // the JWT gate would break Cardcom's server-to-server call.
   '/api/webhooks/cardcom-recurring',
+  // R37 4.1 · Cardcom's call when a card page is finished. Cardcom
+  // carries no user token. Nothing in the call is believed: the
+  // payment service reads one value from it, the id of the page, looks
+  // up its own pending row for that page and asks Cardcom what
+  // happened (payment/app/routes/webhooks.py). The answer is always
+  // the same 200, so the route tells a caller nothing.
+  '/api/webhooks/cardcom',
   // L10 · legal documents + site settings. Israeli law requires
   // terms + privacy be reachable without login; L2 §2 closed
   // /api/search but explicitly does NOT close /api/legal.
