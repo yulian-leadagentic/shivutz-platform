@@ -16,6 +16,7 @@ import {
   ListingInlineSponsor,
   ListingRailSponsor,
 } from '@/features/advertising/MarketplaceSponsors';
+import { postAdEvent } from '@/lib/adEvents';
 
 // R32 S5 · the listing body, lifted out of /marketplace/[id]/page.tsx
 // so the home page can show it without sending the visitor to another
@@ -46,6 +47,14 @@ function daysAgo(dateStr: string): string {
   if (diff < 30) return `לפני ${Math.floor(diff / 7)} שבועות`;
   return `לפני ${Math.floor(diff / 30)} חודשים`;
 }
+
+// R34 5c · listings whose `listing_open` has already been sent in this
+// page view. The panel remounts every time a card is clicked (it is
+// keyed by id on the home page), and a visitor flipping back and forth
+// between two listings is still one interested visitor per listing,
+// not six. Lives in module memory, so a reload starts a new count,
+// same as the impression guard in useAdImpression.
+const openedListingIds = new Set<string>();
 
 export interface ListingDetailPanelProps {
   listingId: string;
@@ -91,7 +100,28 @@ export default function ListingDetailPanel({
     setRevealed(null);
     setRevealError('');
     marketplaceApi.get(listingId)
-      .then((l) => { if (!cancelled) setListing(l); })
+      .then((l) => {
+        if (cancelled) return;
+        setListing(l);
+        // R34 5c · `listing_open`, sent once the listing is actually
+        // on screen rather than when the panel starts loading: an id
+        // that 404s was never opened by anyone. This one effect covers
+        // both the home-page drawer and the /marketplace/[id] route,
+        // since both render this panel.
+        //
+        // Not sent for the advertiser's own listing. The API returns
+        // the contact fields unmasked only to the owner, the same test
+        // the contact card below uses to skip the reveal button.
+        const isOwnRow = !!(l.contact_phone || l.contact_name);
+        if (!isOwnRow && !openedListingIds.has(l.id)) {
+          openedListingIds.add(l.id);
+          postAdEvent({
+            event_type:  'listing_open',
+            target_type: 'marketplace_listing',
+            target_id:   l.id,
+          });
+        }
+      })
       .catch(() => { if (!cancelled) setError('המודעה לא נמצאה'); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };

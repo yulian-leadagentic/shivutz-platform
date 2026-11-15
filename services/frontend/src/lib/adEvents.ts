@@ -45,7 +45,14 @@ function getSessionId(): string {
 }
 
 export type AdEventType   = 'impression' | 'ad_click' | 'inquiry';
-export type AdTargetType  = 'sponsor_ad';
+// R34 5c · marketplace listings are counted through the same pipe, so
+// a service provider can be shown numbers about its own listings.
+// `listing_impression` is a result card on screen, `listing_open` is
+// the detail panel opening. There is no reveal event on purpose: the
+// reveal endpoint already records one row per viewer in
+// marketplace_reveals, and a second copy here would count it twice.
+export type ListingEventType = 'listing_impression' | 'listing_open';
+export type AdTargetType  = 'sponsor_ad' | 'marketplace_listing';
 // R30 §12b · `listing_rail` / `listing_inline` are their own buckets.
 // Without them both listing slots fell to the catch-all 'inline' and
 // admin CTR could not tell them apart — or tell either from side_rail,
@@ -55,13 +62,17 @@ export type AdPlacement =
   | 'inline' | 'carousel' | 'sidebar' | 'featured' | 'marketplace' | 'trustbar'
   | 'listing_rail' | 'listing_inline';
 
-interface PostArgs {
-  event_type:  AdEventType;
-  target_type: AdTargetType;
+// Two shapes, so a listing event cannot be filed against an ad or the
+// other way round. events.py refuses a crossed pair anyway; this makes
+// it a compile error first.
+type PostArgs = {
   target_id:   string;
   placement?:  AdPlacement;
   category?:   string;
-}
+} & (
+  | { event_type: AdEventType;      target_type: 'sponsor_ad' }
+  | { event_type: ListingEventType; target_type: 'marketplace_listing' }
+);
 
 function toWireEvent(args: PostArgs) {
   return {
@@ -96,8 +107,21 @@ function toWireEvent(args: PostArgs) {
 const _BATCH_WINDOW_MS = 300;
 const _BATCH_MAX = 20;           // mirrors _BATCH_MAX in events.py
 
+// R34 5c · listing events wait longer for company. A results grid
+// scrolls into view a row at a time, so at 300ms every row would be
+// its own request, and those requests share one per-IP budget in
+// events.py with the sponsor impressions. Twenty cards must not be
+// able to spend the budget the paid slots are counted with. Two
+// seconds lets a scroll's worth of cards leave together; nothing is
+// lost by waiting, because pagehide and visibilitychange flush
+// whatever is queued. A sponsor impression arriving in the meantime
+// pulls the flush forward to its own 300ms (see `enqueue`), so the ads
+// are never held back by the listings.
+const _LISTING_BATCH_WINDOW_MS = 2000;
+
 let _queue: ReturnType<typeof toWireEvent>[] = [];
 let _timer: ReturnType<typeof setTimeout> | null = null;
+let _timerDue = 0;
 
 function flushQueue(): void {
   if (_timer !== null) { clearTimeout(_timer); _timer = null; }
@@ -125,11 +149,16 @@ function flushQueue(): void {
   }
 }
 
-function enqueue(args: PostArgs): void {
+function enqueue(args: PostArgs, windowMs: number = _BATCH_WINDOW_MS): void {
   _queue.push(toWireEvent(args));
   // Never let the queue outgrow what the endpoint accepts.
   if (_queue.length >= _BATCH_MAX) { flushQueue(); return; }
-  if (_timer === null) _timer = setTimeout(flushQueue, _BATCH_WINDOW_MS);
+  // One timer, due at the earliest deadline anything queued asked for.
+  const due = Date.now() + windowMs;
+  if (_timer !== null && due >= _timerDue) return;
+  if (_timer !== null) clearTimeout(_timer);
+  _timerDue = due;
+  _timer = setTimeout(flushQueue, windowMs);
 }
 
 if (typeof document !== 'undefined') {
@@ -149,6 +178,13 @@ export function postAdEvent(args: PostArgs): void {
   // request rather than sitting in a queue that may never flush.
   if (args.event_type === 'impression') {
     enqueue(args);
+    return;
+  }
+  // R34 5c · both listing events queue. Neither starts a navigation
+  // (the panel opens in place), so neither needs the sendBeacon path
+  // a click does.
+  if (args.target_type === 'marketplace_listing') {
+    enqueue(args, _LISTING_BATCH_WINDOW_MS);
     return;
   }
 

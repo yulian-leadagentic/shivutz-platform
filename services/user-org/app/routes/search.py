@@ -27,7 +27,7 @@ import json
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Header, HTTPException
 from pydantic import BaseModel, Field
 
 from app.db import get_db
@@ -45,6 +45,7 @@ from app.services.visibility import (
     require_contractor_approved,  # noqa: F401 · re-exported for other routes
     viewer_scope_wheres,
 )
+from app.services.search_log import record_search
 from app.services.search_normalize import (
     marketplace_text_token_clauses,
     normalize_search_term,
@@ -435,6 +436,7 @@ def _order_clause(relaxed_field: Optional[str], ad_type: str) -> str:
 @router.post("")
 def search(
     body: SearchIn,
+    background_tasks: BackgroundTasks,
     x_entity_id:   Optional[str] = Header(default=None),
     x_entity_type: Optional[str] = Header(default=None),
     x_user_role:   Optional[str] = Header(default=None),
@@ -699,6 +701,19 @@ def search(
         and bool(marketplace_matches)
     ) or fallback_browse
     primary_section = "marketplace" if marketplace_first else "ads"
+
+    # R34 5c · one search_log row per search: which marketplace
+    # categories it matched and which region the rewriter read. No
+    # query text and no caller id. It is what lets a provider see how
+    # many searches there were for what it sells. Queued as a
+    # background task so it runs after this response has been sent, and
+    # `record_search` swallows its own failures, so the log can neither
+    # slow a search down nor fail one.
+    background_tasks.add_task(
+        record_search,
+        marketplace_matches, filters.get("region"),
+        x_entity_type, x_user_role, marketplace_via_fallback,
+    )
 
     return {
         "filters":                 filters,

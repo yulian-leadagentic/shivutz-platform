@@ -20,6 +20,7 @@ import { apiFetch } from '@/lib/api/client';
 import { marketplaceApi } from '@/lib/api/marketplace';
 import type { MarketplaceListing } from '@/types';
 import { TrustBadge } from '@/components/ads/TrustBadge';
+import ProviderStats from '@/components/provider/ProviderStats';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 
@@ -121,6 +122,8 @@ export default function ProviderDashboardPage() {
           </Link>
         </div>
       </header>
+
+      <ProviderStats />
 
       {/* Listings */}
       <Card id="my-listings">

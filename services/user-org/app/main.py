@@ -1,6 +1,6 @@
 import os
 from fastapi import FastAPI, HTTPException
-from app.routes import contractors, corporations, providers, users, admin_approvals, marketplace, marketplace_admin, marketplace_subscriptions, marketplace_uploads, support, membership_requests, uploads, ads, search, reveals, legal, events
+from app.routes import contractors, corporations, providers, provider_stats, users, admin_approvals, marketplace, marketplace_admin, marketplace_subscriptions, marketplace_uploads, support, membership_requests, uploads, ads, search, reveals, legal, events
 from app.db import get_db, init_db
 from app.errors import register_error_handlers
 
@@ -49,6 +49,10 @@ app.include_router(uploads.router, prefix="/uploads", tags=["uploads"])
 app.include_router(contractors.router, prefix="/organizations/contractors", tags=["contractors"])
 app.include_router(corporations.router, prefix="/organizations/corporations", tags=["corporations"])
 app.include_router(providers.router, prefix="/organizations/providers", tags=["providers"])
+# R34 5c · GET /organizations/providers/me/stats. Same prefix as the
+# provider routes, so the gateway's existing /api/organizations mapping
+# and its JWT gate already cover it.
+app.include_router(provider_stats.router, prefix="/organizations/providers", tags=["providers"])
 app.include_router(users.router, prefix="/users", tags=["users"])
 app.include_router(admin_approvals.router, prefix="/admin", tags=["admin"])
 app.include_router(marketplace.router, prefix="/marketplace", tags=["marketplace"])

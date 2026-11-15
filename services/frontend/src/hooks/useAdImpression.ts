@@ -16,14 +16,22 @@
 //   4. targetId changes → treated as a new ad; the old timer clears
 //      and a fresh observer registers.
 //   5. Cleanup on unmount cancels the pending 1-second timer.
+//
+// R34 5c · the same hook counts marketplace listing cards. Pass
+// `target: 'marketplace_listing'` and the event becomes a
+// `listing_impression` against the listing id. The rules above are
+// deliberately identical: a provider reading "your listing was seen
+// 40 times" is owed the same honesty as an advertiser paying for it,
+// so a card scrolled past in under a second is not a view here either.
 
 import { useEffect, useRef, useCallback } from 'react';
-import { postAdEvent, type AdPlacement } from '@/lib/adEvents';
+import { postAdEvent, type AdPlacement, type AdTargetType } from '@/lib/adEvents';
 
 interface Options {
   targetId?:  string;
   placement?: AdPlacement;
   category?:  string;
+  target?:    AdTargetType;
 }
 
 // Module-level guard so re-mounts of the same ad on the same page
@@ -32,7 +40,7 @@ interface Options {
 // only in JS memory.
 const firedIds = new Set<string>();
 
-export function useAdImpression({ targetId, placement, category }: Options) {
+export function useAdImpression({ targetId, placement, category, target = 'sponsor_ad' }: Options) {
   // Element (not HTMLDivElement) so callers can attach to any DOM
   // element: <li>, <a>, <section>, etc. IntersectionObserver only
   // needs a bounding-rect target.
@@ -75,7 +83,13 @@ export function useAdImpression({ targetId, placement, category }: Options) {
               timerRef.current = window.setTimeout(() => {
                 if (!firedIds.has(targetId)) {
                   firedIds.add(targetId);
-                  postAdEvent({
+                  postAdEvent(target === 'marketplace_listing' ? {
+                    event_type:  'listing_impression',
+                    target_type: 'marketplace_listing',
+                    target_id:   targetId,
+                    placement,
+                    category,
+                  } : {
                     event_type:  'impression',
                     target_type: 'sponsor_ad',
                     target_id:   targetId,
@@ -105,7 +119,7 @@ export function useAdImpression({ targetId, placement, category }: Options) {
       observer.disconnect();
       observerRef.current = null;
     };
-  }, [targetId, placement, category]);
+  }, [targetId, placement, category, target]);
 
   return setRef;
 }

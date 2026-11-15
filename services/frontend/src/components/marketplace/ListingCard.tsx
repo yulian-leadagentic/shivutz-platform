@@ -1,8 +1,11 @@
+'use client';
+
 import Link from 'next/link';
 import { BidiText } from '@/lib/bidi';
 import { MapPin, Users, CheckCircle2, Home, Wrench, Briefcase, MoreHorizontal } from 'lucide-react';
 import type { MarketplaceListing } from '@/types';
 import { CATEGORY_HE_FALLBACK, PRICE_UNIT_HE, labelFor } from '@/lib/labels';
+import { useAdImpression } from '@/hooks/useAdImpression';
 
 // U8 §1 — CATEGORY_HE and PRICE_UNIT_HE moved to lib/labels.ts.
 // Icons stay local; they aren't labels.
@@ -41,8 +44,25 @@ export default function ListingCard({
     ? `/?type=services&listing=${encodeURIComponent(listing.id)}`
     : `/marketplace/${listing.id}`;
 
+  // R34 5c · a `listing_impression` once this card has really been on
+  // screen (half of it, for a second, once per page view: the sponsor
+  // rule, see useAdImpression). It is what the provider dashboard
+  // counts as a view.
+  //
+  // The advertiser's own rows are not counted. The API returns the
+  // contact fields only to the listing's owner, so their presence is
+  // how this card knows it is being shown to the person who wrote it.
+  // Search results never carry them, so an owner who finds their own
+  // card through search is still counted; that is the known gap.
+  const isOwnRow = !!(listing.contact_phone || listing.contact_name);
+  const observeRef = useAdImpression({
+    targetId: isOwnRow ? undefined : listing.id,
+    target:   'marketplace_listing',
+  });
+
   return (
     <Link
+      ref={observeRef}
       href={href}
       onClick={(e) => {
         if (!onOpen) return;

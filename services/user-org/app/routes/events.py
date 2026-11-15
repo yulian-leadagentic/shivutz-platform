@@ -1,7 +1,7 @@
 """R6 §1b + §4 · promo_events endpoints.
 
 Three routes:
-    POST /events                 · public — record ONE ad impression/click/inquiry
+    POST /events                 · public, record ONE ad or listing event
     POST /events/batch           · public — record up to 20 in one request (R30 §26)
     GET  /admin/sponsor-stats    · admin  — per-ad daily counters + CTR
 
@@ -38,6 +38,26 @@ Design constraints (all from R6 §1b):
      + category) so a rogue caller can't cram arbitrary blobs.
   5. Body size cap (16 KiB) so a scripted request can't POST 5,000
      event rows in one call.
+
+R34 5c · the same two POST routes now also count marketplace listings,
+so a service provider can be shown numbers about its own listings
+(routes/provider_stats.py reads them back):
+    target_type 'marketplace_listing'
+    event_type  'listing_impression'  a result card was on screen
+                'listing_open'        the detail panel was opened
+Every gate above applies unchanged: the allow-lists (now keyed by
+target type, so an ad event cannot be filed against a listing or the
+other way round), the per-IP limiter, the batch cap, and the rule that
+target_id must be a live row, here an active, undeleted listing.
+
+Two things are deliberately different for listings:
+  * A contact reveal is NOT an event here. POST /marketplace/{id}/reveal
+    already writes marketplace_reveals, one row per (viewer, listing),
+    and the provider numbers read reveals from that table. A second
+    copy in promo_events would count every reveal twice.
+  * The actor columns are written NULL. A provider is promised
+    aggregates and never who looked, and the surest way to keep that
+    promise is to hold no record of it.
 """
 import ipaddress
 import json
@@ -54,8 +74,14 @@ router = APIRouter()
 
 
 # ── R6 §1b allow-lists ──────────────────────────────────────────────
-_ALLOWED_EVENT_TYPES  = frozenset({"impression", "ad_click", "inquiry"})
-_ALLOWED_TARGET_TYPES = frozenset({"sponsor_ad"})
+# Keyed by target type since R34 5c: each kind of target has its own
+# event vocabulary, and a pair that is not in this table is refused.
+_EVENT_TYPES_BY_TARGET = {
+    "sponsor_ad":          frozenset({"impression", "ad_click", "inquiry"}),
+    "marketplace_listing": frozenset({"listing_impression", "listing_open"}),
+}
+_ALLOWED_EVENT_TYPES  = frozenset().union(*_EVENT_TYPES_BY_TARGET.values())
+_ALLOWED_TARGET_TYPES = frozenset(_EVENT_TYPES_BY_TARGET)
 # metadata_json is a two-key surface for now: where in the layout the
 # ad was placed + which content category it appeared under. Every
 # other key is dropped BEFORE the INSERT so an untrusted caller can't
@@ -95,20 +121,42 @@ def _clean_metadata(metadata: Optional[dict]) -> Optional[dict]:
     return picked or None
 
 
-def _live_target_ids(cur, target_ids: list[str]) -> set:
-    """Subset of `target_ids` that are active sponsor_ads right now.
-    One query for the whole batch rather than one per event."""
+def _pair_allowed(event_type: str, target_type: str) -> bool:
+    return event_type in _EVENT_TYPES_BY_TARGET.get(target_type, ())
+
+
+def _live_target_ids(cur, target_type: str, target_ids: list[str]) -> set:
+    """Subset of `target_ids` that are live rows of `target_type` right
+    now: an active sponsor_ad inside its date window, or an active,
+    undeleted marketplace listing. One query for the whole batch rather
+    than one per event."""
     if not target_ids:
         return set()
     placeholders = ",".join(["%s"] * len(target_ids))
-    cur.execute(
-        f"""SELECT id FROM sponsor_ads
-             WHERE id IN ({placeholders}) AND active = TRUE
-               AND (starts_at IS NULL OR starts_at <= NOW())
-               AND (ends_at   IS NULL OR ends_at   >= NOW())""",
-        tuple(target_ids),
-    )
+    if target_type == "marketplace_listing":
+        cur.execute(
+            f"""SELECT id FROM marketplace_listings
+                 WHERE id IN ({placeholders})
+                   AND status = 'active' AND deleted_at IS NULL""",
+            tuple(target_ids),
+        )
+    else:
+        cur.execute(
+            f"""SELECT id FROM sponsor_ads
+                 WHERE id IN ({placeholders}) AND active = TRUE
+                   AND (starts_at IS NULL OR starts_at <= NOW())
+                   AND (ends_at   IS NULL OR ends_at   >= NOW())""",
+            tuple(target_ids),
+        )
     return {row[0] if not isinstance(row, dict) else row["id"] for row in cur.fetchall()}
+
+
+def _actor(target_type: str, x_entity_id: Optional[str], x_entity_type: Optional[str]) -> tuple:
+    """(actor_entity_id, actor_entity_type) for the row. Listing events
+    carry no actor at all, see the module docstring."""
+    if target_type == "marketplace_listing":
+        return (None, None)
+    return (x_entity_id or None, x_entity_type or None)
 
 
 # ── Rate limiter (per-process, in-memory) ───────────────────────────
@@ -179,20 +227,17 @@ async def record_event(
     if body.target_type not in _ALLOWED_TARGET_TYPES:
         raise HTTPException(status_code=400, detail={"code": "target_type_not_allowed"})
 
+    # R34 5c · both words are known, but they also have to belong
+    # together: `ad_click` on a listing is not a thing we count.
+    if not _pair_allowed(body.event_type, body.target_type):
+        raise HTTPException(status_code=400, detail={"code": "event_type_not_allowed"})
+
     # §1b · target_id must exist AND be active. Anything else lets a
     # caller cram arbitrary UUIDs into the table.
     conn = get_db()
     try:
         cur = conn.cursor()
-        cur.execute(
-            """SELECT id FROM sponsor_ads
-                WHERE id = %s AND active = TRUE
-                  AND (starts_at IS NULL OR starts_at <= NOW())
-                  AND (ends_at   IS NULL OR ends_at   >= NOW())
-                LIMIT 1""",
-            (body.target_id,),
-        )
-        if not cur.fetchone():
+        if not _live_target_ids(cur, body.target_type, [body.target_id]):
             raise HTTPException(status_code=400, detail={"code": "target_not_found"})
 
         clean_meta = _clean_metadata(body.metadata)
@@ -207,7 +252,7 @@ async def record_event(
             (
                 str(_uuid.uuid4()),
                 body.event_type, body.target_type, body.target_id,
-                x_entity_id or None, x_entity_type or None,
+                *_actor(body.target_type, x_entity_id, x_entity_type),
                 body.session_id, json.dumps(clean_meta) if clean_meta else None,
             ),
         )
@@ -248,8 +293,7 @@ async def record_events_batch(
     # Allow-list filter first — cheap, and shrinks the ID set we query.
     candidates = [
         e for e in body.events
-        if e.event_type in _ALLOWED_EVENT_TYPES
-        and e.target_type in _ALLOWED_TARGET_TYPES
+        if _pair_allowed(e.event_type, e.target_type)
     ]
     if not candidates:
         return  # 204 — nothing survived validation, nothing to write
@@ -257,7 +301,15 @@ async def record_events_batch(
     conn = get_db()
     try:
         cur = conn.cursor()
-        live = _live_target_ids(cur, list({e.target_id for e in candidates}))
+        # R34 5c · a batch can now mix ads and listings (a results page
+        # shows both), and each kind is checked against its own table:
+        # one query per target type present, so two at most. Liveness
+        # is tracked per (type, id) so an id that is live as one kind
+        # cannot vouch for an event filed under the other.
+        live = set()
+        for target_type in {e.target_type for e in candidates}:
+            ids = list({e.target_id for e in candidates if e.target_type == target_type})
+            live |= {(target_type, i) for i in _live_target_ids(cur, target_type, ids)}
         if not live:
             return  # 204
 
@@ -266,11 +318,11 @@ async def record_events_batch(
             (
                 str(_uuid.uuid4()),
                 e.event_type, e.target_type, e.target_id,
-                x_entity_id or None, x_entity_type or None,
+                *_actor(e.target_type, x_entity_id, x_entity_type),
                 e.session_id,
                 json.dumps(_clean_metadata(e.metadata)) if _clean_metadata(e.metadata) else None,
             )
-            for e in candidates if e.target_id in live
+            for e in candidates if (e.target_type, e.target_id) in live
         ]
         if rows:
             cur.executemany(
