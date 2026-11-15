@@ -38,6 +38,9 @@ from fastapi import APIRouter, HTTPException, Header
 from pydantic import BaseModel, EmailStr
 
 from app.db import get_db
+from app.services.provider_plans import (
+    PROVIDER_BLOCKED_CATEGORIES, insert_promo_plan, launch_promo_end,
+)
 from app.integrations.israeli_id import (
     BN_CHECKSUM,
     BN_FORMAT,
@@ -61,8 +64,9 @@ class ProviderCreate(BaseModel):
     business_number: str
     # R5 §2b · trade the provider self-selected at signup. Validated
     # against the live marketplace_categories table below so a stale
-    # client can't seed a bogus code. Association only — the provider
-    # can still publish listings in other categories.
+    # client can't seed a bogus code. R33 B · this is the category the
+    # provider's first plan is in, and so the only one it can publish
+    # in until it adds another (/provider/marketplace/subscribe).
     primary_category: str
     # R10 §1 · tier the provider chose from the plan picker (the paid
     # tiers for `primary_category`, excluding any price_nis=0 admin
@@ -171,6 +175,15 @@ async def register_provider(data: ProviderCreate):
                 "code":    "unknown_category",
                 "message": "הקטגוריה שנבחרה אינה זמינה",
             })
+        # R33 B · a plan is the right to publish in its category, so a
+        # plan in a category a provider can never publish in is a plan
+        # that does nothing. Two staging providers registered under
+        # housing that way before this check existed.
+        if cat in PROVIDER_BLOCKED_CATEGORIES:
+            raise HTTPException(status_code=400, detail={
+                "code":    "provider_category_forbidden",
+                "message": "ספק שירות אינו יכול לפרסם בקטגוריה זו. יש לבחור קטגוריה אחרת.",
+            })
 
         # R10 §1 · validate subscription_tier_id BEFORE any writes.
         # Must belong to primary_category, is_active, and price_nis > 0
@@ -210,19 +223,8 @@ async def register_provider(data: ProviderCreate):
         # launch_promo_end) and full-price paths. Missing/malformed
         # value → no promo applies (fail closed on the "we're giving
         # away free service" side).
-        cur.execute(
-            "SELECT setting_val FROM site_settings WHERE setting_key='launch_promo_end' LIMIT 1"
-        )
-        promo_row = cur.fetchone()
-        promo_end = None
-        if promo_row and promo_row.get("setting_val"):
-            try:
-                promo_end = datetime.strptime(
-                    promo_row["setting_val"], "%Y-%m-%d"
-                )
-            except (ValueError, TypeError):
-                promo_end = None
-        promo_active = promo_end is not None and promo_end > datetime.utcnow()
+        promo_end = launch_promo_end(cur)
+        promo_active = promo_end is not None
         cur.execute(
             f"""SELECT id, name FROM service_providers
                 WHERE business_number IN ({_bn_in})
@@ -370,24 +372,12 @@ async def register_provider(data: ProviderCreate):
         # e.g. a 30-day tier picked in October runs until 31.12 for
         # free. The renewal batch sees expires_at as the ONLY
         # authority for when the sub lapses, so this is intentional.
-        sub_id = str(uuid.uuid4())
         if promo_active:
-            cur.execute(
-                """INSERT INTO marketplace_subscriptions
-                       (id, advertiser_entity_type, advertiser_entity_id,
-                        category_code, tier_id, slot_count, duration_days,
-                        price_nis, promo_note,
-                        expires_at, auto_renew, status, cardcom_token_ref)
-                   VALUES (%s, 'service_provider', %s, %s, %s, %s, %s,
-                           %s, 'launch_free_promo',
-                           %s, TRUE, 'active', NULL)""",
-                (
-                    sub_id, provider_id,
-                    cat, tier["id"], tier["slot_count"], tier["duration_days"],
-                    tier["price_nis"], promo_end,
-                ),
-            )
+            # The same row a provider gets when it adds a category
+            # later (services/provider_plans.py).
+            sub_id = insert_promo_plan(cur, provider_id, tier, promo_end)
         else:
+            sub_id = str(uuid.uuid4())
             cur.execute(
                 """INSERT INTO marketplace_subscriptions
                        (id, advertiser_entity_type, advertiser_entity_id,

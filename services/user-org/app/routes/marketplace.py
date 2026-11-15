@@ -11,6 +11,7 @@ import uuid
 
 from app.db import get_db
 from app.services.admin_check import is_admin
+from app.services.provider_plans import PROVIDER_BLOCKED_CATEGORIES
 from app.services.search_normalize import marketplace_text_conditions
 from app.services.phone_normalize import normalize_or_400
 from app.services.seed_visibility import seed_where
@@ -563,17 +564,18 @@ def create_listing(
     # services/user-org/app/routes/marketplace.py` confirms POST is
     # the only mutator that takes a category.
     is_corp_housing = entity_type == "corporation" and body.category == "housing"
-    # U7 §2b · service_provider publishes free across all provider
-    # categories (equipment, services, other + any admin-added). Housing
-    # is reserved for corp; worker is reserved for corp workers. This
-    # branch is the exact mirror of is_corp_housing above — same
-    # subscription/slot bypass, same NULL subscription_id on the row.
-    _PROVIDER_BLOCKED_CATEGORIES = {"housing", "worker"}
-    is_provider_free = (
-        entity_type == "service_provider"
-        and body.category not in _PROVIDER_BLOCKED_CATEGORIES
-    )
-    if entity_type == "service_provider" and not is_provider_free:
+    # R33 B.1 · a provider publishes only in a category where it has an
+    # active plan (Yulian, 15.11). From U7 until this round a provider
+    # skipped the subscription check altogether and its listings were
+    # written with subscription_id NULL, so the plan row created at
+    # registration was never read by anything. A provider now takes the
+    # same subscription-and-slot path a contractor does, below. The
+    # launch promo does not change that: the plan may have cost 0, the
+    # listing is still linked to it.
+    #
+    # The category guard stays: housing is the corporation's, and
+    # worker ads are not marketplace listings.
+    if entity_type == "service_provider" and body.category in PROVIDER_BLOCKED_CATEGORIES:
         raise HTTPException(
             status_code=403,
             detail={
@@ -603,15 +605,15 @@ def create_listing(
     try:
         cur = conn.cursor()
 
-        # subscription_id + slot accounting only apply to callers that
-        # go through the marketplace_subscriptions path (contractors,
-        # and future U7 service_providers). Corp housing is licensed
-        # elsewhere and skips this branch entirely.
+        # subscription_id + slot accounting apply to every caller that
+        # goes through the marketplace_subscriptions path: contractors
+        # and, since R33 B.1, service providers. Corp housing is
+        # licensed elsewhere and skips this branch entirely.
         sub_id:     Optional[str] = None
         slot_count: Optional[int] = None
         used = 0
 
-        if not is_corp_housing and not is_provider_free:
+        if not is_corp_housing:
             # Find an active subscription that covers this category + has a
             # free slot. Locking the row would matter only at very high
             # concurrency; for now a serialized read is fine.
@@ -626,14 +628,25 @@ def create_listing(
                     ORDER BY expires_at DESC LIMIT 1""",
                 (entity_type, entity_id, body.category),
             )
+            # Where this caller buys a plan. Only providers have such a
+            # page; the form turns it into a link next to the message.
+            buy_url = (
+                f"/provider/marketplace/subscribe?category={body.category}"
+                if entity_type == "service_provider" else None
+            )
             sub = cur.fetchone()
             if not sub:
                 raise HTTPException(
                     status_code=402,  # 402 Payment Required — closest fit
                     detail={
                         "code": "no_active_subscription",
-                        "message": "אין מנוי פעיל בקטגוריה זו. רכוש מנוי כדי לפרסם.",
+                        "message": (
+                            "אין לך מסלול פעיל בקטגוריה זו. כדי לפרסם בה יש להוסיף מסלול."
+                            if entity_type == "service_provider"
+                            else "אין מנוי פעיל בקטגוריה זו. רכוש מנוי כדי לפרסם."
+                        ),
                         "category": body.category,
+                        "buy_url": buy_url,
                     },
                 )
 
@@ -646,13 +659,19 @@ def create_listing(
             )
             used = int(cur.fetchone()["n"])
             if used >= sub["slot_count"]:
+                # R33 B · 402, not 409: the way out is a bigger plan,
+                # the same answer as having no plan at all. The listings
+                # already published are untouched; only this new one is
+                # refused.
                 raise HTTPException(
-                    status_code=409,
+                    status_code=402,
                     detail={
                         "code": "no_slots_available",
                         "message": "כל מקומות הפרסום במנוי הזה מנוצלים. השבת מודעה קיימת או שדרג את המנוי.",
+                        "category": body.category,
                         "slot_count": sub["slot_count"],
                         "slots_used": used,
+                        "buy_url": buy_url,
                     },
                 )
             sub_id     = sub["id"]
@@ -690,9 +709,9 @@ def create_listing(
         return {
             "id":              listing_id,
             "status":          "active",
-            # `subscription_id` is null for corp housing; slots not
-            # tracked. Contractor + provider responses carry the
-            # existing pair, unchanged.
+            # `subscription_id` is null for corp housing only; slots
+            # are not tracked there. Contractors and providers get the
+            # plan the listing was filed under and its slot count.
             "subscription_id": sub_id,
             "slots_used":      used + 1 if sub_id else None,
             "slot_count":      slot_count,

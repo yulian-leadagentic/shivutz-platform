@@ -9,6 +9,13 @@ When Cardcom J4 creds land, the `purchase` endpoint will be split into:
   POST /subscriptions/checkout  → returns a Cardcom URL (pending row)
   webhook                       → activates on ResponseCode=0
 That swap is intentionally local to this file.
+
+R33 B.3 · service providers buy here too, to add a category after
+registration. During the launch promo their purchase writes the same
+promo row registration writes (services/provider_plans.py) and charges
+nothing, with or without PAYMENT_FAKE_MODE. After the promo a provider
+is in the same position as everyone else: there is no Cardcom charging
+for marketplace subscriptions yet, so the purchase answers 503.
 """
 import os
 import uuid
@@ -19,6 +26,9 @@ from pydantic import BaseModel, Field
 from decimal import Decimal
 
 from app.db import get_db
+from app.services.provider_plans import (
+    PROVIDER_BLOCKED_CATEGORIES, insert_promo_plan, is_paid_tier, launch_promo_end,
+)
 
 router = APIRouter()
 
@@ -66,6 +76,27 @@ def _require_advertiser_approved(entity_type: str, entity_id: str):
                     detail={
                         "code": "advertiser_not_approved",
                         "message": "פרסום בשוק מותר רק לעסקים מאושרים. אישור התאגיד מבוצע על ידי מנהל המערכת.",
+                    },
+                )
+        elif entity_type == "service_provider":
+            # R33 B.3 · until now a provider fell into the contractor
+            # branch below, was looked up in the contractors table and
+            # got 404 contractor_not_found from quote and purchase.
+            # Providers are active from registration; only a suspended
+            # or removed one is turned away.
+            cur.execute(
+                "SELECT status FROM org_db.service_providers WHERE id=%s AND deleted_at IS NULL",
+                (entity_id,),
+            )
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="provider_not_found")
+            if row["status"] != "active":
+                raise HTTPException(
+                    status_code=403,
+                    detail={
+                        "code": "advertiser_not_approved",
+                        "message": "חשבון הספק אינו פעיל. פנה לתמיכה.",
                     },
                 )
         else:  # contractor
@@ -117,6 +148,24 @@ def _count_active_listings(cur, subscription_id: str) -> int:
     )
     row = cur.fetchone()
     return int(row["n"] if row else 0)
+
+
+def _require_provider_can_buy(tier: dict):
+    """R33 B.3 · what a provider may hold a plan in. `tier` needs
+    category_code, price_nis and is_active (the tier's own flag)."""
+    if tier["category_code"] in PROVIDER_BLOCKED_CATEGORIES:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code":    "provider_category_forbidden",
+                "message": "ספק שירות אינו יכול לפרסם בקטגוריה זו. יש לבחור קטגוריה אחרת.",
+                "category": tier["category_code"],
+            },
+        )
+    # A price of 0 is an admin-only override; no picker offers it, and
+    # registration refuses it for the same reason.
+    if not is_paid_tier(tier):
+        raise HTTPException(status_code=410, detail="tier_unavailable")
 
 
 def _serialize(row: dict) -> dict:
@@ -225,6 +274,19 @@ def quote_subscription(
         if not row["tier_active"] or not row["category_active"]:
             raise HTTPException(status_code=410, detail="tier_unavailable")
 
+        # R33 B.3 · for a provider: is this a plan it may hold, and is
+        # the launch promo on. `promo_end` tells the page whether the
+        # purchase will be charged now (None) or runs free until that
+        # date, so the provider reads it before confirming.
+        promo_end = None
+        if entity_type == "service_provider":
+            _require_provider_can_buy({
+                "category_code": row["category_code"],
+                "price_nis":     row["price_nis"],
+                "is_active":     row["tier_active"],
+            })
+            promo_end = launch_promo_end(cur)
+
         # If they already have an active subscription for this category we
         # surface it so the UI can show "renew/upgrade" instead of "buy".
         existing = _get_active_subscription(cur, entity_type, entity_id, row["category_code"])
@@ -236,6 +298,7 @@ def quote_subscription(
             )}),
             "existing_subscription": _serialize(existing) if existing else None,
             "advertiser": {"entity_type": entity_type, "entity_id": entity_id},
+            "promo_end": promo_end.strftime("%Y-%m-%d") if promo_end else None,
         }
     finally:
         conn.close()
@@ -262,15 +325,6 @@ def purchase_subscription(
     entity_type, entity_id = _resolve_advertiser(x_entity_id, x_entity_type, x_org_id)
     _require_advertiser_approved(entity_type, entity_id)
 
-    if not PAYMENT_FAKE_MODE:
-        raise HTTPException(
-            status_code=503,
-            detail={
-                "code": "cardcom_not_configured",
-                "message": "תשלום אונליין עדיין לא הופעל בסביבה זו. פנה למנהל המערכת.",
-            },
-        )
-
     conn = get_db()
     try:
         cur = conn.cursor()
@@ -279,22 +333,51 @@ def purchase_subscription(
         # row — admin tier edits later won't retroactively change quota
         # or end-date for already-paid subscriptions.
         cur.execute(
-            """SELECT id, category_code, slot_count, duration_days, price_nis,
-                      is_active AS tier_active
-                 FROM marketplace_subscription_tiers WHERE id = %s""",
+            """SELECT t.id, t.category_code, t.slot_count, t.duration_days, t.price_nis,
+                      t.is_active AS tier_active, c.is_active AS category_active
+                 FROM marketplace_subscription_tiers t
+                 JOIN marketplace_categories c ON c.code = t.category_code
+                WHERE t.id = %s""",
             (body.tier_id,),
         )
         tier = cur.fetchone()
         if not tier:
             raise HTTPException(status_code=404, detail="tier_not_found")
-        if not tier["tier_active"]:
+        if not tier["tier_active"] or not tier["category_active"]:
             raise HTTPException(status_code=410, detail="tier_unavailable")
+        if entity_type == "service_provider":
+            _require_provider_can_buy({**tier, "is_active": tier["tier_active"]})
 
         # Block buying a second active subscription for the same category.
         # The advertiser should "upgrade" by buying a different tier after
         # the current one expires (or by cancelling first).
         if _get_active_subscription(cur, entity_type, entity_id, tier["category_code"]):
             raise HTTPException(status_code=409, detail="already_subscribed_to_category")
+
+        # R33 B.3 · a provider adding a category during the launch promo
+        # gets the row registration would have written: nothing charged,
+        # the tier's price kept as a snapshot, the plan running until
+        # the promo ends. No payment is involved, so PAYMENT_FAKE_MODE
+        # does not come into it.
+        promo_end = launch_promo_end(cur) if entity_type == "service_provider" else None
+        if promo_end:
+            sub_id = insert_promo_plan(cur, entity_id, tier, promo_end)
+            conn.commit()
+            cur.execute("SELECT * FROM marketplace_subscriptions WHERE id=%s", (sub_id,))
+            return _serialize(cur.fetchone())
+
+        # Everyone else, and a provider once the promo is over, has to
+        # pay, and there is no charging for marketplace subscriptions
+        # yet (R34 5b). Checked here, after the request is known to be
+        # a valid one, so a bad tier id reads as a bad tier id.
+        if not PAYMENT_FAKE_MODE:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "code": "cardcom_not_configured",
+                    "message": "תשלום אונליין עדיין לא הופעל בסביבה זו. פנה למנהל המערכת.",
+                },
+            )
 
         sub_id = str(uuid.uuid4())
         # FAKE-mode payment marker — replaced with real cardcom_token_ref
