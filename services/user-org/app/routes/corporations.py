@@ -541,10 +541,11 @@ def get_corporation(
     x_entity_id:   Optional[str] = Header(default=None),
     x_entity_type: Optional[str] = Header(default=None),
     x_user_role:   Optional[str] = Header(default=None),
+    x_user_is_admin:   Optional[str] = Header(default=None),
 ):
     # L1 §1 · SEC-1 — was returning full corp profile to any
     # authenticated caller regardless of tenant.
-    require_entity_access(x_entity_id, x_entity_type, x_user_role, org_id, "corporation")
+    require_entity_access(x_entity_id, x_entity_type, x_user_role, org_id, "corporation", x_user_is_admin)
     conn = get_db()
     try:
         cur = conn.cursor()
@@ -589,10 +590,11 @@ def list_corporation_users(
     x_entity_id:   Optional[str] = Header(default=None),
     x_entity_type: Optional[str] = Header(default=None),
     x_user_role:   Optional[str] = Header(default=None),
+    x_user_is_admin:   Optional[str] = Header(default=None),
 ):
     """List team members from entity_memberships (phone-first, includes pending invitations)."""
     # L1 §1 · SEC-1 — was leaking every corp member's phone.
-    require_entity_access(x_entity_id, x_entity_type, x_user_role, org_id, "corporation")
+    require_entity_access(x_entity_id, x_entity_type, x_user_role, org_id, "corporation", x_user_is_admin)
     conn = get_db()
     try:
         cur = conn.cursor()
@@ -768,6 +770,7 @@ def delete_corporation_user(
     membership_id: str,
     x_user_id:   Optional[str] = Header(default=None),
     x_user_role: Optional[str] = Header(default=None),
+    x_user_is_admin: Optional[str] = Header(default=None),
 ):
     """Hard-delete a team membership (active or pending). Cleans up the
     notification_recipients row for the same (entity, user) pair. Role
@@ -778,6 +781,7 @@ def delete_corporation_user(
         membership_id=membership_id,
         caller_user_id=x_user_id,
         caller_role=x_user_role,
+        caller_is_admin=x_user_is_admin,
     )
 
 
@@ -802,6 +806,7 @@ async def update_corporation_user(
     data: TeamMemberPatch,
     x_user_id:   Optional[str] = Header(default=None),
     x_user_role: Optional[str] = Header(default=None),
+    x_user_is_admin: Optional[str] = Header(default=None),
 ):
     """Edit role / job title (active or pending) and — for pending rows
     only — the invited name + phone. Phone change resends the SMS to
@@ -826,6 +831,7 @@ async def update_corporation_user(
         patch=data.dict(exclude_unset=True),
         caller_user_id=x_user_id,
         caller_role=x_user_role,
+        caller_is_admin=x_user_is_admin,
         entity_name=org.get("company_name_he"),
     )
 
@@ -846,6 +852,7 @@ def set_corporation_deal_contact(
     data: DealContactPatch,
     x_user_id:   Optional[str] = Header(default=None),
     x_user_role: Optional[str] = Header(default=None),
+    x_user_is_admin: Optional[str] = Header(default=None),
 ):
     return team_mgmt.set_deal_contact(
         entity_type="corporation",
@@ -854,6 +861,7 @@ def set_corporation_deal_contact(
         is_deal_contact=data.is_deal_contact,
         caller_user_id=x_user_id,
         caller_role=x_user_role,
+        caller_is_admin=x_user_is_admin,
     )
 
 
@@ -882,6 +890,7 @@ def upsert_corporation_notification_recipient(
     body: notif_recipients.RecipientUpsert,
     x_user_id:   Optional[str] = Header(default=None),
     x_user_role: Optional[str] = Header(default=None),
+    x_user_is_admin: Optional[str] = Header(default=None),
 ):
     """Flag/unflag a team member as a notification recipient + choose
     their channels. Role gate: corp admin/owner OR the user themselves
@@ -893,6 +902,7 @@ def upsert_corporation_notification_recipient(
         body=body,
         caller_user_id=x_user_id,
         caller_role=x_user_role,
+        caller_is_admin=x_user_is_admin,
     )
 
 
@@ -902,13 +912,14 @@ def list_corporation_documents(
     x_entity_id:   Optional[str] = Header(default=None),
     x_entity_type: Optional[str] = Header(default=None),
     x_user_role:   Optional[str] = Header(default=None),
+    x_user_is_admin:   Optional[str] = Header(default=None),
 ):
     # L1 §1 · SEC-1 — the highest-risk row in the batch: was exposing
     # signed-doc URLs (business licence, ID, tax certs). Even after
     # SEC-2 seals the /api/uploads path, the URL list itself is
     # sensitive — an attacker could log it and try the storage
     # backend directly later.
-    require_entity_access(x_entity_id, x_entity_type, x_user_role, org_id, "corporation")
+    require_entity_access(x_entity_id, x_entity_type, x_user_role, org_id, "corporation", x_user_is_admin)
     conn = get_db()
     try:
         cur = conn.cursor()

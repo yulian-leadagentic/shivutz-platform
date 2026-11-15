@@ -10,6 +10,7 @@ import json
 import uuid
 
 from app.db import get_db
+from app.services.admin_check import is_admin
 from app.services.search_normalize import marketplace_text_conditions
 from app.services.phone_normalize import normalize_or_400
 from app.services.seed_visibility import seed_where
@@ -776,6 +777,7 @@ def delete_listing(
     x_entity_id: Optional[str] = Header(default=None),
     x_org_id:    Optional[str] = Header(default=None),
     x_user_role: Optional[str] = Header(default=None),
+    x_user_is_admin: Optional[str] = Header(default=None),
 ):
     entity_id = x_entity_id or x_org_id
     conn = get_db()
@@ -790,7 +792,7 @@ def delete_listing(
         if not row:
             raise HTTPException(status_code=404, detail="Listing not found")
         is_owner = (row["corporation_id"] == entity_id) or (row["advertiser_entity_id"] == entity_id)
-        if x_user_role != "admin" and not is_owner:
+        if not is_admin(x_user_is_admin, x_user_role) and not is_owner:
             raise HTTPException(status_code=403, detail="Forbidden")
 
         cur.execute("UPDATE marketplace_listings SET deleted_at=NOW(), status='paused' WHERE id=%s", (listing_id,))

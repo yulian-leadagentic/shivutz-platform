@@ -8,6 +8,7 @@ from typing import Optional, Dict, Any
 from fastapi import HTTPException
 
 from app.db import get_db
+from app.services.admin_check import is_admin
 from app.publisher import publish_event
 
 
@@ -39,9 +40,10 @@ def _ensure_caller_can_manage(
     entity_id: str,
     caller_user_id: Optional[str],
     caller_role: Optional[str],
+    caller_is_admin: Optional[str] = None,
 ):
     """Caller must be platform admin OR an admin/owner member of this entity."""
-    if caller_role == "admin":
+    if is_admin(caller_is_admin, caller_role):
         return
     if not caller_user_id:
         raise HTTPException(status_code=401, detail="auth_required")
@@ -70,13 +72,14 @@ def delete_membership(
     membership_id: str,
     caller_user_id: Optional[str],
     caller_role: Optional[str],
+    caller_is_admin: Optional[str] = None,
 ) -> dict:
     """Hard-delete an entity_memberships row + clean up the
     notification_recipients row for the same (entity, user) tuple."""
     conn = get_db()
     try:
         cur = conn.cursor()
-        _ensure_caller_can_manage(cur, entity_type, entity_id, caller_user_id, caller_role)
+        _ensure_caller_can_manage(cur, entity_type, entity_id, caller_user_id, caller_role, caller_is_admin)
 
         cur.execute(
             """SELECT membership_id, user_id, role
@@ -141,6 +144,7 @@ async def update_membership(
     caller_user_id: Optional[str],
     caller_role: Optional[str],
     entity_name: Optional[str] = None,
+    caller_is_admin: Optional[str] = None,
 ) -> dict:
     """Update a team membership in place.
 
@@ -209,7 +213,7 @@ async def update_membership(
     publish_phone_change = None  # set if we need to send a fresh invite SMS
     try:
         cur = conn.cursor()
-        _ensure_caller_can_manage(cur, entity_type, entity_id, caller_user_id, caller_role)
+        _ensure_caller_can_manage(cur, entity_type, entity_id, caller_user_id, caller_role, caller_is_admin)
 
         cur.execute(
             """SELECT membership_id, user_id, role, invited_phone,
@@ -396,11 +400,12 @@ def set_deal_contact(
     is_deal_contact: bool,
     caller_user_id: Optional[str],
     caller_role: Optional[str],
+    caller_is_admin: Optional[str] = None,
 ) -> Dict[str, Any]:
     conn = get_db()
     try:
         cur = conn.cursor()
-        _ensure_caller_can_manage(cur, entity_type, entity_id, caller_user_id, caller_role)
+        _ensure_caller_can_manage(cur, entity_type, entity_id, caller_user_id, caller_role, caller_is_admin)
 
         # Sanity: the target membership belongs to the claimed entity
         # AND is active. Pending/disabled members can't be contacts.

@@ -1,7 +1,7 @@
 """
 Marketplace admin endpoints — categories + subscription tiers.
 
-Only admin users (gateway forwards `x-user-role: admin`) can hit these.
+Only platform admins can hit these (see services/admin_check.py).
 The matching frontend lives at `/admin/marketplace/categories`.
 
 Mounted by main.py under `/marketplace/admin`, so paths land at
@@ -14,14 +14,15 @@ from decimal import Decimal
 import uuid
 
 from app.db import get_db
+from app.services.admin_check import is_admin
 
 router = APIRouter()
 
 
 # ── Auth helper ───────────────────────────────────────────────────────
 
-def _require_admin(x_user_role: Optional[str]):
-    if x_user_role != "admin":
+def _require_admin(x_user_is_admin: Optional[str], x_user_role: Optional[str]):
+    if not is_admin(x_user_is_admin, x_user_role):
         raise HTTPException(status_code=403, detail="admin_only")
 
 
@@ -81,8 +82,11 @@ def _serialize(row: dict) -> dict:
 # ── GET /marketplace/admin/categories ────────────────────────────────
 
 @router.get("/categories")
-def list_categories(x_user_role: Optional[str] = Header(default=None)):
-    _require_admin(x_user_role)
+def list_categories(
+    x_user_role: Optional[str] = Header(default=None),
+    x_user_is_admin: Optional[str] = Header(default=None),
+):
+    _require_admin(x_user_is_admin, x_user_role)
     conn = get_db()
     try:
         cur = conn.cursor()
@@ -100,8 +104,12 @@ def list_categories(x_user_role: Optional[str] = Header(default=None)):
 # ── POST /marketplace/admin/categories ───────────────────────────────
 
 @router.post("/categories", status_code=201)
-def create_category(body: CategoryUpsert, x_user_role: Optional[str] = Header(default=None)):
-    _require_admin(x_user_role)
+def create_category(
+    body: CategoryUpsert,
+    x_user_role: Optional[str] = Header(default=None),
+    x_user_is_admin: Optional[str] = Header(default=None),
+):
+    _require_admin(x_user_is_admin, x_user_role)
     conn = get_db()
     try:
         cur = conn.cursor()
@@ -126,8 +134,13 @@ def create_category(body: CategoryUpsert, x_user_role: Optional[str] = Header(de
 # ── PATCH /marketplace/admin/categories/{code} ───────────────────────
 
 @router.patch("/categories/{code}")
-def update_category(code: str, body: CategoryPatch, x_user_role: Optional[str] = Header(default=None)):
-    _require_admin(x_user_role)
+def update_category(
+    code: str,
+    body: CategoryPatch,
+    x_user_role: Optional[str] = Header(default=None),
+    x_user_is_admin: Optional[str] = Header(default=None),
+):
+    _require_admin(x_user_is_admin, x_user_role)
     updates, params = [], []
     for field, val in body.model_dump(exclude_none=True).items():
         updates.append(f"{field}=%s")
@@ -151,8 +164,12 @@ def update_category(code: str, body: CategoryPatch, x_user_role: Optional[str] =
 # ── GET /marketplace/admin/categories/{code}/tiers ───────────────────
 
 @router.get("/categories/{code}/tiers")
-def list_tiers(code: str, x_user_role: Optional[str] = Header(default=None)):
-    _require_admin(x_user_role)
+def list_tiers(
+    code: str,
+    x_user_role: Optional[str] = Header(default=None),
+    x_user_is_admin: Optional[str] = Header(default=None),
+):
+    _require_admin(x_user_is_admin, x_user_role)
     conn = get_db()
     try:
         cur = conn.cursor()
@@ -172,8 +189,13 @@ def list_tiers(code: str, x_user_role: Optional[str] = Header(default=None)):
 # ── POST /marketplace/admin/categories/{code}/tiers ──────────────────
 
 @router.post("/categories/{code}/tiers", status_code=201)
-def create_tier(code: str, body: TierUpsert, x_user_role: Optional[str] = Header(default=None)):
-    _require_admin(x_user_role)
+def create_tier(
+    code: str,
+    body: TierUpsert,
+    x_user_role: Optional[str] = Header(default=None),
+    x_user_is_admin: Optional[str] = Header(default=None),
+):
+    _require_admin(x_user_is_admin, x_user_role)
     tier_id = str(uuid.uuid4())
     conn = get_db()
     try:
@@ -200,8 +222,13 @@ def create_tier(code: str, body: TierUpsert, x_user_role: Optional[str] = Header
 # ── PATCH /marketplace/admin/tiers/{tier_id} ─────────────────────────
 
 @router.patch("/tiers/{tier_id}")
-def update_tier(tier_id: str, body: TierPatch, x_user_role: Optional[str] = Header(default=None)):
-    _require_admin(x_user_role)
+def update_tier(
+    tier_id: str,
+    body: TierPatch,
+    x_user_role: Optional[str] = Header(default=None),
+    x_user_is_admin: Optional[str] = Header(default=None),
+):
+    _require_admin(x_user_is_admin, x_user_role)
     updates, params = [], []
     for field, val in body.model_dump(exclude_none=True).items():
         updates.append(f"{field}=%s")
@@ -225,8 +252,12 @@ def update_tier(tier_id: str, body: TierPatch, x_user_role: Optional[str] = Head
 # ── DELETE /marketplace/admin/tiers/{tier_id} ────────────────────────
 
 @router.delete("/tiers/{tier_id}", status_code=204)
-def delete_tier(tier_id: str, x_user_role: Optional[str] = Header(default=None)):
-    _require_admin(x_user_role)
+def delete_tier(
+    tier_id: str,
+    x_user_role: Optional[str] = Header(default=None),
+    x_user_is_admin: Optional[str] = Header(default=None),
+):
+    _require_admin(x_user_is_admin, x_user_role)
     conn = get_db()
     try:
         cur = conn.cursor()

@@ -25,6 +25,7 @@ from fastapi import APIRouter, HTTPException, Header
 from fastapi.responses import FileResponse
 
 from app.db import get_db
+from app.services.admin_check import is_admin
 from app.services.entity_access import require_entity_access
 
 router = APIRouter()
@@ -36,6 +37,7 @@ UPLOAD_DIR    = os.getenv("UPLOAD_DIR", "/app/uploads")
 @router.get("/cloudinary-signature")
 def cloudinary_signature(
     x_user_role: Optional[str] = Header(default=None),
+    x_user_is_admin: Optional[str] = Header(default=None),
     x_user_id:   Optional[str] = Header(default=None),
 ):
     # R30 §17 · signing endpoint returns time-limited upload
@@ -51,7 +53,7 @@ def cloudinary_signature(
     # sigReason discriminator).
     if not x_user_id:
         raise HTTPException(status_code=401, detail={"code": "unauthorized"})
-    if x_user_role != "admin":
+    if not is_admin(x_user_is_admin, x_user_role):
         raise HTTPException(status_code=403, detail={"code": "admin_only"})
 
     cloud   = os.getenv("CLOUDINARY_CLOUD_NAME")
@@ -105,6 +107,7 @@ def get_uploaded_file(
     x_entity_id:   Optional[str] = Header(default=None),
     x_entity_type: Optional[str] = Header(default=None),
     x_user_role:   Optional[str] = Header(default=None),
+    x_user_is_admin:   Optional[str] = Header(default=None),
 ):
     # Path-traversal defense — filenames are server-generated UUIDs,
     # so anything with / or .. is a probe.
@@ -125,7 +128,7 @@ def get_uploaded_file(
         raise HTTPException(status_code=404, detail={"error": "file_not_found"})
     require_entity_access(
         x_entity_id, x_entity_type, x_user_role,
-        row["entity_id"], row["entity_type"],
+        row["entity_id"], row["entity_type"], x_user_is_admin,
     )
     path = Path(UPLOAD_DIR) / filename
     if not path.is_file():

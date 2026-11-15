@@ -6,6 +6,7 @@ const { v4: uuidv4 } = require('uuid');
 const { validateToken } = require('./auth');
 const { rateLimiter }   = require('./rateLimit');
 const { stripIdentityHeadersMiddleware } = require('./stripIdentityHeaders');
+const { isAdminOnlyPath, attachUserHeaders } = require('./identityHeaders');
 
 const app = express();
 
@@ -298,11 +299,7 @@ const PUBLIC_METHOD_SUFFIXES = [
   { prefix: '/api/organizations/contractors/', suffix: '/verify/confirm', methods: new Set(['POST']) },
 ];
 
-// Admin-only routes — matched against the request URL (not the service
-// prefix) so we can mark sub-paths admin-only without affecting the rest
-// of the upstream service. e.g. /api/marketplace/admin/* is admin-only,
-// but /api/marketplace/* (browse) stays public for everyone.
-const ADMIN_ONLY = ['/api/admin', '/api/marketplace/admin'];
+// Admin-only routes live in ./identityHeaders (ADMIN_ONLY, isAdminOnlyPath).
 
 for (const [prefix, target] of Object.entries(services)) {
   app.use(prefix, async (req, res, next) => {
@@ -310,7 +307,14 @@ for (const [prefix, target] of Object.entries(services)) {
 
     // Auth check — use originalUrl so the full /api/... path is available
     const url = req.originalUrl.split('?')[0];
-    const isPublic =
+    // R33 A1 · an admin-only path is never public, whatever the
+    // method. GET /api/marketplace is public for browsing, and the
+    // prefix match used to carry GET /api/marketplace/admin/* along
+    // with it: those requests skipped the role guard below and were
+    // stopped only by the backend's own check. Decided first, so no
+    // public rule added later can open an admin path by accident.
+    const adminOnly = isAdminOnlyPath(url);
+    const isPublic = !adminOnly && (
       PUBLIC_PREFIXES.some(p => req.originalUrl.startsWith(p)) ||
       Object.entries(PUBLIC_METHOD_ROUTES).some(
         ([path, methods]) => url === path && methods.has(req.method)
@@ -321,47 +325,8 @@ for (const [prefix, target] of Object.entries(services)) {
       PUBLIC_METHOD_SUFFIXES.some(
         ({ prefix: p, suffix: s, methods }) =>
           url.startsWith(p) && url.endsWith(s) && methods.has(req.method)
-      );
-    function attachUserHeaders(user) {
-      req.headers['x-user-id']   = user.sub;
-      // Effective role for this request. Multi-membership users
-      // (e.g. yulian@ — owns a corp AND a contractor entity) have a
-      // legacy `role` from users.role that reflects their FIRST
-      // signup, while their CURRENT working context is decided by
-      // the entity they picked at /select-entity. Downstream services
-      // gate on the role they're acting as right now, so we project
-      // entity_type into x-user-role when present and only fall back
-      // to the legacy role for admins (who have no entity context).
-      // This fixed the "contractor_only" 403 a corp-rooted contractor
-      // got when approving a deal.
-      req.headers['x-user-role'] = user.entity_type || user.role;
-      // x-org-id is consumed across services as the CURRENT ACTING
-      // entity's id (the thing the user is operating as right now),
-      // not as the legacy users.org_id. For multi-membership users
-      // (own a corp AND a contractor), the legacy org_id reflects
-      // their first signup — which is the WRONG entity if they're
-      // currently acting as the other one. Mirror the entity-aware
-      // projection we do for x-user-role: when entity context is
-      // present, project entity_id into x-org-id; only fall back
-      // to the legacy org_id when there's no entity context (admins
-      // with no org, old single-entity users).
-      // Audit 2026-05-17: every x-org-id reader (deals, payment,
-      // user-org/marketplace*, worker) treats this as "current
-      // acting entity" already, so the projection is semantically
-      // lossless.
-      const effectiveOrgId = user.entity_id || user.org_id;
-      if (effectiveOrgId)       req.headers['x-org-id']          = effectiveOrgId;
-      else                      delete req.headers['x-org-id'];
-      if (user.phone)           req.headers['x-phone']           = user.phone;
-      else                      delete req.headers['x-phone'];
-      if (user.entity_id)       req.headers['x-entity-id']       = user.entity_id;
-      else                      delete req.headers['x-entity-id'];
-      if (user.entity_type)     req.headers['x-entity-type']     = user.entity_type;
-      else                      delete req.headers['x-entity-type'];
-      if (user.membership_role) req.headers['x-membership-role'] = user.membership_role;
-      else                      delete req.headers['x-membership-role'];
-    }
-
+      )
+    );
     if (!isPublic) {
       const user = await validateToken(req);
       if (!user) return res.status(401).json({ error: 'Unauthorized' });
@@ -369,16 +334,16 @@ for (const [prefix, target] of Object.entries(services)) {
       // Role guard for admin routes — match against request URL so a
       // sub-path (e.g. /api/marketplace/admin) can be admin-only while
       // its parent (/api/marketplace) stays public for browse traffic.
-      if (ADMIN_ONLY.some(p => url.startsWith(p)) && user.role !== 'admin') {
+      if (adminOnly && user.role !== 'admin') {
         return res.status(403).json({ error: 'Forbidden' });
       }
 
-      attachUserHeaders(user);
+      attachUserHeaders(req.headers, user);
     } else if (req.headers.authorization) {
       // Public route, but the caller IS logged in — pass identity headers so
       // backends can offer scoped behaviour (e.g. /marketplace?mine=true).
       const user = await validateToken(req).catch(() => null);
-      if (user) attachUserHeaders(user);
+      if (user) attachUserHeaders(req.headers, user);
     }
 
     // R30 · rate limiting runs HERE, after identification — not before.

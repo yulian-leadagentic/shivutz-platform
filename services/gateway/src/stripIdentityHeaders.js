@@ -21,6 +21,9 @@
 const CLIENT_FORBIDDEN_HEADERS = [
   'x-user-id', 'x-user-role', 'x-org-id', 'x-phone',
   'x-entity-id', 'x-entity-type', 'x-membership-role',
+  // R33 A1 · set only by attachUserHeaders, for a JWT whose role is
+  // admin. A caller that could send it would be an admin by typing.
+  'x-user-is-admin',
 ];
 
 /** Delete every caller-supplied identity header from `headers`. */

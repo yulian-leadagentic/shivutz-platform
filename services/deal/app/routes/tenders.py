@@ -14,6 +14,7 @@ projects:
   x-user-id   → acting user
   x-org-id    → acting entity (contractor_id or corporation_id)
   x-user-role → 'contractor' | 'corporation' | 'admin'
+  x-user-is-admin → '1' for a platform admin, whatever entity they act as
 """
 
 from fastapi import APIRouter, HTTPException, Header
@@ -24,6 +25,7 @@ from decimal import Decimal
 import uuid
 
 from app.db import get_db
+from app.services.admin_check import is_admin as _is_admin
 from app.services import audit
 from app.publisher import publish_event
 
@@ -396,6 +398,7 @@ def get_tender(
     tender_id: str,
     x_org_id: Optional[str] = Header(default=None),
     x_user_role: Optional[str] = Header(default=None),
+    x_user_is_admin: Optional[str] = Header(default=None),
 ):
     """Tender detail. Visibility:
        * contractor (owner): full tender + all bids, corps masked as
@@ -412,7 +415,7 @@ def get_tender(
         t["items"] = _load_items(conn, tender_id)
         revealed = bool(tender.get("revealed_at"))
 
-        is_admin       = x_user_role == "admin"
+        is_admin       = _is_admin(x_user_is_admin, x_user_role)
         is_owner       = x_user_role == "contractor" and x_org_id == tender["contractor_id"]
         is_corp        = x_user_role == "corporation"
 
@@ -573,8 +576,9 @@ async def admin_approve_bid(
     bid_id: str,
     x_user_id: Optional[str] = Header(default=None),
     x_user_role: Optional[str] = Header(default=None),
+    x_user_is_admin: Optional[str] = Header(default=None),
 ):
-    if x_user_role != "admin":
+    if not _is_admin(x_user_is_admin, x_user_role):
         raise HTTPException(status_code=403, detail="admin_only")
     conn = get_db()
     try:
@@ -621,8 +625,9 @@ async def admin_reject_bid(
     data: BidReject,
     x_user_id: Optional[str] = Header(default=None),
     x_user_role: Optional[str] = Header(default=None),
+    x_user_is_admin: Optional[str] = Header(default=None),
 ):
-    if x_user_role != "admin":
+    if not _is_admin(x_user_is_admin, x_user_role):
         raise HTTPException(status_code=403, detail="admin_only")
     conn = get_db()
     try:
@@ -655,6 +660,7 @@ async def select_lines(
     x_org_id: Optional[str] = Header(default=None),
     x_user_id: Optional[str] = Header(default=None),
     x_user_role: Optional[str] = Header(default=None),
+    x_user_is_admin: Optional[str] = Header(default=None),
 ):
     """Contractor picks individual offer LINES (bid_item ids) — different
     corps can win different professions. Marks those bid_items selected
@@ -666,7 +672,7 @@ async def select_lines(
         tender = _load_tender(conn, tender_id)
         if not tender:
             raise HTTPException(status_code=404, detail="tender_not_found")
-        if x_user_role != "admin" and x_org_id != tender["contractor_id"]:
+        if not _is_admin(x_user_is_admin, x_user_role) and x_org_id != tender["contractor_id"]:
             raise HTTPException(status_code=403, detail="forbidden")
         if tender["status"] not in ("open", "awaiting_admin"):
             raise HTTPException(status_code=409, detail="tender_locked")
@@ -741,13 +747,14 @@ def cancel_tender(
     tender_id: str,
     x_org_id: Optional[str] = Header(default=None),
     x_user_role: Optional[str] = Header(default=None),
+    x_user_is_admin: Optional[str] = Header(default=None),
 ):
     conn = get_db()
     try:
         tender = _load_tender(conn, tender_id)
         if not tender:
             raise HTTPException(status_code=404, detail="tender_not_found")
-        if x_user_role != "admin" and x_org_id != tender["contractor_id"]:
+        if not _is_admin(x_user_is_admin, x_user_role) and x_org_id != tender["contractor_id"]:
             raise HTTPException(status_code=403, detail="forbidden")
         cur = conn.cursor()
         cur.execute(
@@ -789,6 +796,7 @@ def edit_tender(
     x_org_id: Optional[str] = Header(default=None),
     x_user_id: Optional[str] = Header(default=None),
     x_user_role: Optional[str] = Header(default=None),
+    x_user_is_admin: Optional[str] = Header(default=None),
 ):
     """Edit a request.
        * Owner: allowed only while still editable (status pending_admin
@@ -801,7 +809,7 @@ def edit_tender(
         tender = _load_tender(conn, tender_id)
         if not tender:
             raise HTTPException(status_code=404, detail="tender_not_found")
-        is_admin = x_user_role == "admin"
+        is_admin = _is_admin(x_user_is_admin, x_user_role)
         is_owner = x_org_id == tender["contractor_id"]
         if not is_admin and not is_owner:
             raise HTTPException(status_code=403, detail="forbidden")
@@ -853,6 +861,7 @@ def delete_tender(
     tender_id: str,
     x_org_id: Optional[str] = Header(default=None),
     x_user_role: Optional[str] = Header(default=None),
+    x_user_is_admin: Optional[str] = Header(default=None),
 ):
     """Hard-delete a request (owner or admin). CASCADE removes items,
     bids, bid lines and per-corp refs. Pre-launch — no soft-delete."""
@@ -861,7 +870,7 @@ def delete_tender(
         tender = _load_tender(conn, tender_id)
         if not tender:
             raise HTTPException(status_code=404, detail="tender_not_found")
-        if x_user_role != "admin" and x_org_id != tender["contractor_id"]:
+        if not _is_admin(x_user_is_admin, x_user_role) and x_org_id != tender["contractor_id"]:
             raise HTTPException(status_code=403, detail="forbidden")
         cur = conn.cursor()
         cur.execute("DELETE FROM foreign_tenders WHERE id=%s", (tender_id,))
@@ -876,6 +885,7 @@ def freeze_tender(
     tender_id: str,
     x_org_id: Optional[str] = Header(default=None),
     x_user_role: Optional[str] = Header(default=None),
+    x_user_is_admin: Optional[str] = Header(default=None),
 ):
     """Freeze a published request — hidden from corps (status filter
     excludes 'frozen') but kept + restorable. Owner or admin."""
@@ -884,7 +894,7 @@ def freeze_tender(
         tender = _load_tender(conn, tender_id)
         if not tender:
             raise HTTPException(status_code=404, detail="tender_not_found")
-        if x_user_role != "admin" and x_org_id != tender["contractor_id"]:
+        if not _is_admin(x_user_is_admin, x_user_role) and x_org_id != tender["contractor_id"]:
             raise HTTPException(status_code=403, detail="forbidden")
         if tender["status"] not in ("open", "pending_admin"):
             raise HTTPException(status_code=409, detail="cannot_freeze")
@@ -904,6 +914,7 @@ def unfreeze_tender(
     tender_id: str,
     x_org_id: Optional[str] = Header(default=None),
     x_user_role: Optional[str] = Header(default=None),
+    x_user_is_admin: Optional[str] = Header(default=None),
 ):
     """Restore a frozen request back to 'open'."""
     conn = get_db()
@@ -911,7 +922,7 @@ def unfreeze_tender(
         tender = _load_tender(conn, tender_id)
         if not tender:
             raise HTTPException(status_code=404, detail="tender_not_found")
-        if x_user_role != "admin" and x_org_id != tender["contractor_id"]:
+        if not _is_admin(x_user_is_admin, x_user_role) and x_org_id != tender["contractor_id"]:
             raise HTTPException(status_code=403, detail="forbidden")
         if tender["status"] != "frozen":
             raise HTTPException(status_code=409, detail="not_frozen")
@@ -931,13 +942,14 @@ def unfreeze_tender(
 @router.get("/admin/all")
 def admin_list_tenders(
     x_user_role: Optional[str] = Header(default=None),
+    x_user_is_admin: Optional[str] = Header(default=None),
     auto_published: Optional[str] = None,
 ):
     """List tenders for admin. `auto_published=true` filters to rows
     that skipped the publish-gate — this is the T1 spot-check queue.
     Without it, admin might never notice a bad actor that bypassed
     review."""
-    if x_user_role != "admin":
+    if not _is_admin(x_user_is_admin, x_user_role):
         raise HTTPException(status_code=403, detail="admin_only")
     conn = get_db()
     try:
@@ -969,10 +981,13 @@ def admin_list_tenders(
 
 
 @router.get("/admin/summary")
-def admin_summary(x_user_role: Optional[str] = Header(default=None)):
+def admin_summary(
+    x_user_role: Optional[str] = Header(default=None),
+    x_user_is_admin: Optional[str] = Header(default=None),
+):
     """Lightweight counts for the admin dashboard widget — how many
     foreign-import requests sit in each actionable bucket."""
-    if x_user_role != "admin":
+    if not _is_admin(x_user_is_admin, x_user_role):
         raise HTTPException(status_code=403, detail="admin_only")
     conn = get_db()
     try:
@@ -997,11 +1012,12 @@ async def admin_publish(
     tender_id: str,
     x_user_id: Optional[str] = Header(default=None),
     x_user_role: Optional[str] = Header(default=None),
+    x_user_is_admin: Optional[str] = Header(default=None),
 ):
     """Gate 1 — admin approves a pending tender for broadcast. Flips
     pending_admin → open and fans the tender out to corps for bidding.
     Until this runs, corps never see the tender."""
-    if x_user_role != "admin":
+    if not _is_admin(x_user_is_admin, x_user_role):
         raise HTTPException(status_code=403, detail="admin_only")
     conn = get_db()
     try:
@@ -1043,10 +1059,11 @@ async def admin_reject(
     data: RejectReason,
     x_user_id: Optional[str] = Header(default=None),
     x_user_role: Optional[str] = Header(default=None),
+    x_user_is_admin: Optional[str] = Header(default=None),
 ):
     """Admin rejects a request (at the publish gate or later) with an
     optional free-text reason. Status → 'rejected'; live bids voided."""
-    if x_user_role != "admin":
+    if not _is_admin(x_user_is_admin, x_user_role):
         raise HTTPException(status_code=403, detail="admin_only")
     conn = get_db()
     try:
@@ -1077,12 +1094,13 @@ async def admin_approve(
     tender_id: str,
     x_user_id: Optional[str] = Header(default=None),
     x_user_role: Optional[str] = Header(default=None),
+    x_user_is_admin: Optional[str] = Header(default=None),
 ):
     """Admin confirms the contractor's selection, reveals identities to
     both sides, and moves the tender to in_progress. Selected bids →
     confirmed; everything else on the tender → rejected. Payment is
     arranged off-platform by the admin; this just records the reveal."""
-    if x_user_role != "admin":
+    if not _is_admin(x_user_is_admin, x_user_role):
         raise HTTPException(status_code=403, detail="admin_only")
     conn = get_db()
     try:
@@ -1137,8 +1155,9 @@ async def admin_approve(
 def admin_close(
     tender_id: str,
     x_user_role: Optional[str] = Header(default=None),
+    x_user_is_admin: Optional[str] = Header(default=None),
 ):
-    if x_user_role != "admin":
+    if not _is_admin(x_user_is_admin, x_user_role):
         raise HTTPException(status_code=403, detail="admin_only")
     conn = get_db()
     try:

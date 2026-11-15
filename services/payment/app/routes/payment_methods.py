@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from typing import Optional
 import uuid
 from app.db import get_db
+from app.services.admin_check import is_admin
 from app.crypto import encrypt_token
 
 router = APIRouter()
@@ -111,6 +112,7 @@ def get_payment_method(
     x_entity_id:  Optional[str] = Header(default=None),
     x_org_id:     Optional[str] = Header(default=None),
     x_user_role:  Optional[str] = Header(default=None),
+    x_user_is_admin:  Optional[str] = Header(default=None),
 ):
     entity_id = x_entity_id or x_org_id
     conn = get_db()
@@ -120,7 +122,7 @@ def get_payment_method(
         row = cur.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Payment method not found")
-        if x_user_role != "admin" and row["entity_id"] != entity_id:
+        if not is_admin(x_user_is_admin, x_user_role) and row["entity_id"] != entity_id:
             raise HTTPException(status_code=403, detail="Forbidden")
         return _serialize_pm(row)
     finally:
@@ -133,6 +135,7 @@ def set_default_payment_method(
     x_entity_id:  Optional[str] = Header(default=None),
     x_org_id:     Optional[str] = Header(default=None),
     x_user_role:  Optional[str] = Header(default=None),
+    x_user_is_admin:  Optional[str] = Header(default=None),
 ):
     entity_id = x_entity_id or x_org_id
     conn = get_db()
@@ -142,7 +145,7 @@ def set_default_payment_method(
         row = cur.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Payment method not found")
-        if x_user_role != "admin" and row["entity_id"] != entity_id:
+        if not is_admin(x_user_is_admin, x_user_role) and row["entity_id"] != entity_id:
             raise HTTPException(status_code=403, detail="Forbidden")
         cur.execute(
             "UPDATE payment_methods SET is_default=FALSE "
@@ -167,6 +170,7 @@ def delete_payment_method(
     x_entity_id:  Optional[str] = Header(default=None),
     x_org_id:     Optional[str] = Header(default=None),
     x_user_role:  Optional[str] = Header(default=None),
+    x_user_is_admin:  Optional[str] = Header(default=None),
 ):
     entity_id = x_entity_id or x_org_id
     conn = get_db()
@@ -176,7 +180,7 @@ def delete_payment_method(
         row = cur.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Payment method not found")
-        if x_user_role != "admin" and row["entity_id"] != entity_id:
+        if not is_admin(x_user_is_admin, x_user_role) and row["entity_id"] != entity_id:
             raise HTTPException(status_code=403, detail="Forbidden")
         cur.execute(
             "UPDATE payment_methods SET deleted_at=NOW(), status='removed' WHERE id=%s", (pm_id,)

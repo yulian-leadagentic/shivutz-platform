@@ -69,6 +69,7 @@ from fastapi import APIRouter, HTTPException, Header, Request
 from pydantic import BaseModel, Field
 
 from app.db import get_db
+from app.services.admin_check import is_admin
 
 router = APIRouter()
 
@@ -349,6 +350,7 @@ async def record_events_batch(
 def sponsor_stats(
     days:          int = 30,
     x_user_role:   Optional[str] = Header(default=None),
+    x_user_is_admin:   Optional[str] = Header(default=None),
 ):
     """Per-day counters for every sponsor_ad in the last `days` days.
     Only admin — non-admin (or anon) gets 403.
@@ -361,7 +363,7 @@ def sponsor_stats(
         ]
     Rows for days with zero events are omitted (no synthetic zeros).
     """
-    if x_user_role != "admin":
+    if not is_admin(x_user_is_admin, x_user_role):
         raise HTTPException(status_code=403, detail="admin_only")
 
     # Clamp so a mistaken `?days=99999` doesn't try to scan the whole

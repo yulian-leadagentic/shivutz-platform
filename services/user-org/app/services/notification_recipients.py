@@ -11,6 +11,7 @@ import json
 import uuid
 
 from app.db import get_db
+from app.services.admin_check import is_admin
 
 
 # Allowed channel codes. Anything outside this set is rejected at upsert.
@@ -47,11 +48,12 @@ def _ensure_caller_can_manage(
     caller_user_id: Optional[str],
     caller_role: Optional[str],
     target_user_id: str,
+    caller_is_admin: Optional[str] = None,
 ):
     """Platform admins always allowed. Otherwise the caller must be either:
        (a) an admin/owner member of this entity (manages anyone), or
        (b) the target user themselves (self opt-out)."""
-    if caller_role == "admin":
+    if is_admin(caller_is_admin, caller_role):
         return
     if not caller_user_id:
         raise HTTPException(status_code=401, detail="auth_required")
@@ -148,6 +150,7 @@ def upsert_recipient(
     body: RecipientUpsert,
     caller_user_id: Optional[str],
     caller_role: Optional[str],
+    caller_is_admin: Optional[str] = None,
 ) -> dict:
     channels = _validate_channels(body.channels)
 
@@ -158,7 +161,7 @@ def upsert_recipient(
         # Caller must be allowed to manage this row.
         _ensure_caller_can_manage(
             cur, entity_type, entity_id,
-            caller_user_id, caller_role, target_user_id,
+            caller_user_id, caller_role, target_user_id, caller_is_admin,
         )
 
         # Target user must be an active member of the entity.

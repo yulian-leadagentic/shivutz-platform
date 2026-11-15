@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 import uuid, httpx, os, json, secrets, shutil
 
 from app.db import get_db
+from app.services.admin_check import is_admin
 from app.publisher import publish_event
 from app.services import verification, rate_limit
 from app.services import notification_recipients as notif_recipients
@@ -544,6 +545,7 @@ async def verify_kablan(
     data: VerifyKablan,
     x_user_id:   Optional[str] = Header(default=None),
     x_user_role: Optional[str] = Header(default=None),
+    x_user_is_admin: Optional[str] = Header(default=None),
 ):
     """Backfill flow — existing contractors who registered before the
     kablan match was required (or whose first attempt mismatched and
@@ -582,7 +584,7 @@ async def verify_kablan(
         contact_email   = row.get("contact_email")
 
         # Role gate (skip if platform admin)
-        if x_user_role != "admin":
+        if not is_admin(x_user_is_admin, x_user_role):
             if not x_user_id:
                 raise HTTPException(status_code=401, detail="auth_required")
             cur.execute(
@@ -698,11 +700,12 @@ def get_contractor(
     x_entity_id:   Optional[str] = Header(default=None),
     x_entity_type: Optional[str] = Header(default=None),
     x_user_role:   Optional[str] = Header(default=None),
+    x_user_is_admin:   Optional[str] = Header(default=None),
 ):
     # L1 §1 · SEC-1 — was returning the full contractor profile to
     # any authenticated caller regardless of tenant. Now gated by
     # the shared entity-access helper (see services/entity_access.py).
-    require_entity_access(x_entity_id, x_entity_type, x_user_role, org_id, "contractor")
+    require_entity_access(x_entity_id, x_entity_type, x_user_role, org_id, "contractor", x_user_is_admin)
     conn = get_db()
     try:
         cur = conn.cursor()
@@ -745,11 +748,12 @@ def list_contractor_users(
     x_entity_id:   Optional[str] = Header(default=None),
     x_entity_type: Optional[str] = Header(default=None),
     x_user_role:   Optional[str] = Header(default=None),
+    x_user_is_admin:   Optional[str] = Header(default=None),
 ):
     """List team members from entity_memberships (phone-first, includes pending invitations)."""
     # L1 §1 · SEC-1 — this was the highest-impact leak: phone numbers
     # of every member of any org, to any authenticated caller.
-    require_entity_access(x_entity_id, x_entity_type, x_user_role, org_id, "contractor")
+    require_entity_access(x_entity_id, x_entity_type, x_user_role, org_id, "contractor", x_user_is_admin)
     conn = get_db()
     try:
         cur = conn.cursor()
@@ -943,6 +947,7 @@ def delete_contractor_user(
     membership_id: str,
     x_user_id:   Optional[str] = Header(default=None),
     x_user_role: Optional[str] = Header(default=None),
+    x_user_is_admin: Optional[str] = Header(default=None),
 ):
     """Same as the corp delete endpoint. Hard delete + recipient cleanup."""
     team_mgmt.delete_membership(
@@ -951,6 +956,7 @@ def delete_contractor_user(
         membership_id=membership_id,
         caller_user_id=x_user_id,
         caller_role=x_user_role,
+        caller_is_admin=x_user_is_admin,
     )
 
 
@@ -974,6 +980,7 @@ async def update_contractor_user(
     data: TeamMemberPatch,
     x_user_id:   Optional[str] = Header(default=None),
     x_user_role: Optional[str] = Header(default=None),
+    x_user_is_admin: Optional[str] = Header(default=None),
 ):
     """Mirror of the corp PATCH endpoint."""
     conn = get_db()
@@ -996,6 +1003,7 @@ async def update_contractor_user(
         patch=data.dict(exclude_unset=True),
         caller_user_id=x_user_id,
         caller_role=x_user_role,
+        caller_is_admin=x_user_is_admin,
         entity_name=org.get("company_name_he"),
     )
 
@@ -1012,6 +1020,7 @@ def set_contractor_deal_contact(
     data: ContractorDealContactPatch,
     x_user_id:   Optional[str] = Header(default=None),
     x_user_role: Optional[str] = Header(default=None),
+    x_user_is_admin: Optional[str] = Header(default=None),
 ):
     return team_mgmt.set_deal_contact(
         entity_type="contractor",
@@ -1020,6 +1029,7 @@ def set_contractor_deal_contact(
         is_deal_contact=data.is_deal_contact,
         caller_user_id=x_user_id,
         caller_role=x_user_role,
+        caller_is_admin=x_user_is_admin,
     )
 
 
@@ -1043,6 +1053,7 @@ def upsert_contractor_notification_recipient(
     body: notif_recipients.RecipientUpsert,
     x_user_id:   Optional[str] = Header(default=None),
     x_user_role: Optional[str] = Header(default=None),
+    x_user_is_admin: Optional[str] = Header(default=None),
 ):
     return notif_recipients.upsert_recipient(
         entity_type="contractor",
@@ -1051,6 +1062,7 @@ def upsert_contractor_notification_recipient(
         body=body,
         caller_user_id=x_user_id,
         caller_role=x_user_role,
+        caller_is_admin=x_user_is_admin,
     )
 
 

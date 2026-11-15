@@ -22,6 +22,7 @@ Contract:
 """
 from typing import Optional
 from fastapi import HTTPException
+from app.services.admin_check import is_admin
 
 
 def require_entity_access(
@@ -30,13 +31,14 @@ def require_entity_access(
     x_user_role:   Optional[str],
     org_id:        str,
     entity_kind:   str,   # 'corporation' | 'contractor'
+    x_user_is_admin: Optional[str] = None,
 ) -> None:
     # Platform admins can inspect any org (admin panel, support
     # tooling, migrations dashboard). The gateway already gates
     # `/api/admin/*` explicitly, but SEC-1's five routes sit
     # under `/api/organizations/*` — they need to accept an admin
     # caller from that path too.
-    if x_user_role == "admin":
+    if is_admin(x_user_is_admin, x_user_role):
         return
     if not x_entity_id:
         raise HTTPException(status_code=401, detail={"error": "no_entity_context"})
