@@ -68,10 +68,36 @@ export const subscriptionApi = {
     ),
 };
 
+export interface CardSetupResult {
+  /** completed: the card is saved. pending: Cardcom has no final answer
+   *  yet. failed: Cardcom reported a failure, nothing was saved. */
+  status: 'completed' | 'pending' | 'failed';
+  payment_method: PaymentMethod | null;
+  reason?: string | null;
+  mode: 'fake' | 'real';
+}
+
 export const paymentApi = {
   /** List payment methods for the authenticated entity (from JWT context). */
   methods: () =>
     apiFetch<PaymentMethod[]>('/payments/payment-methods'),
+
+  /** R37 4.1.1 · add or replace the caller's card. Answers the address
+   *  of the page where the card is typed (Cardcom's); send the browser
+   *  there. Cardcom sends it back with ?card_setup=<setup_id>. */
+  setupCard: () =>
+    apiFetch<{ setup_id: string; url: string; mode: 'fake' | 'real' }>(
+      '/payments/payment-methods/setup',
+      { method: 'POST' },
+    ),
+
+  /** Back from the card page: was the card saved? The server asks
+   *  Cardcom. Safe to call again. */
+  confirmCardSetup: (setupId: string) =>
+    apiFetch<CardSetupResult>(
+      `/payments/payment-methods/setup/${encodeURIComponent(setupId)}/confirm`,
+      { method: 'POST' },
+    ),
 
   /** Delete (soft) a payment method. */
   deleteMethod: (pmId: string) =>

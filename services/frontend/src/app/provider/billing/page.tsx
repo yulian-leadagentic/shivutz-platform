@@ -17,8 +17,9 @@
 //   * cancel             the plan ends now and its listings are paused,
 //                        not deleted.
 //
-// There is no payment-method section: 5b stopped where the prompt told
-// it to, for want of Cardcom charging for marketplace plans.
+// R37 4.1.1 · the card block under the plans is the shared
+// PaymentCardBlock: the card on file, and adding or replacing it on
+// Cardcom's page.
 
 import { Suspense, useCallback, useEffect, useId, useMemo, useState } from 'react';
 import Link from 'next/link';
@@ -35,6 +36,7 @@ import {
 import { paidTiers } from '@/lib/providerCategories';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { PaymentCardBlock } from '@/components/billing/PaymentCardBlock';
 
 function fmtPrice(nis: number): string {
   return `₪${Number(nis).toLocaleString('he-IL', { maximumFractionDigits: 2 })}`;
@@ -296,6 +298,8 @@ function ProviderBillingInner() {
               ))}
             </ul>
           )}
+
+          <PaymentCardBlock />
 
           {ended.length > 0 && (
             <section aria-labelledby="ended-plans" className="space-y-2">

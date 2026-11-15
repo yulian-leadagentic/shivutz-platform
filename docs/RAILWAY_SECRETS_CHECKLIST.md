@@ -173,6 +173,8 @@ Use Cardcom's TEST terminal in staging, real terminal in production.
 | `CARDCOM_BASE_URL` | payment | `https://secure.cardcom.solutions` (same in both — Cardcom doesn't have a separate test endpoint) |
 | `CARDCOM_WEBHOOK_SECRET` | payment | 🎲 Generate fresh per env |
 | `PAYMENT_FAKE_MODE` | payment | `1` in staging while testing, `0` in production |
+| `FRONTEND_URL` | payment | R37 4.1.1. The frontend's public address. Cardcom sends the card holder back to it after the card page. Needed when `PAYMENT_FAKE_MODE` is off |
+| `PUBLIC_API_URL` | payment | R37 4.1.1. The gateway's public address including `/api`, for example `https://<gateway domain>/api`. Cardcom calls `<PUBLIC_API_URL>/webhooks/cardcom` when a card page is finished. Needed when `PAYMENT_FAKE_MODE` is off |
 
 ---
 
