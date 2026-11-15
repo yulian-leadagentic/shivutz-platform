@@ -11,8 +11,12 @@ const { runGraceReminderCron }          = require('./cron/graceReminder');
 const { runGraceHardCapCron }           = require('./cron/graceHardCap');
 const { runSubscriptionRenewalCron }    = require('./cron/subscriptionRenewal');
 const notifRoutes = require('./routes/notifications');
+const whatsappWebhook = require('./routes/whatsappWebhook');
 
 const app = express();
+// Meta signs the exact bytes it sent, so this route reads the raw body
+// and has to be mounted before express.json parses and discards it.
+app.use('/webhooks/whatsapp', express.raw({ type: 'application/json' }), whatsappWebhook);
 // Capture raw body buffer on req.rawBody before JSON parsing —
 // required by vonageWebhookAuth to verify the payload_hash claim in signed JWTs.
 app.use(express.json({

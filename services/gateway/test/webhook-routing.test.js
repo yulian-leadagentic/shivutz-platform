@@ -102,5 +102,15 @@ check('index.js mounts one proxy per entry, in the table\'s order',
 check('the Cardcom path is still in the public list (Cardcom carries no user token)',
   /'\/api\/webhooks\/cardcom-recurring'/.test(source));
 
+// R35 · Meta's WhatsApp webhook. It reaches notification through the
+// broad /api/webhooks rule (pinned above) and has to be public: Meta
+// sends no user token, and a 401 from the gateway would fail the
+// handshake before the service ever saw it.
+const publicList = (source.match(/const PUBLIC_PREFIXES = \[([\s\S]*?)\];/) || [])[1] || '';
+check('/api/webhooks/whatsapp is in the public list', /'\/api\/webhooks\/whatsapp'/.test(publicList));
+check('/api/webhooks/vonage is still in the public list', /'\/api\/webhooks\/vonage'/.test(publicList));
+check('the whole /api/webhooks prefix is not public: each webhook is listed by name',
+  !/'\/api\/webhooks'\s*,/.test(publicList));
+
 console.log(`[webhook-routing] ${failed ? 'FAIL' : 'pass'}: ${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

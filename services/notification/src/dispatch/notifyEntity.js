@@ -7,8 +7,9 @@
 // Channel state today:
 //   email     — SendGrid, live
 //   sms       — Vonage, live
-//   whatsapp  — accepted at opt-in time, dispatcher skips for now;
-//               Phase 2 will plug in services/notification/src/whatsapp/
+//   whatsapp  : accepted at opt-in time and skipped here. These sends
+//               are proactive, so each needs a Meta-approved template,
+//               and R35 ships none.
 //
 // Internal call: user-org is reachable on the docker network without the
 // gateway's JWT gate, so we hit it directly. The list endpoint returns
@@ -108,8 +109,8 @@ async function notifyEntity({
     }
 
     if (channels.includes('whatsapp') && r.phone) {
-      // Phase 2 — Vonage WhatsApp sender. For now log and skip so
-      // opt-ins are durable through the rollout.
+      // A proactive send needs a Meta-approved template and none
+      // exists yet. Log and skip, so the opt-in survives until one does.
       // eslint-disable-next-line no-console
       console.log(`[notifyEntity] whatsapp skip (provider not live) event=${eventKey} → ${r.phone}`);
     }

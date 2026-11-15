@@ -6,10 +6,13 @@
  * channel based on `opts.channel`:
  *
  *   - 'sms'       (default) → existing SMS provider (Vonage / InfoRu / etc.)
- *   - 'whatsapp'           → Vonage Messages API, WhatsApp channel
+ *   - 'whatsapp'           → Meta Cloud API. Free text only inside the 24h
+ *                            window the user's last message opened. Outside
+ *                            it, or when Meta rejects a template, the
+ *                            message goes by SMS instead of failing.
  *   - 'auto'               → try WhatsApp first IF opts.templateName is set
- *                            AND VONAGE_WHATSAPP_NUMBER is configured, else
- *                            SMS. On WhatsApp failure, falls back to SMS.
+ *                            AND the WHATSAPP_* credentials are configured,
+ *                            else SMS. On WhatsApp failure, falls back to SMS.
  *
  * Backwards compatible: the legacy `sendSms()` from ../sms/index.js is
  * still exported under the same name. Existing call sites keep working
@@ -22,9 +25,27 @@
 const { v4: uuidv4 } = require('uuid');
 const { getPool }    = require('../db');
 const { sendSms }    = require('../sms');
-const whatsappProvider = require('./vonageWhatsapp');
+const whatsappProvider = require('./metaWhatsapp');
+const { normalizePhone } = require('../whatsapp/phone');
 
-const HAS_WHATSAPP = () => !!(process.env.VONAGE_APPLICATION_ID && process.env.VONAGE_PRIVATE_KEY && process.env.VONAGE_WHATSAPP_NUMBER);
+const HAS_WHATSAPP = () => !!(process.env.WHATSAPP_ACCESS_TOKEN && process.env.WHATSAPP_PHONE_NUMBER_ID);
+
+// Meta delivers free text only within 24 hours of the user's last
+// message to us. The webhook stores every inbound message, so that
+// table is the record of whether the window is open. A failed lookup
+// throws: guessing "closed" would turn a chat reply into an SMS.
+async function insideServiceWindow(phone) {
+  const [rows] = await getPool().query(
+    `SELECT 1
+       FROM support_messages
+      WHERE channel = 'whatsapp' AND direction = 'inbound'
+        AND peer_phone = ?
+        AND created_at > NOW() - INTERVAL 24 HOUR
+      LIMIT 1`,
+    [normalizePhone(phone)],
+  );
+  return rows.length > 0;
+}
 
 async function logWhatsapp({ phone, message, templateName, messageId, status, err }) {
   try {
@@ -60,7 +81,7 @@ async function sendWhatsappOnce(phone, message, opts) {
       messageId:    result.messageId,
       status:       'submitted',
     });
-    return { ...result, provider: 'vonage-whatsapp', channel: 'whatsapp' };
+    return { ...result, provider: 'meta-cloud', channel: 'whatsapp' };
   } catch (err) {
     await logWhatsapp({
       phone,
@@ -91,15 +112,27 @@ async function sendMessage(phone, message, opts = {}) {
 
   if (channel === 'whatsapp') {
     if (!HAS_WHATSAPP()) {
-      throw new Error('WhatsApp channel requested but VONAGE_* env vars not set');
+      throw new Error('WhatsApp channel requested but WHATSAPP_ACCESS_TOKEN / WHATSAPP_PHONE_NUMBER_ID are not set');
     }
-    return sendWhatsappOnce(phone, message, opts);
+    if (opts.templateName) {
+      try {
+        return await sendWhatsappOnce(phone, message, opts);
+      } catch (err) {
+        console.warn(`[messaging] WhatsApp template send failed, falling back to SMS: ${err.message}`);
+      }
+    } else if (await insideServiceWindow(phone)) {
+      return sendWhatsappOnce(phone, message, opts);
+    } else {
+      console.warn('[messaging] outside the 24h WhatsApp window and no template, sending by SMS');
+    }
+    // Fall through to SMS.
   }
 
   if (channel === 'auto') {
     // 'auto' = prefer WhatsApp if we have credentials AND the caller gave us
-    // a template (free-text only valid in 24h window — we can't safely guess
-    // that). Otherwise SMS. On any WhatsApp failure, fall back to SMS so
+    // a template, otherwise SMS. It never sends free text, open window or
+    // not: its caller is the OTP, which goes over WhatsApp only as an
+    // approved template. On any WhatsApp failure, fall back to SMS so
     // the user still gets the message.
     if (HAS_WHATSAPP() && opts.templateName) {
       try {

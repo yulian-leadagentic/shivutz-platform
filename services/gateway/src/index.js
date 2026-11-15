@@ -206,6 +206,11 @@ const PUBLIC_PREFIXES = [
   // corporations fields).
   '/api/ads/public/sponsored',
   '/api/webhooks/vonage',        // Vonage webhooks — secured by Signature Secret JWT, not user JWT
+  // R35 · Meta's WhatsApp webhook: the GET handshake and the POSTed
+  // events. Meta carries no user token. What guards the route is in
+  // the notification service: the verify token on GET and the
+  // X-Hub-Signature-256 HMAC of the raw body on POST.
+  '/api/webhooks/whatsapp',
   // L5 §5 · Cardcom recurring-charge webhook. HMAC-SHA256 header
   // signature is the security boundary (see payment/webhooks.py) —
   // the JWT gate would break Cardcom's server-to-server call.

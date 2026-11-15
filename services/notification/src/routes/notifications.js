@@ -8,12 +8,12 @@ const { handle: handleEvent } = require('../consumers/handlers');
 const { TEST_CATALOG, TEST_CRONS } = require('../testCatalog');
 const { vonageWebhookAuth, captureRawBody } = require('../sms/vonageWebhookAuth');
 
-// Meta-approved WhatsApp template name registered with Vonage. Until the
-// template is approved by Meta, the WhatsApp send will fail and the
-// dispatcher falls back to SMS — so the opt-in is "safe to flip on"
-// even before Meta approval lands. Env-overridable so we can rotate
-// template names without code changes (e.g. on copy revisions).
-const WHATSAPP_OTP_TEMPLATE = process.env.WHATSAPP_OTP_TEMPLATE_NAME || 'tagidai_otp_he';
+// Name of the Meta-approved OTP template. An OTP is sent outside the
+// 24h window, where Meta accepts nothing but an approved template, so
+// until one exists this stays unset and every OTP goes by SMS. There is
+// no default name: a name Meta does not know costs a failed API call on
+// each login before the SMS goes out.
+const WHATSAPP_OTP_TEMPLATE = process.env.WHATSAPP_OTP_TEMPLATE_NAME;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /internal/otp
@@ -29,18 +29,17 @@ router.post('/internal/otp', async (req, res) => {
     return res.status(400).json({ error: 'phone and code required' });
   }
 
-  // Build the rendered text the same for both channels — Vonage uses it
-  // as the WhatsApp template's fallback_text, and the SMS provider uses
-  // it verbatim. Identical wording means the user sees the same content
-  // either way (modulo the channel).
+  // The SMS provider sends this text verbatim. It matches the wording
+  // of the WhatsApp template, so the user reads the same message on
+  // either channel.
   const message = `קוד האימות שלך לכניסה לפורטל TagidAI הוא: ${code}\nבתוקף 10 דקות. אל תשתף קוד זה.`;
 
-  const channel = whatsappOptIn ? 'auto' : 'sms';
+  const viaWhatsapp = !!(whatsappOptIn && WHATSAPP_OTP_TEMPLATE);
   try {
     const result = await sendMessage(phone, message, {
-      channel,
-      templateName:   whatsappOptIn ? WHATSAPP_OTP_TEMPLATE : undefined,
-      templateParams: whatsappOptIn ? [code] : undefined,
+      channel:        viaWhatsapp ? 'auto' : 'sms',
+      templateName:   viaWhatsapp ? WHATSAPP_OTP_TEMPLATE : undefined,
+      templateParams: viaWhatsapp ? [code] : undefined,
     });
     res.json({ sent: true, channel: result.channel, messageId: result.messageId });
   } catch (err) {
