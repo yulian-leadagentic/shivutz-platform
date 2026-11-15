@@ -304,7 +304,7 @@ export default function HowItWorksPage() {
           <div className="border-r-4 border-brand-500 pr-3">
             <p className="font-semibold text-slate-900 mb-1">תאגידי כוח אדם</p>
             <p>
-              נבדקים מול רשם החברות (data.gov.il) וברשימת תאגידי כוח אדם המורשים של רשות האוכלוסין וההגירה, המיובאת מדי שנה מ-PDF רשמי. תאגיד שאינו ברשימה — אינו יכול לפרסם.
+              נבדקים מול רשם החברות וברשימת תאגידי כוח אדם המורשים של רשות האוכלוסין וההגירה, המתעדכנת מדי שנה ממקור רשמי. תאגיד שאינו ברשימה אינו יכול לפרסם.
             </p>
           </div>
           <div className="border-r-4 border-emerald-500 pr-3">
