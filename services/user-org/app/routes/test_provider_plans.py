@@ -34,8 +34,12 @@ class Cursor:
     """Answers a query by the first rule whose text appears in the SQL.
     A rule's answer is a list of rows, or a callable(params) -> rows."""
 
+    # R34 4c · create_listing reads the category's field schema. A test
+    # that is not about attributes gets a category with none.
+    DEFAULTS = [("SELECT field_schema FROM marketplace_categories", [{"field_schema": None}])]
+
     def __init__(self, rules):
-        self.rules = list(rules)
+        self.rules = list(rules) + self.DEFAULTS
         self.executed = []
         self._rows = []
         self.rowcount = 1

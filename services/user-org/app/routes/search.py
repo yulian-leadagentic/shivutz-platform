@@ -37,6 +37,7 @@ from app.services.query_rewriter import (
     REGION_KEYWORDS,
     rewrite,
 )
+from app.services.listing_attributes import REGION_MATCH_SQL
 from app.services.query_reranker import rerank
 from app.services.visibility import (
     contractor_approval_status,
@@ -356,14 +357,20 @@ def _search_marketplace(
         conditions.extend(scope_wheres)
         params.extend(scope_params)
 
-    # S3.1 · soft region filter. `national` is the rewriter's way of
-    # saying "anywhere" (`כל הארץ`), and no listing carries it, so
-    # applying it as a predicate would narrow to region-NULL rows —
-    # the opposite of what the user asked for.
+    # S3.1 · soft region filter. `national` on a search is the
+    # rewriter's way of saying "anywhere" (`כל הארץ`), so it filters
+    # nothing.
+    #
+    # R37 · on a listing, `national` means the listing serves the whole
+    # country, and a listing can now name several regions (`regions`).
+    # The old predicate, `ml.region = %s OR ml.region IS NULL`, knew
+    # neither: a listing filed as nationwide was left out of every
+    # regional search. The predicate is shared with the listings page
+    # (services/listing_attributes.py).
     region = filters.get("region")
     if region and region != "national":
-        conditions.append("(ml.region = %s OR ml.region IS NULL)")
-        params.append(region)
+        conditions.append(REGION_MATCH_SQL)
+        params.extend([region, region])
 
     and_conditions = list(conditions)
     and_params = list(params)

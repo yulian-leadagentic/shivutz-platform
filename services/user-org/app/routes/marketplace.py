@@ -11,6 +11,10 @@ import uuid
 
 from app.db import get_db
 from app.services.admin_check import is_admin
+from app.services.listing_attributes import (
+    REGION_MATCH_SQL, attribute_view, card_price, load_schema, parse_schema,
+    single_region, validate_attributes, validate_regions,
+)
 from app.services.provider_plans import PROVIDER_BLOCKED_CATEGORIES
 from app.services.search_normalize import marketplace_text_conditions
 from app.services.phone_normalize import normalize_or_400
@@ -42,6 +46,10 @@ class ListingCreate(BaseModel):
     # browser → Cloudinary direct upload completes. Capped server-side
     # so a malicious client can't pad the JSON column with thousands.
     images_json:    Optional[List[str]] = None
+    # R34 4c · the answers to the category's own questions
+    # (marketplace_categories.field_schema), and the regions served.
+    attributes:     Optional[dict] = None
+    regions:        Optional[List[str]] = None
 
 class ListingUpdate(BaseModel):
     title:          Optional[str] = None
@@ -57,6 +65,8 @@ class ListingUpdate(BaseModel):
     contact_name:   Optional[str] = None
     status:         Optional[str] = None   # active | rented | sold | paused
     images_json:    Optional[List[str]] = None
+    attributes:     Optional[dict] = None
+    regions:        Optional[List[str]] = None
 
 # Soft-cap on stored image URLs per listing — protects against runaway
 # JSON columns. Not enforced at the DB level; FE shouldn't allow more
@@ -96,6 +106,10 @@ _PUBLIC_LISTING_FIELDS = (
     "is_furnished",
     "available_from",
     "images_json",
+    # R34 4c · what the listing answered and where it serves. Neither
+    # identifies the advertiser.
+    "attributes",
+    "regions",
     "status",
     "created_at",
     "updated_at",
@@ -147,6 +161,14 @@ def _serialize(row: dict, *, include_owner_fields: bool = False) -> dict:
                     result[k] = []
             else:
                 result[k] = v or []
+        elif k in ("attributes", "regions"):
+            # JSON columns arrive as text.
+            if isinstance(v, (str, bytes, bytearray)):
+                try:
+                    v = json.loads(v)
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    v = None
+            result[k] = v
         else:
             result[k] = _coerce(v)
     return result
@@ -248,8 +270,11 @@ def list_listings(
             conditions.append("ml.category = %s")
             params.append(category)
         if region:
-            conditions.append("ml.region = %s")
-            params.append(region)
+            # R34 4c · a listing can serve several regions, or all of
+            # them. Until now this was `ml.region = %s`, which also
+            # dropped every listing with no region at all.
+            conditions.append(REGION_MATCH_SQL)
+            params.extend([region, region])
         if city:
             conditions.append("ml.city LIKE %s")
             params.append(f"%{city}%")
@@ -344,6 +369,10 @@ def _serialize_category(row: dict) -> dict:
         if k not in row:
             continue
         result[k] = _coerce(row[k])
+    # R34 4c · what the category asks of a listing, parsed. Public: it
+    # is a list of questions, and the listing form reads it.
+    if "field_schema" in row:
+        result["field_schema"] = parse_schema(row["field_schema"])
     return result
 
 
@@ -353,7 +382,7 @@ def list_public_categories():
     try:
         cur = conn.cursor()
         cur.execute(
-            """SELECT code, name_he, name_en, icon_slug, sort_order
+            """SELECT code, name_he, name_en, icon_slug, sort_order, field_schema
                  FROM marketplace_categories
                 WHERE is_active = 1
                 ORDER BY sort_order, code"""
@@ -401,6 +430,13 @@ def get_listing(
         include_owner = _caller_owns(row, x_entity_id or x_org_id, x_entity_type)
         r = _serialize(row, include_owner_fields=include_owner)
         r["is_corporation_verified"] = row.get("corporation_approval_status") == "approved"
+        # R34 4c · the answers in the schema's order, each with the
+        # schema's label, so the panel shows them without a second
+        # request and without its own copy of the labels.
+        r["attribute_fields"] = (
+            attribute_view(load_schema(cur, row["category"]), row.get("attributes"))
+            if row.get("attributes") else []
+        )
         return r
     finally:
         conn.close()
@@ -673,9 +709,25 @@ def create_listing(
         )
 
     listing_id = str(uuid.uuid4())
+    regions = validate_regions(body.regions)
     conn = get_db()
     try:
         cur = conn.cursor()
+
+        # R34 4c · the category's own questions. Checked before a slot
+        # is looked for, so a form that is simply filled in wrong is
+        # told so and not "no room in your plan".
+        schema = load_schema(cur, body.category)
+        attributes = validate_attributes(schema, body.attributes)
+        # The card and the search results read `price` and `price_unit`.
+        # Where the category's answers include the price, that is what
+        # goes there; a caller that sent the two columns itself (the
+        # corporation's housing form) keeps what it sent.
+        price, price_unit = body.price, body.price_unit
+        if price is None and attributes:
+            price, price_unit = card_price(schema, attributes)
+        elif price is None and not attributes and schema and (schema.get("price") or {}).get("note"):
+            price_unit = schema["price"]["note"]
 
         # subscription_id + slot accounting apply to every caller that
         # goes through the marketplace_subscriptions path: contractors
@@ -703,13 +755,16 @@ def create_listing(
                advertiser_entity_type, advertiser_entity_id,
                category, subcategory, title, description,
                city, region, price, price_unit, capacity, is_furnished,
-               available_from, contact_phone, contact_name, images_json)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+               available_from, contact_phone, contact_name, images_json,
+               attributes, regions)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         """, (
             listing_id, legacy_corp_id, sub_id,
             entity_type, entity_id,
             body.category, body.subcategory, body.title.strip(), body.description,
-            body.city, body.region, body.price, body.price_unit,
+            # `regions` is the full answer; `region` keeps the single
+            # value for a listing that has exactly one.
+            body.city, single_region(regions) if regions else body.region, price, price_unit,
             body.capacity, body.is_furnished, body.available_from,
             # R30 §15 · contact_phone is what a contractor calls to reach
             # the advertiser — it was stored verbatim. Optional field, so
@@ -717,6 +772,8 @@ def create_listing(
             # Israeli mobile and is stored canonically.
             normalize_or_400(body.contact_phone, required=False), body.contact_name,
             json.dumps(images) if images else None,
+            json.dumps(attributes, ensure_ascii=False) if attributes else None,
+            json.dumps(regions) if regions else None,
         ))
         conn.commit()
         return {
@@ -794,6 +851,21 @@ def update_listing(
                     imgs = imgs[:_MAX_IMAGES_PER_LISTING]
                 updates.append("images_json=%s")
                 params.append(json.dumps(imgs) if imgs else None)
+            elif field == "attributes":
+                # R34 4c · the whole set is replaced and checked whole,
+                # so a required answer cannot be dropped by an edit.
+                schema = load_schema(cur, row["category"])
+                clean = validate_attributes(schema, val)
+                updates.append("attributes=%s")
+                params.append(json.dumps(clean, ensure_ascii=False) if clean else None)
+                if "price" not in body.model_fields_set:
+                    price, price_unit = card_price(schema, clean)
+                    updates.extend(["price=%s", "price_unit=%s"])
+                    params.extend([price, price_unit])
+            elif field == "regions":
+                regions = validate_regions(val)
+                updates.extend(["regions=%s", "region=%s"])
+                params.extend([json.dumps(regions) if regions else None, single_region(regions)])
             elif field == "contact_phone":
                 # R30 §15 · same rule as create. exclude_none means we
                 # only reach here when the caller actually sent the

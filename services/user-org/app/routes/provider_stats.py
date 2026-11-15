@@ -66,6 +66,22 @@ _NON_CUSTOMER_VIEWERS = ("service_provider", "admin")
 _ANYWHERE = "national"
 
 
+def _regions_of(listing: dict) -> list:
+    """The region codes a listing serves. `regions` (a JSON array, text
+    as it comes from MySQL) is the full answer where the listing has
+    one; otherwise its single `region`. Empty means "not stated", which
+    has always counted as nationwide."""
+    raw = listing.get("regions")
+    if isinstance(raw, (str, bytes, bytearray)):
+        try:
+            raw = json.loads(raw)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            raw = None
+    if isinstance(raw, list) and raw:
+        return [r for r in raw if isinstance(r, str)]
+    return [listing["region"]] if listing.get("region") else []
+
+
 def demand_scope(listings: list[dict], primary_category: Optional[str]) -> tuple[dict, str]:
     """Which searches count as "in your categories and regions".
 
@@ -87,13 +103,15 @@ def demand_scope(listings: list[dict], primary_category: Optional[str]) -> tuple
         category = listing.get("category")
         if not category:
             continue
-        region = listing.get("region")
-        if not region or region == _ANYWHERE:
+        # R34 4c · a listing can serve several regions. `regions` is the
+        # full answer where it exists; the single `region` otherwise.
+        served = _regions_of(listing)
+        if not served or _ANYWHERE in served:
             scope[category] = None
         elif category not in scope:
-            scope[category] = {region}
+            scope[category] = set(served)
         elif scope[category] is not None:
-            scope[category].add(region)
+            scope[category].update(served)
     if scope:
         return scope, "listings"
     if primary_category:
@@ -212,7 +230,7 @@ def provider_stats(
         since = today - timedelta(days=days - 1)
 
         cur.execute(
-            """SELECT id, title, category, region, status
+            """SELECT id, title, category, region, regions, status
                  FROM marketplace_listings
                 WHERE advertiser_entity_type = 'service_provider'
                   AND advertiser_entity_id   = %s

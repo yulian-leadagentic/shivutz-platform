@@ -33,6 +33,7 @@ from pydantic import BaseModel, Field
 from decimal import Decimal
 
 from app.db import get_db
+from app.services.listing_attributes import parse_schema
 from app.services.provider_plans import (
     PROVIDER_BLOCKED_CATEGORIES, insert_promo_plan, is_paid_tier, launch_promo_end,
 )
@@ -250,12 +251,16 @@ def public_catalog():
     try:
         cur = conn.cursor()
         cur.execute(
-            """SELECT c.code, c.name_he, c.name_en, c.name_ar, c.icon_slug, c.sort_order
+            """SELECT c.code, c.name_he, c.name_en, c.name_ar, c.icon_slug, c.sort_order,
+                      c.field_schema
                  FROM marketplace_categories c
                 WHERE c.is_active = TRUE
                 ORDER BY c.sort_order, c.code"""
         )
         cats = [_serialize(r) for r in cur.fetchall()]
+        # R34 4c · what each category asks of a listing, for the form.
+        for c in cats:
+            c["field_schema"] = parse_schema(c.get("field_schema"))
         if not cats:
             return []
 
