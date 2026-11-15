@@ -121,16 +121,20 @@ function ProviderBillingInner() {
       : list;
   }, [plans, preset]);
 
+  // R37 4.1.4 · paid plans whose renewal charge failed and is being
+  // tried again. Not running, and not over either.
+  const pastDue = useMemo(() => plans.filter((s) => s.status === 'past_due'), [plans]);
+
   // The latest ended plan of each category that has no running one.
   const ended = useMemo(() => {
-    const withPlan = new Set(running.map((s) => s.category_code));
+    const withPlan = new Set([...running, ...pastDue].map((s) => s.category_code));
     const seen = new Set<string>();
     return plans.filter((s) => {
       if (s.is_current || withPlan.has(s.category_code) || seen.has(s.category_code)) return false;
       seen.add(s.category_code);
       return true;
     });
-  }, [plans, running]);
+  }, [plans, running, pastDue]);
 
   function biggerTiers(plan: Subscription): CatalogTier[] {
     const cat = catalog.find((c) => c.code === plan.category_code);
@@ -271,7 +275,26 @@ function ProviderBillingInner() {
         </div>
       ) : (
         <>
-          {running.length === 0 ? (
+          {pastDue.length > 0 && (
+            <ul className="space-y-3">
+              {pastDue.map((plan) => (
+                <li key={plan.id} role="alert" className="rounded-2xl border border-red-200 bg-red-50 p-4 sm:p-5">
+                  <p className="flex items-center gap-2 text-base font-bold text-red-900">
+                    <AlertCircle className="h-5 w-5 shrink-0" aria-hidden="true" />
+                    {plan.category_name_he} · החידוש לא הצליח
+                  </p>
+                  <p className="mt-2 text-sm leading-relaxed text-red-900">
+                    לא הצלחנו לחייב את הכרטיס השמור עבור חידוש המסלול.
+                    {plan.next_attempt_at && <> ננסה שוב ב-{fmtDate(plan.next_attempt_at)}.</>}
+                    {' '}אם הכרטיס הוחלף, החיוב ייעשה בכרטיס החדש.
+                    אם גם הניסיונות הבאים לא יצליחו, המסלול יסתיים והמודעות שבו יירדו מהפרסום.
+                  </p>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {running.length === 0 && pastDue.length > 0 ? null : running.length === 0 ? (
             <div className="flex flex-col items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-10 text-center">
               <p className="text-base font-semibold text-slate-900">אין לך מסלול פעיל</p>
               <p className="text-sm text-slate-600">כדי לפרסם מודעה יש להוסיף מסלול בקטגוריה.</p>

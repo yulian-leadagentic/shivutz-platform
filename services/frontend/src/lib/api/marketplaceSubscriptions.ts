@@ -26,7 +26,12 @@ export interface Subscription {
   price_nis:                number;
   expires_at:               string;
   auto_renew:               boolean;
-  status:                   'active' | 'expired' | 'cancelled';
+  /** 'past_due': a paid plan whose renewal charge failed. The charge is
+   *  tried again at next_attempt_at; after repeated failures the plan
+   *  ends and its listings are paused (R37 4.1.4). */
+  status:                   'active' | 'past_due' | 'expired' | 'cancelled';
+  next_attempt_at?:         string | null;
+  rebill_attempts?:         number;
   /** Why nothing was paid, when nothing was: 'launch_free_promo', 'r33_backfill'. */
   promo_note?:              string | null;
   cardcom_token_ref?:       string | null;

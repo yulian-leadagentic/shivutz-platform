@@ -32,6 +32,7 @@ from app.services.cardcom import (
     CardcomNetworkError,
 )
 from app.services.payment_events import record_event
+from app.services import marketplace_renewal
 from app.crypto import decrypt_token
 
 logger = logging.getLogger(__name__)
@@ -924,7 +925,19 @@ async def renewal_batch(x_internal_secret: Optional[str] = Header(default=None))
         _apply_success(sub)
         charged += 1
 
+    # R37 4.1.4 · paid marketplace plans renew in the same pass, by the
+    # same rule and with the same numbers. Not caught: a pass that
+    # breaks here must fail the batch out loud, the cron's heartbeat is
+    # what reports it.
+    marketplace_plans = await marketplace_renewal.renew_due_plans(
+        now,
+        interval_days=REBILL_INTERVAL_DAYS,
+        max_attempts=REBILL_MAX_ATTEMPTS,
+        limit=RENEWAL_BATCH_LIMIT,
+    )
+
     return {
+        "marketplace_plans": marketplace_plans,
         "processed":      processed,
         "charged":        charged,
         "failed":         failed,
