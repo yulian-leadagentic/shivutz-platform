@@ -210,7 +210,7 @@ export default function HowItWorksPage() {
             href="/register/corporation"
             className="inline-flex items-center gap-2 bg-brand-600 hover:bg-brand-700 text-slate-900 font-semibold px-5 py-2.5 rounded-lg min-h-11"
           >
-            הרשמה כתאגיד — חינם
+            הרשמה כתאגיד · חינם לתקופת ניסיון
             <ArrowLeft className="h-4 w-4" />
           </Link>
         </div>
@@ -259,7 +259,7 @@ export default function HowItWorksPage() {
             href="/register/provider"
             className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-5 py-2.5 rounded-lg min-h-11"
           >
-            הרשמה כספק שירותים — חינם
+            הרשמה כספק שירותים · חינם לתקופת ניסיון
             <ArrowLeft className="h-4 w-4" />
           </Link>
           <Link

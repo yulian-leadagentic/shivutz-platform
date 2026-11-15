@@ -28,7 +28,7 @@ const DETAILS: Record<RoleId, {
   },
   service_provider: {
     icon: Wrench,
-    desc: 'הובלות, ביטוח, ציוד, קורסים — פרסמו את השירותים שלכם לקבלנים ולתאגידים. חינם עד סוף 2026.',
+    desc: 'הובלות, ביטוח, ציוד, קורסים: פרסמו את השירותים שלכם לקבלנים ולתאגידים. חינם לתקופת ניסיון.',
   },
 };
 
@@ -62,7 +62,7 @@ export function RoleRegisterPicker() {
                   <h3 className="text-base font-bold text-slate-900">{role.title}</h3>
                 </div>
                 <p className="text-sm text-slate-600 leading-relaxed">{detail.desc}</p>
-                <p className="mt-3 text-sm font-semibold text-brand-700">הרשמה חינם →</p>
+                <p className="mt-3 text-sm font-semibold text-brand-700">הרשמה · חינם לתקופת ניסיון →</p>
               </div>
             </Link>
           );
