@@ -1,24 +1,39 @@
 # R37 report · 15.11.2026
 
 Branch `pivot/v2`, deployed to staging. `git rev-list --left-right --count origin/staging...origin/pivot/v2` = `0	0`.
-Tag `pre-r37` is at `1de4bc3`, the last R33 commit. 27 commits since, 78 files.
+Tag `pre-r37` is at `1de4bc3`, the last R33 commit. 35 commits since, this update included, 103 files.
+Tag `pre-r37-p4` is at `c73feca`, the first version of this report, before Part 4.1 was built.
+
+**Updated 15.11.2026, evening:** Part 4.1 is built and live on staging. The sections that said it had stopped are
+rewritten: "What to know first", the status table, Part 4, findings 5 and 6, and Manual actions 5, 6, 12 to 15.
 
 ## What to know first
 
-1. **Parts 0, 1, 2, 3, 5 and 6 are done and live on staging.** Part 4 is done only in part, see the next point.
-2. **Part 4 (Cardcom) stopped at 4.1, on a contradiction.** The prompt builds on "token add and replace through
-   LowProfile" and "the same card block `/billing` uses". Neither exists. No code anywhere creates a Cardcom card page,
-   `/billing` has no card UI, and nothing ever calls the refund function. **That premise came from my R34 report, which
-   overstated what exists.** I did 4.0 (the webhook route) and 4.1.3 (no plan without a charge at registration), reported
-   4.1.4 and 4.1.7, and stopped the rest for your go-ahead. Details and what I need from you are under Part 4.
-3. **Two facts about staging's payment service that the prompt assumes otherwise:** `PAYMENT_FAKE_MODE` is **on** there
-   (it is off in user-org), and the Cardcom terminal number is set to something that is **not** the public test terminal.
-   I did not read the value. Please confirm it is a test terminal before fake mode is ever switched off.
-4. **One of your decisions could not be applied as written.** D7 says the one plan on `services` "moves with its
+1. **Every part is now done and live on staging**, Part 4 included. You said to build card capture from scratch; it is
+   built, with the charge on purchase, renewal, the admin refund and the webhook.
+2. **None of Part 4 has met Cardcom.** Staging's payment service runs with `PAYMENT_FAKE_MODE` on, and I do not type a
+   card into Cardcom's page, test cards included. So the whole flow is verified in fake mode: on staging (40 checks),
+   against MySQL built from staging's own table definitions (91 checks), and in unit tests (126 in payment). What that
+   cannot show is what Cardcom itself answers. The first real run on the test terminal is yours (Manual action 12),
+   and it may turn up a field that is not where Cardcom's API description says it is.
+3. **The four Cardcom calls in the code were all in the wrong shape.** Checked against Cardcom's published v11 API
+   description, none matched: the card page would have charged instead of saving a card, and a token charge sent no
+   expiry and no invoice block. None had ever run for real. I rewrote the four from the description. This also changes
+   what the three contractor charges send, since it is one function.
+4. **Two facts about staging's payment service, unchanged:** `PAYMENT_FAKE_MODE` is **on** there, and the Cardcom
+   terminal number is set to something that is **not** the public test terminal. I did not read the value and I did not
+   switch fake mode off. Please confirm it is a test terminal before you do.
+5. **Renewal and refund needed choices the prompt does not make.** I took the closest reading of the contractor rules
+   and listed each choice under Part 4 ("Choices for you to confirm"). The two that matter most: a paid plan with no
+   card on file is not renewed for free (a contractor subscription is), and a refund does not change the plan.
+6. **`/api/webhooks/cardcom` is now public at the gateway.** It has to be, Cardcom carries no user token. What guards
+   it is in the handler and is described under 4.1.6.
+7. **One of your decisions could not be applied as written.** D7 says the one plan on `services` "moves with its
    owner's listings". Its owner has no listings. I left that plan and the `services` category alone. One answer from you
    closes it (Manual action 2).
-5. **Every promo plan ends on 31.12.2026 and nothing happens when a plan ends.** No job flips its status and its
-   listings stay published. This is not new, but it now has a date. It belongs to the renewal work in Part 4.
+8. **A promo plan still just ends.** Every promo plan ends on 31.12.2026. Renewal now exists, for plans a charge paid
+   for. A promo plan is never charged by it, and nothing happens when it ends: its status is not changed and its
+   listings stay published. That decision is still open (Manual action 6).
 
 ## Status
 
@@ -32,13 +47,13 @@ Tag `pre-r37` is at `1de4bc3`, the last R33 commit. 27 commits since, 78 files.
 | 3.3 | R34 4c fields per category | Done, live |
 | 3.4 | R34 5a plan management | Done, live |
 | 4.0 | Cardcom webhook route | Done, live |
-| 4.1.1 | Card for a provider | **Stopped**, nothing to extend |
-| 4.1.2 | Charge on purchase | **Stopped**, needs 4.1.1 |
+| 4.1.1 | Card for a provider | Done, live. Verified in fake mode only |
+| 4.1.2 | Charge on purchase | Done, live. Verified in fake mode only |
 | 4.1.3 | Registration after the promo | Done, live |
-| 4.1.4 | Renewal | **Reported**: the job and its rules exist for contractors and corporations; not extended |
-| 4.1.5 | Refund | **Stopped**, needs a charge to refund |
-| 4.1.6 | Webhook verification | The existing handler already verifies; nothing new to verify yet |
-| 4.1.7 | VAT | **Reported**: tier price is VAT included |
+| 4.1.4 | Renewal | Done, live, on the contractor job and its failure rule. Four choices to confirm |
+| 4.1.5 | Refund | Done, live. Verified in fake mode only |
+| 4.1.6 | Webhook verification | Done, live |
+| 4.1.7 | VAT | Reported and applied: the tier price is charged as it stands, VAT inside it |
 | 5 | Eight small fixes | Done, live |
 | 6 | R35 WhatsApp on Meta | Code done, live. Nothing has met Meta yet; needs your secrets |
 
@@ -48,6 +63,14 @@ written by a subagent in parallel with Parts 2 to 5; I reviewed it, ran its test
 ## Commits
 
 ```
+78bae9a R37 4.1 · two things the browser showed on the plans page
+920484a R37 4.1.5 · an admin returns a plan charge to the card, once, on record
+3959bff R37 4.1.4 · a paid plan renews in the subscriptions' batch, by its failure rule
+e7cf552 R37 4.1.2 · after the promo a provider's plan is charged for, then activated
+47bb9db R37 4.1.6 · Cardcom's card-page webhook: reachable, and believed for nothing
+2283a06 R37 4.1.1 · a provider adds or replaces its card on Cardcom's page
+820f9e2 R37 4.1 · the Cardcom calls in the shape Cardcom's API has
+c73feca R37 report · what shipped, where Part 4 stopped, and what needs a decision
 4b97513 R37 Part 5 item 6 · the route is /tenders/{id}/admin/close
 66a0888 R37 4.1.3 · after the promo, registration activates no plan
 d6fd4e0 R35 §5 · the WhatsApp variables and where they go
@@ -77,7 +100,8 @@ cef6f10 R34 5a · a plan's owner can upgrade it, cancel it and switch renewal on
 ```
 
 Migrations added, all applied on staging (ledger checked): `098` email footer, `099` WhatsApp ids, `100` operating
-company, `101` categories, `102` listing fields.
+company, `101` categories, `102` listing fields, `103` card setups, `104` plan charges, `105` the plan's renewal
+columns and the `past_due` status.
 
 Two errors in commit messages, both mine: `cef6f10` says "35 new tests", the file has 31. `4d3c4de` names the route
 `admin-close`; it is `admin/close` (corrected in `4b97513`).
@@ -326,48 +350,223 @@ signature. `/api/webhooks/vonage` still reaches notification.
 Gateway test `test/webhook-routing.test.js`, 24 checks, pass: both destinations, the order, that a longer name is not
 the Cardcom path, that `index.js` still mounts from the table.
 
-Also found: `/api/webhooks/cardcom`, the webhook Cardcom calls after a card page, is not public and not routed to
-payment (401 at the gateway). Nothing creates a card page today, so nothing calls it. I left it, and a test pins that
-it has no rule yet.
+Also found then: `/api/webhooks/cardcom`, the webhook Cardcom calls after a card page, was not public and not routed
+to payment. That is fixed in 4.1.6 below; the test now has 29 checks.
 
-### 4.1 · Where it stopped, and why
+### 4.1 · Built
 
-What the code actually has:
+The first pass stopped here: the prompt builds on a card flow that did not exist (my R34 report had said it did). You
+answered "go ahead, building Cardcom card capture from scratch". This is what was built.
 
-| The prompt says exists | What I found |
+#### The Cardcom calls (`820f9e2`)
+
+Checked field by field against Cardcom's published v11 API description. All four were wrong, and none had ever run
+against Cardcom: nothing called two of them, and staging charges in fake mode.
+
+| Call | What the code sent | Now |
+|---|---|---|
+| Card page (`LowProfile/Create`) | No `Operation`, so the page would have **charged** the amount. An API password the request does not take. Old names for the failure address and the coin | `Operation: CreateTokenOnly` with a J2 check: the card is validated, a token comes back, no money moves |
+| Page result (`GetLpResult`) | Read the last digits, brand and expiry from fields the answer does not have | Reads `TokenInfo`, `TranzactionInfo`, `UIValues`. A page the holder has not finished is "pending", not a failure |
+| Token charge (`Transactions/Transaction`) | No card expiry. The invoice as `InvoiceHead` and `InvoiceLines`, which v11 does not read, so **no document would have been issued** | Token, expiry, our own id against a double charge, and a `Document` block |
+| Refund (`RefundByTransactionId`) | Named the transaction by a field the request does not have | `TransactionId`, with the API password this call does take |
+
+Also here: what is kept of a Cardcom answer in `payment_events.raw` is now a list of what may stay. The answers carry
+the token, the first digits of the card and the holder's id number and phone, and nothing filtered them.
+
+The three contractor charges (start, extra seats, renewal) go through the same function, so they now send the card's
+expiry and the `Document` block too. Their flow is otherwise untouched.
+
+#### 4.1.1 · A provider adds or replaces a card (`2283a06`)
+
+- `POST /payments/payment-methods/setup`, for the logged-in entity. Writes a pending row in a new table,
+  `payment_card_setups` (migration 103), that says whose setup this is, and answers the address of Cardcom's page.
+- The card is typed on Cardcom's page. Cardcom sends the browser back to "מנוי ותשלום" with `?card_setup=<id>`.
+- `POST /payments/payment-methods/setup/{id}/confirm`: the page asks whether the card was saved. Only for the caller's
+  own setup; anyone else's reads as 404. The answer comes from asking Cardcom.
+- A card is stored in one place, after Cardcom confirmed the page, for the entity on **our** row.
+- A new card replaces the old one.
+
+**What is stored.** The token, encrypted as before, and what a person needs to recognise the card: last four digits,
+brand, expiry, holder name. The same columns `payment_methods` always had. No card number, no CVV. The row from
+staging (fake mode, so an obviously fake card):
+
+```
+entity_type: service_provider   provider: cardcom   provider_token: <96 chars, encrypted>
+last_4_digits: 0000   card_brand: fake   card_holder_name: None   expiry: 12/2099   is_default: 1   status: active
+```
+
+**Removed:** `POST /payments/payment-methods`, the route that stored a token taken from the request body for an entity
+named in the body (finding 6). Nothing called it. On staging it now answers 405.
+
+**The page.** "מנוי ותשלום" has an "אמצעי תשלום" block: the card on file, "הוספת כרטיס" or "החלפת כרטיס", and the result
+when the browser comes back (saved, not confirmed yet with a "בדיקה שוב" button, not saved with Cardcom's reason). The
+block is a shared component, written to sit on any billing page.
+
+**"The same card block `/billing` uses":** `/billing` has none, so there was nothing to reuse. The server flow serves
+contractors and corporations as well, the entity types `payment_methods` already held, but only the provider page got
+the block. Putting it on `/billing` is one line and a decision (Choices, 9).
+
+**Real mode needs two settings on the payment service:** `FRONTEND_URL` and `PUBLIC_API_URL`. Staging has neither.
+Without them, and with fake mode off, adding a card answers 503 and opens no page. In fake mode there is no Cardcom
+page: the browser comes straight back and a card marked "כרטיס בדיקה" is saved.
+
+#### 4.1.6 · The card-page webhook (`47bb9db`)
+
+`/api/webhooks/cardcom` is routed to payment and public. Nothing in the call is believed:
+
+- one value is read from it, the id of the page, and only to find our own pending row for that page;
+- whose card it is comes from that row, never from the body;
+- whether a card was saved comes from asking Cardcom (`GetLpResult`), and the result must name our row;
+- a page id we never issued does nothing;
+- a repeated call finds the row finished and changes nothing;
+- the answer is the same `200 {"received": true}` whatever happened.
+
+The return page and the webhook finish a setup through the same code; whichever arrives first does the work, and a row
+lock makes the two arriving together store one card.
+
+Charges have no callback to distrust: a token charge is one server to server call, answered in the same call.
+
+#### 4.1.2 · Charge on purchase (`e7cf552`)
+
+After the promo, a provider buying a plan is charged the tier row's price, and the plan is activated only if Cardcom
+confirms.
+
+- **user-org** still decides whether the purchase may happen. When it may, it writes the purchase down in a new table,
+  `payment_db.marketplace_charges` (migration 104), with the tier's price, size and length, and asks payment to
+  charge. It writes no plan row.
+- **payment** charges the card for the amount **on that row**. The route takes no amount, tier or entity from the
+  request. After Cardcom confirms, it writes the plan row and marks the charge as charged in one transaction.
+- Declined card: 402, in Hebrew, with Cardcom's own text when it gave one. No card on file: 402, with the page that
+  adds one. Cardcom unreachable: 502. None leaves a plan.
+- Against a double charge: one purchase at a time per provider and category; a charge row is taken for charging once;
+  its id goes to Cardcom as the transaction's own id.
+- The invoice comes from the `Document` block of the charge. It is made out to the provider's name and email; the
+  business number goes on it only when it has nine digits.
+
+The page: the purchase dialog now says what will be charged and that the plan renews, and its button reads "אישור
+וחיוב". Without a card the dialog does not open; the page points at "מנוי ותשלום". "מנוי ותשלום" lists the provider's
+charges with their invoice links.
+
+Contractors and corporations buying a marketplace plan are where they were: 503.
+
+#### 4.1.3 · Registration after the promo (done in the first pass, `66a0888`)
+
+No plan at registration once the promo is over. The provider is created and sent to "מנוי ותשלום". This matches how a
+contractor registers: account first, payment after. With 4.1.2 the path now continues: add a card there, then
+"הוספת מסלול", then the charge.
+
+#### 4.1.4 · Renewal (`3959bff`)
+
+There is a renewal job and a failure rule, so they are used, not rebuilt. The notification cron calls
+`/payments/subscriptions/internal/renewal-batch` every day; that batch now also renews paid plans in the same pass,
+and is handed its own numbers (3 days, 3 attempts), not a copy of them.
+
+| | |
 |---|---|
-| LowProfile create | `create_low_profile()` is defined in `cardcom.py`. **Nothing calls it.** No route starts a card page |
-| Token add and replace | No flow. A token row is written by the card-page webhook, which nothing triggers, or by `POST /payments/payment-methods`, which takes a raw token and the entity from the request body |
-| The card block `/billing` uses | `/billing` has **no** card UI. `payments.ts` can list, delete and set a default; no page calls it |
-| `RefundByTransactionId` | `refund_transaction()` is defined. **Nothing calls it** |
-| Charging a stored token | Exists and is used: `charge_token()`, by subscription start, seat purchase and the renewal batch |
-| Renewal job and failure rules | Exist, for contractors and corporations |
+| Charged | Another period from now |
+| Declined | `past_due`, another attempt in 3 days |
+| 3 failed attempts | The plan ends (`expired`) |
+| Cardcom unreachable | Nothing changes; the next pass tries again |
+| Attempted within the hour | Left alone |
 
-So 4.1.1 is not "extend the existing token flow to providers". It is "build card capture for the first time, for
-anyone". That is a different size of work, and it is the kind of difference your guardrail says to stop on.
+Which plans: only a plan a charge paid for, with renewal on. **A promo plan is never charged here**, with or without a
+card on file. Migration 105 gives the plan row what the chain needs.
 
-Two more reasons I did not push through:
+The page shows a plan whose renewal failed, with the date of the next attempt. A paid plan with renewal on says that
+the card will be charged at the renewal date and that turning renewal off prevents it.
 
-- **I cannot do the acceptance.** Every line of it needs a card entered on Cardcom's page. I do not enter card numbers
-  on a hosted page, test numbers included. You would have to do that step.
-- **Staging is not set up the way the prompt assumes** (point 3 at the top).
+#### 4.1.5 · Refund (`920484a`)
 
-**4.1.3 · done, because it needs no card.** After the promo, registration writes no plan. The provider is created,
-the response says `plan_active: false`, and the site opens "מנוי ותשלום". This matches how a contractor registers:
-account first, payment after. Until charging exists the purchase endpoint answers 503 after the promo, so a provider
-who registers after 31.12.2026 cannot publish. That is the rule working. The welcome email states the plan, so it is
-sent only when a plan was activated.
+An admin section on `/admin/marketplace`, "חיובי מסלולים": every plan charge with the provider's name, the invoice
+link and its state, and "זיכוי" on a charge that was taken.
 
-**4.1.4 · renewal, reported.** There is a job: the notification cron calls `/payments/subscriptions/internal/renewal-batch`.
-Its failure rule: a failed charge sets `past_due` and retries every 3 days, 3 attempts, then `expired` and the
-corporation's ads are paused. It serves the `subscriptions` table only. `marketplace_subscriptions` has none of the
-columns it uses (`rebill_attempts`, `next_attempt_at`). I invented no schedule.
+- Admin only. A provider is refused, its own charge included.
+- Confirm dialog, which says how much goes back, to whom, that the plan is not changed and that it cannot be undone.
+- Through `RefundByTransactionId`, for the whole amount.
+- On record every time: a `payment_events` row of kind `marketplace_refund` with the outcome, the charge, the plan, the
+  transaction refunded and the admin. On success the charge row also keeps when, by whom, and Cardcom's refund id.
+- Once: a refunded charge is refused, and two clicks make one refund.
 
-**4.1.7 · VAT, reported.** Contractor plans are charged with `vat_amount = 0` and `VATIncluded: true` on the invoice
-head: the plan price is the price the customer pays, VAT inside it. I decided nothing for provider plans.
+#### 4.1.7 · VAT
 
-**What I need from you to finish Part 4:** your go-ahead knowing it starts from card capture; confirmation of the
-staging terminal; and you at the keyboard for the card page when the acceptance runs.
+Contractor plans are charged with `vat_amount = 0`: the plan price is what the customer pays, VAT inside it. Provider
+plans are charged the same way, the tier price as it stands. The one line of the document carries the whole amount.
+I decided nothing beyond following the contractor plans.
+
+#### Evidence
+
+**Staging, inside the payment container, 40 checks, all pass** (`stg_p41.py`). Fake mode. Temporary providers named
+"QA R37 P41", removed at the end: 0 rows left in six tables. `launch_promo_end` was set to yesterday for the purchase
+checks and put back in a `finally`: it read `2026-12-31` before and after.
+
+| Acceptance line | Result on staging |
+|---|---|
+| 4.0 before and after, gateway test | Done in the first pass. Test now 29 checks |
+| A provider adds a card, the token row exists, no card data | **Pass, fake mode.** Row shown above |
+| Promo yesterday: a purchase charges ₪200, an invoice is issued, the plan activates; date restored | Charge of ₪200 and activation: **pass, fake mode.** Date restored. **No invoice**: fake mode issues no document |
+| A declined test card: nothing activates, Hebrew error | **Pass with the fake-mode decline switch**, not with a Cardcom test card. Message: "החיוב לא אושר על ידי חברת האשראי. המסלול לא הופעל." |
+| A repeated webhook call changes nothing | **Pass.** A finished page twice; a pending page twice and then the return page: one card |
+| An admin refund on a test charge succeeds and is recorded | **Pass, fake mode.** Charge row and audit row checked |
+| A second provider cannot see or use the first one's card or invoices | **Pass.** Card by id 403, its setup 404, its charge 404, lists empty |
+
+Also on staging: a lapsed paid plan was renewed (charged, 30 more days, a renewal charge row); a declined renewal went
+to `past_due` with the next attempt in 72 hours; the pass touched no other plan.
+
+**From outside, through the gateway:** `POST /api/webhooks/cardcom` answers `200 {"received":true}`;
+`/api/payments/payment-methods/setup`, `/api/payments/marketplace/charges`, `.../pay` and `.../refund` answer 401
+without a login.
+
+**MySQL built from staging's table definitions plus migrations 103 to 105:** 78 checks in the payment code (card 24,
+purchase 18, renewal 24, refund 12) and 13 in user-org's purchase route, all pass. The renewal run walks the whole
+chain: three declines, the plan ends, its listings are paused; a card replaced mid-chain is charged at the next
+attempt; a promo plan with a card on file is not charged.
+
+**Unit tests:** payment 126 pass (6 before this round). user-org's two plan files 68 pass (13 new). Gateway webhook
+routing 29 checks.
+
+**Browser**, locally, with the API stubbed, at 390 and 1280. Screenshots in the scratchpad, `r37-screenshots/P41_*`
+(13 files): the plans page with no card, with a card saved, with a card not saved, with a failed renewal and a paid
+plan; the purchase dialog, a charged purchase, a purchase with no card, a declined purchase; the admin list, the
+refund dialog, a refunded row. The deployed staging bundle contains the new screens' strings.
+
+#### Not verified
+
+- **Anything Cardcom answers.** Whether the page opens, where the last digits and the expiry sit in the result of a
+  card saved without a charge, whether the charge is accepted with the expiry as sent, whether the document is issued,
+  whether the refund is accepted, and what the webhook body looks like. The handler reads the page id from the query
+  string, a JSON body or a form body, whichever Cardcom sends.
+- **The card page round trip in a browser.**
+- **The contractor charges in their new shape.** Same function, same reason.
+- **The cron's own call on staging.** I ran the plan pass in the payment process, so that no contractor or corporation
+  subscription was touched outside its schedule. A unit test pins that the batch calls the pass with its own numbers.
+- **The new screens on staging with a login.** Verified locally with a stubbed API.
+
+#### Choices for you to confirm
+
+Each is where the prompt or the contractor rules did not decide, and what I did.
+
+1. **Renewal price.** The tier row's price and length on the day of renewal, as a contractor subscription renews at
+   its plan's current price. A price you change reaches every renewing plan with no notice to the provider.
+2. **No card on a paid plan.** A contractor subscription with no card is moved forward a period for free (R9). A paid
+   plan is not: the renewal counts as failed and the plan goes down the 3 days, 3 attempts chain. Otherwise removing
+   the card would mean publishing for free.
+3. **The end of the chain.** The plan's published listings are paused, not deleted, as cancelling a plan does. The
+   contractor rule pauses a corporation's ads at the same point.
+4. **During `past_due`.** The plan's listings stay published; new ones cannot be published under it. A contractor in
+   `past_due` keeps full access.
+5. **A refund does not change the plan.** It moves money and nothing else. A refunded plan stays active and still
+   renews. If a refund should end the plan, say so.
+6. **A paid plan cannot be upgraded or cancelled at once.** Both are refused by the server (what each costs or returns
+   is not decided), so the page does not offer them on a paid plan. Its owner can turn renewal off.
+7. **Renewal is on by default at purchase,** as it was before. The dialog now says so. Please read its wording.
+8. **The invoice line** reads "מסלול פרסום בשירותים נלווים · <category> · <tier> · 30 ימים". Yours to word.
+9. **Contractors and corporations.** They can save a card through the API but have no card block on `/billing`, and
+   their marketplace purchase still answers 503. Say if either should change.
+10. **`FREE_LAUNCH_UNTIL` on the payment service.** While it is set, a charge answers "charged" with nothing charged.
+    A plan purchase or renewal is refused in that state (503), not waved through.
+11. **A charge Cardcom did not answer** is recorded as `error`, with no plan. Whether money moved is not known; the
+    admin list shows such rows so they can be looked up at Cardcom.
+12. **One card per entity.** A new card removes the old one.
 
 ## Part 5 · Small fixes
 
@@ -443,10 +642,11 @@ For a decision:
 4. **The staging frontend has no `NEXT_PUBLIC_FREE_LAUNCH_UNTIL`.** Its own `/api/config/promo` reports `null`. So the
    launch banner and the registration sentence do not show on staging at all, while the server does grant promo plans
    from `site_settings.launch_promo_end`. One promo, two switches, and they disagree.
-5. **Plans do not end.** Nothing flips a plan's status at `expires_at` and its listings stay published. Every promo
-   plan ends 31.12.2026.
-6. **`POST /payments/payment-methods` trusts its body.** It stores a token for whatever entity the request names, with
-   no check that the caller is that entity. Not reachable without a login, but any logged-in user qualifies.
+5. **Promo plans do not end.** Nothing flips a promo plan's status at `expires_at` and its listings stay published.
+   Every promo plan ends 31.12.2026. A paid plan now does end, when its renewal chain runs out (4.1.4). The same goes
+   for a paid plan whose owner turned renewal off: nothing touches it at its end.
+6. **Fixed in 4.1.1.** `POST /payments/payment-methods` stored a token for whatever entity the request named. The
+   route is removed.
 7. **After a reveal, a provider's listing shows no business name.** The reveal returns the corporation's name only, so
    the line still reads "ספק שירות". I did not change what a reveal returns.
 8. **The gateway's `/api/auth/` rate-limit exemption never matches.** It tests a path that is relative to the mount.
@@ -457,6 +657,12 @@ For a decision:
 11. **Three Vonage WhatsApp variables are still set on Railway** and are now dead. The old Vonage WhatsApp webhook
     routes are dead too and still in the code. `jsonwebtoken` in the notification service has no user left.
 
+16. **`docs/RAILWAY_SECRETS_CHECKLIST.md` says staging runs fake mode "while testing" and terminal `1000`.** The
+    prompt says fake mode stays off on staging. Staging has fake mode on and a terminal that is not `1000`. Three
+    statements, none matching another.
+17. **Three more Cardcom functions are in the old request shape** and have no caller: the J5 hold, its capture and its
+    release (`authorize_low_profile`, `capture_transaction`, `void_transaction`). Left as they are.
+
 For information:
 
 12. The legal documents are still drafts (`is_draft`).
@@ -466,20 +672,25 @@ For information:
     recreated. The local gateway and notification containers run this round's code by `docker cp`.
 15. Two small files are left in the staging user-org container's `/tmp` (`ddl_support_messages.sql`,
     `ddl_whatsapp_message_log.sql`), from a read-only check. No data rows are left on staging from this round.
+18. From Part 4.1, locally: temp folders `/tmp/r37p41_a` to `_g` in the payment container and `/tmp/r37p41_u1` in
+    user-org (same safety check, they go when the containers are recreated). The four scratch databases in the local
+    MySQL were dropped. Nothing is left on staging: the run printed 0 rows in each table it used.
 
 ## `git diff -w --stat pre-r37..HEAD`
 
-78 files changed, 6384 insertions(+), 631 deletions(-). By area:
+103 files changed, 11161 insertions(+), 871 deletions(-). Part 4.1 alone (`pre-r37-p4..HEAD`): 36 files, 4300
+insertions, 268 deletions. By area:
 
 | Area | Files |
 |---|---|
-| `db/migrations` | 098, 099, 100, 101, 102 |
+| `db/migrations` | 098, 099, 100, 101, 102, 103, 104, 105 |
 | `services/user-org` | routes: marketplace, marketplace_subscriptions, providers, events, provider_stats, search; services: listing_attributes, provider_plans; five test files |
-| `services/frontend` | provider billing, listing form, dashboard, shell, subscribe; CategoryFields; categoryStyle; listing card and panel; home page; copy files |
+| `services/payment` | services: cardcom, card_setup, marketplace_charges, marketplace_renewal, marketplace_refunds; routes: payment_methods, webhooks, marketplace_charges, subscriptions; main; seven test files |
+| `services/frontend` | provider billing, listing form, dashboard, shell, subscribe; PaymentCardBlock, MarketplaceCharges, MarketplaceChargesAdmin; CategoryFields; categoryStyle; listing card and panel; home page; admin marketplace; copy files |
 | `services/notification` | Meta sender, webhook, inbound handler, composer, dispatcher; five test files |
 | `services/gateway` | serviceMap, index, rateLimit; two test files |
 | `services/deal` | tenders, one test file |
-| `docs`, `scripts`, `.env.example` | prompts, WhatsApp docs, seed script |
+| `docs`, `scripts`, `.env.example` | prompts, WhatsApp docs, seed script, the two new payment settings |
 
 ## Manual actions
 
@@ -490,9 +701,9 @@ For information:
 3. Review the tiers in `/admin/marketplace`: the four seeded at ₪200, and equipment's ₪149 and ₪399.
 4. Check the transport and scaffolding fields with one real provider each. Also the language list and which fields, if
    any, should be required.
-5. **Part 4:** say whether to build card capture from scratch. Confirm the staging terminal is a test terminal. When
-   the acceptance runs, the card page is yours to fill.
-6. Decide what a plan's end means before 31.12.2026 (finding 5). It can ride with Part 4.
+5. **Part 4:** built. What is left is the run against Cardcom, action 12.
+6. Decide what a promo plan's end means before 31.12.2026 (finding 5). Part 4 did not decide it: a promo plan is
+   never charged and nothing happens to it at its end.
 7. Set `NEXT_PUBLIC_FREE_LAUNCH_UNTIL` on the staging frontend if the banner and the registration sentence should show
    there (finding 4).
 8. **WhatsApp.** On Railway, staging, notification service: the six `WHATSAPP_*` variables, with the verify token from
@@ -503,3 +714,19 @@ For information:
 10. When Cardcom approves the main terminal: the production variables, as in the prompt.
 11. In Cardcom, confirm the terminal and invoices are on אג'נטיק טכנולוגיות בע"מ. In Meta, rename the business
     portfolio if you want it to match.
+12. **The real run on the Cardcom test terminal, staging, payment service.** In this order:
+    1. Confirm in Cardcom that the terminal number set on staging is a test terminal.
+    2. Check the terminal may create a token without a charge and may refund ("זיכוי כרטיס או אסימון").
+    3. Set `FRONTEND_URL` (the staging site's address) and `PUBLIC_API_URL` (the same address with `/api`).
+    4. Make sure `FREE_LAUNCH_UNTIL` is not set there.
+    5. Set `PAYMENT_FAKE_MODE=0` and redeploy.
+    6. As a provider on staging: "מנוי ותשלום", "הוספת כרטיס", a Cardcom test card. The card should appear in the block.
+    7. Tell me, and I set `launch_promo_end` to yesterday, you buy a plan, I read the rows and the invoice with you,
+       you try a card Cardcom declines, you refund from `/admin/marketplace`, and I put the date back.
+    If step 6 fails, send me the time and I read the payment log: the likeliest cause is a field Cardcom names
+    differently from its description.
+13. **Read the Hebrew I wrote for money.** The purchase dialog (the charge sentence and the renewal sentence), the note
+    under the card ("מספר הכרטיס המלא אינו נשמר במערכת"), the failed-renewal notice, the refund dialog, and the
+    invoice line.
+14. **Decide the twelve choices** under Part 4, "Choices for you to confirm". 2 and 5 first.
+15. Bring `docs/RAILWAY_SECRETS_CHECKLIST.md` in line with what you decide for staging (finding 16).
