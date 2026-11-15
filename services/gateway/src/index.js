@@ -77,7 +77,7 @@ app.get('/readyz', (_, res) => res.json({ status: 'ready', service: 'gateway' })
 // is actually stale. Read via `curl /api/__version`.
 app.get('/api/__version', (_, res) => res.json({
   service: 'gateway',
-  build:   'stg-2026-08-11-b',    // bump when you push a new gateway change
+  build:   'stg-2026-11-15-r37',  // bump when you push a new gateway change
   routes:  Object.keys(services), // deployed prefix list — proves which routes shipped
 }));
 
@@ -162,35 +162,8 @@ app.post(
 );
 
 // ─── Route table ───────────────────────────────────────────
-const services = {
-  '/api/auth':          process.env.AUTH_SERVICE_URL          || 'http://auth:3001',
-  '/api/organizations': process.env.USER_ORG_SERVICE_URL      || 'http://user-org:3002',
-  '/api/users':         process.env.USER_ORG_SERVICE_URL      || 'http://user-org:3002',
-  '/api/documents':     process.env.USER_ORG_SERVICE_URL      || 'http://user-org:3002',
-  '/api/workers':       process.env.WORKER_SERVICE_URL        || 'http://worker:3003',
-  '/api/enums':         process.env.WORKER_SERVICE_URL        || 'http://worker:3003',
-  '/api/tenders':       process.env.DEAL_SERVICE_URL          || 'http://deal:3005',
-  '/api/notifications': process.env.NOTIFICATION_SERVICE_URL  || 'http://notification:3006',
-  '/api/webhooks':      process.env.NOTIFICATION_SERVICE_URL  || 'http://notification:3006',
-  '/api/admin':         process.env.ADMIN_SERVICE_URL         || 'http://admin:3007',
-  '/api/payments':      process.env.PAYMENT_SERVICE_URL       || 'http://payment:3009',
-  '/api/marketplace':   process.env.USER_ORG_SERVICE_URL      || 'http://user-org:3002',
-  '/api/uploads':       process.env.USER_ORG_SERVICE_URL      || 'http://user-org:3002',
-  '/api/support-tickets': process.env.USER_ORG_SERVICE_URL    || 'http://user-org:3002',
-  '/api/membership-requests': process.env.USER_ORG_SERVICE_URL || 'http://user-org:3002',
-  '/api/ads':           process.env.USER_ORG_SERVICE_URL      || 'http://user-org:3002',
-  '/api/events':        process.env.USER_ORG_SERVICE_URL      || 'http://user-org:3002',
-  '/api/search':        process.env.USER_ORG_SERVICE_URL      || 'http://user-org:3002',
-  // L10 shipped the /legal/{slug} + /legal/settings routes on user-org
-  // and added /api/legal to PUBLIC_PREFIXES, but forgot to add the
-  // proxy mapping here — every /api/legal/* call fell through to the
-  // default 404 handler. Surfaced by S1 smoke test §2.2 B2.
-  '/api/legal':         process.env.USER_ORG_SERVICE_URL      || 'http://user-org:3002',
-  // L7 — /api/contractor/reveals (PRD-2). Named prefix so future
-  // contractor-only routes can land here without a per-endpoint
-  // gateway edit.
-  '/api/contractor':    process.env.USER_ORG_SERVICE_URL      || 'http://user-org:3002',
-};
+// Lives in ./serviceMap so it can be tested; order matters there.
+const { services } = require('./serviceMap');
 
 // Public routes (no auth required) — matched against req.originalUrl
 const PUBLIC_PREFIXES = [
