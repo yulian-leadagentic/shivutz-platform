@@ -85,7 +85,9 @@ function ProviderSubscribeInner() {
 
   const activeByCategory = useMemo(() => {
     const map: Record<string, Subscription> = {};
-    for (const s of mine) if (s.status === 'active') map[s.category_code] = s;
+    // is_current, not status: nothing flips status when a plan lapses,
+    // and the server sells a new plan from that moment on.
+    for (const s of mine) if (s.is_current) map[s.category_code] = s;
     return map;
   }, [mine]);
 

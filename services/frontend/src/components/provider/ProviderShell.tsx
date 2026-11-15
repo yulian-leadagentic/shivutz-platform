@@ -7,14 +7,14 @@
 // only looks right beside the corporation sidebar. With no sidebar the
 // form hugged the start edge and left the rest of the screen empty.
 //
-// A top bar rather than a sidebar because the area has two pages. A
-// 256px column holding two links would only move the empty space to the
-// other side of the screen.
+// A top bar rather than a sidebar because the area has a handful of
+// pages. A 256px column holding three links would only move the empty
+// space to the other side of the screen.
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LayoutDashboard, LogOut, Megaphone, Menu, X } from 'lucide-react';
+import { CreditCard, LayoutDashboard, LogOut, Megaphone, Menu, X } from 'lucide-react';
 import Logo from '@/components/Logo';
 import { apiFetch } from '@/lib/api/client';
 import { clearTokens } from '@/lib/auth';
@@ -22,6 +22,10 @@ import { ENTITY_TYPE_HE } from '@/lib/labels';
 import { cn } from '@/lib/utils';
 
 const DASHBOARD     = '/provider/dashboard';
+const BILLING       = '/provider/billing';
+// Adding a category is part of managing the plans, so its page keeps
+// the same nav item lit.
+const ADD_CATEGORY  = '/provider/marketplace/subscribe';
 const LISTINGS_ID   = 'my-listings';
 const MOBILE_NAV_ID = 'provider-nav-mobile';
 
@@ -66,6 +70,7 @@ export default function ProviderShell({ children }: { children: React.ReactNode 
 
   const onListings  = pathname === DASHBOARD && hash === `#${LISTINGS_ID}`;
   const onDashboard = pathname === DASHBOARD && !onListings;
+  const onBilling   = pathname === BILLING || pathname === ADD_CATEGORY;
 
   // The dashboard shows a spinner until its data arrives, so on arrival
   // from the form (or on a hard load) the anchor does not exist yet when
@@ -106,8 +111,6 @@ export default function ProviderShell({ children }: { children: React.ReactNode 
     window.location.assign('/');
   }
 
-  // "מנוי ותשלום" is in the R34 spec, but its page arrives with a later
-  // phase. It joins this list when the route exists.
   const items = (
     <>
       <Link
@@ -127,6 +130,15 @@ export default function ProviderShell({ children }: { children: React.ReactNode 
       >
         <Megaphone className="h-5 w-5 shrink-0" aria-hidden="true" />
         המודעות שלי
+      </Link>
+      <Link
+        href={BILLING}
+        onClick={() => go('')}
+        aria-current={onBilling ? 'page' : undefined}
+        className={cn(ITEM, onBilling ? CURRENT : IDLE)}
+      >
+        <CreditCard className="h-5 w-5 shrink-0" aria-hidden="true" />
+        מנוי ותשלום
       </Link>
       <button
         type="button"

@@ -37,6 +37,10 @@ export interface Subscription {
   // Annotated by /my/subscriptions only:
   slots_used?:              number;
   slots_available?:         number;
+  tier_name_he?:            string | null;
+  /** Running right now: status 'active' and not past expires_at.
+   *  `status` alone is not enough, nothing flips it when a plan lapses. */
+  is_current?:              boolean;
 }
 
 export interface SubscriptionQuote {
@@ -98,4 +102,24 @@ export const marketplaceSubscriptionsApi = {
     apiFetch<void>(`/marketplace/my/subscriptions/${id}/auto-renew`, {
       method: 'DELETE',
     }),
+
+  /** Turn auto-renew back on, on a plan that is still running. */
+  enableAutoRenew: (id: string) =>
+    apiFetch<void>(`/marketplace/my/subscriptions/${id}/auto-renew`, {
+      method: 'POST',
+    }),
+
+  /** Move a running plan to a bigger tier of the same category. */
+  upgrade: (id: string, tier_id: string) =>
+    apiFetch<Subscription>(`/marketplace/my/subscriptions/${id}/upgrade`, {
+      method: 'POST',
+      body: JSON.stringify({ tier_id }),
+    }),
+
+  /** End a running plan now. Its published listings are paused, not deleted. */
+  cancel: (id: string) =>
+    apiFetch<{ id: string; status: 'cancelled'; listings_paused: number }>(
+      `/marketplace/my/subscriptions/${id}/cancel`,
+      { method: 'POST' },
+    ),
 };
