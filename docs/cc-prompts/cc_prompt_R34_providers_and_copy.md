@@ -61,7 +61,7 @@ Today in `marketplace_categories`: housing (דיור להשכרה) · equipment 
    - Insert `insurance` ביטוח · `transport` הסעות · `scaffolding` פיגומים · `courses` קורסים והסמכות. Codes and slugs are permanent.
    - `services` and `other`: report active listings and active subscriptions on each. If both are zero, set `is_active=false` (never delete). If not zero, **stop and report**; Yulian decides where they move.
    - `sort_order` follows the home chip order.
-2. **No tiers and no prices in the migration.** Each new category gets zero tiers; R33's "אין מסלול פעיל" badge will show on it. Yulian adds the tiers and prices in `/admin/marketplace` (Manual actions).
+2. **Default price ₪200 (Yulian, 15.11).** Seed **one active tier per provider category** (insurance, transport, scaffolding, courses, equipment): ₪200 for 30 days, slot count equal to today's "בסיסי" tier (5 ads). Yulian manages prices and tiers from `/admin/marketplace` afterwards, so the values are data, not code. Existing tiers on `equipment` stay; report them. Also make ₪200 the default value of the price field when an admin creates a new category or tier.
 3. The provider registration picker (R33 B.2) hides `housing` for providers entirely and shows categories without an active paid tier as unavailable.
 4. Search: every home chip must return that category's listings through the federated pass. Add `search_synonyms` per category if the table has the column (e.g. הסעות: הסעה, הסעות עובדים, מיניבוס · קורסים והסמכות: קורס, הסמכה, הדרכה, עבודה בגובה · פיגומים: פיגום · ביטוח: ביטוח בריאות, חבות מעבידים). If the column does not exist, report and stop at the list.
 
@@ -135,6 +135,6 @@ Today views and clicks are recorded only for sponsor ads (`events.py`, `promo_ev
 Per phase: what changed, file:line, evidence, screenshots. Phase 2 failure count. Phase 3 counts for `services` and `other`. `git diff -w --stat`.
 
 **Manual actions (expected):**
-1. Yulian adds tiers and prices for ביטוח, הסעות, פיגומים, קורסים והסמכות, ציוד וכלי עבודה in `/admin/marketplace`.
+1. Yulian reviews the seeded ₪200 tiers in `/admin/marketplace` and adjusts any category.
 2. Yulian decides where `services` / `other` listings move, if any exist.
 3. Yulian reviews the transport and scaffolding fields with one real provider each.
