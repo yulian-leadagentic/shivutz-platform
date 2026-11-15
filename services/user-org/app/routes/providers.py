@@ -39,7 +39,7 @@ from pydantic import BaseModel, EmailStr
 
 from app.db import get_db
 from app.services.provider_plans import (
-    PROVIDER_BLOCKED_CATEGORIES, insert_promo_plan, launch_promo_end,
+    PROVIDER_BLOCKED_CATEGORIES, launch_promo_end, plan_at_registration,
 )
 from app.integrations.israeli_id import (
     BN_CHECKSUM,
@@ -361,40 +361,19 @@ async def register_provider(data: ProviderCreate):
 
         # R10 §1 + §2 · marketplace_subscriptions row for the picked
         # tier. Under the launch promo (until site_settings.
-        # launch_promo_end) the row records price_paid=0 +
-        # promo_note='launch_free_promo' and rides the promo_end
-        # date; the real tier price stays visible in price_nis (the
-        # snapshot column) so we can audit "what was the sticker
-        # price at the time" a year from now. After the promo the
-        # row uses the full tier price + DATE_ADD(NOW, duration_days).
+        # launch_promo_end) the row records promo_note=
+        # 'launch_free_promo' and rides the promo_end date; the real
+        # tier price stays visible in price_nis (the snapshot column) so
+        # we can audit "what was the sticker price at the time" a year
+        # from now. Duration under promo can far exceed
+        # tier.duration_days: a 30-day tier picked in October runs
+        # until 31.12 for free. expires_at is the only authority for
+        # when the plan lapses.
         #
-        # Duration under promo can far exceed tier.duration_days —
-        # e.g. a 30-day tier picked in October runs until 31.12 for
-        # free. The renewal batch sees expires_at as the ONLY
-        # authority for when the sub lapses, so this is intentional.
-        if promo_active:
-            # The same row a provider gets when it adds a category
-            # later (services/provider_plans.py).
-            sub_id = insert_promo_plan(cur, provider_id, tier, promo_end)
-        else:
-            sub_id = str(uuid.uuid4())
-            cur.execute(
-                """INSERT INTO marketplace_subscriptions
-                       (id, advertiser_entity_type, advertiser_entity_id,
-                        category_code, tier_id, slot_count, duration_days,
-                        price_nis, promo_note,
-                        expires_at, auto_renew, status, cardcom_token_ref)
-                   VALUES (%s, 'service_provider', %s, %s, %s, %s, %s,
-                           %s, NULL,
-                           DATE_ADD(NOW(), INTERVAL %s DAY),
-                           TRUE, 'active', NULL)""",
-                (
-                    sub_id, provider_id,
-                    cat, tier["id"], tier["slot_count"], tier["duration_days"],
-                    tier["price_nis"],
-                    tier["duration_days"],
-                ),
-            )
+        # R37 4.1.3 · during the promo, the same row a provider gets
+        # when it adds a category later. After it, no plan at all: none
+        # activates without a successful charge. See plan_at_registration.
+        plan_id = plan_at_registration(cur, provider_id, tier, promo_end)
         conn.commit()
 
         # R10 §3 · providers auto-activate (status='active' at :211),
@@ -441,20 +420,26 @@ async def register_provider(data: ProviderCreate):
         # which flagged the risk explicitly.
         frontend_url = os.getenv("FRONTEND_URL", "https://www.tagidai.com")
         cta_url = f"{frontend_url}/provider/marketplace/new?category={cat}"
-        await publish_event("provider.welcome", {
-            "recipient_email": data.email,
-            "contact_name":    data.contact_name,
-            "business_name":   name,
-            "plan_name":       plan_name,
-            "category_name":   category_name,
-            "category_code":   cat,
-            "cta_url":         cta_url,
-            # promo_end_iso lets the handler decide whether to render
-            # the "free until X" block without another DB round-trip.
-            # ISO date so downstream comparison is unambiguous;
-            # `null` means "no promo active" and the block collapses.
-            "promo_end_iso":   promo_end.strftime("%Y-%m-%d") if promo_active else None,
-        })
+        # R37 4.1.3 · the welcome email says "המסלול שלך: ..." and sends
+        # the provider to the listing form. Both are true only when a
+        # plan was activated, so the email goes only then. A provider
+        # who registered after the promo is taken to "מנוי ותשלום" by the
+        # site; an email worded for that case does not exist yet.
+        if plan_id:
+            await publish_event("provider.welcome", {
+                "recipient_email": data.email,
+                "contact_name":    data.contact_name,
+                "business_name":   name,
+                "plan_name":       plan_name,
+                "category_name":   category_name,
+                "category_code":   cat,
+                "cta_url":         cta_url,
+                # promo_end_iso lets the handler decide whether to render
+                # the "free until X" block without another DB round-trip.
+                # ISO date so downstream comparison is unambiguous;
+                # `null` means "no promo active" and the block collapses.
+                "promo_end_iso":   promo_end.strftime("%Y-%m-%d") if promo_active else None,
+            })
 
         return {
             "id":            provider_id,
@@ -463,6 +448,10 @@ async def register_provider(data: ProviderCreate):
             "org_type":      "service_provider",
             "access_token":  user.get("access_token"),
             "refresh_token": user.get("refresh_token"),
+            # R37 4.1.3 · whether the provider left with a plan. False
+            # after the promo; the site then opens "מנוי ותשלום" instead
+            # of the listing form.
+            "plan_active":   plan_id is not None,
         }
     finally:
         conn.close()

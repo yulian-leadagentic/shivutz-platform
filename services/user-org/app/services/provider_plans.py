@@ -81,6 +81,26 @@ def insert_promo_plan(
     return sub_id
 
 
+def plan_at_registration(cur, provider_id: str, tier: dict, promo_end: Optional[datetime]) -> Optional[str]:
+    """The plan a provider leaves registration with: the id of its promo
+    plan while the launch promo runs, None once it is over.
+
+    R37 4.1.3 (Yulian, 15.11): no plan activates without a successful
+    charge. From R10 until now, a registration after the promo wrote an
+    active plan at the tier's full price and charged nothing, for want
+    of any charging to do. It now writes no plan: the provider exists,
+    is sent to "מנוי ותשלום", and gets its plan the way every later plan
+    is got, through the purchase endpoint. That endpoint refuses while
+    there is no online payment, so until Cardcom is wired in a provider
+    who registers after the promo cannot publish. That is the rule
+    working, not a gap in it.
+
+    The caller commits."""
+    if promo_end is None:
+        return None
+    return insert_promo_plan(cur, provider_id, tier, promo_end)
+
+
 def is_paid_tier(tier: dict) -> bool:
     """A tier a provider may pick: active, and with a real price. A
     price of 0 marks an admin-only override, which no picker offers."""

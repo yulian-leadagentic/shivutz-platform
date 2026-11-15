@@ -291,7 +291,13 @@ export default function ProviderRegisterPage() {
       });
       if (email.trim()) qs.set('email', email.trim());
       if (city.trim())  qs.set('city',  city.trim());
-      setTimeout(() => router.push(`/provider/marketplace/new?${qs.toString()}`), 1200);
+      // R37 4.1.3 · after the launch promo no plan is activated at
+      // registration, so there is nothing to publish under yet. The
+      // provider goes to "מנוי ותשלום", where a plan is added.
+      const next = res.plan_active === false
+        ? `/provider/billing?category=${encodeURIComponent(primaryCategory)}`
+        : `/provider/marketplace/new?${qs.toString()}`;
+      setTimeout(() => router.push(next), 1200);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'הרישום נכשל';
       routeServerError(msg);

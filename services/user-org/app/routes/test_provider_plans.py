@@ -22,6 +22,7 @@ from app.routes.marketplace_subscriptions import PurchaseRequest, QuoteRequest
 from app.services import provider_plans
 from app.services.provider_plans import (
     PROVIDER_BLOCKED_CATEGORIES, insert_promo_plan, is_paid_tier, launch_promo_end,
+    plan_at_registration,
 )
 
 PROVIDER = {"x_entity_id": "prov-1", "x_entity_type": "service_provider", "x_org_id": "prov-1"}
@@ -286,6 +287,33 @@ class PurchaseTest(unittest.TestCase):
             self.assertEqual(out["tier"]["price_nis"], 149.0)
             corp = subs.quote_subscription(QuoteRequest(tier_id="tier-1"), **CORP)
             self.assertIsNone(corp["promo_end"])
+
+
+class RegistrationPlanTest(unittest.TestCase):
+    """R37 4.1.3 · no plan activates without a successful charge."""
+
+    def test_during_the_promo_registration_leaves_with_the_promo_plan(self):
+        cur = Cursor([("INSERT INTO marketplace_subscriptions", [])])
+        end = datetime.strptime(FUTURE, "%Y-%m-%d")
+        plan_id = plan_at_registration(cur, "prov-1", {**TIER}, end)
+        self.assertTrue(plan_id)
+        sql, params = cur.ran("INSERT INTO marketplace_subscriptions")[0]
+        self.assertEqual((params[0], params[1], params[7], params[8]), (plan_id, "prov-1", "launch_free_promo", end))
+
+    def test_after_the_promo_registration_writes_no_plan(self):
+        cur = Cursor([])          # any query at all would raise
+        self.assertIsNone(plan_at_registration(cur, "prov-1", {**TIER}, None))
+        self.assertEqual(cur.executed, [])
+
+    def test_registration_has_no_other_way_to_write_a_plan(self):
+        # The full-price row registration used to write after the promo
+        # was an INSERT of its own in routes/providers.py.
+        import pathlib
+        from app.routes import providers
+        source = pathlib.Path(providers.__file__).read_text(encoding="utf8")
+        self.assertNotIn("INSERT INTO marketplace_subscriptions", source)
+        self.assertIn("plan_at_registration(cur, provider_id, tier, promo_end)", source)
+        self.assertIn('"plan_active":   plan_id is not None', source)
 
 
 class HelpersTest(unittest.TestCase):

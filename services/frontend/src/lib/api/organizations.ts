@@ -45,6 +45,8 @@ export const orgApi = {
       org_type:      'service_provider';
       access_token?: string;
       refresh_token?: string;
+      /** R37 4.1.3 · false when no plan was activated (after the launch promo). */
+      plan_active?: boolean;
     }>('/organizations/providers/register', {
       method: 'POST',
       body: JSON.stringify(data),
