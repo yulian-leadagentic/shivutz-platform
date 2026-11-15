@@ -342,7 +342,11 @@ def _search_marketplace(
         raw_query, drop_words=_rewriter_consumed_words(raw_query),
     )
     if not clauses:
-        return []
+        # R34 · the empty result keeps the function's two-value shape.
+        # R32 made this function return (rows, via_fallback) and missed
+        # this early exit, so a query with no usable word ("!!", "...")
+        # failed to unpack in the caller and /api/search answered 500.
+        return [], False
 
     conditions = ["ml.status = 'active'"]
     params: list[object] = []

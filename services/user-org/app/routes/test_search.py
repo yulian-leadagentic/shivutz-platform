@@ -10,6 +10,7 @@ import unittest
 from app.routes.search import (
     _build_where,
     _order_clause,
+    _search_marketplace,
     NM_RELAX_ORDER,
     NEAR_MATCH_TRIGGER,
     NEAR_MATCH_LIMIT,
@@ -132,6 +133,36 @@ class ContractConstantsTest(unittest.TestCase):
 
     def test_near_match_cap_at_ten(self):
         self.assertEqual(NEAR_MATCH_LIMIT, 10)
+
+
+class SearchMarketplaceShapeTest(unittest.TestCase):
+    """`_search_marketplace` returns (rows, via_fallback) on EVERY path.
+
+    R32 changed the return to a tuple and missed the early exit for a
+    query with no usable word. The caller unpacks two values, so "!!"
+    raised and POST /api/search answered 500 for six days. These cases
+    return before any database access, which is what makes them
+    testable here.
+    """
+
+    def test_punctuation_only_query_returns_a_pair(self):
+        for q in ("!!", "??", "...", ",,", "--", "( )"):
+            with self.subTest(query=q):
+                result = _search_marketplace(q)
+                self.assertIsInstance(result, tuple)
+                self.assertEqual(len(result), 2)
+
+    def test_punctuation_only_query_is_empty_and_not_a_fallback(self):
+        rows, via_fallback = _search_marketplace("!!")
+        self.assertEqual(rows, [])
+        self.assertIs(via_fallback, False)
+
+    def test_empty_and_whitespace_queries_return_a_pair(self):
+        for q in ("", "   "):
+            with self.subTest(query=q):
+                rows, via_fallback = _search_marketplace(q)
+                self.assertEqual(rows, [])
+                self.assertIs(via_fallback, False)
 
 
 if __name__ == "__main__":
