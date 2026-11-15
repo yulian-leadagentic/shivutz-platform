@@ -1,4 +1,4 @@
-"""R37 Part 5 item 6 · POST /tenders/{id}/admin-close on an id that does
+"""R37 Part 5 item 6 · POST /tenders/{id}/admin/close on an id that does
 not exist answers 404. It used to answer 200 "closed": the UPDATE
 matched nothing and nobody looked (R33 finding 6)."""
 import sys
