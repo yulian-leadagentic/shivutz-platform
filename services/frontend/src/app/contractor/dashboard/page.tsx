@@ -121,7 +121,7 @@ export default function ContractorDashboardPage() {
         <h1 className="text-2xl font-bold text-slate-900">
           שלום{displayName ? `, ${displayName}` : ''}
         </h1>
-        <p className="text-sm text-slate-500">שני מסלולים למצוא עובדים — בחרו את המתאים</p>
+        <p className="text-sm text-slate-500">שני מסלולים למצוא עובדים: בחרו את המתאים</p>
       </header>
 
       {/* C2 — split entry tiles. Reuses the same mental model as the
