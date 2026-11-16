@@ -3151,8 +3151,11 @@ function SponsorSlot({ ad }: { ad: SponsorAd }) {
 // users skim which column is which.
 function ResultsHeader({ kind }: { kind: 'worker' | 'housing' }) {
   const labels = kind === 'worker'
-    ? ['מודעה', 'כמות', 'מוצא', 'אזור', '']
-    : ['מודעה', 'מיטות', 'עיר',  '₪/מיטה', ''];
+    // R38 item 5 · every row in both tables is a corporation's ad, so the
+    // column names who offers it. The "מודעה" badge on sponsored slots
+    // (above) marks an ad and stays.
+    ? ['תאגידים', 'כמות', 'מוצא', 'אזור', '']
+    : ['תאגידים', 'מיטות', 'עיר',  '₪/מיטה', ''];
   return (
     <li role="row" aria-hidden="true" className="results-header">
       <div className="results-cell">{labels[0]}</div>
@@ -3268,7 +3271,7 @@ function AdRow({
       className={`results-row cursor-pointer ${boosted ? 'results-row--boosted' : ''} ${expanded ? 'results-row--expanded' : ''}`}
     >
       {/* Cell 1 — title + one-line body + housing thumb */}
-      <div className="results-cell" data-l="מודעה">
+      <div className="results-cell" data-l="תאגידים">
         <div className="results-title-row">
           {thumbUrl && (
             <img src={thumbUrl} alt="" className="results-thumb" />
