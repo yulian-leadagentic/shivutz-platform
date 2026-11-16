@@ -10,11 +10,12 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Loader2, Download, RefreshCw, Phone, Mail, ChevronRight, Search } from 'lucide-react';
+import { Loader2, Download, RefreshCw, Mail, ChevronRight, Search } from 'lucide-react';
 import { revealsApi, type ContractorReveal } from '@/lib/api/reveals';
 import { mapApiError } from '@/lib/api/errors';
 import { useEnums } from '@/features/enums/EnumsContext';
 import { AD_TYPE_HE, labelFor } from '@/lib/labels';
+import { ContactActions } from '@/components/contact/ContactActions';
 
 function fmtDateTime(iso: string): string {
   try { return new Date(iso).toLocaleString('he-IL'); } catch { return iso; }
@@ -128,9 +129,11 @@ export default function ContractorRevealsPage() {
                   <td className="px-3 py-2 text-slate-700">
                     <div className="flex flex-col gap-0.5">
                       {r.phone && (
-                        <a href={`tel:${r.phone}`} className="inline-flex items-center gap-1 text-brand-700 hover:underline" dir="ltr">
-                          <Phone className="w-3.5 h-3.5" /> {r.phone}
-                        </a>
+                        <ContactActions
+                          phone={r.phone}
+                          adTitle={r.title_he}
+                          target={r.ad_removed ? undefined : { type: 'ad', id: r.ad_id }}
+                        />
                       )}
                       {r.email && (
                         <a href={`mailto:${r.email}`} className="inline-flex items-center gap-1 text-brand-700 hover:underline break-all">

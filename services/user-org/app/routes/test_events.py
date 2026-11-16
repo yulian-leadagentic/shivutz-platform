@@ -49,8 +49,9 @@ class ActorTest(unittest.TestCase):
 
 
 class _FakeCursor:
-    def __init__(self, live_ads=(), live_listings=(), owners=None):
-        self.live = {"sponsor_ads": set(live_ads), "marketplace_listings": set(live_listings)}
+    def __init__(self, live_ads=(), live_listings=(), owners=None, live_worker_ads=()):
+        self.live = {"sponsor_ads": set(live_ads), "marketplace_listings": set(live_listings),
+                     "ads": set(live_worker_ads)}
         # listing id -> the entity that advertises it (R37: own views)
         self.owners = dict(owners or {})
         self.selects: list = []
@@ -62,7 +63,7 @@ class _FakeCursor:
         if sql.lstrip().startswith("INSERT INTO promo_events"):
             self.inserted.append(tuple(params))
             return
-        if "advertiser_entity_id = %s" in sql:
+        if "advertiser_entity_id = %s" in sql or "owner_entity_id = %s" in sql:
             *ids, entity = params
             self.own_checks.append((tuple(ids), entity))
             self._rows = [{"id": i} for i in ids if self.owners.get(i) == entity]
@@ -306,6 +307,58 @@ class SingleTest(_HandlerCase):
         self.assertEqual(self._code(cursor, _event("impression", "nonsense", "ad1")), "target_type_not_allowed")
         self.assertEqual(self._code(cursor, _event("ad_click", "marketplace_listing", "l1")), "event_type_not_allowed")
         self.assertEqual(cursor.inserted, [])
+
+
+
+class ContactEventsTest(_HandlerCase):
+    """R38 item 7 · "התקשר" and "וואטסאפ" after a reveal."""
+
+    def test_the_two_events_on_an_ad_and_on_a_listing(self):
+        for event_type in ("contact_call", "contact_whatsapp"):
+            self.assertTrue(_pair_allowed(event_type, "ad"))
+            self.assertTrue(_pair_allowed(event_type, "marketplace_listing"))
+            self.assertFalse(_pair_allowed(event_type, "sponsor_ad"))
+        self.assertFalse(_pair_allowed("impression", "ad"))
+
+    def test_a_contact_event_carries_no_actor(self):
+        self.assertEqual(_actor("ad", "e1", "contractor"), (None, None))
+
+    def _single(self, cursor, event, **headers):
+        get_db, limiter, _ = self._patched(cursor)
+        with get_db, limiter:
+            return asyncio.run(events.record_event(
+                event, _Request(),
+                x_entity_id=headers.get("x_entity_id"), x_entity_type=headers.get("x_entity_type"),
+            ))
+
+    def test_a_call_on_a_live_ad_is_recorded_without_the_caller(self):
+        cursor = _FakeCursor(live_worker_ads={"w1"})
+        self._single(cursor, _event("contact_call", "ad", "w1"), x_entity_id="c1", x_entity_type="contractor")
+        self.assertEqual([(r[1], r[2], r[3], r[4], r[5]) for r in cursor.inserted],
+                         [("contact_call", "ad", "w1", None, None)])
+        self.assertEqual(cursor.selects[0][0], "ads")
+
+    def test_an_ad_that_is_gone_is_refused(self):
+        with self.assertRaises(HTTPException) as ctx:
+            self._single(_FakeCursor(), _event("contact_whatsapp", "ad", "gone"))
+        self.assertEqual(ctx.exception.detail["code"], "target_not_found")
+
+    def test_the_advertiser_calling_its_own_number_is_not_counted(self):
+        cursor = _FakeCursor(live_worker_ads={"w1"}, owners={"w1": "k1"})
+        self._single(cursor, _event("contact_call", "ad", "w1"), x_entity_id="k1", x_entity_type="corporation")
+        self.assertEqual(cursor.inserted, [])
+
+    def test_in_a_batch_own_ads_drop_out_and_the_rest_is_kept(self):
+        cursor = _FakeCursor(live_worker_ads={"w1", "w2"}, live_listings={"l1"}, owners={"w1": "k1"})
+        get_db, limiter, _ = self._patched(cursor)
+        with get_db, limiter:
+            asyncio.run(events.record_events_batch(EventBatch(events=[
+                _event("contact_call",     "ad",                  "w1"),
+                _event("contact_whatsapp", "ad",                  "w2"),
+                _event("contact_call",     "marketplace_listing", "l1"),
+            ]), _Request(), x_entity_id="k1", x_entity_type="corporation"))
+        self.assertEqual(sorted((r[1], r[3]) for r in cursor.inserted),
+                         [("contact_call", "l1"), ("contact_whatsapp", "w2")])
 
 
 if __name__ == "__main__":

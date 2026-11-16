@@ -53,6 +53,10 @@ export type AdEventType   = 'impression' | 'ad_click' | 'inquiry';
 // marketplace_reveals, and a second copy here would count it twice.
 export type ListingEventType = 'listing_impression' | 'listing_open';
 export type AdTargetType  = 'sponsor_ad' | 'marketplace_listing';
+// R38 item 7 · a click on "התקשר" or "וואטסאפ" after a reveal. On a
+// worker or housing ad (target 'ad') or on a marketplace listing.
+export type ContactEventType  = 'contact_call' | 'contact_whatsapp';
+export type ContactTargetType = 'ad' | 'marketplace_listing';
 // R30 §12b · `listing_rail` / `listing_inline` are their own buckets.
 // Without them both listing slots fell to the catch-all 'inline' and
 // admin CTR could not tell them apart — or tell either from side_rail,
@@ -72,6 +76,7 @@ type PostArgs = {
 } & (
   | { event_type: AdEventType;      target_type: 'sponsor_ad' }
   | { event_type: ListingEventType; target_type: 'marketplace_listing' }
+  | { event_type: ContactEventType; target_type: ContactTargetType }
 );
 
 function toWireEvent(args: PostArgs) {
@@ -183,7 +188,9 @@ export function postAdEvent(args: PostArgs): void {
   // R34 5c · both listing events queue. Neither starts a navigation
   // (the panel opens in place), so neither needs the sendBeacon path
   // a click does.
-  if (args.target_type === 'marketplace_listing') {
+  // R38 item 7 · a contact click opens the dialer or WhatsApp and the
+  // page may lose focus, so it goes out at once with keepalive below.
+  if (args.target_type === 'marketplace_listing' && !args.event_type.startsWith('contact_')) {
     enqueue(args, _LISTING_BATCH_WINDOW_MS);
     return;
   }

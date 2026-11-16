@@ -29,6 +29,7 @@ import LeadCaptureModal from '@/components/landing/LeadCaptureModal';
 import ListingCard from '@/components/marketplace/ListingCard';
 import { ListingDetailDrawer } from '@/components/marketplace/ListingDetailPanel';
 import { AdDetailDrawer, type AdScreenAd } from '@/components/ads/AdDetailDrawer';
+import { ContactActions } from '@/components/contact/ContactActions';
 // Landing IA — mount the mock-driven floating bubble. Was orphan
 // code; mounting it here surfaces marketplace-activity ambient
 // cues on the public landing (see LiveActivityFeed for the future
@@ -3480,9 +3481,7 @@ function AdRow({
               {revealed.company_name || '–'}
             </div>
             {revealed.phone && (
-              <a href={`tel:${revealed.phone}`} className="text-brand-700 hover:underline flex items-center gap-1.5">
-                <Phone className="w-4 h-4" /> <span dir="ltr">{revealed.phone}</span>
-              </a>
+              <ContactActions phone={revealed.phone} adTitle={ad.title_he} target={{ type: 'ad', id: ad.id }} />
             )}
             {revealed.email && (
               <a href={`mailto:${revealed.email}`} className="text-brand-700 hover:underline flex items-center gap-1.5">

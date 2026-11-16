@@ -77,9 +77,15 @@ router = APIRouter()
 # ── R6 §1b allow-lists ──────────────────────────────────────────────
 # Keyed by target type since R34 5c: each kind of target has its own
 # event vocabulary, and a pair that is not in this table is refused.
+# R38 item 7 · contact_call / contact_whatsapp: a click on "התקשר" or
+# "וואטסאפ" after a reveal, on a worker or housing ad ('ad') or on a
+# marketplace listing. So an advertiser can later see how people
+# reached it. The number is never part of the event.
+_CONTACT_EVENTS = frozenset({"contact_call", "contact_whatsapp"})
 _EVENT_TYPES_BY_TARGET = {
     "sponsor_ad":          frozenset({"impression", "ad_click", "inquiry"}),
-    "marketplace_listing": frozenset({"listing_impression", "listing_open"}),
+    "marketplace_listing": frozenset({"listing_impression", "listing_open"}) | _CONTACT_EVENTS,
+    "ad":                  _CONTACT_EVENTS,
 }
 _ALLOWED_EVENT_TYPES  = frozenset().union(*_EVENT_TYPES_BY_TARGET.values())
 _ALLOWED_TARGET_TYPES = frozenset(_EVENT_TYPES_BY_TARGET)
@@ -141,6 +147,12 @@ def _live_target_ids(cur, target_type: str, target_ids: list[str]) -> set:
                    AND status = 'active' AND deleted_at IS NULL""",
             tuple(target_ids),
         )
+    elif target_type == "ad":
+        cur.execute(
+            f"""SELECT id FROM ads
+                 WHERE id IN ({placeholders}) AND deleted_at IS NULL""",
+            tuple(target_ids),
+        )
     else:
         cur.execute(
             f"""SELECT id FROM sponsor_ads
@@ -173,10 +185,27 @@ def _own_listing_ids(cur, target_ids: list[str], x_entity_id: Optional[str]) -> 
     return {row[0] if not isinstance(row, dict) else row["id"] for row in cur.fetchall()}
 
 
+def _own_target_ids(cur, target_type: str, target_ids: list[str], x_entity_id: Optional[str]) -> set:
+    """R38 item 7 · the caller's own listings or ads among `target_ids`.
+    An advertiser calling its own number is not a contact."""
+    if target_type == "marketplace_listing":
+        return _own_listing_ids(cur, target_ids, x_entity_id)
+    if target_type != "ad" or not x_entity_id or not target_ids:
+        return set()
+    placeholders = ",".join(["%s"] * len(target_ids))
+    cur.execute(
+        f"""SELECT id FROM ads WHERE id IN ({placeholders}) AND owner_entity_id = %s""",
+        (*target_ids, x_entity_id),
+    )
+    return {row[0] if not isinstance(row, dict) else row["id"] for row in cur.fetchall()}
+
+
 def _actor(target_type: str, x_entity_id: Optional[str], x_entity_type: Optional[str]) -> tuple:
     """(actor_entity_id, actor_entity_type) for the row. Listing events
     carry no actor at all, see the module docstring."""
-    if target_type == "marketplace_listing":
+    # R38 item 7 · a contact click on an ad carries no actor either: who
+    # called whom is the advertiser's business, not our record.
+    if target_type in ("marketplace_listing", "ad"):
         return (None, None)
     return (x_entity_id or None, x_entity_type or None)
 
@@ -263,7 +292,7 @@ async def record_event(
             raise HTTPException(status_code=400, detail={"code": "target_not_found"})
         # R37 · the caller's own listing: accepted, not recorded. A 204
         # like any other, so the page that sent it sees nothing odd.
-        if body.target_type == "marketplace_listing" and _own_listing_ids(cur, [body.target_id], x_entity_id):
+        if _own_target_ids(cur, body.target_type, [body.target_id], x_entity_id):
             return
 
         clean_meta = _clean_metadata(body.metadata)
@@ -340,10 +369,9 @@ async def record_events_batch(
             return  # 204
         # R37 · the caller's own listings drop out of the batch; the
         # rest of it is recorded as usual.
-        own = _own_listing_ids(
-            cur, [i for t, i in live if t == "marketplace_listing"], x_entity_id,
-        )
-        live -= {("marketplace_listing", i) for i in own}
+        for own_type in ("marketplace_listing", "ad"):
+            own = _own_target_ids(cur, own_type, [i for t, i in live if t == own_type], x_entity_id)
+            live -= {(own_type, i) for i in own}
 
         import uuid as _uuid
         rows = [

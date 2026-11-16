@@ -22,6 +22,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { BadgeCheck, Home as HomeIcon, Loader2, Phone, Users, X } from 'lucide-react';
 
+import { ContactActions } from '@/components/contact/ContactActions';
 import type { ContactReveal } from '@/lib/api/search';
 
 export interface AdScreenAd {
@@ -237,10 +238,7 @@ export function AdDetailDrawer({
                   <div className="space-y-2">
                     {revealed.company_name && <p className="text-sm font-semibold text-slate-900">{revealed.company_name}</p>}
                     {revealed.phone && (
-                      <a href={`tel:${revealed.phone}`} dir="ltr" className="inline-flex min-h-[44px] items-center gap-2 text-base font-semibold text-slate-900">
-                        <Phone className="h-4 w-4" aria-hidden="true" />
-                        {revealed.phone}
-                      </a>
+                      <ContactActions phone={revealed.phone} adTitle={ad.title_he} target={{ type: 'ad', id: ad.id }} />
                     )}
                     {revealed.email && (
                       <a href={`mailto:${revealed.email}`} dir="ltr" className="block text-sm text-brand-800 underline underline-offset-2">

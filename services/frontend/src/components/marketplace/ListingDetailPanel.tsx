@@ -19,6 +19,7 @@ import {
   ListingRailSponsor,
 } from '@/features/advertising/MarketplaceSponsors';
 import { postAdEvent } from '@/lib/adEvents';
+import { ContactActions } from '@/components/contact/ContactActions';
 
 // R32 S5 · the listing body, lifted out of /marketplace/[id]/page.tsx
 // so the home page can show it without sending the visitor to another
@@ -439,14 +440,14 @@ export default function ListingDetailPanel({
                   {revealed.contact_name}
                 </div>
               )}
+              {/* R38 item 7 · the number, "התקשר" and "וואטסאפ", without
+                  the orange frame it used to sit in. */}
               {revealed.contact_phone && (
-                <a
-                  href={`tel:${revealed.contact_phone}`}
-                  className="flex items-center gap-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition-colors min-h-[44px]"
-                >
-                  <Phone className="h-4 w-4" />
-                  <span dir="ltr">{revealed.contact_phone}</span>
-                </a>
+                <ContactActions
+                  phone={revealed.contact_phone}
+                  adTitle={listing.title}
+                  target={{ type: 'marketplace_listing', id: listing.id }}
+                />
               )}
             </div>
           ) : (
