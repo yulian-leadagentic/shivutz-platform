@@ -35,6 +35,9 @@ process.env.FRONTEND_URL             = 'https://staging.example.test';
 const logs = captureLogs();
 const db  = fakeDb();
 const net = fakeNetwork();
+// R38 · only a registered number is searched for. The dedup run below
+// counts searches, so its sender is a registered contractor.
+db.memberships['+972502222222'] = [{ entity_type: 'contractor', entity_id: 'con-1', is_whatsapp_default: 0 }];
 const smsSent = [];
 stubModule('db.js', { getPool: () => db.pool, initDb: async () => {} });
 stubModule('sms/index.js', {

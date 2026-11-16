@@ -14,6 +14,13 @@ function pickEntityReply(frontendUrl) {
   return `המספר הזה משויך לכמה חשבונות. בחרו באתר את החשבון לוואטסאפ: ${frontendUrl}/billing#whatsapp`;
 }
 
+// R38 · WhatsApp is for registered users. A number no user holds gets
+// this and no search. /#register is the role picker on the home page,
+// the target of the site's own "הצטרף עכשיו".
+function registerInviteReply(frontendUrl) {
+  return `החיפוש בוואטסאפ פתוח למשתמשים רשומים. להרשמה: ${frontendUrl}/#register`;
+}
+
 const MAX_LENGTH  = 1000;
 const MAX_RESULTS = 5;
 const FIELD_SHOWN = 40;
@@ -110,6 +117,7 @@ function composeReply({ query, search, labels, frontendUrl }) {
 module.exports = {
   composeReply,
   pickEntityReply,
+  registerInviteReply,
   NON_TEXT_REPLY,
   RATE_LIMIT_REPLY,
   SEARCH_FAILED_REPLY,

@@ -3,6 +3,8 @@
 // What is locked here:
 //   * who the sender is decides the search scope (decision 2), and the
 //     headers that carry it are exactly the three the search reads
+//   * R38: only a registered number is searched for; one with several
+//     memberships uses the one picked on the site, or is asked to pick
 //   * every inbound message gets at most one outbound message, and a
 //     normal one gets exactly one (decision 3: each is billed)
 //   * the per-number limits: 10 an hour, 1 per 5 seconds
@@ -36,8 +38,9 @@ stubModule('sms/index.js', {
 });
 let { handleInbound } = load('whatsapp/handleInbound');
 const {
-  pickEntityReply, NON_TEXT_REPLY, RATE_LIMIT_REPLY, SEARCH_FAILED_REPLY, MAX_LENGTH,
+  pickEntityReply, registerInviteReply, NON_TEXT_REPLY, RATE_LIMIT_REPLY, SEARCH_FAILED_REPLY, MAX_LENGTH,
 } = load('whatsapp/composeReply');
+const INVITE = registerInviteReply('https://staging.example.test');
 
 const CONTRACTOR  = '972501110001';
 const CORPORATION = '972501110002';
@@ -57,6 +60,11 @@ db.memberships = {
     { entity_type: 'service_provider', entity_id: 'prov-3', is_whatsapp_default: 0 },
   ],
 };
+// The rate-limit runs below are about the limiter, so their numbers are
+// registered: an unknown number would never reach the search anyway.
+for (const n of ['+972501119999', '+972501118888', '+972501117777']) {
+  db.memberships[n] = [{ entity_type: 'contractor', entity_id: `con-${n.slice(-4)}`, is_whatsapp_default: 0 }];
+}
 
 const WORKERS = {
   filters: { ad_type: 'worker', profession_code: 'flooring', origin_country: 'CN', region: 'center', quantity: 20 },
@@ -166,14 +174,28 @@ async function run() {
   check('even a message too short to search gets the pick reply', r.sent.length === 1 && bodyOf(r) === pickEntityReply('https://staging.example.test'), bodyOf(r));
 
   net.searchResult = SERVICES_ONLY;
-  for (const [name, from] of [['an unknown number', UNKNOWN], ['a service provider', PROVIDER]]) {
+  wait(10);
+  r = await deliver(text(PROVIDER, '20 פועלים סינים במרכז'));
+  check('a service provider: searches with its own scope, and the D1 matrix in user-org decides what it sees',
+    r.searches.length === 1 && r.searches[0].headers['x-user-role'] === 'service_provider'
+    && r.searches[0].headers['x-entity-type'] === 'service_provider' && r.searches[0].headers['x-entity-id'] === 'prov-1', r.searches[0]?.headers);
+  check('a service provider: one reply, with the sign-up line for what it cannot see',
+    r.sent.length === 1 && bodyOf(r).includes('מודעות עובדים ודיור זמינות לקבלנים רשומים: https://staging.example.test/register/contractor'), bodyOf(r));
+
+  // ── 2b. R38 · registered users only ──────────────────────────────
+  for (const [type, message] of [['text', () => text(UNKNOWN, '20 פועלים סינים במרכז')], ['image', () => media(UNKNOWN, 'image')], ['audio', () => media(UNKNOWN, 'audio')]]) {
     wait(10);
-    r = await deliver(text(from, '20 פועלים סינים במרכז'));
-    check(`${name}: searches with no identity header at all`, identityHeaders(r.searches[0].headers).length === 0, r.searches[0].headers);
-    check(`${name}: one reply, with the sign-up line and the link`,
-      r.sent.length === 1 && bodyOf(r).includes('מודעות עובדים ודיור זמינות לקבלנים רשומים: https://staging.example.test/register/contractor')
-      && bodyOf(r).split('\n').at(-1).endsWith('&type=services'), bodyOf(r));
+    r = await deliver(message());
+    check(`an unknown number, ${type}: stored, no search, exactly one reply, the invitation`,
+      r.inbound.length === 1 && r.searches.length === 0 && r.sent.length === 1 && bodyOf(r) === INVITE && r.outbound.length === 1, { searches: r.searches.length, body: bodyOf(r) });
   }
+  check('the invitation links to the role picker on the home page, and is the only link in it',
+    INVITE.endsWith('https://staging.example.test/#register') && INVITE.match(/https?:\/\//g).length === 1, INVITE);
+  db.memberships['+972501110007'] = [];
+  wait(10);
+  r = await deliver(text('972501110007', 'רצפים'));
+  check('a number whose user has no active membership is not registered either', r.searches.length === 0 && bodyOf(r) === INVITE, bodyOf(r));
+  delete db.memberships['+972501110007'];
   check('an x-user-is-admin header was never built, for anyone',
     net.searchCalls.every((c) => !Object.keys(c.headers).some((k) => k.toLowerCase() === 'x-user-is-admin')));
 
@@ -187,10 +209,10 @@ async function run() {
     flat.includes('u.is_active = TRUE') && flat.includes('u.deleted_at IS NULL') && flat.includes('em.is_active = TRUE') && flat.includes('em.invitation_accepted_at IS NOT NULL'), flat);
   check('and reads which membership is picked for WhatsApp', flat.includes('em.is_whatsapp_default'), flat);
 
-  // ── 3. non-text ──────────────────────────────────────────────────
+  // ── 3. non-text, from a registered number ────────────────────────
   for (const type of ['image', 'document', 'location', 'audio', 'video', 'sticker', 'unsupported']) {
     wait(10);
-    r = await deliver(media(UNKNOWN, type));
+    r = await deliver(media(CORPORATION, type));
     check(`${type}: stored, answered once with the text-only line, no search`,
       r.inbound.length === 1 && r.inbound[0].message_text === `[${type}]` && r.sent.length === 1 && bodyOf(r) === NON_TEXT_REPLY
       && r.searches.length === 0 && r.outbound.length === 1 && r.outbound[0].in_reply_to === r.inbound[0].id, { sent: r.sent.length, body: bodyOf(r) });
@@ -227,7 +249,7 @@ async function run() {
   check('all twelve are stored', flood.every((x) => x.inbound.length === 1));
   check('only one of the twelve reached the search', flood.reduce((n, x) => n + x.searches.length, 0) === 1);
   check('no message got more than one reply', flood.every((x) => x.sent.length <= 1 && x.outbound.length === x.sent.length));
-  check('a limited number does not limit anyone else', (await deliver(text(UNKNOWN, 'רצפים'))).searches.length === 1);
+  check('a limited number does not limit anyone else', (await deliver(text(CORPORATION, 'רצפים'))).searches.length === 1);
 
   // ── 6. rate limit: spaced out ────────────────────────────────────
   const STEADY = '972501118888';
@@ -296,8 +318,11 @@ async function run() {
   db.failNext = (sql) => (/FROM auth_db\.users/.test(sql) ? new Error('auth_db unreachable') : null);
   r = await deliver(text(CONTRACTOR, 'רצפים במרכז'));
   db.failNext = null;
-  check('sender lookup fails: the search still runs, as anonymous, never with a wider scope',
-    r.searches.length === 1 && identityHeaders(r.searches[0].headers).length === 0 && r.sent.length === 1, r.searches[0]?.headers);
+  check('sender lookup fails: no search, since who wrote is not known',
+    r.searches.length === 0, r.searches[0]?.headers);
+  check('and one reply, the search-failed line, never the invitation to a user who may be registered',
+    r.sent.length === 1 && bodyOf(r) === SEARCH_FAILED_REPLY, bodyOf(r));
+  check('and a log line', logs.some((l) => l.includes('[whatsapp] sender lookup failed, no search') && l.includes('auth_db unreachable')));
 
   // ── 10. Meta refuses the send ────────────────────────────────────
   wait(10);

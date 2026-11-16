@@ -244,6 +244,7 @@ function underLimit(name, message) {
     load('whatsapp/composeReply').RATE_LIMIT_REPLY,
     load('whatsapp/composeReply').SEARCH_FAILED_REPLY,
     load('whatsapp/composeReply').pickEntityReply(FRONTEND),
+    load('whatsapp/composeReply').registerInviteReply(FRONTEND),
   ].join('\n');
   check('no em dash in any user-facing string', !all.includes(String.fromCharCode(0x2014)));
   check('the fixed replies are worded as the spec has them',
@@ -257,6 +258,13 @@ function underLimit(name, message) {
   const message = load('whatsapp/composeReply').pickEntityReply(FRONTEND);
   check('pick reply: one line, ends with the link to the card', !message.includes('\n') && message.endsWith(`${FRONTEND}/billing#whatsapp`), message);
   check('pick reply: the link is the only URL in it, so the preview card opens the card', message.match(/https?:\/\//g).length === 1, message);
+}
+
+// ── R38 · an unregistered number ───────────────────────────────────
+{
+  const message = load('whatsapp/composeReply').registerInviteReply(FRONTEND);
+  check('invitation: one line, ends with the role picker on the home page', !message.includes('\n') && message.endsWith(`${FRONTEND}/#register`), message);
+  check('invitation: the only URL in it', message.match(/https?:\/\//g).length === 1, message);
 }
 
 finish('whatsapp-compose');

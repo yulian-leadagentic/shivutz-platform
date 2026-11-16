@@ -7,7 +7,7 @@ const { getPool }        = require('../db');
 const { sendMessage }    = require('../messaging');
 const { normalizePhone } = require('./phone');
 const {
-  composeReply, pickEntityReply, NON_TEXT_REPLY, RATE_LIMIT_REPLY, SEARCH_FAILED_REPLY,
+  composeReply, pickEntityReply, registerInviteReply, NON_TEXT_REPLY, RATE_LIMIT_REPLY, SEARCH_FAILED_REPLY,
 } = require('./composeReply');
 
 const USER_ORG_URL = process.env.USER_ORG_SERVICE_URL || 'http://user-org:3002';
@@ -55,8 +55,10 @@ async function rateLimitVerdict(inboundId) {
   return 'proceed';
 }
 
-// Which entity the sender speaks for (R38). One active membership is
-// that one. With several, the one the user picked on the site
+// Who the sender is (R38). WhatsApp is for registered users only: a
+// number with no live user and no active, accepted membership is
+// 'unknown' and is invited to register. One membership is that one.
+// With several, the one the user picked on the site
 // (is_whatsapp_default, migration 110); none picked means no search,
 // one reply asking him to pick.
 async function identifySender(phone) {
@@ -77,14 +79,11 @@ async function identifySender(phone) {
   return { kind: 'member', entityType: entity.entity_type, entityId: entity.entity_id };
 }
 
-// Search headers for the entity, by the R32 D1 matrix: a contractor or
-// a corporation searches with its own scope, anyone else as an
-// anonymous visitor. x-user-is-admin is never sent: a phone number is
-// not an admin login.
-function searchHeaders(sender) {
-  if (sender.kind !== 'member') return {};
-  const { entityType, entityId } = sender;
-  if (entityType !== 'contractor' && entityType !== 'corporation') return {};
+// The entity's own scope, as the site would send it, so the R32 D1
+// matrix in user-org decides what it sees: a service provider sees
+// services and no worker or housing ads, as on the site.
+// x-user-is-admin is never sent: a phone number is not an admin login.
+function searchHeaders({ entityType, entityId }) {
   return { 'x-user-role': entityType, 'x-entity-type': entityType, 'x-entity-id': entityId };
 }
 
@@ -129,15 +128,7 @@ async function loadLabels() {
   return labels.value;
 }
 
-async function searchReply(phone, text) {
-  let sender = { kind: 'unknown' };
-  try {
-    sender = await identifySender(phone);
-  } catch (err) {
-    console.error('[whatsapp] sender lookup failed, searching as anonymous:', err.message);
-  }
-  if (sender.kind === 'pick') return pickEntityReply(FRONTEND_URL);
-
+async function searchReply(sender, text) {
   if (Array.from(text).length < SEARCH_QUERY_MIN) {
     return composeReply({ query: text, search: {}, labels: NO_LABELS, frontendUrl: FRONTEND_URL });
   }
@@ -151,12 +142,30 @@ async function searchReply(phone, text) {
     return SEARCH_FAILED_REPLY;
   }
   console.log(
-    `[whatsapp] search POST ${USER_ORG_URL}/search scope=${headers['x-entity-type'] || 'anonymous'} ` +
+    `[whatsapp] search POST ${USER_ORG_URL}/search scope=${headers['x-entity-type']} ` +
     `ads=${(result.results || []).length} listings=${(result.marketplace_matches || []).length}`,
   );
   return composeReply({
     query: text, search: result, labels: await loadLabels(), frontendUrl: FRONTEND_URL,
   });
+}
+
+// Who the sender is decides the reply before what he sent does: an
+// unregistered number or an unpicked entity gets its one line whatever
+// the message was, and nothing is searched for it.
+async function replyFor(message, phone, text) {
+  let sender;
+  try {
+    sender = await identifySender(phone);
+  } catch (err) {
+    // Not knowing who wrote is not a reason to search for him.
+    console.error('[whatsapp] sender lookup failed, no search:', err.message);
+    return SEARCH_FAILED_REPLY;
+  }
+  if (sender.kind === 'unknown') return registerInviteReply(FRONTEND_URL);
+  if (sender.kind === 'pick')    return pickEntityReply(FRONTEND_URL);
+  if (message.type !== 'text')   return NON_TEXT_REPLY;
+  return searchReply(sender, text);
 }
 
 async function handleInbound(message) {
@@ -194,10 +203,7 @@ async function handleInbound(message) {
     return;
   }
 
-  let body;
-  if (verdict === 'notice') body = RATE_LIMIT_REPLY;
-  else if (!isText)         body = NON_TEXT_REPLY;
-  else                      body = await searchReply(phone, text);
+  const body = verdict === 'notice' ? RATE_LIMIT_REPLY : await replyFor(message, phone, text);
 
   const sent = await sendMessage(phone, body, { channel: 'whatsapp' });
   await pool.query(
