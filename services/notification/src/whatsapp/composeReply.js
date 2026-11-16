@@ -7,6 +7,7 @@
 const NON_TEXT_REPLY      = 'כרגע אני מבין רק הודעות טקסט. מה אתם מחפשים?';
 const RATE_LIMIT_REPLY    = 'קיבלתי כמה הודעות, עונה על האחרונה';
 const SEARCH_FAILED_REPLY = 'לא הצלחתי לחפש כרגע, נסו שוב עוד רגע';
+const VOICE_FAILED_REPLY  = 'לא הצלחתי להבין את ההודעה הקולית, נסו לכתוב במקום';
 
 // R38 · a user with several accounts and none picked for WhatsApp. The
 // link opens the card where he picks (frontend WhatsAppEntityCard).
@@ -121,5 +122,6 @@ module.exports = {
   NON_TEXT_REPLY,
   RATE_LIMIT_REPLY,
   SEARCH_FAILED_REPLY,
+  VOICE_FAILED_REPLY,
   MAX_LENGTH,
 };

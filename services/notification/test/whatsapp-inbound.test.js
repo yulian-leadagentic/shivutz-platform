@@ -4,7 +4,9 @@
 //   * who the sender is decides the search scope (decision 2), and the
 //     headers that carry it are exactly the three the search reads
 //   * R38: only a registered number is searched for; one with several
-//     memberships uses the one picked on the site, or is asked to pick
+//     memberships uses the one picked on the site, or is asked to pick;
+//     a voice note is downloaded from Meta, transcribed by ElevenLabs
+//     and searched as text, and any failure there is one line
 //   * every inbound message gets at most one outbound message, and a
 //     normal one gets exactly one (decision 3: each is billed)
 //   * the per-number limits: 10 an hour, 1 per 5 seconds
@@ -38,7 +40,7 @@ stubModule('sms/index.js', {
 });
 let { handleInbound } = load('whatsapp/handleInbound');
 const {
-  pickEntityReply, registerInviteReply, NON_TEXT_REPLY, RATE_LIMIT_REPLY, SEARCH_FAILED_REPLY, MAX_LENGTH,
+  pickEntityReply, registerInviteReply, NON_TEXT_REPLY, RATE_LIMIT_REPLY, SEARCH_FAILED_REPLY, VOICE_FAILED_REPLY, MAX_LENGTH,
 } = load('whatsapp/composeReply');
 const INVITE = registerInviteReply('https://staging.example.test');
 
@@ -92,7 +94,10 @@ function media(from, type) {
 }
 // Runs one inbound message and reports what it caused.
 async function deliver(message) {
-  const before = { graph: net.graphCalls.length, search: net.searchCalls.length, inbound: db.inbound().length, outbound: db.outbound().length, sms: smsSent.length };
+  const before = {
+    graph: net.graphCalls.length, search: net.searchCalls.length, inbound: db.inbound().length, outbound: db.outbound().length, sms: smsSent.length,
+    media: net.mediaCalls.length, download: net.downloadCalls.length, stt: net.sttCalls.length,
+  };
   let error = null;
   try {
     await handleInbound(message);
@@ -106,7 +111,14 @@ async function deliver(message) {
     inbound:  db.inbound().slice(before.inbound),
     outbound: db.outbound().slice(before.outbound),
     sms:      smsSent.slice(before.sms),
+    media:    net.mediaCalls.slice(before.media),
+    download: net.downloadCalls.slice(before.download),
+    stt:      net.sttCalls.slice(before.stt),
   };
+}
+function voice(from, extra = {}) {
+  counter += 1;
+  return { from, id: `wamid.IN${counter}`, timestamp: String(Math.floor(db.now / 1000)), type: 'audio', audio: { id: `media-${counter}`, mime_type: 'audio/ogg; codecs=opus', voice: true, ...extra } };
 }
 const wait = (seconds) => { db.now += seconds * 1000; };
 const bodyOf = (r) => r.sent[0]?.body?.text?.body;
@@ -188,6 +200,7 @@ async function run() {
     r = await deliver(message());
     check(`an unknown number, ${type}: stored, no search, exactly one reply, the invitation`,
       r.inbound.length === 1 && r.searches.length === 0 && r.sent.length === 1 && bodyOf(r) === INVITE && r.outbound.length === 1, { searches: r.searches.length, body: bodyOf(r) });
+    check(`an unknown number, ${type}: nothing is downloaded or transcribed`, r.media.length === 0 && r.stt.length === 0);
   }
   check('the invitation links to the role picker on the home page, and is the only link in it',
     INVITE.endsWith('https://staging.example.test/#register') && INVITE.match(/https?:\/\//g).length === 1, INVITE);
@@ -210,7 +223,7 @@ async function run() {
   check('and reads which membership is picked for WhatsApp', flat.includes('em.is_whatsapp_default'), flat);
 
   // ── 3. non-text, from a registered number ────────────────────────
-  for (const type of ['image', 'document', 'location', 'audio', 'video', 'sticker', 'unsupported']) {
+  for (const type of ['image', 'document', 'location', 'video', 'sticker', 'unsupported']) {
     wait(10);
     r = await deliver(media(CORPORATION, type));
     check(`${type}: stored, answered once with the text-only line, no search`,
@@ -225,6 +238,75 @@ async function run() {
   }
   r = await deliver({ id: 'wamid.NOFROM', type: 'text', text: { body: 'רצפים' } });
   check('a message with no sender number is dropped without a reply', r.inbound.length === 0 && r.sent.length === 0 && r.error === null);
+
+  // ── 3b. R38 · voice notes ────────────────────────────────────────
+  net.searchResult = WORKERS;
+  delete process.env.ELEVENLABS_API_KEY;
+  for (const [name, key] of [['not set', undefined], ['the "-" placeholder', '-']]) {
+    if (key) process.env.ELEVENLABS_API_KEY = key;
+    wait(10);
+    r = await deliver(voice(CONTRACTOR));
+    check(`voice, ELEVENLABS_API_KEY ${name}: one reply, the type-instead line, no download, no transcription, no search`,
+      r.sent.length === 1 && bodyOf(r) === VOICE_FAILED_REPLY && r.media.length === 0 && r.stt.length === 0 && r.searches.length === 0
+      && r.inbound[0].message_text === '[audio]' && r.outbound.length === 1, { body: bodyOf(r), media: r.media.length });
+  }
+  check('the type-instead line', VOICE_FAILED_REPLY === 'לא הצלחתי להבין את ההודעה הקולית, נסו לכתוב במקום');
+
+  process.env.ELEVENLABS_API_KEY = 'test-eleven-key';
+  wait(10);
+  r = await deliver(voice(CONTRACTOR));
+  check('voice: the media id is looked up once, on the Graph API at the configured version, with the token',
+    r.media.length === 1 && r.media[0].url === `https://graph.facebook.com/v26.0/media-${counter}` && r.media[0].method === 'GET'
+    && r.media[0].headers.Authorization === 'Bearer test-access-token' && r.media[0].signal instanceof AbortSignal, r.media[0]);
+  check('voice: the URL Meta returned is fetched once, with the same token',
+    r.download.length === 1 && r.download[0].url.startsWith('https://lookaside.fbsbx.com/') && r.download[0].headers.Authorization === 'Bearer test-access-token', r.download[0]);
+  const stt = r.stt[0];
+  check('voice: ElevenLabs is called once, as the gateway calls it', r.stt.length === 1
+    && stt.url === 'https://api.elevenlabs.io/v1/speech-to-text' && stt.method === 'POST' && stt.headers['xi-api-key'] === 'test-eleven-key'
+    && stt.form.get('model_id') === 'scribe_v1' && stt.form.get('language_code') === 'heb' && stt.signal instanceof AbortSignal, stt && stt.headers);
+  const file = stt.form.get('file');
+  check('voice: the bytes Meta sent are the file, typed audio/ogg without the codec parameter',
+    file.type === 'audio/ogg' && file.name === 'voice.ogg' && Buffer.from(await file.arrayBuffer()).equals(Buffer.from(net.voiceBytes)), { type: file.type, name: file.name, size: file.size });
+  check('voice: the transcript is the query, with the sender\'s own scope',
+    r.searches.length === 1 && r.searches[0].body.query === 'רצפים במרכז' && r.searches[0].headers['x-entity-id'] === 'con-1', r.searches[0]?.body);
+  check('voice: one reply, the search reply', r.sent.length === 1 && bodyOf(r).includes('• עובדים: ריצוף · סין · מרכז · 25') && r.outbound.length === 1, bodyOf(r));
+  check('voice: the inbound row keeps the transcript', db.inbound().find((x) => x.id === r.inbound[0].id).message_text === '[audio] רצפים במרכז',
+    db.inbound().find((x) => x.id === r.inbound[0].id).message_text);
+  check('voice: neither key nor transcript is in a log line',
+    !logs.join('\n').includes('test-eleven-key') && !logs.join('\n').includes('רצפים במרכז'));
+
+  const voiceFails = [
+    ['the media lookup answers 404', () => { net.media = () => net.json(404, { error: { message: 'Unsupported get request', code: 100 } }); }, 'Meta media lookup failed (404, code 100)'],
+    ['the media URL is not on a Meta host', () => { net.media = () => net.json(200, { url: 'https://media.example.test/x', mime_type: 'audio/ogg', file_size: 7 }); }, 'not on a Meta host'],
+    ['the file is over 10 MB', () => { net.media = () => net.json(200, { url: 'https://lookaside.fbsbx.com/x', mime_type: 'audio/ogg', file_size: 11 * 1024 * 1024 }); }, 'over 10485760'],
+    ['the download answers 401', () => { net.download = () => new Response('no', { status: 401 }); }, 'Meta media download failed (401)'],
+    ['ElevenLabs answers 500', () => { net.stt = () => net.json(500, { detail: 'boom' }); }, 'ElevenLabs answered 500'],
+    ['ElevenLabs times out', () => { net.stt = () => { throw Object.assign(new Error('The operation was aborted due to timeout'), { name: 'TimeoutError' }); }; }, 'aborted due to timeout'],
+    ['the transcript is empty', () => { net.transcript = '   '; }, 'transcribed to nothing'],
+  ];
+  wait(3600); // the hourly limit is not what these are about
+  for (const [name, arrange, logged] of voiceFails) {
+    arrange();
+    wait(10);
+    r = await deliver(voice(CONTRACTOR));
+    net.media = null; net.download = null; net.stt = null; net.transcript = 'רצפים במרכז';
+    check(`voice, ${name}: one reply, the type-instead line, no search, the row stays [audio]`,
+      r.error === null && r.sent.length === 1 && bodyOf(r) === VOICE_FAILED_REPLY && r.searches.length === 0
+      && db.inbound().find((x) => x.id === r.inbound[0].id).message_text === '[audio]', { body: bodyOf(r), error: r.error && r.error.message });
+    check(`voice, ${name}: and a log line`, logs.some((l) => l.includes('[whatsapp] voice note') && l.includes(logged)), logs.slice(-2));
+  }
+  check('voice: the token never went to a host that is not Meta\'s', !logs.some((l) => l.includes('unexpected request')));
+
+  wait(10);
+  r = await deliver(voice(TWO_HATS));
+  check('voice from a user who has not picked an entity: the pick reply, nothing transcribed',
+    bodyOf(r) === pickEntityReply('https://staging.example.test') && r.media.length === 0 && r.stt.length === 0);
+  wait(10);
+  const v1 = await deliver(voice(CORPORATION));
+  const v2 = await deliver(voice(CORPORATION));
+  check('a second voice note in the burst window: the limit notice, nothing transcribed for it',
+    v1.stt.length === 1 && bodyOf(v2) === RATE_LIMIT_REPLY && v2.media.length === 0 && v2.stt.length === 0, bodyOf(v2));
+  delete process.env.ELEVENLABS_API_KEY;
 
   // ── 4. dedup ─────────────────────────────────────────────────────
   wait(4000);

@@ -243,6 +243,7 @@ function underLimit(name, message) {
     load('whatsapp/composeReply').NON_TEXT_REPLY,
     load('whatsapp/composeReply').RATE_LIMIT_REPLY,
     load('whatsapp/composeReply').SEARCH_FAILED_REPLY,
+    load('whatsapp/composeReply').VOICE_FAILED_REPLY,
     load('whatsapp/composeReply').pickEntityReply(FRONTEND),
     load('whatsapp/composeReply').registerInviteReply(FRONTEND),
   ].join('\n');

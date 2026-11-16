@@ -5,9 +5,12 @@
 const { v4: uuidv4, v7: uuidv7 } = require('uuid');
 const { getPool }        = require('../db');
 const { sendMessage }    = require('../messaging');
+const { downloadMedia }  = require('../messaging/metaWhatsapp');
 const { normalizePhone } = require('./phone');
+const { transcribe, sttKey } = require('./transcribe');
 const {
-  composeReply, pickEntityReply, registerInviteReply, NON_TEXT_REPLY, RATE_LIMIT_REPLY, SEARCH_FAILED_REPLY,
+  composeReply, pickEntityReply, registerInviteReply,
+  NON_TEXT_REPLY, RATE_LIMIT_REPLY, SEARCH_FAILED_REPLY, VOICE_FAILED_REPLY,
 } = require('./composeReply');
 
 const USER_ORG_URL = process.env.USER_ORG_SERVICE_URL || 'http://user-org:3002';
@@ -150,10 +153,42 @@ async function searchReply(sender, text) {
   });
 }
 
+// R38 · a voice note becomes the text it says, kept on the inbound row
+// as "[audio] <transcript>". Any failure is null: the caller answers
+// with one line asking to type instead.
+async function voiceToText(message, inboundId) {
+  if (!sttKey()) {
+    console.warn('[whatsapp] voice note, ELEVENLABS_API_KEY is not set');
+    return null;
+  }
+  let transcript;
+  try {
+    const { bytes, mimeType } = await downloadMedia(message.audio?.id);
+    transcript = await transcribe(bytes, mimeType);
+  } catch (err) {
+    console.error('[whatsapp] voice note not transcribed:', err.message);
+    return null;
+  }
+  if (!transcript) {
+    console.warn('[whatsapp] voice note transcribed to nothing');
+    return null;
+  }
+  try {
+    await getPool().query(
+      'UPDATE support_messages SET message_text = ? WHERE id = ?',
+      [`[audio] ${transcript}`, inboundId],
+    );
+  } catch (err) {
+    console.error('[whatsapp] transcript not stored:', err.message);
+  }
+  console.log(`[whatsapp] voice note transcribed, ${Array.from(transcript).length} characters`);
+  return transcript;
+}
+
 // Who the sender is decides the reply before what he sent does: an
 // unregistered number or an unpicked entity gets its one line whatever
-// the message was, and nothing is searched for it.
-async function replyFor(message, phone, text) {
+// the message was, and nothing is searched or transcribed for it.
+async function replyFor(message, phone, text, inboundId) {
   let sender;
   try {
     sender = await identifySender(phone);
@@ -164,6 +199,10 @@ async function replyFor(message, phone, text) {
   }
   if (sender.kind === 'unknown') return registerInviteReply(FRONTEND_URL);
   if (sender.kind === 'pick')    return pickEntityReply(FRONTEND_URL);
+  if (message.type === 'audio') {
+    const transcript = await voiceToText(message, inboundId);
+    return transcript ? searchReply(sender, transcript) : VOICE_FAILED_REPLY;
+  }
   if (message.type !== 'text')   return NON_TEXT_REPLY;
   return searchReply(sender, text);
 }
@@ -203,7 +242,7 @@ async function handleInbound(message) {
     return;
   }
 
-  const body = verdict === 'notice' ? RATE_LIMIT_REPLY : await replyFor(message, phone, text);
+  const body = verdict === 'notice' ? RATE_LIMIT_REPLY : await replyFor(message, phone, text, inboundId);
 
   const sent = await sendMessage(phone, body, { channel: 'whatsapp' });
   await pool.query(

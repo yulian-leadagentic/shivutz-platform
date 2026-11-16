@@ -60,4 +60,45 @@ async function send(phone, message, opts = {}) {
   return { messageId: wamid };
 }
 
-module.exports = { send };
+// R38 · a media file a user sent us (a voice note). Two calls with the
+// same token: the media id gives a short-lived URL, and that URL gives
+// the bytes. The token goes only to Meta's own hosts.
+const MEDIA_TIMEOUT_MS = 15_000;
+const MEDIA_MAX_BYTES  = 10 * 1024 * 1024;
+const MEDIA_HOSTS      = ['.fbsbx.com', '.facebook.com', '.fbcdn.net', '.whatsapp.net'];
+
+function isMetaHost(url) {
+  try {
+    const { protocol, hostname } = new URL(url);
+    return protocol === 'https:' && MEDIA_HOSTS.some((h) => hostname.endsWith(h));
+  } catch {
+    return false;
+  }
+}
+
+async function downloadMedia(mediaId) {
+  const token = process.env.WHATSAPP_ACCESS_TOKEN;
+  if (!token) throw new Error('WHATSAPP_ACCESS_TOKEN must be set');
+  if (!mediaId) throw new Error('the message has no media id');
+  const auth    = { Authorization: `Bearer ${token}` };
+  const version = process.env.WHATSAPP_API_VERSION || DEFAULT_VERSION;
+
+  const lookup = await fetch(`${GRAPH_URL}/${version}/${encodeURIComponent(mediaId)}`, {
+    headers: auth, signal: AbortSignal.timeout(MEDIA_TIMEOUT_MS),
+  });
+  const info = await lookup.json().catch(() => null);
+  if (!lookup.ok || !info?.url) {
+    throw new Error(`Meta media lookup failed (${lookup.status}${info?.error?.code ? `, code ${info.error.code}` : ''})`);
+  }
+  if (!isMetaHost(info.url)) throw new Error('Meta media URL is not on a Meta host, not fetched');
+  if (Number(info.file_size) > MEDIA_MAX_BYTES) throw new Error(`media is ${info.file_size} bytes, over ${MEDIA_MAX_BYTES}`);
+
+  const file = await fetch(info.url, { headers: auth, signal: AbortSignal.timeout(MEDIA_TIMEOUT_MS) });
+  if (!file.ok) throw new Error(`Meta media download failed (${file.status})`);
+  const bytes = Buffer.from(await file.arrayBuffer());
+  if (bytes.length === 0) throw new Error('Meta media download was empty');
+  if (bytes.length > MEDIA_MAX_BYTES) throw new Error(`media is ${bytes.length} bytes, over ${MEDIA_MAX_BYTES}`);
+  return { bytes, mimeType: info.mime_type || file.headers.get('content-type') || 'audio/ogg' };
+}
+
+module.exports = { send, downloadMedia };
