@@ -183,7 +183,7 @@ export default function ProviderRegisterPage() {
     e.preventDefault();
     resetErrors();
     if (!/^\d{6}$/.test(code)) {
-      setError('קוד לא תקין — 6 ספרות');
+      setError('קוד לא תקין: 6 ספרות');
       return;
     }
     setBusy(true);

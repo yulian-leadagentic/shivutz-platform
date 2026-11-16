@@ -303,8 +303,8 @@ async def add_admin(body: AdminUserIn, x_user_id: Optional[str] = Header(default
     # won't get the heads-up SMS.
     first_name = body.full_name.strip().split()[0]
     sms_body = (
-        f"שיבוץ — {first_name}, נוספת כמנהל מערכת. "
-        f"כניסה: {FRONTEND_URL}/login עם המספר הזה — קוד OTP יישלח בעת הכניסה."
+        f"שיבוץ: {first_name}, נוספת כמנהל מערכת. "
+        f"כניסה: {FRONTEND_URL}/login עם המספר הזה. קוד OTP יישלח בעת הכניסה."
     )
     try:
         async with httpx.AsyncClient(timeout=3.0) as client:

@@ -20,13 +20,13 @@ const TEST_CATALOG = [
     event_type: 'org.registered',
     group:      'Org lifecycle',
     channels:   ['sms', 'email'],
-    description: 'A new contractor or corporation finished /register — fans out to all platform admins.',
+    description: 'A new contractor or corporation finished /register, fans out to all platform admins.',
     payload: {
       org_name: 'אבני דרך בנייה בע״מ',
       org_type: 'contractor',
     },
     override_keys: [],
-    notes: 'Fan-out target is every active admin in auth_db.users. Overrides are ignored — uses real admin recipients.',
+    notes: 'Fan-out target is every active admin in auth_db.users. Overrides are ignored: uses real admin recipients.',
   },
   {
     event_type: 'org.approved',
@@ -60,7 +60,7 @@ const TEST_CATALOG = [
     event_type: 'org.sla.warning',
     group:      'Org lifecycle',
     channels:   ['email'],
-    description: 'Org hasn’t been approved within SLA — emails platform admin.',
+    description: 'Org hasn’t been approved within SLA, emails platform admin.',
     payload: {
       org_name:      'אבני דרך בנייה בע״מ',
       org_type:      'corporation',
@@ -112,7 +112,7 @@ const TEST_CATALOG = [
     event_type: 'contractor.blocked.deleted_company',
     group:      'Auth',
     channels:   ['email'],
-    description: 'Contractor’s פנקס הקבלנים row was removed — license deemed invalid.',
+    description: 'Contractor’s פנקס הקבלנים row was removed, license deemed invalid.',
     payload: {
       contact_email: 'test@example.com',
       contact_name:  'יוסי כהן',
@@ -149,7 +149,7 @@ const TEST_CATALOG = [
       region_he:         'מרכז',
     },
     override_keys: ['corporation_phone', 'corporation_email'],
-    notes: 'Production fan-out targets the corp’s configured recipients. With a fake corporation_id, falls back to corporation_email/corporation_phone — which is exactly where the overrides land. corp_deal_no surfaces in the SMS as "#C-{n}" so the corp team can reference the deal internally.',
+    notes: 'Production fan-out targets the corp’s configured recipients. With a fake corporation_id, falls back to corporation_email/corporation_phone, which is exactly where the overrides land. corp_deal_no surfaces in the SMS as "#C-{n}" so the corp team can reference the deal internally.',
   },
   {
     event_type: 'deal.accepted',
@@ -165,13 +165,13 @@ const TEST_CATALOG = [
       profession_he:     'טייחים',
     },
     override_keys: ['contractor_phone', 'contractor_email'],
-    notes: 'Production fan-out targets contractor’s configured recipients. With a fake contractor_id, falls back to contractor_email/contractor_phone — overrides land there.',
+    notes: 'Production fan-out targets contractor’s configured recipients. With a fake contractor_id, falls back to contractor_email/contractor_phone, overrides land there.',
   },
   {
     event_type: 'deal.corp_committed',
     group:      'Deal lifecycle',
     channels:   ['sms', 'email'],
-    description: 'Corp committed a worker list — contractor has 48h to approve.',
+    description: 'Corp committed a worker list, contractor has 48h to approve.',
     payload: {
       deal_id:                       '00000000-0000-0000-0000-000000000000',
       contractor_contact_name:       'יוסי כהן',
@@ -223,7 +223,7 @@ const TEST_CATALOG = [
     event_type: 'deal.expired',
     group:      'Deal lifecycle',
     channels:   ['sms', 'email'],
-    description: 'Contractor didn’t approve within 48h — deal auto-expired.',
+    description: 'Contractor didn’t approve within 48h, deal auto-expired.',
     payload: {
       deal_id:                       '00000000-0000-0000-0000-000000000000',
       contractor_contact_name:       'יוסי כהן',
@@ -254,7 +254,7 @@ const TEST_CATALOG = [
     event_type: 'deal.closed',
     group:      'Deal lifecycle',
     channels:   ['sms', 'email'],
-    description: 'Capture succeeded — deal closed, both sides notified.',
+    description: 'Capture succeeded: deal closed, both sides notified.',
     payload: {
       contractor_contact_name:  'יוסי כהן',
       contractor_contact_phone: '+972500000000',
@@ -270,7 +270,7 @@ const TEST_CATALOG = [
     event_type: 'deal.discrepancy.flagged',
     group:      'Deal lifecycle',
     channels:   ['email'],
-    description: 'Admin or system flagged a discrepancy on a deal — notifies admin.',
+    description: 'Admin or system flagged a discrepancy on a deal, notifies admin.',
     payload: {
       deal_id:    '00000000-0000-0000-0000-000000000000',
       reason:     'Worker count mismatch',
@@ -282,7 +282,7 @@ const TEST_CATALOG = [
     event_type: 'deal.pending_admin_nudge',
     group:      'Deal lifecycle',
     channels:   ['email'],
-    description: 'Pending admin action on a deal for >X hours — daily admin nudge.',
+    description: 'Pending admin action on a deal for >X hours, daily admin nudge.',
     payload: {
       deal_id:       '00000000-0000-0000-0000-000000000000',
       hours_pending: 26,
@@ -295,7 +295,7 @@ const TEST_CATALOG = [
     event_type: 'search.no_match',
     group:      'Search',
     channels:   ['sms'],
-    description: 'Contractor’s search found zero matching corps with workers — pings every active corp as a recruiting nudge.',
+    description: 'Contractor’s search found zero matching corps with workers, pings every active corp as a recruiting nudge.',
     payload: {
       profession_he: 'טייחים',
       region_he:     'מרכז',
@@ -311,7 +311,7 @@ const TEST_CATALOG = [
     event_type: 'worker.changed',
     group:      'Worker',
     channels:   [],
-    description: 'A worker was added or status changed — re-runs the match for open searches. Internal effect, no message body.',
+    description: 'A worker was added or status changed, re-runs the match for open searches. Internal effect, no message body.',
     payload: { worker_id: '00000000-0000-0000-0000-000000000000' },
     override_keys: [],
   },
@@ -319,7 +319,7 @@ const TEST_CATALOG = [
     event_type: 'worker_search.changed',
     group:      'Worker',
     channels:   [],
-    description: 'A WorkerSearch was edited — re-runs the match. Internal effect, no message body.',
+    description: 'A WorkerSearch was edited, re-runs the match. Internal effect, no message body.',
     payload: { search_id: '00000000-0000-0000-0000-000000000000' },
     override_keys: [],
   },
@@ -327,7 +327,7 @@ const TEST_CATALOG = [
     event_type: 'worker.visa.expired',
     group:      'Worker',
     channels:   ['email'],
-    description: 'Worker visa expired — emails the corp.',
+    description: 'Worker visa expired: emails the corp.',
     payload: {
       corp_contact_email: 'test@example.com',
       worker_name:        'János Kovács',
@@ -355,7 +355,7 @@ const TEST_CATALOG = [
     event_type: 'team.membership_request.created',
     group:      'Team',
     channels:   ['sms'],
-    description: 'Existing user asked to join an org — pings the owner.',
+    description: 'Existing user asked to join an org, pings the owner.',
     payload: {
       owner_phone:      '+972500000000',
       owner_name:       'יוסי כהן',
@@ -411,7 +411,7 @@ const TEST_CATALOG = [
     event_type: 'tender.bid_submitted',
     group:      'Tender',
     channels:   ['sms'],
-    description: 'Corp bid on a tender — contractor pinged.',
+    description: 'Corp bid on a tender, contractor pinged.',
     payload: {
       contractor_id:     '00000000-0000-0000-0000-000000000000',
       tender_id:         '00000000-0000-0000-0000-000000000000',
@@ -423,7 +423,7 @@ const TEST_CATALOG = [
     event_type: 'tender.revealed',
     group:      'Tender',
     channels:   ['sms'],
-    description: 'Admin approved tender — corp identity revealed to both sides.',
+    description: 'Admin approved tender: corp identity revealed to both sides.',
     payload: {
       tender_id:               '00000000-0000-0000-0000-000000000000',
       contractor_contact_phone:'+972500000000',
@@ -437,7 +437,7 @@ const TEST_CATALOG = [
     event_type: 'message.new',
     group:      'Other',
     channels:   ['sms', 'email'],
-    description: 'A new in-deal chat message — pings the recipient side.',
+    description: 'A new in-deal chat message, pings the recipient side.',
     payload: {
       deal_id:           '00000000-0000-0000-0000-000000000000',
       recipient_phone:   '+972500000000',
@@ -445,7 +445,7 @@ const TEST_CATALOG = [
       sender_label:      'הקבלן',
     },
     override_keys: ['recipient_phone', 'recipient_email'],
-    notes: 'In production the deal-service attaches contractor_id/corporation_id and the recipient is picked from the org’s configured recipients. With those omitted, falls back to recipient_email/recipient_phone — overrides land there.',
+    notes: 'In production the deal-service attaches contractor_id/corporation_id and the recipient is picked from the org’s configured recipients. With those omitted, falls back to recipient_email/recipient_phone, overrides land there.',
   },
 ];
 
@@ -486,11 +486,11 @@ const CRON_METADATA = {
     fn:          'runGraceReminderCron',
   },
   'graceHardCap.js': {
-    description: 'סגירת מנויים שחלפו 10 ימי חסד ללא תשלום — מסמן ל-cancelled ומודיע לבעלים. בפרוד רץ יומי ב-09:00.',
+    description: 'סגירת מנויים שחלפו 10 ימי חסד ללא תשלום, מסמן ל-cancelled ומודיע לבעלים. בפרוד רץ יומי ב-09:00.',
     fn:          'runGraceHardCapCron',
   },
   'subscriptionRenewal.js': {
-    description: 'סריקת מנויים חודשיים שהגיע מועד החיוב שלהם — סכומי Cardcom ועדכון next_billing_at. בפרוד רץ יומי ב-09:00.',
+    description: 'סריקת מנויים חודשיים שהגיע מועד החיוב שלהם, סכומי Cardcom ועדכון next_billing_at. בפרוד רץ יומי ב-09:00.',
     fn:          'runSubscriptionRenewalCron',
   },
   'trialEndingReminder.js': {
@@ -513,7 +513,7 @@ function loadCrons() {
   for (const file of files) {
     const meta = CRON_METADATA[file];
     if (!meta) {
-      console.warn(`[testCatalog] cron file ${file} has no CRON_METADATA entry — hidden from admin panel until described`);
+      console.warn(`[testCatalog] cron file ${file} has no CRON_METADATA entry, hidden from admin panel until described`);
       continue;
     }
     crons.push({
@@ -526,7 +526,7 @@ function loadCrons() {
   // Reverse drift: metadata entries whose file has been deleted.
   for (const key of Object.keys(CRON_METADATA)) {
     if (!files.includes(key)) {
-      console.warn(`[testCatalog] CRON_METADATA references ${key} but file is not on disk — remove the entry or restore the file`);
+      console.warn(`[testCatalog] CRON_METADATA references ${key} but file is not on disk, remove the entry or restore the file`);
     }
   }
   return crons;

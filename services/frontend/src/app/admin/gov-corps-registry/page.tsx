@@ -28,7 +28,7 @@ interface ImportResult {
 }
 
 function fmt(iso?: string) {
-  if (!iso) return '—';
+  if (!iso) return '–';
   try { return new Date(iso).toLocaleString('he-IL'); } catch { return iso; }
 }
 
@@ -78,7 +78,7 @@ export default function AdminGovCorpsPage() {
       <div>
         <h1 className="text-2xl font-bold text-slate-900">רשימת תאגידי כוח אדם מורשים</h1>
         <p className="text-sm text-slate-500 mt-1 leading-relaxed">
-          הרשימה הרשמית של רשות האוכלוסין וההגירה — קבלני כוח אדם בעלי היתר להעסיק עובדים זרים בענף הבניין.
+          הרשימה הרשמית של רשות האוכלוסין וההגירה, קבלני כוח אדם בעלי היתר להעסיק עובדים זרים בענף הבניין.
           טעינת קובץ חדשה מחליפה את כל הרשומות לאותה שנה ומקדמת אוטומטית תאגידים שכבר רשומים במערכת שח.פ שלהם
           מופיע בקובץ.
         </p>
@@ -177,7 +177,7 @@ export default function AdminGovCorpsPage() {
           ) : years.length === 0 ? (
             <div className="text-center py-8 text-slate-400 text-sm flex flex-col items-center gap-1">
               <AlertCircle className="h-6 w-6 text-slate-300" />
-              <p>עדיין אין רשימה במערכת — טען קובץ PDF כדי להתחיל.</p>
+              <p>עדיין אין רשימה במערכת, טען קובץ PDF כדי להתחיל.</p>
             </div>
           ) : (
             // M3.1 scroll-safety — table has 4 numeric+date columns
@@ -335,8 +335,8 @@ function RegistryRowsBrowser({ years }: { years: YearStat[] }) {
                       className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-start hover:bg-slate-50"
                     >
                       {isExp ? <ChevronDown className="h-4 w-4 text-slate-400" /> : <ChevronLeft className="h-4 w-4 text-slate-400" />}
-                      <span className="text-xs text-slate-400 font-mono w-12">{r.serial_no ?? '—'}</span>
-                      <span className="font-medium text-slate-800 flex-1 truncate">{r.company_name_he || '—'}</span>
+                      <span className="text-xs text-slate-400 font-mono w-12">{r.serial_no ?? '–'}</span>
+                      <span className="font-medium text-slate-800 flex-1 truncate">{r.company_name_he || '–'}</span>
                       <span className="text-xs text-slate-500 font-mono">{r.business_number || 'ללא ח.פ'}</span>
                       {isManual && (
                         <span className="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-full">הוספה ידנית</span>
@@ -352,7 +352,7 @@ function RegistryRowsBrowser({ years }: { years: YearStat[] }) {
                           <RowDetail label="טלפון 2"   value={r.phone_mobile_2}   dir="ltr" />
                           <RowDetail label="לנדליין 1" value={r.phone_landline_1} dir="ltr" />
                           <RowDetail label="לנדליין 2" value={r.phone_landline_2} dir="ltr" />
-                          <RowDetail label="נטען"      value={r.imported_at ? fmt(r.imported_at) : '—'} />
+                          <RowDetail label="נטען"      value={r.imported_at ? fmt(r.imported_at) : '–'} />
                         </dl>
                       </div>
                     )}
@@ -361,7 +361,7 @@ function RegistryRowsBrowser({ years }: { years: YearStat[] }) {
               })}
             </ul>
             {filtered.length > 200 && (
-              <p className="text-xs text-slate-400 mt-2">מציג 200 ראשונים — סנן בחיפוש כדי לראות יותר.</p>
+              <p className="text-xs text-slate-400 mt-2">מציג 200 ראשונים: סנן בחיפוש כדי לראות יותר.</p>
             )}
           </>
         )}
@@ -374,7 +374,7 @@ function RowDetail({ label, value, dir }: { label: string; value?: string | null
   return (
     <div className="flex items-baseline gap-2">
       <dt className="text-xs text-slate-500 shrink-0 w-24">{label}:</dt>
-      <dd className="text-slate-800 break-all" dir={dir}>{value || '—'}</dd>
+      <dd className="text-slate-800 break-all" dir={dir}>{value || '–'}</dd>
     </div>
   );
 }
@@ -450,7 +450,7 @@ function ManualEntryCard({ onAdded, defaultYear }: {
       {open && (
         <CardContent>
           <CardDescription className="mb-3">
-            לתאגיד שאינו מופיע ב-PDF של רשות האוכלוסין — הוסף אותו ידנית. אם התאגיד כבר רשום במערכת, נעדכן אותו אוטומטית ל-tier_2.
+            לתאגיד שאינו מופיע ב-PDF של רשות האוכלוסין, הוסף אותו ידנית. אם התאגיד כבר רשום במערכת, נעדכן אותו אוטומטית ל-tier_2.
           </CardDescription>
           <form onSubmit={submit} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Input

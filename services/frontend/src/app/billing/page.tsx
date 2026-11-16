@@ -166,7 +166,7 @@ export default function BillingPage() {
       // specialised upgrade nudge. mapApiError is still the default.
       const code = e instanceof ApiError ? (e.cause?.error || e.cause?.code) : undefined;
       if (code === 'seat_limit') {
-        setError('הגעת לתקרת המשתמשים במסלול הנוכחי — שדרג כדי להוסיף עוד.');
+        setError('הגעת לתקרת המשתמשים במסלול הנוכחי, שדרג כדי להוסיף עוד.');
       } else {
         setError(mapApiError(e));
       }
@@ -239,7 +239,7 @@ export default function BillingPage() {
           {(sub as unknown as { payment_mode?: string })?.payment_mode === 'fake' && (
             <span
               className="text-[10px] font-bold uppercase tracking-wider rounded-full border border-amber-300 bg-amber-50 text-amber-700 px-2 py-0.5"
-              title="סביבת בדיקות — התשלומים לא באמת נגבים."
+              title="סביבת בדיקות: התשלומים לא באמת נגבים."
             >
               מצב בדיקה
             </span>
@@ -260,7 +260,7 @@ export default function BillingPage() {
           </div>
           <h2 className="text-lg font-bold text-slate-900">אין מנוי פעיל</h2>
           <p className="text-sm text-slate-500 mt-1 max-w-md mx-auto leading-relaxed">
-            בחרו מסלול למטה כדי להתחיל — פרסום מודעות וחשיפת פרטי תאגידים דורשים מנוי פעיל.
+            בחרו מסלול למטה כדי להתחיל, פרסום מודעות וחשיפת פרטי תאגידים דורשים מנוי פעיל.
           </p>
         </section>
       )}
@@ -298,7 +298,7 @@ export default function BillingPage() {
 
           <div className="flex items-baseline gap-3 flex-wrap">
             <h2 className="text-3xl sm:text-4xl font-extrabold text-slate-900">
-              {currentTier?.title ?? (error ? '—' : (
+              {currentTier?.title ?? (error ? '–' : (
                 <span className="inline-block w-24 h-8 rounded-md bg-slate-100 animate-pulse" aria-label="טוען" />
               ))}
             </h2>
@@ -416,10 +416,10 @@ export default function BillingPage() {
                 <li key={m.membership_id} className="py-2 flex items-center gap-3">
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-slate-900 truncate">
-                      {m.full_name || ((m.invited_first_name || '') + ' ' + (m.invited_last_name || '')).trim() || m.phone || '—'}
+                      {m.full_name || ((m.invited_first_name || '') + ' ' + (m.invited_last_name || '')).trim() || m.phone || '–'}
                       {isSelf && <span className="text-[10px] font-normal text-slate-400 ms-1.5">(אתה)</span>}
                     </p>
-                    <p className="text-xs text-slate-500"><span dir="ltr">{m.phone || '—'}</span>{m.pending ? ' · ממתין' : ''}</p>
+                    <p className="text-xs text-slate-500"><span dir="ltr">{m.phone || '–'}</span>{m.pending ? ' · ממתין' : ''}</p>
                   </div>
                   <button
                     type="button"
@@ -593,7 +593,7 @@ export default function BillingPage() {
                 type="button"
                 disabled={busyTier !== null || isCurrent || priceMissing}
                 onClick={() => upgrade(t.code)}
-                title={priceMissing ? 'מחיר חסר בקטלוג — פנה לתמיכה' : undefined}
+                title={priceMissing ? 'מחיר חסר בקטלוג: פנה לתמיכה' : undefined}
                 className={`w-full text-sm font-semibold py-2.5 rounded-lg
                            disabled:cursor-not-allowed inline-flex items-center justify-center gap-2 transition ${
                   isCurrent || priceMissing

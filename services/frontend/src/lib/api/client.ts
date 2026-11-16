@@ -263,10 +263,10 @@ function friendlyError(raw: string): string {
     return 'הערך שהזנת כבר קיים במערכת';
   }
   if (/foreign key constraint|cannot add or update a child row/i.test(m)) {
-    return 'הפעולה אינה אפשרית — קיימים פריטים תלויים';
+    return 'הפעולה אינה אפשרית: קיימים פריטים תלויים';
   }
   if (/cannot delete or update a parent row/i.test(m)) {
-    return 'לא ניתן למחוק — קיימים פריטים שתלויים בערך זה';
+    return 'לא ניתן למחוק: קיימים פריטים שתלויים בערך זה';
   }
 
   // Auth/OTP codes (user_not_found, already_registered, phone_not_verified,

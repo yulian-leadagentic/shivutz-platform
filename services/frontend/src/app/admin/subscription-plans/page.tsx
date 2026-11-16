@@ -170,7 +170,7 @@ export default function SubscriptionPlansPage() {
     <div className="max-w-6xl mx-auto px-4 py-6 space-y-6">
       <header>
         <h1 className="text-2xl font-bold text-slate-900">מסלולי מנוי</h1>
-        <p className="text-sm text-slate-500">הגדרת מגבלות המנוי לקבלן ולתאגיד. שינויים נכנסים לתוקף מיידית — השאר ריק לצפיה בלתי מוגבלת.</p>
+        <p className="text-sm text-slate-500">הגדרת מגבלות המנוי לקבלן ולתאגיד. שינויים נכנסים לתוקף מיידית, השאר ריק לצפיה בלתי מוגבלת.</p>
       </header>
 
       {error && (

@@ -276,7 +276,7 @@ export default function ContractorDashboardPage() {
                 </p>
                 {included != null && memberCount >= included && usage?.limits.extra_user_price_nis != null && (
                   <p className="text-xs text-amber-700 mt-1">
-                    הגעת למכסה. משתמש נוסף — ₪{usage.limits.extra_user_price_nis}/חודש.
+                    הגעת למכסה. משתמש נוסף: ₪{usage.limits.extra_user_price_nis}/חודש.
                   </p>
                 )}
                 <Link
@@ -342,7 +342,7 @@ export default function ContractorDashboardPage() {
                     בבדיקה
                   </p>
                   <p className="text-xs text-slate-600 mt-1">
-                    בקשתך בבדיקת צוות ההרשמה — בדרך כלל עד 24 שעות עסקיות.
+                    בקשתך בבדיקת צוות ההרשמה, בדרך כלל עד 24 שעות עסקיות.
                     בזמן ההמתנה תוכלי לחפש עובדים; חשיפת פרטי קשר נפתחת אחרי אישור.
                   </p>
                 </>

@@ -61,7 +61,7 @@ function vonageWebhookAuth(req, res, next) {
 
   // If no secret is configured, skip verification in development
   if (!secret) {
-    console.warn('[vonage-webhook] VONAGE_SIGNATURE_SECRET not set — skipping signature check');
+    console.warn('[vonage-webhook] VONAGE_SIGNATURE_SECRET not set, skipping signature check');
     return next();
   }
 
@@ -84,11 +84,11 @@ function vonageWebhookAuth(req, res, next) {
   if (payload.payload_hash) {
     const rawBody = req.rawBody;                // captured below in captureRawBody middleware
     if (!rawBody) {
-      console.warn('[vonage-webhook] rawBody not available — skipping payload_hash check');
+      console.warn('[vonage-webhook] rawBody not available, skipping payload_hash check');
     } else {
       const bodyHash = crypto.createHash('sha256').update(rawBody).digest('hex');
       if (bodyHash !== payload.payload_hash) {
-        console.warn('[vonage-webhook] payload_hash mismatch — possible tampering');
+        console.warn('[vonage-webhook] payload_hash mismatch: possible tampering');
         return res.status(401).json({ error: 'payload_hash_mismatch' });
       }
     }

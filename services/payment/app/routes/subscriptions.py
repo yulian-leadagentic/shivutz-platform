@@ -413,7 +413,7 @@ def _invoice_data_for(cur, entity_id: str, entity_type: str, *,
     return {
         "customer_name":  name,
         "customer_email": email,
-        "description":    f"מנוי {plan_tier} — פלטפורמת שיבוץ",
+        "description":    f"מנוי {plan_tier}, פלטפורמת שיבוץ",
     }
 
 

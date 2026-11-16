@@ -148,7 +148,7 @@ export default function EditListingPage() {
 
       {success && (
         <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm rounded-xl px-4 py-3">
-          ✓ המודעה עודכנה בהצלחה — מעביר לרשימה…
+          ✓ המודעה עודכנה בהצלחה, מעביר לרשימה…
         </div>
       )}
 

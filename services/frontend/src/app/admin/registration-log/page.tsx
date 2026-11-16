@@ -26,7 +26,7 @@ const STATUS_MAP: Record<string, { label: string; cls: string; icon: React.Eleme
 };
 
 function fmtDate(s: string | null) {
-  if (!s) return '—';
+  if (!s) return '–';
   return new Date(s).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' });
 }
 
@@ -85,7 +85,7 @@ export default function RegistrationLogPage() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">לוג ניסיונות רישום</h1>
-          <p className="text-sm text-slate-500 mt-1">OTP שנשלחו בתהליך הרישום — כולל כישלונות</p>
+          <p className="text-sm text-slate-500 mt-1">OTP שנשלחו בתהליך הרישום, כולל כישלונות</p>
         </div>
         <button onClick={load} className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-700 border border-slate-200 rounded-lg px-3 py-2 hover:bg-slate-50 transition-colors">
           <RefreshCw className="h-3.5 w-3.5" />
@@ -100,7 +100,7 @@ export default function RegistrationLogPage() {
           <div>
             <p className="text-sm font-semibold text-amber-800">{failed.length} ניסיונות כושלים</p>
             <p className="text-xs text-amber-700 mt-0.5">
-              מספרים שלא הצליחו לאמת — ייתכן שזקוקים לרישום ידני
+              מספרים שלא הצליחו לאמת, ייתכן שזקוקים לרישום ידני
             </p>
           </div>
         </div>
@@ -178,7 +178,7 @@ export default function RegistrationLogPage() {
                       </span>
                     </td>
                     <td className="px-5 py-3 text-xs text-slate-400 font-mono" dir="ltr">
-                      {e.ip_address || '—'}
+                      {e.ip_address || '–'}
                     </td>
                     <td className="px-5 py-3 text-xs text-slate-500">{fmtDate(e.created_at)}</td>
                     <td className="px-5 py-3 text-xs text-slate-500">{fmtDate(e.verified_at)}</td>

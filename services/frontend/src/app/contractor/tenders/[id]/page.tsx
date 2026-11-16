@@ -23,7 +23,7 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 const STATUS: Record<string, { cls: string; label: string }> = {
   pending_admin:  { cls: 'bg-slate-200 text-slate-700',   label: 'ממתין לאישור פרסום' },
   open:           { cls: 'bg-sky-100 text-sky-800',       label: 'פתוח להצעות' },
-  awaiting_admin: { cls: 'bg-amber-500 text-white',       label: 'בקשת קשר — ממתין למנהל' },
+  awaiting_admin: { cls: 'bg-amber-500 text-white',       label: 'בקשת קשר: ממתין למנהל' },
   in_progress:    { cls: 'bg-emerald-500 text-white',     label: 'בתהליך' },
   closed:         { cls: 'bg-emerald-50 text-emerald-700', label: 'הושלם' },
   cancelled:      { cls: 'bg-rose-50 text-rose-700',      label: 'בוטל' },
@@ -32,7 +32,7 @@ const STATUS: Record<string, { cls: string; label: string }> = {
 };
 
 function fmtDate(iso?: string | null) {
-  if (!iso) return '—';
+  if (!iso) return '–';
   const s = iso.includes(' ') && !iso.includes('T') ? iso.replace(' ', 'T') : iso;
   const z = /[Zz]$|[+-]\d{2}:?\d{2}$/.test(s) ? s : s + 'Z';
   return new Date(z).toLocaleDateString('he-IL');
@@ -295,12 +295,12 @@ export default function ContractorTenderDetailPage() {
               <span className="font-semibold text-slate-700">כרגע:</span>
               <span>{whoseLabel[currentStep.whose]}</span>
               <span className="text-slate-300">·</span>
-              <span>שלב {current} מתוך 4 — {currentStep.label}</span>
+              <span>שלב {current} מתוך 4: {currentStep.label}</span>
               {/* T2 — tooltip explaining when contact info is revealed.
                   Docs/tender-anon-flow.md is the canonical source. */}
               <span
                 className="text-slate-400 cursor-help border-b border-dotted border-slate-300"
-                title="פרטי התאגיד ופרטי הקבלן נחשפים רק לאחר שהמנהל מאשר את ההצעה הזוכה — לא לפני. עד אז שני הצדדים אנונימיים זה לזה."
+                title="פרטי התאגיד ופרטי הקבלן נחשפים רק לאחר שהמנהל מאשר את ההצעה הזוכה, לא לפני. עד אז שני הצדדים אנונימיים זה לזה."
               >
                 מתי הפרטים נחשפים?
               </span>
@@ -359,7 +359,7 @@ export default function ContractorTenderDetailPage() {
       {revealed && (
         <div className="flex items-start gap-3 bg-emerald-50 border border-emerald-300 rounded-xl px-4 py-3">
           <ShieldCheck className="h-5 w-5 text-emerald-600 shrink-0 mt-0.5" />
-          <p className="text-sm font-semibold text-emerald-900">הבקשה אושרה — פרטי התאגידים הזוכים נחשפו (ראה למטה בכל שורה).</p>
+          <p className="text-sm font-semibold text-emerald-900">הבקשה אושרה: פרטי התאגידים הזוכים נחשפו (ראה למטה בכל שורה).</p>
         </div>
       )}
 
@@ -452,13 +452,13 @@ export default function ContractorTenderDetailPage() {
                           {partial && <span className="text-[10px] text-amber-600"> (חלקי)</span>}
                         </div>
                         <div className="text-sm font-extrabold text-slate-900">
-                          {bi.hourly_rate != null ? `₪${bi.hourly_rate}/שעה` : '—'}
+                          {bi.hourly_rate != null ? `₪${bi.hourly_rate}/שעה` : '–'}
                         </div>
                         {arrival && <div className="text-[11px] text-slate-400">הגעה: {fmtDate(arrival)}</div>}
                       </div>
                       {isRejected && (
                         <p className="basis-full text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded px-2 py-1">
-                          <span className="font-semibold">סיבת דחייה:</span> {rejectionReason || 'לא צוינה — פנה למנהל המערכת'}
+                          <span className="font-semibold">סיבת דחייה:</span> {rejectionReason || 'לא צוינה: פנה למנהל המערכת'}
                         </p>
                       )}
                     </div>
@@ -473,7 +473,7 @@ export default function ContractorTenderDetailPage() {
       {/* Revealed corp contacts */}
       {revealed && (
         <div className="rounded-2xl border border-emerald-200 bg-emerald-50/40 p-4 space-y-2">
-          <p className="text-sm font-bold text-emerald-900">פרטי קשר — תאגידים זוכים</p>
+          <p className="text-sm font-bold text-emerald-900">פרטי קשר: תאגידים זוכים</p>
           {liveBids.filter((b) => b.status === 'confirmed' && b.corporation_id).map((b) => {
             const corp = corpById[b.corporation_id as string];
             if (!corp) return null;

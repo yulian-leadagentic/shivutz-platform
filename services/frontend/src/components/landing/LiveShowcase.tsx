@@ -115,7 +115,7 @@ function CombinedCard({ side, ctaHref, switching, onClick }: CombinedCardProps) 
           </div>
           <div className="text-xs md:text-lg text-navy-600 font-bold leading-snug mb-1.5 md:mb-3">
             <span className="md:hidden">אל תישאר בחוץ</span>
-            <span className="hidden md:inline">מנהל תאגיד — אל תישאר בחוץ</span>
+            <span className="hidden md:inline">מנהל תאגיד: אל תישאר בחוץ</span>
           </div>
           <div className="inline-flex items-center gap-1 md:gap-2 px-3 md:px-6 py-1.5 md:py-2.5 rounded-full bg-navy-600 text-xs md:text-base font-bold text-white shadow-md group-hover:bg-navy-700 transition-colors">
             {isSwitching
@@ -187,7 +187,7 @@ export default function LiveShowcase() {
 
   return (
     <section
-      aria-label="הפעילות בפורטל — בחירת תפקיד"
+      aria-label="הפעילות בפורטל: בחירת תפקיד"
       className="relative bg-rose-50/40"
     >
       <div className="max-w-6xl mx-auto px-6 w-full py-3 sm:py-4">

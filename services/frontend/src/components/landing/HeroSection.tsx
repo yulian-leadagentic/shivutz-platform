@@ -69,7 +69,7 @@ export default function HeroSection(_: HeroSectionProps) {
             </h1>
 
             <p className="text-xs md:text-sm text-slate-600 leading-relaxed max-w-xl mx-auto">
-              מערכת מבוססת AI להתאמת עובדים, שיבוץ וניהול תהליך הגיוס — במהירות, בפשטות ובזמן אמת.
+              מערכת מבוססת AI להתאמת עובדים, שיבוץ וניהול תהליך הגיוס, במהירות, בפשטות ובזמן אמת.
             </p>
           </div>
         </div>

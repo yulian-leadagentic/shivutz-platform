@@ -158,7 +158,7 @@ const M_MISSING_FIELDS = 'חסר מידע בבקשה';
 const M_WRONG_CODE     = 'קוד לא נכון. נסה שנית';
 const M_MAX_ATTEMPTS   = 'יותר מדי ניסיונות שגויים. בקש קוד חדש';
 const M_OTP_EXPIRED    = 'הקוד פג תוקף. בקש קוד חדש';
-const M_OTP_NONE       = 'לא נמצא קוד תקף — בקש קוד חדש';
+const M_OTP_NONE       = 'לא נמצא קוד תקף, בקש קוד חדש';
 
 /**
  * Send OTP via notification service. Channel is picked downstream from

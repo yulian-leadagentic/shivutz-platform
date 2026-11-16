@@ -689,7 +689,7 @@ def create_listing(
             detail={
                 "code":    "provider_category_forbidden",
                 "message": (
-                    "ספק שירות יכול לפרסם בקטגוריות שירות בלבד — "
+                    "ספק שירות יכול לפרסם בקטגוריות שירות בלבד. "
                     "לא ניתן לפרסם דיור או עובדים דרך חשבון ספק."
                 ),
                 "category": body.category,

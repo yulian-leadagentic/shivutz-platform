@@ -82,7 +82,7 @@ async function sendEmail(eventKey, recipientEmail, recipientUserId, variables) {
     );
     console.warn(
       `[mailer] BLOCKED (allowlist) ${eventKey} → ${recipientEmail} ` +
-      `— set EMAIL_ALLOWLIST_DOMAINS or run with NODE_ENV=production`
+      `set EMAIL_ALLOWLIST_DOMAINS or run with NODE_ENV=production`
     );
     return;
   }

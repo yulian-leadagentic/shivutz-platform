@@ -10,7 +10,7 @@ const CACHE_TTL = 300; // 5 minutes
 // without waiting for the first failed request. Prints presence + a
 // short hash, never the secret itself.
 if (!SECRET) {
-  console.error('[gateway/auth] JWT_SECRET is NOT set — every authenticated request will 401');
+  console.error('[gateway/auth] JWT_SECRET is NOT set, every authenticated request will 401');
 } else {
   const fp = require('crypto').createHash('sha256').update(SECRET).digest('hex').slice(0, 8);
   console.log(`[gateway/auth] JWT_SECRET loaded (len=${SECRET.length}, sha256[:8]=${fp})`);

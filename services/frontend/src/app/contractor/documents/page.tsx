@@ -232,7 +232,7 @@ function LicenseSection({
       <ConfirmDialog
         open={confirmingDelete}
         title="מחיקת רישיון קבלן"
-        message="למחוק את רישיון הקבלן? נדרש רישיון מעודכן לפעילות — ללא רישיון תקף לא תוכל לפתוח בקשות עובדים חדשות."
+        message="למחוק את רישיון הקבלן? נדרש רישיון מעודכן לפעילות, ללא רישיון תקף לא תוכל לפתוח בקשות עובדים חדשות."
         confirmLabel="מחק רישיון"
         variant="destructive"
         busy={deleting}
@@ -561,7 +561,7 @@ export default function ContractorDocumentsPage() {
       <div>
         <h2 className="text-xl font-bold text-slate-900">מסמכים</h2>
         <p className="text-sm text-slate-500 mt-1">
-          רישיון קבלן מורשה בנפרד — הוא המסמך הבסיסי הנדרש. שאר המסמכים נוספים לפי הצורך.
+          רישיון קבלן מורשה בנפרד, הוא המסמך הבסיסי הנדרש. שאר המסמכים נוספים לפי הצורך.
         </p>
       </div>
 

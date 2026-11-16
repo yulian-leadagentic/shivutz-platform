@@ -107,7 +107,7 @@ export default function NotificationTestPanel() {
       });
       pushHistory({
         ts: Date.now(), kind: 'event', label: selected.event_type, ok: !!res.fired,
-        detail: `נשלח בהצלחה — payload נשמר ב-history`,
+        detail: `נשלח בהצלחה: payload נשמר ב-history`,
       });
     } catch (err: unknown) {
       pushHistory({
@@ -145,7 +145,7 @@ export default function NotificationTestPanel() {
         <div>
           <h1 className="text-xl font-semibold text-slate-900">בדיקת הודעות</h1>
           <p className="text-sm text-slate-500">
-            הפעלת אירועים מהמערכת עם פיילואד נבחר ויעדים מותאמים — בלי לפגוע במשתמשים אמיתיים.
+            הפעלת אירועים מהמערכת עם פיילואד נבחר ויעדים מותאמים, בלי לפגוע במשתמשים אמיתיים.
           </p>
         </div>
       </header>
@@ -175,12 +175,12 @@ export default function NotificationTestPanel() {
                 onChange={e => setSelectedKey(e.target.value)}
                 className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-500"
               >
-                <option value="">— בחר —</option>
+                <option value="">בחר</option>
                 {Object.entries(grouped).map(([group, items]) => (
                   <optgroup key={group} label={group}>
                     {items.map(e => (
                       <option key={e.event_type} value={e.event_type}>
-                        {e.event_type} ({e.channels.join(', ') || '—'})
+                        {e.event_type} ({e.channels.join(', ') || '–'})
                       </option>
                     ))}
                   </optgroup>
@@ -197,13 +197,13 @@ export default function NotificationTestPanel() {
               <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3 text-sm text-slate-700 space-y-2">
                 <p className="font-medium text-slate-900">מה המסך הזה עושה</p>
                 <p className="text-xs text-slate-600 leading-relaxed">
-                  בחר אירוע מערכת מהרשימה למעלה כדי לשלוח הודעה לדוגמה — SMS, אימייל
-                  או WhatsApp — לפי הערוצים שההנדלר משתמש בהם בפועל. אין השפעה על משתמשים
+                  בחר אירוע מערכת מהרשימה למעלה כדי לשלוח הודעה לדוגמה, SMS, אימייל
+                  או WhatsApp, לפי הערוצים שההנדלר משתמש בהם בפועל. אין השפעה על משתמשים
                   אמיתיים: הכפתורים ״החלף טלפון יעד״ ו״החלף אימייל יעד״ ממתגים את היעד
                   לפרטים שהאדמין נותן, וה-payload עצמו נותר כפי שמוגדר בקטלוג.
                 </p>
                 <p className="text-xs text-slate-600 leading-relaxed">
-                  הבלוק ״Cron — הפעל עכשיו״ מימין מפעיל job מתוזמן ידנית פעם אחת;
+                  הבלוק ״Cron: הפעל עכשיו״ מימין מפעיל job מתוזמן ידנית פעם אחת;
                   הוא גורף על נתונים אמיתיים ב-DB, לכן שם אין override.
                 </p>
               </div>
@@ -281,7 +281,7 @@ export default function NotificationTestPanel() {
             <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
               <h2 className="text-base font-semibold text-slate-800 mb-3 flex items-center gap-2">
                 <Clock className="h-5 w-5 text-slate-500" />
-                Cron — הפעל עכשיו
+                Cron: הפעל עכשיו
               </h2>
               <ul className="space-y-2">
                 {crons.map(c => (

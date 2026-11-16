@@ -17,14 +17,14 @@ import { useTableState } from '@/components/table/useTableState';
 const BID_STATUS: Record<string, { cls: string; label: string }> = {
   pending_admin: { cls: 'bg-slate-200 text-slate-700', label: 'ממתין לאישור מנהל' },
   submitted: { cls: 'bg-sky-100 text-sky-800',        label: 'הוגשה' },
-  selected:  { cls: 'bg-amber-500 text-white',        label: 'נבחרה — ממתין למנהל' },
+  selected:  { cls: 'bg-amber-500 text-white',        label: 'נבחרה: ממתין למנהל' },
   confirmed: { cls: 'bg-emerald-500 text-white',      label: 'זכית!' },
   rejected:  { cls: 'bg-rose-50 text-rose-700',       label: 'לא נבחרה' },
   withdrawn: { cls: 'bg-slate-100 text-slate-500',    label: 'נמשכה' },
 };
 
 function fmt(iso?: string | null) {
-  if (!iso) return '—';
+  if (!iso) return '–';
   const s = iso.includes(' ') && !iso.includes('T') ? iso.replace(' ', 'T') : iso;
   const z = /[Zz]$|[+-]\d{2}:?\d{2}$/.test(s) ? s : s + 'Z';
   return new Date(z).toLocaleDateString('he-IL');

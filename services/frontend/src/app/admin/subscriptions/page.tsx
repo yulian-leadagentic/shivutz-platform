@@ -125,7 +125,7 @@ export default function AdminSubscriptionsPage() {
       return;
     }
     const note = prompt(
-      `להעביר את "${row.entity_name || row.entity_id}" למנוי פעיל · ללא חיוב?\n\nהערה (חובה — נכנסת לאודיט):`,
+      `להעביר את "${row.entity_name || row.entity_id}" למנוי פעיל · ללא חיוב?\n\nהערה (חובה: נכנסת לאודיט):`,
       '',
     );
     if (note === null) return;
@@ -163,7 +163,7 @@ export default function AdminSubscriptionsPage() {
             <div className="flex-1 min-w-0">
               <div className="text-sm font-semibold text-slate-900">חידושים שדולגו החודש</div>
               <p className="text-xs text-slate-500 mt-0.5">
-                מנוי פעיל בלי אמצעי תשלום אינו מושעה: תקופת החיוב מוארכת ונרשם אירוע audit. אין דוא״ל לכל דילוג — סופרים כאן.
+                מנוי פעיל בלי אמצעי תשלום אינו מושעה: תקופת החיוב מוארכת ונרשם אירוע audit. אין דוא״ל לכל דילוג, סופרים כאן.
               </p>
               <div className="mt-2 flex items-baseline gap-4 flex-wrap text-sm">
                 <span className="font-bold text-slate-900">{skip.count} מנויים</span>
@@ -248,10 +248,10 @@ export default function AdminSubscriptionsPage() {
                     }`}>{STATUS_LABEL[r.status]}</span>
                   </td>
                   <td className="px-3 py-2 text-slate-500 text-xs">
-                    {r.days_remaining != null ? `${r.days_remaining} ימים` : '—'}
+                    {r.days_remaining != null ? `${r.days_remaining} ימים` : '–'}
                   </td>
-                  <td className="px-3 py-2 text-slate-500 text-xs">{r.trial_ends_at ? new Date(r.trial_ends_at).toLocaleDateString('he-IL') : '—'}</td>
-                  <td className="px-3 py-2 text-slate-500 text-xs">{r.current_period_end ? new Date(r.current_period_end).toLocaleDateString('he-IL') : '—'}</td>
+                  <td className="px-3 py-2 text-slate-500 text-xs">{r.trial_ends_at ? new Date(r.trial_ends_at).toLocaleDateString('he-IL') : '–'}</td>
+                  <td className="px-3 py-2 text-slate-500 text-xs">{r.current_period_end ? new Date(r.current_period_end).toLocaleDateString('he-IL') : '–'}</td>
                   <td className="px-3 py-2 text-end">
                     <div className="inline-flex items-center gap-2 flex-wrap">
                       <button onClick={() => extendTrial(r)} disabled={busy === r.id} className="inline-flex items-center gap-1 text-xs text-amber-700 hover:bg-amber-50 px-2 py-1 rounded disabled:opacity-50">

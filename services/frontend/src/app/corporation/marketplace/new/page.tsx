@@ -216,7 +216,7 @@ export default function NewListingPage() {
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-slate-700">כותרת *</label>
               <Input
-                placeholder="לדוגמה: דירה ל-7 עובדים בנתניה — מרוהטת"
+                placeholder="לדוגמה: דירה ל-7 עובדים בנתניה, מרוהטת"
                 value={form.title}
                 onChange={(e) => update('title', e.target.value)}
                 required

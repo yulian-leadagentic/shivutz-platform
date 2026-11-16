@@ -42,7 +42,7 @@ export const CODE_TO_HE: Record<string, string> = {
   rate_limited:          'יותר מדי בקשות, נסה שוב עוד רגע',
   network_error:         'בעיה בחיבור לרשת. בדוק את החיבור ונסה שוב',
   handler_failed:        'קרתה תקלה, נסה שוב עוד רגע',
-  cron_failed:           'הפעולה המתוזמנת נכשלה — פנה לתמיכה',
+  cron_failed:           'הפעולה המתוזמנת נכשלה: פנה לתמיכה',
   no_changes:            'אין שינויים לשמור',
   admin_only:            'הפעולה זמינה למנהלי מערכת בלבד',
   corp_only:             'הפעולה זמינה לחשבונות תאגיד בלבד',
@@ -61,7 +61,7 @@ export const CODE_TO_HE: Record<string, string> = {
   otp_expired:           'הקוד פג תוקף. שלח קוד חדש',
   otp_expired_or_not_found: 'הקוד פג תוקף. שלח קוד חדש',
   otp_send_failed:       'שליחת הקוד נכשלה. נסה שוב עוד רגע',
-  no_recent_otp:         'לא נמצא קוד תקף — בקש קוד חדש',
+  no_recent_otp:         'לא נמצא קוד תקף, בקש קוד חדש',
   sms_send_failed:       'שליחת ה-SMS נכשלה. נסה שוב עוד רגע',
   user_not_found:        'מספר הטלפון לא רשום במערכת',
   use_phone_login:       'חשבון זה מחייב כניסה עם SMS / WhatsApp',
@@ -78,7 +78,7 @@ export const CODE_TO_HE: Record<string, string> = {
   // L2 §4c א׳ — data.gov.il timeout during registration. Different
   // wording from entity_not_approved so the user knows it's a
   // temporary registry hiccup, not a rejection.
-  registry_unreachable:  'לא הצלחנו לאמת מול פנקס הקבלנים כרגע. אנחנו ננסה שוב אוטומטית — או שאפשר לאמת מחדש למטה.',
+  registry_unreachable:  'לא הצלחנו לאמת מול פנקס הקבלנים כרגע. אנחנו ננסה שוב אוטומטית, או שאפשר לאמת מחדש למטה.',
   invite_expired:        'ההזמנה פגה. פנה לשולח לקבלת הזמנה חדשה',
   invite_not_found_or_used: 'ההזמנה כבר בשימוש או לא נמצאה',
   invalid_role:          'התפקיד אינו תקין',
@@ -131,7 +131,7 @@ export const CODE_TO_HE: Record<string, string> = {
   tier_reveal_limit:         'הגעת למכסת החשיפות במסלול שלך',
   tier_unavailable:          'המסלול הנוכחי אינו זמין. פנה לתמיכה',
   tier_not_found:            'המסלול לא נמצא',
-  tier_in_use_set_inactive_instead: 'המסלול בשימוש — הפוך אותו ללא-פעיל במקום למחוק',
+  tier_in_use_set_inactive_instead: 'המסלול בשימוש: הפוך אותו ללא-פעיל במקום למחוק',
   title_required:            'יש להזין כותרת',
   name_required:             'יש להזין שם',
   message_required:          'יש להזין תוכן הודעה',
@@ -158,7 +158,7 @@ export const CODE_TO_HE: Record<string, string> = {
   period_not_found:          'תקופת החיוב לא נמצאה',
   percent_out_of_range:      'האחוז שהוזן מחוץ לטווח המותר',
   valid_until_before_valid_from: 'תאריך הסיום חייב להיות אחרי תאריך ההתחלה',
-  grace_period:              'המנוי בתקופת חסד — נא לעדכן אמצעי תשלום',
+  grace_period:              'המנוי בתקופת חסד: נא לעדכן אמצעי תשלום',
   cardcom_not_configured:    'שירות התשלום אינו מוגדר. פנה לתמיכה',
   cardcom_recurring_not_wired_yet: 'החיוב החוזר אינו מחובר עדיין. פנה לתמיכה',
   cloudinary_not_configured: 'שירות תמונות אינו מוגדר. פנה לתמיכה',
@@ -178,8 +178,8 @@ export const CODE_TO_HE: Record<string, string> = {
   not_editable:              'לא ניתן לערוך במצב הנוכחי',
   not_pending_publish:       'הבקשה אינה ממתינה לפרסום',
   select_at_least_one_line:  'יש לבחור לפחות שורה אחת',
-  has_responses_cannot_edit: 'לא ניתן לערוך — התקבלו כבר הצעות',
-  has_responses_cannot_edit_items: 'לא ניתן לערוך פריטים — התקבלו כבר הצעות',
+  has_responses_cannot_edit: 'לא ניתן לערוך: התקבלו כבר הצעות',
+  has_responses_cannot_edit_items: 'לא ניתן לערוך פריטים, התקבלו כבר הצעות',
   missing_hourly_rate:       'חסר תעריף שעתי',
 
   // ── workers / other resources ──────────────────────────────

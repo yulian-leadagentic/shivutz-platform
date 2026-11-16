@@ -12,7 +12,7 @@ export default function LandingFooter() {
               entirely from the experience. */}
           <div className="md:col-span-2">
             <p className="text-sm leading-relaxed max-w-xs">
-              הפלטפורמה המובילה בישראל לשיבוץ עובדים זרים בענף הבנייה — מאמתת, מתאימה ומקלה.
+              הפלטפורמה המובילה בישראל לשיבוץ עובדים זרים בענף הבנייה, מאמתת, מתאימה ומקלה.
             </p>
           </div>
 

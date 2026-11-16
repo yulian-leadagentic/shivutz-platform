@@ -8,8 +8,8 @@ import './globals.css';
 const heebo = Heebo({ subsets: ['hebrew', 'latin'], variable: '--font-heebo' });
 
 export const metadata: Metadata = {
-  title: 'TagidAI — גיוס עובדים זרים לבנייה',
-  description: 'TagidAI — מערכת מבוססת AI להתאמת עובדים זרים, שיבוץ וניהול תהליך הגיוס בענף הבנייה.',
+  title: 'TagidAI: גיוס עובדים זרים לבנייה',
+  description: 'TagidAI: מערכת מבוססת AI להתאמת עובדים זרים, שיבוץ וניהול תהליך הגיוס בענף הבנייה.',
   applicationName: 'TagidAI',
   // Deployment marker — bumped whenever we need to force-verify that a
   // new build is actually serving. Renders as <meta name="build-tag">

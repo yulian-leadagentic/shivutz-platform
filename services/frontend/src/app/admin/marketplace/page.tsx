@@ -182,12 +182,12 @@ function CategoriesPanel({
                 (codes + English name are technical fields). */}
             <div>
               <Input placeholder="vehicles" value={newCode} onChange={e => setNewCode(e.target.value)} dir="ltr" />
-              <p className="text-[10px] text-slate-400 mt-0.5">קוד טכני באנגלית — ללא רווחים, באותיות קטנות</p>
+              <p className="text-[10px] text-slate-400 mt-0.5">קוד טכני באנגלית: ללא רווחים, באותיות קטנות</p>
             </div>
             <Input placeholder="שם בעברית" value={newHe} onChange={e => setNewHe(e.target.value)} />
             <div>
               <Input placeholder="Vehicles" value={newEn} onChange={e => setNewEn(e.target.value)} dir="ltr" />
-              <p className="text-[10px] text-slate-400 mt-0.5">שם באנגלית — מוצג לתאגידים שבחרו ממשק באנגלית</p>
+              <p className="text-[10px] text-slate-400 mt-0.5">שם באנגלית: מוצג לתאגידים שבחרו ממשק באנגלית</p>
             </div>
             {err && <p className="text-xs text-red-600">{err}</p>}
             <div className="flex gap-2">
@@ -319,7 +319,7 @@ function TiersPanel({
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-2 pb-3">
         <CardTitle className="text-base">
-          מסלולי מנוי — <span className="font-mono text-sm text-slate-500" dir="ltr">{categoryCode}</span>
+          מסלולי מנוי: <span className="font-mono text-sm text-slate-500" dir="ltr">{categoryCode}</span>
         </CardTitle>
         <Button size="sm" onClick={() => setAdding(v => !v)}>
           <Plus className="h-3.5 w-3.5" />

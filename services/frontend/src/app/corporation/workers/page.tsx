@@ -37,7 +37,7 @@ const EXP_LABELS: Record<string, string> = {
 };
 
 function visaStatus(until?: string): { label: string; urgent: boolean } {
-  if (!until) return { label: '—', urgent: false };
+  if (!until) return { label: '–', urgent: false };
   const days = (new Date(until).getTime() - Date.now()) / 86_400_000;
   if (days < 0)   return { label: 'פגה', urgent: true };
   if (days <= 30) return { label: `${Math.round(days)} ימים`, urgent: true };
@@ -45,7 +45,7 @@ function visaStatus(until?: string): { label: string; urgent: boolean } {
 }
 
 function formatDate(d?: string) {
-  if (!d) return '—';
+  if (!d) return '–';
   try { return new Date(d).toLocaleDateString('he-IL'); } catch { return d; }
 }
 
@@ -77,7 +77,7 @@ function ExperienceCell({ workerId, value, onSaved }: {
     finally { setSaving(false); }
   }
 
-  const currentLabel = EXP_LABELS[value] ?? (value || '—');
+  const currentLabel = EXP_LABELS[value] ?? (value || '–');
 
   if (editing) {
     return (
@@ -204,7 +204,7 @@ function DateCell({ workerId, value, updateKey, onSaved }: {
 
   const displayDate = value
     ? (() => { try { return new Date(value).toLocaleDateString('he-IL'); } catch { return value; } })()
-    : '—';
+    : '–';
 
   if (editing) {
     return (
@@ -290,7 +290,7 @@ function EmpNumCell({ workerId, value, onSaved }: {
 
   return (
     <div className="flex items-center gap-1 group/emp min-w-0">
-      <span className="text-xs font-mono text-slate-600 dir-ltr" dir="ltr">{value || '—'}</span>
+      <span className="text-xs font-mono text-slate-600 dir-ltr" dir="ltr">{value || '–'}</span>
       <button
         onClick={startEdit}
         className="opacity-0 group-hover/emp:opacity-100 transition-opacity text-slate-400 hover:text-brand-600 shrink-0"
@@ -685,14 +685,14 @@ export default function WorkersPage() {
             const expCode     = w.experience_range ?? '';
             const profLabel   = professionMap[w.profession_type] ?? w.profession_type;
             const originLabel = originMap[w.origin_country] ?? w.origin_country;
-            const regionLabel = availRegion ? (regionMap[availRegion] ?? availRegion) : '—';
+            const regionLabel = availRegion ? (regionMap[availRegion] ?? availRegion) : '–';
             const internalId  = (w as unknown as { internal_id?: string }).internal_id || '';
             return (
               <div key={w.id} className={`rounded-2xl border border-slate-200 bg-white shadow-sm p-4 ${ROW_BG[w.status] ?? ''}`}>
                 <div className="flex items-start justify-between gap-3 mb-3">
                   <div className="min-w-0 flex-1">
                     <div className="font-bold text-slate-900 truncate">{w.first_name} {w.last_name}</div>
-                    <div className="text-[11px] font-mono text-slate-400 mt-0.5">{internalId || '—'}</div>
+                    <div className="text-[11px] font-mono text-slate-400 mt-0.5">{internalId || '–'}</div>
                   </div>
                   <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium shrink-0 ${sr.color}`}>{sr.label}</span>
                 </div>
@@ -784,13 +784,13 @@ export default function WorkersPage() {
                 const expCode     = w.experience_range ?? '';
                 const profLabel   = professionMap[w.profession_type] ?? w.profession_type;
                 const originLabel = originMap[w.origin_country] ?? w.origin_country;
-                const regionLabel = availRegion ? (regionMap[availRegion] ?? availRegion) : '—';
+                const regionLabel = availRegion ? (regionMap[availRegion] ?? availRegion) : '–';
                 const internalId  = (w as unknown as { internal_id?: string }).internal_id || '';
                 return (
                   <tr key={w.id} className={`border-b border-slate-100 last:border-0 hover:bg-slate-50/60 ${ROW_BG[w.status] ?? ''}`}>
                     <td className="px-3 py-2.5 align-top">
                       <div className="font-semibold text-slate-900 whitespace-nowrap">{w.first_name} {w.last_name}</div>
-                      <div className="text-[11px] font-mono text-slate-400">{internalId || '—'}</div>
+                      <div className="text-[11px] font-mono text-slate-400">{internalId || '–'}</div>
                     </td>
                     <td className="px-3 py-2.5 align-top">
                       <SelectCell workerId={w.id} value={w.profession_type}

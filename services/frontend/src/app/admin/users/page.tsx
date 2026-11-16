@@ -29,7 +29,7 @@ type UserDetails = Awaited<ReturnType<typeof adminApi.getUserDetails>>;
 type DetailState = { loading: true } | { loading: false; data: UserDetails } | { loading: false; error: string };
 
 function fmtDate(iso: string | null) {
-  if (!iso) return '—';
+  if (!iso) return '–';
   return new Date(iso).toLocaleString('he-IL');
 }
 
@@ -192,7 +192,7 @@ export default function AdminUsersPage() {
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">משתמשים</h1>
-          <p className="text-sm text-slate-500 mt-1">כל המשתמשים הרשומים במערכת — קבלנים, תאגידים, מנהלים.</p>
+          <p className="text-sm text-slate-500 mt-1">כל המשתמשים הרשומים במערכת, קבלנים, תאגידים, מנהלים.</p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <Button
@@ -343,17 +343,17 @@ export default function AdminUsersPage() {
                           <td className="px-3 py-2.5 text-slate-800 font-medium">
                             <span className="inline-flex items-center gap-1.5">
                               {isExpanded ? <ChevronDown className="h-3.5 w-3.5 text-slate-400" /> : <ChevronLeft className="h-3.5 w-3.5 text-slate-400" />}
-                              {u.full_name || '—'}
+                              {u.full_name || '–'}
                             </span>
                           </td>
-                          <td className="px-3 py-2.5 text-slate-600" dir="ltr">{u.phone || '—'}</td>
-                          <td className="px-3 py-2.5 text-slate-600" dir="ltr">{u.email || '—'}</td>
+                          <td className="px-3 py-2.5 text-slate-600" dir="ltr">{u.phone || '–'}</td>
+                          <td className="px-3 py-2.5 text-slate-600" dir="ltr">{u.email || '–'}</td>
                           <td className="px-3 py-2.5">
                             <Badge variant={u.role === 'admin' ? 'default' : 'secondary'}>
                               {ROLE_LABEL[u.role] || u.role}
                             </Badge>
                           </td>
-                          <td className="px-3 py-2.5 text-slate-600 text-xs">{u.org_name || '—'}</td>
+                          <td className="px-3 py-2.5 text-slate-600 text-xs">{u.org_name || '–'}</td>
                           <td className="px-3 py-2.5 text-slate-500 text-xs" dir="ltr">{fmtDate(u.last_login_at)}</td>
                           <td className="px-3 py-2.5">
                             {u.is_active
@@ -398,7 +398,7 @@ export default function AdminUsersPage() {
         open={!!pendingDisable}
         title="השבתת משתמש"
         message={pendingDisable
-          ? `להשבית את ${pendingDisable.full_name || pendingDisable.phone}? המשתמש לא יוכל להתחבר; אם הוא מחובר כרגע — הסשן ינותק בבקשת ה-API הבאה. ניתן להפעיל מחדש בכל עת.`
+          ? `להשבית את ${pendingDisable.full_name || pendingDisable.phone}? המשתמש לא יוכל להתחבר; אם הוא מחובר כרגע, הסשן ינותק בבקשת ה-API הבאה. ניתן להפעיל מחדש בכל עת.`
           : ''}
         confirmLabel="השבת"
         variant="destructive"
@@ -449,7 +449,7 @@ function UserDetailBlock({ state, onRefresh }: { state: DetailState | undefined;
     trialing: 'ניסיון', active: 'פעיל', past_due: 'חוב', cancelled: 'בוטל', expired: 'פג תוקף',
   };
   const fmt = (iso: string | null) =>
-    iso ? new Date(iso).toLocaleDateString('he-IL') : '—';
+    iso ? new Date(iso).toLocaleDateString('he-IL') : '–';
 
   // R4 · seat breakdown. Backend returns raw components; sum lives
   // in subscription_limits.effective_seats. FE renders each part
@@ -478,11 +478,11 @@ function UserDetailBlock({ state, onRefresh }: { state: DetailState | undefined;
         <div className="text-[10px] uppercase tracking-wide text-slate-400 mb-1">הישות</div>
         {entity ? (
           <>
-            <div className="font-semibold text-slate-800">{entity.name || '—'}</div>
+            <div className="font-semibold text-slate-800">{entity.name || '–'}</div>
             <dl className="mt-1.5 space-y-0.5 text-xs">
               <div className="flex justify-between"><dt className="text-slate-500">סוג</dt><dd>{ENTITY_TYPE_HE[entity.type] || entity.type}</dd></div>
-              <div className="flex justify-between"><dt className="text-slate-500">ח.פ / ע.מ</dt><dd dir="ltr">{entity.business_number || '—'}</dd></div>
-              <div className="flex justify-between"><dt className="text-slate-500">סטטוס</dt><dd>{entity.approval_status ? (STATUS_HE[entity.approval_status] || entity.approval_status) : '—'}</dd></div>
+              <div className="flex justify-between"><dt className="text-slate-500">ח.פ / ע.מ</dt><dd dir="ltr">{entity.business_number || '–'}</dd></div>
+              <div className="flex justify-between"><dt className="text-slate-500">סטטוס</dt><dd>{entity.approval_status ? (STATUS_HE[entity.approval_status] || entity.approval_status) : '–'}</dd></div>
               <div className="flex justify-between"><dt className="text-slate-500">הצטרפות</dt><dd>{fmt(entity.joined_at)}</dd></div>
               <div className="pt-1 mt-1 border-t border-slate-100">
                 <div className="flex justify-between">
@@ -514,15 +514,15 @@ function UserDetailBlock({ state, onRefresh }: { state: DetailState | undefined;
         <div className="text-[10px] uppercase tracking-wide text-slate-400 mb-1">בעל החשבון · ליצירת קשר</div>
         {owner ? (
           <>
-            <div className="font-semibold text-slate-800">{owner.full_name || '—'}</div>
+            <div className="font-semibold text-slate-800">{owner.full_name || '–'}</div>
             <dl className="mt-1.5 space-y-0.5 text-xs">
               <div className="flex justify-between items-baseline">
                 <dt className="text-slate-500">טלפון</dt>
-                <dd>{owner.phone ? <a className="text-brand-700 hover:underline" dir="ltr" href={`tel:${owner.phone}`}>{owner.phone}</a> : '—'}</dd>
+                <dd>{owner.phone ? <a className="text-brand-700 hover:underline" dir="ltr" href={`tel:${owner.phone}`}>{owner.phone}</a> : '–'}</dd>
               </div>
               <div className="flex justify-between items-baseline">
                 <dt className="text-slate-500">אימייל</dt>
-                <dd>{owner.email ? <a className="text-brand-700 hover:underline" dir="ltr" href={`mailto:${owner.email}`}>{owner.email}</a> : '—'}</dd>
+                <dd>{owner.email ? <a className="text-brand-700 hover:underline" dir="ltr" href={`mailto:${owner.email}`}>{owner.email}</a> : '–'}</dd>
               </div>
             </dl>
           </>

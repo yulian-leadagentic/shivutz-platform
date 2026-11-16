@@ -104,7 +104,7 @@ export const ENTITY_TYPE_HE: Record<string, string> = {
 export function labelFor(
   map: Record<string, string>,
   code: string | null | undefined,
-  fallback = '—',
+  fallback = '–',
 ): string {
   if (!code) return fallback;
   return map[code] ?? code;

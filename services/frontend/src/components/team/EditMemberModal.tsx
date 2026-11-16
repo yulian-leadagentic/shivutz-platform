@@ -25,16 +25,16 @@ function validateName(raw: string, fieldLabel: string): string {
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 const ROLE_OPTIONS_PENDING_OR_NEW: { value: string; label: string }[] = [
-  { value: 'admin',  label: 'מנהל — גישה מלאה לבקשות, עסקאות וצוות' },
-  { value: 'viewer', label: 'צופה — קריאה בלבד' },
+  { value: 'admin',  label: 'מנהל: גישה מלאה לבקשות, עסקאות וצוות' },
+  { value: 'viewer', label: 'צופה: קריאה בלבד' },
 ];
 
 // owner is shown for active rows because a demote-from-owner is a
 // legitimate edit. Sole-owner protection is enforced server-side.
 const ROLE_OPTIONS_ACTIVE: { value: string; label: string }[] = [
-  { value: 'owner',  label: 'בעלים — שליטה מלאה כולל ניהול בעלים' },
-  { value: 'admin',  label: 'מנהל — גישה מלאה לבקשות, עסקאות וצוות' },
-  { value: 'viewer', label: 'צופה — קריאה בלבד' },
+  { value: 'owner',  label: 'בעלים: שליטה מלאה כולל ניהול בעלים' },
+  { value: 'admin',  label: 'מנהל: גישה מלאה לבקשות, עסקאות וצוות' },
+  { value: 'viewer', label: 'צופה: קריאה בלבד' },
 ];
 
 interface Props {

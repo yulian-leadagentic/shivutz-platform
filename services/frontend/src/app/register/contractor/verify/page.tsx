@@ -23,7 +23,7 @@ function VerifyEmailLink() {
 
   useEffect(() => {
     if (!contractorId || !token) {
-      setState({ kind: 'error', message: 'הקישור לא תקין — חסרים פרמטרים' });
+      setState({ kind: 'error', message: 'הקישור לא תקין: חסרים פרמטרים' });
       return;
     }
     let aborted = false;
@@ -40,9 +40,9 @@ function VerifyEmailLink() {
           kind: 'error',
           message:
             msg === 'invalid_token' ? 'קוד אימות שגוי או נמחק' :
-            msg === 'expired'       ? 'הקישור פג תוקף — חזור לרישום וקבל קישור חדש' :
+            msg === 'expired'       ? 'הקישור פג תוקף: חזור לרישום וקבל קישור חדש' :
             msg === 'already_used'  ? 'הקישור כבר נוצל בעבר' :
-            'אימות נכשל — נסה שוב או פנה לתמיכה',
+            'אימות נכשל: נסה שוב או פנה לתמיכה',
         });
       }
     })();

@@ -29,7 +29,7 @@ interface Props {
 }
 
 function fmtDate(iso?: string | null) {
-  if (!iso) return '—';
+  if (!iso) return '–';
   try { return new Date(iso).toLocaleDateString('he-IL'); } catch { return iso; }
 }
 
@@ -89,7 +89,7 @@ export function GovRegistrySection({ corpId }: Props) {
               </>
             ) : (
               <>
-                תאגיד מאושר ברשימת קבלני כוח אדם של רשות האוכלוסין וההגירה — היתר להעסיק עובדים זרים בענף הבניין,
+                תאגיד מאושר ברשימת קבלני כוח אדם של רשות האוכלוסין וההגירה, היתר להעסיק עובדים זרים בענף הבניין,
                 שנת <strong>{matchedYear}</strong>.
               </>
             )}

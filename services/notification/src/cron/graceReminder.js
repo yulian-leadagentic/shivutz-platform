@@ -33,15 +33,15 @@ function bodyForStep(step, entityName) {
   const link   = `${FRONTEND_URL}/billing`;
   switch (step) {
     case 1:
-      return `TagidAI — תקופת הניסיון${suffix} הסתיימה. יש לך 7 ימים לחדש לפני שהמודעות יושהו. חידוש:\n${link}`;
+      return `TagidAI: תקופת הניסיון${suffix} הסתיימה. יש לך 7 ימים לחדש לפני שהמודעות יושהו. חידוש:\n${link}`;
     case 2:
-      return `TagidAI — נותרו 4 ימים לחידוש המנוי${suffix} לפני שהמודעות יושהו:\n${link}`;
+      return `TagidAI: נותרו 4 ימים לחידוש המנוי${suffix} לפני שהמודעות יושהו:\n${link}`;
     case 3:
-      return `TagidAI — מחר המודעות${suffix} יושהו ויוסתרו מתוצאות החיפוש. חדש עכשיו:\n${link}`;
+      return `TagidAI: מחר המודעות${suffix} יושהו ויוסתרו מתוצאות החיפוש. חדש עכשיו:\n${link}`;
     case 4:
-      return `TagidAI — המודעות${suffix} הושהו. חדש מנוי כדי להחזירן מיד:\n${link}`;
+      return `TagidAI: המודעות${suffix} הושהו. חדש מנוי כדי להחזירן מיד:\n${link}`;
     default:
-      return `TagidAI — עדכון לגבי המנוי${suffix}:\n${link}`;
+      return `TagidAI: עדכון לגבי המנוי${suffix}:\n${link}`;
   }
 }
 

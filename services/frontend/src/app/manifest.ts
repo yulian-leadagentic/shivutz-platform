@@ -9,7 +9,7 @@ import type { MetadataRoute } from 'next';
 // behaviour is intentionally out of scope.
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: 'TagidAI — גיוס עובדים זרים לבנייה',
+    name: 'TagidAI: גיוס עובדים זרים לבנייה',
     short_name: 'TagidAI',
     description: 'מערכת מבוססת AI להתאמת עובדים זרים, שיבוץ וניהול תהליך הגיוס בענף הבנייה.',
     lang: 'he',

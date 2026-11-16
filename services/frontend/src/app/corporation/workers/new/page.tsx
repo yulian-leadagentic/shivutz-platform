@@ -185,7 +185,7 @@ export default function NewWorkerPage() {
               <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0 text-green-600" />
               <div>
                 <p className="font-semibold">העובד נשמר.</p>
-                <p className="text-xs text-green-700 mt-0.5">מקצוע, שפות, מוצא, ויזה וזמינות נשארים פתוחים — לחץ &quot;הוסף עובד נוסף&quot; כדי להזין שם חדש.</p>
+                <p className="text-xs text-green-700 mt-0.5">מקצוע, שפות, מוצא, ויזה וזמינות נשארים פתוחים, לחץ &quot;הוסף עובד נוסף&quot; כדי להזין שם חדש.</p>
               </div>
             </div>
           )}

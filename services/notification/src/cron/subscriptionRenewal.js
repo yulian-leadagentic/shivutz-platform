@@ -49,7 +49,7 @@ async function reportHeartbeat(secret, cronName, ok, errStr, resultObj) {
 async function runSubscriptionRenewalCron() {
   const secret = process.env.INTERNAL_BATCH_SECRET;
   if (!secret) {
-    console.warn('[cron/renewal] INTERNAL_BATCH_SECRET not set — skipping');
+    console.warn('[cron/renewal] INTERNAL_BATCH_SECRET not set, skipping');
     // No heartbeat here — without the secret we can't reach the endpoint
     // anyway. This IS the misconfig case; the admin dashboard rendering
     // 'no heartbeat ever recorded' is itself the signal.

@@ -46,11 +46,11 @@ interface CardVisuals {
 const VISUALS: Record<RoleId, CardVisuals> = {
   contractor: {
     cardTitle: 'אני קבלן',
-    tagline: 'מחפש עובדים זרים מיומנים לפרויקטים? מצא, בחר ושבץ — הכל דיגיטלי.',
+    tagline: 'מחפש עובדים זרים מיומנים לפרויקטים? מצא, בחר ושבץ, הכל דיגיטלי.',
     cta:     'הצטרף עכשיו כקבלן · חינם לתקופת ניסיון',
     benefits: [
       'גישה לאלפי עובדים זרים מיומנים',
-      'מנוע התאמה אוטומטי — תוצאות בשניות',
+      'מנוע התאמה אוטומטי: תוצאות בשניות',
       'ניהול עסקאות ודיווח בפלטפורמה',
       'תשלום מאובטח ושקוף',
     ],
@@ -130,7 +130,7 @@ function FullSection({ onLeadCapture }: { onLeadCapture?: () => void }) {
               "הצטרפו לפלטפורמה" catches a drift. */}
           <p className="text-xs font-semibold uppercase tracking-widest text-brand-600 mb-3">מוכנים להתחיל?</p>
           <h2 className="text-3xl md:text-4xl font-extrabold text-slate-900 mb-3">הרשם עכשיו</h2>
-          <p className="text-slate-500">קבלנים, תאגידים וספקי שירות — לכולם יש כאן מקום</p>
+          <p className="text-slate-500">קבלנים, תאגידים וספקי שירות, לכולם יש כאן מקום</p>
         </div>
 
         <div className="grid md:grid-cols-3 gap-6">

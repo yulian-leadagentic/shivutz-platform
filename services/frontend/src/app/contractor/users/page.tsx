@@ -171,7 +171,7 @@ export default function ContractorUsersPage() {
   }
 
   function fmt(iso?: string | null) {
-    if (!iso) return '—';
+    if (!iso) return '–';
     return new Date(iso).toLocaleDateString('he-IL');
   }
 
@@ -237,7 +237,7 @@ export default function ContractorUsersPage() {
           disabled={!showForm && seatsFull}
           title={
             !showForm && seatsFull
-              ? 'הגעת לתקרת המשתמשים במסלול הנוכחי — שדרג כדי להוסיף עוד.'
+              ? 'הגעת לתקרת המשתמשים במסלול הנוכחי, שדרג כדי להוסיף עוד.'
               : undefined
           }
         >
@@ -272,10 +272,10 @@ export default function ContractorUsersPage() {
               </p>
               <p className="text-xs text-slate-600">
                 {seatsFull
-                  ? 'הגעת לתקרת המשתמשים במסלול הנוכחי — שדרג כדי להוסיף עוד.'
+                  ? 'הגעת לתקרת המשתמשים במסלול הנוכחי, שדרג כדי להוסיף עוד.'
                   : `כל המשתמשים החדשים כלולים במסלול. נותרו ${seatIncluded - seatUsed}.`}
                 {seatExtraPrice !== null && seatsFull && (
-                  <> משתמש נוסף — ₪{seatExtraPrice}/חודש.</>
+                  <> משתמש נוסף: ₪{seatExtraPrice}/חודש.</>
                 )}
               </p>
             </div>
@@ -339,8 +339,8 @@ export default function ContractorUsersPage() {
                 onChange={(e) => setRole(e.target.value)}
                 className="flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
               >
-                <option value="admin">מנהל — גישה מלאה לבקשות, עסקאות וצוות</option>
-                <option value="viewer">צופה — קריאה בלבד</option>
+                <option value="admin">מנהל: גישה מלאה לבקשות, עסקאות וצוות</option>
+                <option value="viewer">צופה: קריאה בלבד</option>
               </select>
             </div>
             {error && <p className="text-sm text-red-600">{error}</p>}
@@ -402,7 +402,7 @@ export default function ContractorUsersPage() {
                   <li key={m.membership_id} className="p-4 space-y-3">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0 flex-1">
-                        <h3 className="font-medium text-slate-900 leading-snug">{m.full_name ?? '—'}</h3>
+                        <h3 className="font-medium text-slate-900 leading-snug">{m.full_name ?? '–'}</h3>
                         {m.job_title && (
                           <p className="text-xs text-slate-500 mt-0.5">{m.job_title}</p>
                         )}
@@ -413,9 +413,9 @@ export default function ContractorUsersPage() {
                     </div>
                     <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm">
                       <dt className="text-slate-500">טלפון</dt>
-                      <dd className="text-slate-700" dir="ltr">{m.phone || '—'}</dd>
+                      <dd className="text-slate-700" dir="ltr">{m.phone || '–'}</dd>
                       <dt className="text-slate-500">מייל</dt>
-                      <dd className="text-slate-700 break-all" dir="ltr">{m.email || '—'}</dd>
+                      <dd className="text-slate-700 break-all" dir="ltr">{m.email || '–'}</dd>
                       <dt className="text-slate-500">הצטרף</dt>
                       <dd className="text-slate-700">{fmt(m.invitation_accepted_at)}</dd>
                     </dl>
@@ -468,11 +468,11 @@ export default function ContractorUsersPage() {
                 <tbody>
                   {active.map((m) => (
                     <tr key={m.membership_id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50">
-                      <td className="px-4 py-3 font-medium text-slate-900 whitespace-nowrap">{m.full_name ?? '—'}</td>
-                      <td className="px-4 py-3 text-slate-600">{m.job_title || '—'}</td>
-                      <td className="px-4 py-3 text-slate-600 whitespace-nowrap" dir="ltr">{m.phone || '—'}</td>
+                      <td className="px-4 py-3 font-medium text-slate-900 whitespace-nowrap">{m.full_name ?? '–'}</td>
+                      <td className="px-4 py-3 text-slate-600">{m.job_title || '–'}</td>
+                      <td className="px-4 py-3 text-slate-600 whitespace-nowrap" dir="ltr">{m.phone || '–'}</td>
                       <td className="px-4 py-3 text-slate-600 whitespace-nowrap" dir="ltr">
-                        {m.email ? <span className="text-xs">{m.email}</span> : <span className="text-xs text-slate-300">—</span>}
+                        {m.email ? <span className="text-xs">{m.email}</span> : <span className="text-xs text-slate-300">–</span>}
                       </td>
                       <td className="px-4 py-3">
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${ROLE_COLORS[m.role] ?? 'bg-slate-100 text-slate-600'}`}>
@@ -543,7 +543,7 @@ export default function ContractorUsersPage() {
                 <li key={m.membership_id} className="p-4 space-y-3">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
-                      <h3 className="font-medium text-slate-900 leading-snug">{m.full_name ?? '—'}</h3>
+                      <h3 className="font-medium text-slate-900 leading-snug">{m.full_name ?? '–'}</h3>
                       {m.job_title && (
                         <p className="text-xs text-slate-500 mt-0.5">{m.job_title}</p>
                       )}
@@ -554,9 +554,9 @@ export default function ContractorUsersPage() {
                   </div>
                   <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm">
                     <dt className="text-slate-500">טלפון</dt>
-                    <dd className="text-slate-700" dir="ltr">{m.phone || '—'}</dd>
+                    <dd className="text-slate-700" dir="ltr">{m.phone || '–'}</dd>
                     <dt className="text-slate-500">מייל</dt>
-                    <dd className="text-slate-700 break-all" dir="ltr">{m.email || '—'}</dd>
+                    <dd className="text-slate-700 break-all" dir="ltr">{m.email || '–'}</dd>
                     <dt className="text-slate-500">נשלח</dt>
                     <dd className="text-slate-700">{fmt(m.created_at)}</dd>
                   </dl>
@@ -596,11 +596,11 @@ export default function ContractorUsersPage() {
               <tbody>
                 {pending.map((m) => (
                   <tr key={m.membership_id} className="border-b border-slate-50 last:border-0">
-                    <td className="px-4 py-3 font-medium text-slate-900 whitespace-nowrap">{m.full_name ?? '—'}</td>
-                    <td className="px-4 py-3 text-slate-600">{m.job_title || '—'}</td>
-                    <td className="px-4 py-3 text-slate-600 whitespace-nowrap" dir="ltr">{m.phone || '—'}</td>
+                    <td className="px-4 py-3 font-medium text-slate-900 whitespace-nowrap">{m.full_name ?? '–'}</td>
+                    <td className="px-4 py-3 text-slate-600">{m.job_title || '–'}</td>
+                    <td className="px-4 py-3 text-slate-600 whitespace-nowrap" dir="ltr">{m.phone || '–'}</td>
                     <td className="px-4 py-3 text-slate-600 whitespace-nowrap" dir="ltr">
-                      {m.email ? <span className="text-xs">{m.email}</span> : <span className="text-xs text-slate-300">—</span>}
+                      {m.email ? <span className="text-xs">{m.email}</span> : <span className="text-xs text-slate-300">–</span>}
                     </td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${ROLE_COLORS[m.role] ?? 'bg-slate-100 text-slate-600'}`}>
@@ -650,7 +650,7 @@ export default function ContractorUsersPage() {
             // Best-effort usage refresh; failures don't block the modal.
             adApi.usage().then(setUsage).catch(() => undefined);
             setSuccess(duplicate
-              ? 'הרכישה כבר תועדה — אפשר להזמין את המשתמש'
+              ? 'הרכישה כבר תועדה: אפשר להזמין את המשתמש'
               : `${count} מושבים נוספו לחשבון. אפשר להזמין את המשתמש כעת.`);
             setTimeout(() => setSuccess(''), 6000);
           }}

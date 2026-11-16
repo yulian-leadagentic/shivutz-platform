@@ -133,7 +133,7 @@ export default function LandingNav(_: LandingNavProps) {
                   <span className="text-white text-xs font-bold">{getInitials(displayName || '?')}</span>
                 </div>
                 <span className="hidden sm:inline text-sm font-medium max-w-[180px] truncate text-slate-700">
-                  {displayName || '—'}
+                  {displayName || '–'}
                 </span>
                 <ChevronDown className={`h-4 w-4 transition-transform text-slate-500 ${userMenuOpen ? 'rotate-180' : ''}`} />
               </button>

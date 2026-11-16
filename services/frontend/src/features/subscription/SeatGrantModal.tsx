@@ -107,7 +107,7 @@ export function SeatGrantModal({ detail, onClose, onSuccess }: Props) {
             </div>
 
             <div className="mt-4 rounded-lg bg-slate-50 border border-slate-200 p-3 text-xs text-slate-600 space-y-0.5">
-              <div className="flex justify-between"><span>כלולים במסלול</span><span>{detail.seatsIncluded ?? '—'}</span></div>
+              <div className="flex justify-between"><span>כלולים במסלול</span><span>{detail.seatsIncluded ?? '–'}</span></div>
               <div className="flex justify-between"><span>שרכשו</span><span>{detail.seatsPaid}</span></div>
               <div className="flex justify-between"><span>מהנהלה (עכשיו)</span><span>{detail.seatsGranted}</span></div>
               <div className="flex justify-between pt-1 mt-1 border-t border-slate-200 font-semibold text-slate-800">
@@ -146,7 +146,7 @@ export function SeatGrantModal({ detail, onClose, onSuccess }: Props) {
               </label>
 
               <p className="text-xs text-slate-500 leading-relaxed">
-                מושבים אלה <strong>אינם נחשבים לחישוב חיוב</strong> בחידוש הבא —
+                מושבים אלה <strong>אינם נחשבים לחישוב חיוב</strong> בחידוש הבא:
                 רק extra_seats_paid מחויב. ההערה נכנסת לאודיט לצד השינוי.
               </p>
 

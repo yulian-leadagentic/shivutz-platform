@@ -210,7 +210,7 @@ async def register_contractor(
                     status_code=409,
                     detail={
                         "code": "already_have_contractor",
-                        "message": "כבר יש לך חשבון קבלן — אנחנו מעבירים אותך אליו.",
+                        "message": "כבר יש לך חשבון קבלן. אנחנו מעבירים אותך אליו.",
                         "existing_entity_id": row[0] if row else None,
                         "entity_type": "contractor",
                     },

@@ -185,10 +185,10 @@ function OrgRow({
               ['נרשם',    new Date(org.created_at).toLocaleDateString('he-IL')],
               ...(org.org_type === 'contractor'
                 ? ([
-                    ['מספר קבלן',   org.kablan_number || '—'],
-                    ['סיווג',       org.kvutza && org.sivug ? `${org.kvutza}-${org.sivug}` : '—'],
-                    ['ענף',         org.gov_branch || '—'],
-                    ['רשם החברות',  org.gov_company_status || '—'],
+                    ['מספר קבלן',   org.kablan_number || '–'],
+                    ['סיווג',       org.kvutza && org.sivug ? `${org.kvutza}-${org.sivug}` : '–'],
+                    ['ענף',         org.gov_branch || '–'],
+                    ['רשם החברות',  org.gov_company_status || '–'],
                   ] as Array<[string, string]>)
                 : []),
             ].map(([k, v]) => (
@@ -197,7 +197,7 @@ function OrgRow({
                 {/* G6 — plaintext bidi resolves per-value: Hebrew names
                     stay RTL, phone/email/ח.פ render LTR without a
                     per-field metadata flag. */}
-                <p className="font-medium text-slate-800 truncate" style={{ unicodeBidi: 'plaintext' }}>{v || '—'}</p>
+                <p className="font-medium text-slate-800 truncate" style={{ unicodeBidi: 'plaintext' }}>{v || '–'}</p>
               </div>
             ))}
           </div>

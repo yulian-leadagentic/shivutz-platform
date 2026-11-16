@@ -115,11 +115,11 @@ export default function AdminOrgsPage() {
   function clearFilters() { setTypeFilter('all'); setStatusFilter('all'); setSearch(''); }
 
   function fmt(iso?: string | null) {
-    if (!iso) return '—';
+    if (!iso) return '–';
     return new Date(iso).toLocaleDateString('he-IL');
   }
   function fmtDateTime(iso?: string | null) {
-    if (!iso) return '—';
+    if (!iso) return '–';
     return new Date(iso).toLocaleString('he-IL');
   }
 
@@ -367,12 +367,12 @@ function ExpandedDetail({
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-3 text-sm">
-          <DetailRow icon={<Building2 className="h-3.5 w-3.5" />} label="שם (עברית)" value={org.company_name_he || '—'} />
-          <DetailRow icon={<Building2 className="h-3.5 w-3.5" />} label="שם (אנגלית)" value={org.company_name || '—'} ltr />
-          <DetailRow icon={<Hash className="h-3.5 w-3.5" />} label="ח.פ / ע.מ" value={org.business_number || '—'} ltr />
-          <DetailRow icon={<User className="h-3.5 w-3.5" />}  label="איש קשר"    value={org.contact_name || '—'} />
-          <DetailRow icon={<Mail className="h-3.5 w-3.5" />}  label="אימייל"     value={org.contact_email || '—'} ltr />
-          <DetailRow icon={<Phone className="h-3.5 w-3.5" />} label="טלפון"      value={org.contact_phone || '—'} ltr />
+          <DetailRow icon={<Building2 className="h-3.5 w-3.5" />} label="שם (עברית)" value={org.company_name_he || '–'} />
+          <DetailRow icon={<Building2 className="h-3.5 w-3.5" />} label="שם (אנגלית)" value={org.company_name || '–'} ltr />
+          <DetailRow icon={<Hash className="h-3.5 w-3.5" />} label="ח.פ / ע.מ" value={org.business_number || '–'} ltr />
+          <DetailRow icon={<User className="h-3.5 w-3.5" />}  label="איש קשר"    value={org.contact_name || '–'} />
+          <DetailRow icon={<Mail className="h-3.5 w-3.5" />}  label="אימייל"     value={org.contact_email || '–'} ltr />
+          <DetailRow icon={<Phone className="h-3.5 w-3.5" />} label="טלפון"      value={org.contact_phone || '–'} ltr />
           <DetailRow icon={<CalendarDays className="h-3.5 w-3.5" />} label="נרשם" value={fmtDateTime(org.created_at)} />
           <DetailRow
             icon={<ShieldCheck className="h-3.5 w-3.5" />}
@@ -386,12 +386,12 @@ function ExpandedDetail({
           <div className="mt-4 pt-3 border-t border-slate-100">
             <p className="text-xs font-semibold text-slate-500 mb-2">פרטי רישום קבלן</p>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-3 text-sm">
-              <DetailRow label="מספר קבלן"            value={org.kablan_number || '—'} ltr />
-              <DetailRow label="קבוצה"                value={org.kvutza || '—'} />
-              <DetailRow label="סיווג"                value={org.sivug != null ? String(org.sivug) : '—'} />
-              <DetailRow label="ענף"                  value={org.gov_branch || '—'} />
-              <DetailRow label="סטטוס רשם החברות"     value={org.gov_company_status || '—'} />
-              <DetailRow label="אומת מול רשם הקבלנים" value={org.kablan_verified_at ? fmtDateTime(org.kablan_verified_at) : '—'} />
+              <DetailRow label="מספר קבלן"            value={org.kablan_number || '–'} ltr />
+              <DetailRow label="קבוצה"                value={org.kvutza || '–'} />
+              <DetailRow label="סיווג"                value={org.sivug != null ? String(org.sivug) : '–'} />
+              <DetailRow label="ענף"                  value={org.gov_branch || '–'} />
+              <DetailRow label="סטטוס רשם החברות"     value={org.gov_company_status || '–'} />
+              <DetailRow label="אומת מול רשם הקבלנים" value={org.kablan_verified_at ? fmtDateTime(org.kablan_verified_at) : '–'} />
             </div>
           </div>
         )}
@@ -403,12 +403,12 @@ function ExpandedDetail({
               <DetailRow
                 icon={<MapPin className="h-3.5 w-3.5" />}
                 label="מדינות מוצא"
-                value={coo.length ? coo.join(', ') : '—'}
+                value={coo.length ? coo.join(', ') : '–'}
                 ltr
               />
-              <DetailRow label="חוזה מינימום (חודשים)" value={org.minimum_contract_months != null ? String(org.minimum_contract_months) : '—'} />
-              <DetailRow label="ברשימת רשות האוכלוסין" value={org.gov_registry_source_year ? `${org.gov_registry_source_year}` : '—'} />
-              <DetailRow label="עודכן מול הרשימה"      value={org.gov_registry_matched_at ? fmtDateTime(org.gov_registry_matched_at) : '—'} />
+              <DetailRow label="חוזה מינימום (חודשים)" value={org.minimum_contract_months != null ? String(org.minimum_contract_months) : '–'} />
+              <DetailRow label="ברשימת רשות האוכלוסין" value={org.gov_registry_source_year ? `${org.gov_registry_source_year}` : '–'} />
+              <DetailRow label="עודכן מול הרשימה"      value={org.gov_registry_matched_at ? fmtDateTime(org.gov_registry_matched_at) : '–'} />
               <DetailRow label="חתימה על תנאי שימוש"   value={org.tc_signed_at ? fmtDateTime(org.tc_signed_at) : 'לא נחתם'} />
               {org.tc_version && <DetailRow label="גרסת T&C" value={org.tc_version} ltr />}
             </div>
@@ -487,7 +487,7 @@ function VerificationCell({ tier, method }: {
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       <span className={`inline-flex items-center text-xs font-medium px-2 py-0.5 rounded border ${t?.cls ?? 'bg-slate-100 text-slate-500 border-slate-200'}`}>
-        {t?.he ?? tier ?? '—'}
+        {t?.he ?? tier ?? '–'}
       </span>
       {method && (
         <span className={`text-xs ${isManualTier2 ? 'text-amber-700' : 'text-slate-500'}`}>

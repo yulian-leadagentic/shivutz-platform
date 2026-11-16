@@ -89,7 +89,7 @@ export default function AdminAdsPage() {
     <div className="max-w-6xl mx-auto px-4 py-6 space-y-5">
       <header>
         <h1 className="text-2xl font-bold text-slate-900">מודעות בפלטפורמה</h1>
-        <p className="text-sm text-slate-500">ניהול תוכן — הסתרה, ביטול הסתרה, מחיקה</p>
+        <p className="text-sm text-slate-500">ניהול תוכן: הסתרה, ביטול הסתרה, מחיקה</p>
       </header>
 
       {/* A1 — shared TableToolbar. Type filter as pills (better tap
@@ -162,7 +162,7 @@ export default function AdminAdsPage() {
                 return (
                   <tr key={ad.id} className={`border-b border-slate-100 ${hidden ? 'opacity-50' : ''}`}>
                     <td className="px-3 py-2 max-w-xs truncate font-medium text-slate-900">{ad.title_he}</td>
-                    <td className="px-3 py-2 text-slate-600">{ad.owner_name || '—'}</td>
+                    <td className="px-3 py-2 text-slate-600">{ad.owner_name || '–'}</td>
                     <td className="px-3 py-2 text-slate-600">{labelFor(AD_TYPE_HE, ad.ad_type)}</td>
                     <td className="px-3 py-2">
                       {hidden

@@ -18,7 +18,7 @@ const FILTER_LABEL: Record<Filter, string> = {
 };
 
 function fmtDate(iso: string | null) {
-  if (!iso) return '—';
+  if (!iso) return '–';
   return new Date(iso).toLocaleString('he-IL');
 }
 

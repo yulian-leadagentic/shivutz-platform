@@ -209,7 +209,7 @@ export default function CorpTenderDetailPage() {
           <ShieldCheck className="h-5 w-5 text-emerald-600 shrink-0 mt-0.5" />
           <div>
             <p className="text-sm font-semibold text-emerald-900">זכית בבקשה! 🎉</p>
-            <p className="text-xs text-emerald-700 mt-0.5">פרטי הקבלן נחשפו — ניתן ליצור קשר ישירות.</p>
+            <p className="text-xs text-emerald-700 mt-0.5">פרטי הקבלן נחשפו: ניתן ליצור קשר ישירות.</p>
             {revealed && contractorCorp && (
               <div className="mt-2 space-y-1 text-xs text-emerald-800">
                 {contractorCorp.contact_name && <p className="inline-flex items-center gap-1.5"><Building2 className="h-3.5 w-3.5" />{contractorCorp.contact_name}</p>}

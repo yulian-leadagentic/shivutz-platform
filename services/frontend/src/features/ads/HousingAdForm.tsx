@@ -277,7 +277,7 @@ export function HousingAdForm({
           value={v.body_he}
           onChange={(e) => field('body_he')(e.target.value)}
           rows={4}
-          placeholder="פרטים נוספים — מרחק מתחבורה ציבורית, מיקום ביחס לפרויקטים, כללי הבית וכו'"
+          placeholder="פרטים נוספים: מרחק מתחבורה ציבורית, מיקום ביחס לפרויקטים, כללי הבית וכו'"
           className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
         />
       </div>

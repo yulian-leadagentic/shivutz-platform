@@ -55,7 +55,7 @@ const ENTITY_LABEL: Record<string, string> = {
 };
 
 function fmt(iso: string | null) {
-  if (!iso) return '—';
+  if (!iso) return '–';
   try { return new Date(iso).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' }); }
   catch { return iso; }
 }
@@ -249,7 +249,7 @@ export default function AdminSupportPage() {
                           value={draft}
                           onChange={(e) => setDraftNotes((s) => ({ ...s, [t.id]: e.target.value }))}
                           rows={2}
-                          placeholder="הערה פנימית — לא נחשפת ללקוח"
+                          placeholder="הערה פנימית: לא נחשפת ללקוח"
                           className="w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-sm resize-none"
                         />
                       </div>

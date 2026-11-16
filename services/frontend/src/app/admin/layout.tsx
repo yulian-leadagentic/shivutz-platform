@@ -44,7 +44,7 @@ const NAV = [
   { href: '/admin/legal',              label: 'מסמכים משפטיים',           icon: FileText },
   { href: '/admin/gov-corps-registry', label: 'רשימת תאגידים מורשים',     icon: FileCheck },
   { href: '/admin/users',              label: 'משתמשים',                  icon: Users },
-  { href: '/admin/leads',              label: 'לידים — השאירו פרטים',     icon: Inbox },
+  { href: '/admin/leads',              label: 'לידים: השאירו פרטים',     icon: Inbox },
   { href: '/admin/support',            label: 'תמיכה ותקלות',             icon: MessageCircle },
   { href: '/admin/origins',            label: 'ארצות מוצא',               icon: Flag },
   { href: '/admin/registration-log',   label: 'לוג רישומים',              icon: PhoneCall },

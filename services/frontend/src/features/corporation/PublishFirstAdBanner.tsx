@@ -49,7 +49,7 @@ export function PublishFirstAdBanner() {
         <div className="flex-1">
           <h3 className="text-base font-bold text-slate-900">פרסמו את המודעה הראשונה שלכם</h3>
           <p className="text-sm text-slate-600 mt-1 leading-relaxed">
-            מודעת עובדים או דיור לפועלים — קבלנים יראו אתכם בחיפוש ויפנו ישירות.
+            מודעת עובדים או דיור לפועלים, קבלנים יראו אתכם בחיפוש ויפנו ישירות.
           </p>
           <Link
             href="/corporation/ads/new"

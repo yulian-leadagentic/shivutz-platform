@@ -47,10 +47,10 @@ export default function ContactPage() {
       <section className="space-y-2 text-slate-800">
         <h2 className="text-lg font-semibold text-slate-900">פרטיות ונגישות</h2>
         <p>
-          פניות בנושא פרטיות ומידע אישי — לאותה כתובת דוא&quot;ל למעלה, בציון &quot;פנייה בנושא פרטיות&quot; בכותרת.
+          פניות בנושא פרטיות ומידע אישי, לאותה כתובת דוא&quot;ל למעלה, בציון &quot;פנייה בנושא פרטיות&quot; בכותרת.
         </p>
         <p>
-          פניות בנושא נגישות מטופלות על ידי רכז הנגישות — פרטים ב-
+          פניות בנושא נגישות מטופלות על ידי רכז הנגישות, פרטים ב-
           <Link href="/accessibility" className="text-brand-700 hover:underline">הצהרת הנגישות</Link>.
         </p>
       </section>

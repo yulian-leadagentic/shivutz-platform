@@ -50,7 +50,7 @@ const PLACEMENTS: { code: string; label_he: string; hint_he: string }[] = [
   { code: 'home_carousel',        label_he: 'קרוסלת עמוד הבית',  hint_he: 'קבוצת כרטיסים בעמוד הבית' },
   { code: 'marketplace_banner',   label_he: 'באנר קניון',        hint_he: 'רצועה רחבה מעל התוצאות' },
   { code: 'marketplace_carousel', label_he: 'קרוסלת קניון',      hint_he: 'קבוצת כרטיסים בקניון' },
-  { code: 'side_rail',            label_he: 'עמודת צד',          hint_he: 'מגדל דביק — דסקטופ ‎1440‎ ומעלה בלבד' },
+  { code: 'side_rail',            label_he: 'עמודת צד',          hint_he: 'מגדל דביק: דסקטופ ‎1440‎ ומעלה בלבד' },
   { code: 'listing_rail',         label_he: 'עמודת צד במודעה',   hint_he: 'בעמוד המודעה, מתחת לכרטיס יצירת הקשר' },
   { code: 'listing_inline',       label_he: 'רצועה במודעה',      hint_he: 'בעמוד המודעה, מתחת לתיאור' },
 ];
@@ -169,7 +169,7 @@ function CarouselLimitCard() {
         />
         <p className="mt-1 text-xs text-slate-500 flex items-start gap-1">
           <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-          תקרת השרת: 12. מעל 6 — במובייל הקרוסלה נגללת אופקית, וסביר שהאחרונים לא ייראו כמעט אף פעם.
+          תקרת השרת: 12. מעל 6: במובייל הקרוסלה נגללת אופקית, וסביר שהאחרונים לא ייראו כמעט אף פעם.
         </p>
       </div>
       <button
@@ -412,7 +412,7 @@ function AdEditor({
     // The check runs on both create + edit, so an old seed being
     // corrected here can't slip through with the same shape.
     if (f.cta_url.trim() && !/^https?:\/\//i.test(f.cta_url.trim())) {
-      return setErr('קישור CTA חייב להתחיל ב-http:// או https:// — קישור יחסי ייקרא כנתיב באתר וייפול ל-404');
+      return setErr('קישור CTA חייב להתחיל ב-http:// או https://, קישור יחסי ייקרא כנתיב באתר וייפול ל-404');
     }
 
     const creativeSet = [f.creative_url, f.creative_w, f.creative_h].filter(x => x.trim() !== '');
@@ -503,9 +503,9 @@ function AdEditor({
               onChange={v => set('cta_url', v)}
               hint={
                 !initial
-                  ? 'הקישור לאתר המפרסם — חובה ביצירה (R20 §3c).'
+                  ? 'הקישור לאתר המפרסם: חובה ביצירה (R20 §3c).'
                   : f.creative_url
-                    ? 'חובה כשיש תמונה — אחרת התמונה לחיצה בלי יעד.'
+                    ? 'חובה כשיש תמונה: אחרת התמונה לחיצה בלי יעד.'
                     : 'רשות בעריכת מודעה קיימת בלי תמונה.'
               }
             />
@@ -525,7 +525,7 @@ function AdEditor({
                 set('creative_h',   h != null ? String(h) : '');
               }}
             />
-            <TextField label="לוגו (אופציונלי — לתצוגת ברירת מחדל בלי תמונה)"
+            <TextField label="לוגו (אופציונלי: לתצוגת ברירת מחדל בלי תמונה)"
                        value={f.logo_url} onChange={v => set('logo_url', v)} />
             <div className="grid grid-cols-2 gap-2">
               <TextField label="רקע מותג (#RRGGBB)" value={f.brand_bg} onChange={v => set('brand_bg', v)} placeholder="#0f172a" />
@@ -660,7 +660,7 @@ function MultiPicker({ options, value, onChange, compact }:{
           {o.label}
         </button>
       ))}
-      {options.length === 0 && <span className="text-xs text-slate-400 px-2">— אין —</span>}
+      {options.length === 0 && <span className="text-xs text-slate-400 px-2">אין</span>}
     </div>
   );
 }
@@ -721,7 +721,7 @@ function CreativeUploader({ creativeUrl, creativeW, creativeH, placements, onCha
     ? 'לא נבחר סלוט. בחר placements בטופס כדי לראות את המידות הנדרשות.'
     : specs.length === 1
       ? `מידה נדרשת: ${specs[0][0]}×${specs[0][1]}.`
-      : `מידות נדרשות: ${specs.map(([w,h]) => `${w}×${h}`).join(' · ')} — נכס נפרד לכל סלוט (הכלל של R29 §2).`;
+      : `מידות נדרשות: ${specs.map(([w,h]) => `${w}×${h}`).join(' · ')}, נכס נפרד לכל סלוט (הכלל של R29 §2).`;
 
   async function upload(file: File) {
     setErr(null);
@@ -813,7 +813,7 @@ function CreativeUploader({ creativeUrl, creativeW, creativeH, placements, onCha
                 <>העלאה מהמחשב תופעל כשמנהל השרת יגדיר Cloudinary (<code>CLOUDINARY_CLOUD_NAME</code>/<code>API_KEY</code>/<code>API_SECRET</code>). בינתיים הדבק כתובת תמונה.</>
               )}
               {sigReason === 'unauthorized' && (
-                <>אין הרשאה לחתימה על העלאה, או שפג תוקף החיבור. התנתק והתחבר מחדש, ואם התקלה חוזרת — Cloudinary מוגדר אבל הנתיב נחסם ברמת הגייטוויי; דווח.</>
+                <>אין הרשאה לחתימה על העלאה, או שפג תוקף החיבור. התנתק והתחבר מחדש, ואם התקלה חוזרת, Cloudinary מוגדר אבל הנתיב נחסם ברמת הגייטוויי; דווח.</>
               )}
               {(sigReason === 'error' || !sigReason) && (
                 <>שגיאה זמנית בקבלת חתימה. נסה שוב, ואם התקלה חוזרת השתמש בהדבקת כתובת.</>
@@ -858,7 +858,7 @@ function ManualUrlEntry({ onPick, setErr }: {
       const dims = await new Promise<{ w: number; h: number }>((resolve, reject) => {
         const img = new Image();
         img.onload  = () => resolve({ w: img.naturalWidth, h: img.naturalHeight });
-        img.onerror = () => reject(new Error('טעינת התמונה נכשלה — בדוק שהכתובת נגישה'));
+        img.onerror = () => reject(new Error('טעינת התמונה נכשלה: בדוק שהכתובת נגישה'));
         img.src = trimmed;
       });
       if (!dims.w || !dims.h) throw new Error('לא הצלחתי לזהות מידות של התמונה');
@@ -989,11 +989,11 @@ function SlotsTab() {
               {rows.map(r => (
                 <tr key={r.id}>
                   <td className="px-3 py-2">{PLACEMENTS.find(p => p.code === r.placement)?.label_he ?? r.placement}</td>
-                  <td className="px-3 py-2 text-slate-500">{r.category_code ?? '—'}</td>
+                  <td className="px-3 py-2 text-slate-500">{r.category_code ?? '–'}</td>
                   <td className="px-3 py-2 text-slate-500">{fmtDate(r.starts_at)}</td>
                   <td className="px-3 py-2 text-slate-500">{fmtDate(r.ends_at)}</td>
                   <td className="px-3 py-2 tabular-nums">{r.price_nis} ₪</td>
-                  <td className="px-3 py-2">{r.advertiser_name ?? <span className="text-slate-400">— לא הוזמן —</span>}</td>
+                  <td className="px-3 py-2">{r.advertiser_name ?? <span className="text-slate-400">לא הוזמן</span>}</td>
                 </tr>
               ))}
             </tbody>
@@ -1005,7 +1005,7 @@ function SlotsTab() {
 }
 
 function fmtDate(iso: string | null): string {
-  if (!iso) return '—';
+  if (!iso) return '–';
   try {
     return new Date(iso).toLocaleString('he-IL', {
       dateStyle: 'short', timeStyle: 'short',

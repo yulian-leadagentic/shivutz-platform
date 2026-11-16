@@ -197,7 +197,7 @@ export default function MembershipRequestAcceptPage() {
           <div className="flex items-center gap-2 bg-slate-50 rounded-lg px-3 py-2 text-sm">
             <EntityIcon className="h-4 w-4 text-slate-400 shrink-0" />
             <span className="text-slate-500">ה{entityKindHe}:</span>
-            <span className="font-semibold text-slate-900 truncate">{req.entity_name || '—'}</span>
+            <span className="font-semibold text-slate-900 truncate">{req.entity_name || '–'}</span>
           </div>
 
           {/* Requester details */}

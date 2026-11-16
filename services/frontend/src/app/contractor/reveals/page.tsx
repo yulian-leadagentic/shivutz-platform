@@ -137,7 +137,7 @@ export default function ContractorRevealsPage() {
                           <Mail className="w-3.5 h-3.5" /> {r.email}
                         </a>
                       )}
-                      {!r.phone && !r.email && <span className="text-slate-400">—</span>}
+                      {!r.phone && !r.email && <span className="text-slate-400">–</span>}
                     </div>
                   </td>
                 </tr>

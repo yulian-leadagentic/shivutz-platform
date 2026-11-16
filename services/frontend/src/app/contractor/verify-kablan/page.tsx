@@ -74,7 +74,7 @@ export default function VerifyKablanPage() {
           <CardContent className="pt-8 pb-8 flex flex-col items-center gap-3">
             <CheckCircle2 className="h-14 w-14 text-emerald-500" />
             <h2 className="text-xl font-bold text-slate-900">אומת מול פנקס הקבלנים</h2>
-            <p className="text-slate-600 text-sm">החשבון שלך פעיל במלואו — מעביר אותך לדשבורד…</p>
+            <p className="text-slate-600 text-sm">החשבון שלך פעיל במלואו, מעביר אותך לדשבורד…</p>
             <Loader2 className="h-5 w-5 animate-spin text-brand-600" />
           </CardContent>
         </Card>
@@ -95,7 +95,7 @@ export default function VerifyKablanPage() {
             <p className="text-slate-700 text-sm leading-relaxed">
               {isUnreachable
                 ? 'שירות פנקס הקבלנים אינו זמין כרגע. ננסה לאמת אוטומטית מאוחר יותר, או שתוכל לנסות שוב בעוד מספר דקות.'
-                : 'הפרטים שהזנת התקבלו. מנהל יבדוק את הבקשה — בדרך כלל תוך 48 שעות. נשלח אליך SMS לאחר האישור.'}
+                : 'הפרטים שהזנת התקבלו. מנהל יבדוק את הבקשה, בדרך כלל תוך 48 שעות. נשלח אליך SMS לאחר האישור.'}
             </p>
             <div className="flex gap-2 pt-2">
               {isUnreachable ? (
@@ -124,7 +124,7 @@ export default function VerifyKablanPage() {
           </div>
           <CardTitle className="text-xl">אימות מספר רישיון קבלן</CardTitle>
           <CardDescription className="mt-1">
-            הזן את מספר הרישיון שלך מפנקס הקבלנים — אנו נצליב אותו מול הרישום הרשמי.
+            הזן את מספר הרישיון שלך מפנקס הקבלנים, אנו נצליב אותו מול הרישום הרשמי.
           </CardDescription>
         </CardHeader>
         <CardContent>

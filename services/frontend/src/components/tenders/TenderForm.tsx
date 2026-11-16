@@ -238,7 +238,7 @@ export default function TenderForm({ mode, initial, onSubmit, onCancel }: Props)
             ? <><Loader2 className="h-4 w-4 animate-spin" /> שומר…</>
             : mode === 'edit'
               ? <><Send className="h-4 w-4" /> שמור שינויים</>
-              : <><Send className="h-4 w-4" /> שלח לאישור — {totalWorkers} עובדים</>}
+              : <><Send className="h-4 w-4" /> שלח לאישור: {totalWorkers} עובדים</>}
         </Button>
         <Button type="button" variant="outline" size="lg" onClick={onCancel}>
           ביטול

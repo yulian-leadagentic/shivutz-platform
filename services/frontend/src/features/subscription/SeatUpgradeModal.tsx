@@ -155,7 +155,7 @@ export function SeatUpgradeModal({ detail, onClose, onSuccess }: Props) {
 
               <p className="text-xs text-slate-500 leading-relaxed">
                 המושב יהיה זמין להזמנה מיידית. החיוב עצמו מתחיל בחידוש
-                הבא של המנוי — לא מתחלק לפי ימים.
+                הבא של המנוי: לא מתחלק לפי ימים.
               </p>
 
               {error && (

@@ -139,7 +139,7 @@ function DocEditor({ doc, onSaved }: { doc: LegalDocAdmin; onSaved: () => void }
         </label>
         <label className="text-xs text-slate-600 inline-flex items-center gap-2 h-9 pt-4">
           <input type="checkbox" checked={isDraft} onChange={(e) => setIsDraft(e.target.checked)} />
-          <span>טיוטה — מציג באנר טיוטה בעמוד הציבורי</span>
+          <span>טיוטה: מציג באנר טיוטה בעמוד הציבורי</span>
         </label>
         <button type="button" onClick={save} disabled={saving}
                 className="h-9 inline-flex items-center gap-1 text-sm font-semibold text-slate-900 bg-brand-600 hover:bg-brand-500 rounded px-4 disabled:bg-slate-300">
@@ -210,7 +210,7 @@ function SettingsTab() {
         <div className="flex items-start gap-2 text-sm text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
           <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
           <div>
-            הצהרת הנגישות אינה מלאה — חסרים פרטי התקשרות לרכז הנגישות (טלפון או מייל). המקטע אינו מוצג לציבור עד שיושלמו.
+            הצהרת הנגישות אינה מלאה, חסרים פרטי התקשרות לרכז הנגישות (טלפון או מייל). המקטע אינו מוצג לציבור עד שיושלמו.
           </div>
         </div>
       )}

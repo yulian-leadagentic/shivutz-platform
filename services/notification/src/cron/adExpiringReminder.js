@@ -49,7 +49,7 @@ async function runAdExpiringReminderCron() {
     const title    = (t.title || '').slice(0, 60);
     const dayLabel = t.days_left === 1 ? 'מחר' : `בעוד ${t.days_left} ימים`;
     const message =
-      `TagidAI — המודעה "${title}" תפוג ${dayLabel} ותוסתר מתוצאות החיפוש. ` +
+      `TagidAI: המודעה "${title}" תפוג ${dayLabel} ותוסתר מתוצאות החיפוש. ` +
       `לעריכה או פרסום מחדש:\n${link}`;
     await sendSmsInternal(t.phone, message);
     sent++;

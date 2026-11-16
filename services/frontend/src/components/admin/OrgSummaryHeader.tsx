@@ -40,12 +40,12 @@ const DEAL_STATUS_GROUPS: Array<{
 ];
 
 function fmtDate(iso?: string | null) {
-  if (!iso) return '—';
+  if (!iso) return '–';
   try { return new Date(iso).toLocaleDateString('he-IL'); } catch { return iso; }
 }
 
 function fmtNumberOrDash(n: number | null | undefined) {
-  if (n == null) return '—';
+  if (n == null) return '–';
   return n.toLocaleString('he-IL');
 }
 
@@ -132,10 +132,10 @@ function ContractorVerificationBanner({ status }: {
   } else if (verdict === 'manual') {
     tone = anyMismatch ? 'danger' : 'warn';
     icon = <AlertTriangle className="h-5 w-5" />;
-    title = 'אושר ידנית — ללא אימות אוטומטי';
+    title = 'אושר ידנית: ללא אימות אוטומטי';
     body  = anyMismatch
       ? 'מנהל אישר ידנית, אך פרטי הקשר שהוזנו אינם תואמים את הרשום בפנקס הקבלנים. ראה פירוט למטה.'
-      : 'הקבלן לא עבר אימות מול פנקס הקבלנים — אישור ניתן ידנית על ידי מנהל המערכת.';
+      : 'הקבלן לא עבר אימות מול פנקס הקבלנים, אישור ניתן ידנית על ידי מנהל המערכת.';
   } else if (verdict === 'unverified' || verdict === 'legacy') {
     tone = anyMismatch ? 'danger' : 'warn';
     icon = <AlertTriangle className="h-5 w-5" />;
@@ -206,7 +206,7 @@ function ChannelMatchRow({ label, userValue, registryValue, match }: {
     : 'bg-slate-300';
   const matchLabel = match === true ? 'תואם'
     : match === false ? 'לא תואם'
-    : '—';
+    : '–';
   return (
     <div className="rounded-md bg-white/70 border border-current/20 px-2.5 py-1.5">
       <div className="flex items-center gap-2 mb-0.5">
@@ -217,11 +217,11 @@ function ChannelMatchRow({ label, userValue, registryValue, match }: {
       <div className="grid grid-cols-2 gap-2 text-[11px] opacity-80">
         <div>
           <p className="opacity-60">שהוזן</p>
-          <p dir="ltr" className="font-mono truncate">{userValue || '—'}</p>
+          <p dir="ltr" className="font-mono truncate">{userValue || '–'}</p>
         </div>
         <div>
           <p className="opacity-60">בפנקס הקבלנים</p>
-          <p dir="ltr" className="font-mono truncate">{registryValue || '—'}</p>
+          <p dir="ltr" className="font-mono truncate">{registryValue || '–'}</p>
         </div>
       </div>
     </div>
@@ -376,7 +376,7 @@ function ContractorGovPanel({ gov, businessNumber }: {
       {!gov.pinkash_found && !gov.ica_found && (
         <div className="flex items-start gap-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
           <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-          לא נמצאה התאמה ברשם החברות או בפנקס הקבלנים — נדרש אישור ידני.
+          לא נמצאה התאמה ברשם החברות או בפנקס הקבלנים, נדרש אישור ידני.
         </div>
       )}
     </section>
@@ -500,9 +500,9 @@ function RecentDealsTable({ deals, orgType }: {
                 <td className="px-3 py-2"><StatusBadge status={d.status} /></td>
                 <td className="px-3 py-2"><StuckBadge on={d.stuck_on} /></td>
                 <td className="px-3 py-2 text-slate-700 max-w-[180px] truncate" title={d.other_party_name ?? ''}>
-                  {d.other_party_name ?? '—'}
+                  {d.other_party_name ?? '–'}
                 </td>
-                <td className="px-3 py-2 text-slate-700">{d.profession_he ?? d.profession_type ?? '—'}</td>
+                <td className="px-3 py-2 text-slate-700">{d.profession_he ?? d.profession_type ?? '–'}</td>
                 <td className="px-3 py-2 text-slate-700">{fmtNumberOrDash(d.workers_count ?? d.dw_count)}</td>
                 <td className="px-3 py-2 text-slate-500 text-xs whitespace-nowrap">
                   <span className="inline-flex items-center gap-1">

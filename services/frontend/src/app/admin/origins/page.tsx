@@ -148,14 +148,14 @@ export default function AdminOriginsPage() {
               dir="ltr"
               className="flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
             >
-              <option value="">— בחר —</option>
+              <option value="">בחר</option>
               {ISO_COUNTRIES
                 // Drop countries already in the registry so admin doesn't
                 // pick a duplicate by mistake; the server-side UNIQUE
                 // constraint would 409 anyway.
                 .filter(c => !rows.some(r => r.code === c.code))
                 .map(c => (
-                  <option key={c.code} value={c.code}>{c.code} — {c.name_en}</option>
+                  <option key={c.code} value={c.code}>{c.code} : {c.name_en}</option>
                 ))}
             </select>
             <span className="text-xs text-slate-400">

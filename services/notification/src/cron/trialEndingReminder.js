@@ -49,7 +49,7 @@ async function runTrialEndingReminderCron() {
     const nameSuffix = t.entity_name ? ` (${t.entity_name})` : '';
     const dayLabel   = t.days_left === 1 ? 'מחר' : `בעוד ${t.days_left} ימים`;
     const message =
-      `TagidAI — תקופת הניסיון שלכם${nameSuffix} מסתיימת ${dayLabel}. ` +
+      `TagidAI: תקופת הניסיון שלכם${nameSuffix} מסתיימת ${dayLabel}. ` +
       `שדרגו למנוי בתשלום כדי להמשיך בפעילות:\n${link}`;
     await sendSmsInternal(t.phone, message);
     sent++;

@@ -167,7 +167,7 @@ function mapSearchError(e: unknown): string {
   // Error whose message names a timeout / abort. Do NOT gate on
   // ApiError here — network failures throw before apiFetch wraps.
   const msg = e instanceof Error ? e.message.toLowerCase() : '';
-  if (/networkerror|failed to fetch|load failed|abort/.test(msg)) return 'בעיית תקשורת — בדוק את החיבור ונסה שוב.';
+  if (/networkerror|failed to fetch|load failed|abort/.test(msg)) return 'בעיית תקשורת: בדוק את החיבור ונסה שוב.';
   if (/timeout|timed out/.test(msg))                              return 'החיפוש לוקח יותר מדי זמן. נסה שוב.';
   // Everything else through the central mapper so a server-supplied
   // Hebrew message wins, and known codes get their translation.
@@ -682,7 +682,7 @@ function LandingPageInner() {
     if (fRegion) chips.push('אזור: ' + labelFor(regions, fRegion));
     if (fOrigin) chips.push('מוצא: ' + labelFor(origins, fOrigin));
     if (chips.length) {
-      const prefix = chips.join(' · ') + (query ? ' — ' : '');
+      const prefix = chips.join(' · ') + (query ? ', ' : '');
       query = prefix + query;
     }
     if (query.length < 2) return;
@@ -1535,7 +1535,7 @@ function LandingPageInner() {
                     // SP — placeholder-as-example: teaches the smart-query
                     // syntax in-context (better than "חפש").
                     placeholder="נסה: 20 פועלים סינים במרכז"
-                    aria-label="חיפוש חכם — תיאור חופשי בעברית"
+                    aria-label="חיפוש חכם: תיאור חופשי בעברית"
                     className="ai-field-input flex-1 min-w-0 h-11 text-base sm:text-lg outline-none placeholder:text-slate-400 bg-transparent"
                   />
                   <div className="ai-ghost" aria-hidden="true">
@@ -1953,7 +1953,7 @@ function LandingPageInner() {
                     >
                       {isMarketplace && (
                         <p className="text-xs text-slate-500 py-1">
-                          תוצאות שירותים נלווים — הסינון המתקדם לא רלוונטי כאן. לחיפוש קטגוריה, קלד אותה בשורה למעלה.
+                          תוצאות שירותים נלווים: הסינון המתקדם לא רלוונטי כאן. לחיפוש קטגוריה, קלד אותה בשורה למעלה.
                         </p>
                       )}
                       {showProf && (
@@ -2269,7 +2269,7 @@ function LandingPageInner() {
                           className="text-xs text-slate-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 flex items-start gap-2"
                         >
                           <Sparkles className="w-3.5 h-3.5 mt-0.5 text-amber-700 shrink-0" aria-hidden="true" />
-                          <span>לא זיהינו מקצוע מסוים — מציג את כל ההיצע, לפי סדר התאמה</span>
+                          <span>לא זיהינו מקצוע מסוים, מציג את כל ההיצע, לפי סדר התאמה</span>
                         </div>
                       );
                     }
@@ -2377,7 +2377,7 @@ function LandingPageInner() {
                         מודעות עובדים של תאגידים אחרים אינן מוצגות לתאגידים.
                       </p>
                       <p className="text-sm text-slate-700 mb-4">
-                        אלה המודעות שלך שתואמות לחיפוש — כרגע אין.
+                        אלה המודעות שלך שתואמות לחיפוש, כרגע אין.
                       </p>
                       <Link
                         href="/corporation/ads/new/worker"
@@ -2462,7 +2462,7 @@ function LandingPageInner() {
                   {showWorkers && workerAds.length > 0 && (
                     <ul
                       role="table"
-                      aria-label="תוצאות חיפוש — עובדים"
+                      aria-label="תוצאות חיפוש: עובדים"
                       className="results-table"
                     >
                       <ResultsHeader kind="worker" />
@@ -2508,8 +2508,8 @@ function LandingPageInner() {
                       // NMC — additive when exact > 0 ("יש גם היצעים
                       // נוספים…"), negating only when exact === 0.
                       heading = hasExact
-                        ? `יש גם היצעים נוספים בכמויות אחרות — אפשר לשלב בין כמה תאגידים:`
-                        : `אין כרגע מודעה עם ${qtyRequested} עובדים. אלה ההיצעים הגדולים ביותר — אפשר לשלב בין כמה תאגידים.`;
+                        ? `יש גם היצעים נוספים בכמויות אחרות, אפשר לשלב בין כמה תאגידים:`
+                        : `אין כרגע מודעה עם ${qtyRequested} עובדים. אלה ההיצעים הגדולים ביותר, אפשר לשלב בין כמה תאגידים.`;
                       tagFor  = (ad) => ad.quantity ? `כמות: ${ad.quantity}` : undefined;
                     } else if (relaxed === 'origin_country') {
                       const originsSeen = Array.from(new Set(near.map((a) => a.origin_country).filter(Boolean) as string[]))
@@ -2522,7 +2522,7 @@ function LandingPageInner() {
                       //     — negating when exact === 0: "לא נמצאו X מ{req}. יש X מ{origins}:"
                       heading = hasExact
                         ? (seenPart
-                            ? `יש עוד ${workersOf} שעשויים להתאים — ${seenPart}:`
+                            ? `יש עוד ${workersOf} שעשויים להתאים: ${seenPart}:`
                             : `יש עוד ${workersOf} שעשויים להתאים:`)
                         : (seenPart
                             ? `לא נמצאו ${workersOf} מ${requestedOrigin}. יש ${workersOf} ${seenPart}:`
@@ -2538,7 +2538,7 @@ function LandingPageInner() {
                       const seenPart = regionsSeen.length ? `ב${regionsSeen.join(', ב')}` : '';
                       heading = hasExact
                         ? (seenPart
-                            ? `יש עוד ${workersOf} גם באזורים אחרים — ${seenPart}:`
+                            ? `יש עוד ${workersOf} גם באזורים אחרים: ${seenPart}:`
                             : `יש עוד ${workersOf} גם באזורים אחרים:`)
                         : (seenPart
                             ? `אין ${workersOf} ב${requestedRegion}. יש ${seenPart}:`
@@ -2574,7 +2574,7 @@ function LandingPageInner() {
                             <ul
                               key={kind}
                               role="table"
-                              aria-label={kind === 'worker' ? 'תוצאות קרובות — עובדים' : 'תוצאות קרובות — דיור'}
+                              aria-label={kind === 'worker' ? 'תוצאות קרובות: עובדים' : 'תוצאות קרובות: דיור'}
                               className="results-table"
                             >
                               <ResultsHeader kind={kind} />
@@ -2630,7 +2630,7 @@ function LandingPageInner() {
                       housing read as two half-empty sections. */}
                   {showHousing && (housingAds.length > 0 || housingListings.length > 0) && (
                     <section
-                      aria-label="תוצאות חיפוש — דיור"
+                      aria-label="תוצאות חיפוש: דיור"
                       className="r32-section order-1 space-y-3"
                     >
                       <h2 className="text-base sm:text-lg font-bold text-slate-900">
@@ -3291,20 +3291,20 @@ function AdRow({
       </div>
 
       {/* Cell 2 — quantity / beds */}
-      <div className="results-cell results-cell-num" data-l={col2Lbl} aria-label={`${col2Lbl}: ${col2Val ?? '—'}`}>
-        {col2Val ?? '—'}
+      <div className="results-cell results-cell-num" data-l={col2Lbl} aria-label={`${col2Lbl}: ${col2Val ?? '–'}`}>
+        {col2Val ?? '–'}
         {isNearQty && <span className="results-near-tag">{nearMatchTag}</span>}
       </div>
 
       {/* Cell 3 — origin / city */}
-      <div className="results-cell" data-l={col3Lbl} aria-label={`${col3Lbl}: ${col3Val ?? '—'}`}>
-        {col3Val ?? '—'}
+      <div className="results-cell" data-l={col3Lbl} aria-label={`${col3Lbl}: ${col3Val ?? '–'}`}>
+        {col3Val ?? '–'}
         {isNearOrigin && <span className="results-near-tag">{nearMatchTag}</span>}
       </div>
 
       {/* Cell 4 — region / ₪ per bed */}
-      <div className="results-cell results-cell-num" data-l={col4Lbl} aria-label={`${col4Lbl}: ${col4Val ?? '—'}`}>
-        {col4Val ?? '—'}
+      <div className="results-cell results-cell-num" data-l={col4Lbl} aria-label={`${col4Lbl}: ${col4Val ?? '–'}`}>
+        {col4Val ?? '–'}
         {isNearRegion && <span className="results-near-tag">{nearMatchTag}</span>}
       </div>
 
@@ -3375,7 +3375,7 @@ function AdRow({
               <div className="space-y-2">
                 {(ad.total_beds != null || ad.available_beds != null) && (
                   <div className="text-xs text-slate-600">
-                    <span className="font-semibold text-slate-800">{ad.available_beds ?? '—'}</span> מיטות פנויות
+                    <span className="font-semibold text-slate-800">{ad.available_beds ?? '–'}</span> מיטות פנויות
                     {ad.total_beds != null && <> מתוך <span className="font-semibold text-slate-800">{ad.total_beds}</span> סה&quot;כ</>}
                   </div>
                 )}
@@ -3420,7 +3420,7 @@ function AdRow({
           <div className="text-sm text-slate-800 space-y-1">
             <div className="font-semibold flex items-center gap-1.5">
               <Building2 className="w-4 h-4 text-slate-500" />
-              {revealed.company_name || '—'}
+              {revealed.company_name || '–'}
             </div>
             {revealed.phone && (
               <a href={`tel:${revealed.phone}`} className="text-brand-700 hover:underline flex items-center gap-1.5">
@@ -3435,7 +3435,7 @@ function AdRow({
             {/* R2 — reassure re-viewing this ad won't charge a
                 second reveal. Product decision, DO NOT remove. */}
             <p className="text-xs text-slate-500 pt-1">
-              נשמר לך — לא ייגבו חשיפות נוספות על מודעה זו.
+              נשמר לך: לא ייגבו חשיפות נוספות על מודעה זו.
             </p>
             {/* R4 — cross-flow discovery. Product decision, DO NOT
                 remove. R32 S5.4 · it used to leave for

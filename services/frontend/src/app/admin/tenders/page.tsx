@@ -24,7 +24,7 @@ import { useTableState } from '@/components/table/useTableState';
 const STATUS: Record<string, { cls: string; label: string }> = {
   pending_admin:  { cls: 'bg-slate-800 text-white',        label: 'ממתין לאישור פרסום' },
   open:           { cls: 'bg-sky-100 text-sky-800',        label: 'פתוח להצעות' },
-  awaiting_admin: { cls: 'bg-amber-500 text-white',        label: 'בקשת קשר — ממתין לאישורך' },
+  awaiting_admin: { cls: 'bg-amber-500 text-white',        label: 'בקשת קשר: ממתין לאישורך' },
   in_progress:    { cls: 'bg-emerald-500 text-white',      label: 'בתהליך' },
   closed:         { cls: 'bg-emerald-50 text-emerald-700', label: 'הושלם' },
   cancelled:      { cls: 'bg-rose-50 text-rose-700',       label: 'בוטל' },
@@ -33,7 +33,7 @@ const STATUS: Record<string, { cls: string; label: string }> = {
 };
 
 function fmt(iso?: string | null) {
-  if (!iso) return '—';
+  if (!iso) return '–';
   const s = iso.includes(' ') && !iso.includes('T') ? iso.replace(' ', 'T') : iso;
   const z = /[Zz]$|[+-]\d{2}:?\d{2}$/.test(s) ? s : s + 'Z';
   return new Date(z).toLocaleString('he-IL');
@@ -250,7 +250,7 @@ export default function AdminTendersPage() {
               ? 'bg-brand-600 text-slate-900 border-brand-800'
               : 'bg-white text-slate-600 border-slate-300 hover:border-brand-400'
           }`}
-          title="הצג רק בקשות שפורסמו אוטומטית (tier_2+ + kablan-verified) — לבדיקה בדיעבד"
+          title="הצג רק בקשות שפורסמו אוטומטית (tier_2+ + kablan-verified), לבדיקה בדיעבד"
         >
           {autoOnly ? '✓ פורסמו אוטומטית בלבד' : 'פורסמו אוטומטית'}
         </button>
@@ -324,7 +324,7 @@ export default function AdminTendersPage() {
                   <span className={`inline-flex items-center text-[11px] font-bold px-2 py-0.5 rounded-full ${pill.cls}`}>{pill.label}</span>
                 </div>
                 <p className="text-sm text-slate-600 mt-1.5">
-                  קבלן: <span className="font-semibold">{t.contractor_id ? (names[t.contractor_id] || '…') : '—'}</span>
+                  קבלן: <span className="font-semibold">{t.contractor_id ? (names[t.contractor_id] || '…') : '–'}</span>
                   {' · '}{t.bids?.length ?? 0} הצעות
                   {selectedBids.length > 0 && <> · {selectedBids.length} נבחרו</>}
                   {pending > 0 && (
@@ -441,7 +441,7 @@ export default function AdminTendersPage() {
                           : 'border-slate-200'}`}>
                           <div className="flex items-center justify-between gap-2">
                             <span className="font-semibold text-slate-900 inline-flex items-center gap-2 flex-wrap">
-                              {b.corporation_id ? (names[b.corporation_id] || b.corporation_id.slice(0, 8)) : '—'}
+                              {b.corporation_id ? (names[b.corporation_id] || b.corporation_id.slice(0, 8)) : '–'}
                               {b.corp_ref_no != null && (
                                 <span className="inline-flex items-center gap-0.5 text-[11px] font-bold text-slate-500 bg-slate-100 border border-slate-200 rounded-full px-2 py-0.5">
                                   <Hash className="h-3 w-3" />אצל התאגיד: בקשה {b.corp_ref_no}
@@ -459,7 +459,7 @@ export default function AdminTendersPage() {
                             {b.items.map((it) => (
                               <div key={it.id} className={`flex items-center justify-between ${it.selected ? 'text-emerald-700 font-semibold' : ''}`}>
                                 <span>{it.selected && '✓ '}{it.quantity_offered} {professionMap[it.profession_type] ?? it.profession_type}</span>
-                                <span>{it.hourly_rate != null ? `₪${it.hourly_rate}/שעה` : '—'}</span>
+                                <span>{it.hourly_rate != null ? `₪${it.hourly_rate}/שעה` : '–'}</span>
                               </div>
                             ))}
                           </div>
@@ -468,7 +468,7 @@ export default function AdminTendersPage() {
                               the contractor until the admin approves it. */}
                           {isPending && (
                             <div className="mt-2 pt-2 border-t border-slate-200">
-                              <p className="text-xs text-slate-600 mb-2">הצעה חדשה — תוצג לקבלן רק לאחר אישורך.</p>
+                              <p className="text-xs text-slate-600 mb-2">הצעה חדשה: תוצג לקבלן רק לאחר אישורך.</p>
                               {rejectingBid === b.id ? (
                                 <div className="space-y-2">
                                   <textarea value={bidRejectReason} onChange={(e) => setBidRejectReason(e.target.value)} rows={2}
@@ -525,7 +525,7 @@ export default function AdminTendersPage() {
                 {t.status === 'awaiting_admin' && (
                   <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 space-y-2">
                     <p className="text-sm text-amber-900">
-                      הקבלן בחר {selectedBids.length} תאגידים. לאחר תיאום התשלום מול הצדדים — אשר כדי לחשוף את הפרטים לשני הצדדים.
+                      הקבלן בחר {selectedBids.length} תאגידים. לאחר תיאום התשלום מול הצדדים, אשר כדי לחשוף את הפרטים לשני הצדדים.
                     </p>
                     <Button type="button" disabled={acting === t.id || selectedBids.length === 0}
                       className="bg-emerald-600 hover:bg-emerald-700"
@@ -568,7 +568,7 @@ export default function AdminTendersPage() {
           const t = tenders.find((x) => x.id === confirmDelete);
           const title = t?.title || 'בקשה ללא כותרת';
           const bidCount = t?.bids?.length ?? 0;
-          return `אתה עומד למחוק לצמיתות את "${title}".\n\nכל ${bidCount} ההצעות שצורפו לבקשה יימחקו יחד איתה. אין שחזור.\n\nאם הבקשה רק בלא נכונה — שקול "דחה בקשה" במקום מחיקה.`;
+          return `אתה עומד למחוק לצמיתות את "${title}".\n\nכל ${bidCount} ההצעות שצורפו לבקשה יימחקו יחד איתה. אין שחזור.\n\nאם הבקשה רק בלא נכונה, שקול "דחה בקשה" במקום מחיקה.`;
         })()}
         confirmPhrase={confirmDelete ? confirmDelete.slice(0, 6) : ''}
         confirmLabel="מחק לצמיתות"

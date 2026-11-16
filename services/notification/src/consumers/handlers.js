@@ -218,7 +218,7 @@ async function handle(routingKey, payload, sendEmail) {
         if (admin.phone) {
           await sendSmsInternal(
             admin.phone,
-            `${firstName}, ספק שירותים נלווים חדש נרשם והופעל — ${payload.org_name}${planSegment}${categorySegment}\n${entityLink}`,
+            `${firstName}, ספק שירותים נלווים חדש נרשם והופעל: ${payload.org_name}${planSegment}${categorySegment}\n${entityLink}`,
           );
         }
         if (admin.email) {
@@ -251,7 +251,7 @@ async function handle(routingKey, payload, sendEmail) {
       // pass; a real registrant's real address on staging will be
       // rejected downstream (safety, per decisions doc).
       if (!payload.recipient_email) {
-        console.warn('[handlers] provider.welcome missing recipient_email — skipped');
+        console.warn('[handlers] provider.welcome missing recipient_email: skipped');
         break;
       }
 
@@ -345,7 +345,7 @@ async function handle(routingKey, payload, sendEmail) {
           corp_deal_no:    payload.corp_deal_no || '',
           link:            dealUrl,
         },
-        smsText: `TagidAI — דרישה חדשה${ref}: ${prof}. לצפייה ותגובה: ${dealUrl}`,
+        smsText: `TagidAI: דרישה חדשה${ref}: ${prof}. לצפייה ותגובה: ${dealUrl}`,
         sendEmail, sendSms: sendSmsInternal,
         fallback: { email: payload.corporation_email, phone: payload.corporation_phone },
       });
@@ -367,7 +367,7 @@ async function handle(routingKey, payload, sendEmail) {
           deal_id:          payload.deal_id,
           link:             dealUrl,
         },
-        smsText: `העסקה אושרה — ${corp}. פרטים: ${dealUrl}`,
+        smsText: `העסקה אושרה: ${corp}. פרטים: ${dealUrl}`,
         sendEmail, sendSms: sendSmsInternal,
         fallback: { email: payload.contractor_email, phone: payload.contractor_phone },
       });
@@ -432,7 +432,7 @@ async function handle(routingKey, payload, sendEmail) {
       const adUrl = `${FRONTEND_URL}/corporation/ads`;
       const title = (payload.ad_title || '').slice(0, 60);
       const message =
-        `TagidAI — קבלן חשף את פרטי הקשר שלכם בעקבות המודעה "${title}". ` +
+        `TagidAI: קבלן חשף את פרטי הקשר שלכם בעקבות המודעה "${title}". ` +
         `הוא עשוי לפנות אליכם בקרוב.\nלצפייה במודעות שלכם:\n${adUrl}`;
       await sendSmsInternal(payload.corp_phone, message);
       break;
@@ -458,7 +458,7 @@ async function handle(routingKey, payload, sendEmail) {
       const entityKindHe = payload.entity_type === 'contractor' ? 'הקבלן' : 'התאגיד';
       const ownerName    = (payload.owner_name || '').split(' ')[0] || 'שלום';
       const message =
-        `TagidAI — ${ownerName}, ${payload.requester_name} (${payload.requester_phone}) מבקש להצטרף לצוות ${entityKindHe} "${payload.entity_name}".\n` +
+        `TagidAI: ${ownerName}, ${payload.requester_name} (${payload.requester_phone}) מבקש להצטרף לצוות ${entityKindHe} "${payload.entity_name}".\n` +
         `לאישור בלחיצה אחת:\n${approveUrl}`;
       await sendSmsInternal(payload.owner_phone, message);
       break;
@@ -469,7 +469,7 @@ async function handle(routingKey, payload, sendEmail) {
       const entityKindHe = payload.entity_type === 'contractor' ? 'הקבלן' : 'התאגיד';
       const firstName = (payload.requester_name || '').split(' ')[0] || 'שלום';
       const message =
-        `TagidAI — ${firstName}, בקשתך להצטרף לצוות ${entityKindHe} אושרה. תוכל להיכנס למערכת עם מספר הטלפון שלך.\n` +
+        `TagidAI: ${firstName}, בקשתך להצטרף לצוות ${entityKindHe} אושרה. תוכל להיכנס למערכת עם מספר הטלפון שלך.\n` +
         `${FRONTEND_URL}/login`;
       await sendSmsInternal(payload.requester_phone, message);
       break;
@@ -481,7 +481,7 @@ async function handle(routingKey, payload, sendEmail) {
       const firstName = (payload.requester_name || '').split(' ')[0] || 'שלום';
       const reasonSuffix = payload.reason ? `\nהערה: ${payload.reason}` : '';
       const message =
-        `TagidAI — ${firstName}, בקשתך להצטרף לצוות ${entityKindHe} נדחתה על ידי הבעלים.` +
+        `TagidAI: ${firstName}, בקשתך להצטרף לצוות ${entityKindHe} נדחתה על ידי הבעלים.` +
         reasonSuffix +
         `\nלשאלות, פנה לתמיכה: ${FRONTEND_URL}/support`;
       await sendSmsInternal(payload.requester_phone, message);
@@ -499,9 +499,9 @@ async function handle(routingKey, payload, sendEmail) {
     case 'contractor.verify.sms_code': {
       const firstName = (payload.contact_name || '').split(' ')[0] || 'שלום';
       const message =
-        `TagidAI — קוד אימות בעלות לעסק שלך: ${payload.code}\n` +
+        `TagidAI: קוד אימות בעלות לעסק שלך: ${payload.code}\n` +
         `הזן את הקוד באתר כדי להשלים את הרישום. תקף ל-30 דקות.\n` +
-        `אם לא ביקשת — התעלם מההודעה (${firstName}).`;
+        `אם לא ביקשת, התעלם מההודעה (${firstName}).`;
       await sendSmsInternal(payload.phone, message);
       break;
     }
@@ -527,7 +527,7 @@ async function handle(routingKey, payload, sendEmail) {
         const firstName = (payload.contact_name || '').split(' ')[0] || 'שלום';
         await sendSmsInternal(
           payload.contact_phone,
-          `TagidAI — ${firstName}, הרישום של ${payload.company_name || 'העסק שלך'} כבר לא מופיע בפנקס הקבלנים. ` +
+          `TagidAI: ${firstName}, הרישום של ${payload.company_name || 'העסק שלך'} כבר לא מופיע בפנקס הקבלנים. ` +
           `הגשת בקשות לתאגידים מושהית עד שנעדכן את האימות. ` +
           `אמת מחדש: ${FRONTEND_URL}/contractor/verify-kablan`
         );
@@ -552,7 +552,7 @@ async function handle(routingKey, payload, sendEmail) {
         const firstName = (payload.contact_name || '').split(' ')[0] || 'שלום';
         await sendSmsInternal(
           payload.contact_phone,
-          `TagidAI — ${firstName}, החשבון שלך אומת בהצלחה ✓ אתה יכול עכשיו להגיש בקשות לתאגידים. ` +
+          `TagidAI: ${firstName}, החשבון שלך אומת בהצלחה ✓ אתה יכול עכשיו להגיש בקשות לתאגידים. ` +
           `כניסה: ${FRONTEND_URL}/contractor/dashboard`
         );
       }
@@ -577,7 +577,7 @@ async function handle(routingKey, payload, sendEmail) {
         const firstName = (payload.contractor_contact_name || '').split(' ')[0] || 'שלום';
         await sendSmsInternal(
           payload.contractor_contact_phone,
-          `TagidAI — ${firstName}, תאגיד הציע ${vars.worker_count} עובדי ${vars.profession_he} לבקשתך. ` +
+          `TagidAI: ${firstName}, תאגיד הציע ${vars.worker_count} עובדי ${vars.profession_he} לבקשתך. ` +
           `יש לך 48 שעות לאשר. כניסה: ${dealUrl}`
         );
       }
@@ -656,8 +656,8 @@ async function broadcastNoMatch(payload, sendEmail) {
 
   const uploadLink = `${FRONTEND_URL}/corporation/workers/new`;
   const message =
-    `TagidAI — קבלן מחפש ${qty} עובדי ${profHe} ${recruitment}${region}, ולא נמצאו התאמות פעילות.\n` +
-    `אם יש לכם עובדים זמינים — זה הזמן להעלות אותם למערכת:\n${uploadLink}`;
+    `TagidAI: קבלן מחפש ${qty} עובדי ${profHe} ${recruitment}${region}, ולא נמצאו התאמות פעילות.\n` +
+    `אם יש לכם עובדים זמינים, זה הזמן להעלות אותם למערכת:\n${uploadLink}`;
 
   // Fan out via notifyEntity so every team member on the corp who opted
   // in as a notification recipient gets the alert on their channels
@@ -747,8 +747,8 @@ async function broadcastTender(payload) {
 
   const link = `${FRONTEND_URL}/corporation/tenders`;
   const message =
-    `TagidAI — מכרז ייבוא חדש: קבלן מבקש ${qty} עובדים מחו״ל ` +
-    `(${profCount} מקצועות). אם תוכלו לספק — הגישו הצעה: ${link}`;
+    `TagidAI: מכרז ייבוא חדש: קבלן מבקש ${qty} עובדים מחו״ל ` +
+    `(${profCount} מקצועות). אם תוכלו לספק, הגישו הצעה: ${link}`;
 
   for (const c of corps) {
     if (!c?.contact_phone) continue;
@@ -766,7 +766,7 @@ async function notifyContractorOfBid(payload) {
   const link = `${FRONTEND_URL}/contractor/tenders/${payload.tender_id}`;
   await sendSmsInternal(
     phone,
-    `TagidAI — התקבלה הצעה חדשה למכרז הייבוא שלך. היכנס לבדוק ולבחור: ${link}`,
+    `TagidAI: התקבלה הצעה חדשה למכרז הייבוא שלך. היכנס לבדוק ולבחור: ${link}`,
   );
 }
 
@@ -783,7 +783,7 @@ async function notifyTenderRevealed(payload) {
     if (cPhone) {
       await sendSmsInternal(
         cPhone,
-        `TagidAI — מכרז הייבוא אושר ע״י מנהל המערכת. פרטי התאגיד הזוכה נחשפו: ${contractorLink}`,
+        `TagidAI: מכרז הייבוא אושר ע״י מנהל המערכת. פרטי התאגיד הזוכה נחשפו: ${contractorLink}`,
       );
     }
   }
@@ -792,7 +792,7 @@ async function notifyTenderRevealed(payload) {
     if (phone) {
       await sendSmsInternal(
         phone,
-        `TagidAI — זכיתם במכרז ייבוא עובדים! פרטי הקבלן נחשפו, ניתן ליצור קשר: ${corpLink}`,
+        `TagidAI: זכיתם במכרז ייבוא עובדים! פרטי הקבלן נחשפו, ניתן ליצור קשר: ${corpLink}`,
       );
     }
   }

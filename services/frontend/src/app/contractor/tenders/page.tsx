@@ -15,7 +15,7 @@ import { useTableState } from '@/components/table/useTableState';
 const STATUS_PILL: Record<string, { cls: string; label: string }> = {
   pending_admin:  { cls: 'bg-slate-200 text-slate-700 border-slate-300',     label: 'ממתין לאישור פרסום' },
   open:           { cls: 'bg-sky-100 text-sky-800 border-sky-200',           label: 'פתוח להצעות' },
-  awaiting_admin: { cls: 'bg-amber-500 text-white border-amber-500',         label: 'בקשת קשר — ממתין למנהל' },
+  awaiting_admin: { cls: 'bg-amber-500 text-white border-amber-500',         label: 'בקשת קשר: ממתין למנהל' },
   in_progress:    { cls: 'bg-emerald-500 text-white border-emerald-500',     label: 'בתהליך' },
   closed:         { cls: 'bg-emerald-50 text-emerald-700 border-emerald-200', label: 'הושלם' },
   cancelled:      { cls: 'bg-rose-50 text-rose-700 border-rose-200',         label: 'בוטל' },
@@ -24,7 +24,7 @@ const STATUS_PILL: Record<string, { cls: string; label: string }> = {
 };
 
 function fmt(iso?: string | null) {
-  if (!iso) return '—';
+  if (!iso) return '–';
   const s = iso.includes(' ') && !iso.includes('T') ? iso.replace(' ', 'T') : iso;
   const z = /[Zz]$|[+-]\d{2}:?\d{2}$/.test(s) ? s : s + 'Z';
   return new Date(z).toLocaleDateString('he-IL');

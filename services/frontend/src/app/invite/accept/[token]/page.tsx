@@ -108,7 +108,7 @@ export default function InviteAcceptPage() {
       // surface the field. Modern invites never reach this branch.
       if (msg === 'full_name required for new users') {
         setNeedsLegacyName(true);
-        setError('נראה שזה הפעם הראשונה שלך — יש להזין שם מלא');
+        setError('נראה שזה הפעם הראשונה שלך, יש להזין שם מלא');
       } else {
         setError(otpErr(msg));
       }
@@ -160,7 +160,7 @@ export default function InviteAcceptPage() {
                     </p>
                     <p className="text-sm text-slate-500">
                       תפקיד: {ROLE_LABELS[meta.role] ?? meta.role}
-                      {meta.job_title ? ` — ${meta.job_title}` : ''}
+                      {meta.job_title ? `, ${meta.job_title}` : ''}
                     </p>
                     {meta.inviter_name && (
                       <p className="text-xs text-slate-400">הוזמנת על ידי {meta.inviter_name}</p>
@@ -213,7 +213,7 @@ export default function InviteAcceptPage() {
 
                     {!isLegacy && (
                       <p className="text-xs text-slate-500 text-center">
-                        קוד אימות בן 6 ספרות יישלח ב-SMS למספר זה. אם הפרטים שגויים — פנה למזמין.
+                        קוד אימות בן 6 ספרות יישלח ב-SMS למספר זה. אם הפרטים שגויים, פנה למזמין.
                       </p>
                     )}
 

@@ -34,7 +34,7 @@ const STATUS_LABELS: Record<string, { label: string; cls: string }> = {
 // U8 §1 — was a local copy of the four-key CATEGORY_HE map.
 
 function fmtDate(s?: string) {
-  if (!s) return '—';
+  if (!s) return '–';
   return new Date(s).toLocaleDateString('he-IL');
 }
 
@@ -193,7 +193,7 @@ export default function CorporationMarketplacePage() {
                         <div className="min-w-0 flex-1">
                           <h3 className="font-medium text-slate-900 leading-snug">{l.title}</h3>
                           <p className="text-xs text-slate-500 mt-1">
-                            {labelFor(CATEGORY_HE_FALLBACK, l.category)} · {l.city || '—'}
+                            {labelFor(CATEGORY_HE_FALLBACK, l.category)} · {l.city || '–'}
                           </p>
                           <p className="text-xs text-slate-400 mt-0.5">{fmtDate(l.created_at)}</p>
                         </div>
@@ -250,7 +250,7 @@ export default function CorporationMarketplacePage() {
                       <tr key={l.id} className="hover:bg-slate-50/50">
                         <td className="px-5 py-3 font-medium text-slate-900 max-w-xs truncate">{l.title}</td>
                         <td className="px-5 py-3 text-slate-500">{labelFor(CATEGORY_HE_FALLBACK, l.category)}</td>
-                        <td className="px-5 py-3 text-slate-500">{l.city || '—'}</td>
+                        <td className="px-5 py-3 text-slate-500">{l.city || '–'}</td>
                         <td className="px-5 py-3 text-slate-400 text-xs">{fmtDate(l.created_at)}</td>
                         <td className="px-5 py-3">
                           <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${st.cls}`}>{st.label}</span>
@@ -296,7 +296,7 @@ export default function CorporationMarketplacePage() {
         open={!!pendingDelete}
         title="מחיקת מודעה"
         message={pendingDelete
-          ? `למחוק את המודעה "${pendingDelete.title}"? פעולה זו אינה הפיכה — קבלנים שצפו בה לא יוכלו לפנות אליך עוד דרך המודעה הזו.`
+          ? `למחוק את המודעה "${pendingDelete.title}"? פעולה זו אינה הפיכה, קבלנים שצפו בה לא יוכלו לפנות אליך עוד דרך המודעה הזו.`
           : ''}
         confirmLabel="מחק מודעה"
         variant="destructive"

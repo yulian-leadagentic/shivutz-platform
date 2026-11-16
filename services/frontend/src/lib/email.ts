@@ -11,7 +11,7 @@
 // flows and any future form share one rule.
 
 export const EMAIL_ERROR_INVALID =
-  'כתובת אימייל לא תקינה — לדוגמה name@company.co.il';
+  'כתובת אימייל לא תקינה, לדוגמה name@company.co.il';
 export const EMAIL_ERROR_REQUIRED = 'כתובת אימייל היא שדה חובה';
 
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;

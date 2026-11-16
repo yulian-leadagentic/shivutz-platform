@@ -1136,7 +1136,7 @@ const STRIP_ASPECT = (placement: string): AspectPair => {
   const fallback = aspectFor('marketplace_banner');
   if (typeof console !== 'undefined') {
     console.error(
-      `[sponsors] placement "${placement}" is not in SPONSOR_SIZES — ` +
+      `[sponsors] placement "${placement}" is not in SPONSOR_SIZES ` +
       'falling back to marketplace_banner. Add it to the catalog.',
     );
   }

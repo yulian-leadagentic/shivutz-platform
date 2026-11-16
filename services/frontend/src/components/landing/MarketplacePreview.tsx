@@ -15,7 +15,7 @@ const PLACEHOLDERS: MarketplaceListing[] = [
     corporation_name: 'עמל כוח אדם בע"מ',
     is_corporation_verified: true,
     category: 'housing',
-    title: 'דירה מרוהטת ל-6 עובדים — חדרה, קרוב למרכז',
+    title: 'דירה מרוהטת ל-6 עובדים, חדרה, קרוב למרכז',
     city: 'חדרה',
     region: 'center',
     price: 1800,
@@ -32,7 +32,7 @@ const PLACEHOLDERS: MarketplaceListing[] = [
     corporation_name: 'גלובל ורקרס ישראל',
     is_corporation_verified: true,
     category: 'equipment',
-    title: 'פיגומים וכלי עבודה — השכרה לפרויקטים',
+    title: 'פיגומים וכלי עבודה: השכרה לפרויקטים',
     city: 'תל אביב',
     region: 'center',
     price: 2500,
@@ -88,7 +88,7 @@ export default function MarketplacePreview() {
               מה זמין עכשיו
             </h2>
             <p className="text-slate-500 mt-2">
-              תאגידים מורשים מפרסמים דיור, ציוד ושירותים — פתוח לעיון חופשי
+              תאגידים מורשים מפרסמים דיור, ציוד ושירותים, פתוח לעיון חופשי
             </p>
           </div>
           <Link
@@ -110,7 +110,7 @@ export default function MarketplacePreview() {
         {/* CTA strip */}
         <div className="mt-12 text-center bg-brand-50 rounded-3xl border border-brand-100 py-8 px-6">
           <p className="text-lg font-bold text-slate-900 mb-2">
-            גם אתם רוצים לפרסם? — הצטרפו
+            גם אתם רוצים לפרסם? הצטרפו
           </p>
           <p className="text-sm text-slate-500 mb-5">
             תאגידים מנויים מפרסמים ללא עלות נוספת. צרו חשבון ופרסמו תוך דקות.

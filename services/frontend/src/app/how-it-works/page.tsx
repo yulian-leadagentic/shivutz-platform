@@ -32,25 +32,25 @@ const STEPS = [
       // was 'אין הרשמה' alone; step 3 in this page already says
       // registration is only needed to reveal contact details, so
       // loading the pitch with a caveat is redundant. Two-word delete.
-      'מקלידים או מדברים בעברית טבעית. אין טופס למלא — כל מה שצריך זו שאלה אחת.',
+      'מקלידים או מדברים בעברית טבעית. אין טופס למלא: כל מה שצריך זו שאלה אחת.',
     detail:
-      'המערכת מזהה מה חיפשת גם כשהניסוח לא סטנדרטי. אפשר לומר "אני צריך רתכים מסין באזור המרכז" או "5 בנאים לפרויקט בדרום עם ניסיון של שנתיים לפחות" — הכל מובן.',
+      'המערכת מזהה מה חיפשת גם כשהניסוח לא סטנדרטי. אפשר לומר "אני צריך רתכים מסין באזור המרכז" או "5 בנאים לפרויקט בדרום עם ניסיון של שנתיים לפחות", הכל מובן.',
   },
   {
     n: 2,
     label: 'המערכת מבינה ומציגה',
     icon: Sparkles,
     body:
-      'המנוע מזהה את המקצוע, המוצא, האזור והכמות שביקשת, ומציג מהמלאי הזמין רק את המודעות שמתאימות — לפי סדר רלוונטיות.',
+      'המנוע מזהה את המקצוע, המוצא, האזור והכמות שביקשת, ומציג מהמלאי הזמין רק את המודעות שמתאימות, לפי סדר רלוונטיות.',
     detail:
-      'המודעות שרואים בפועל הן של תאגידים מאושרים בלבד. אם אין התאמה מדויקת, המערכת מציגה מודעות קרובות ומסבירה איזה תנאי הורדנו — כדי שלא תישאר עם דף ריק בלי הבנה למה.',
+      'המודעות שרואים בפועל הן של תאגידים מאושרים בלבד. אם אין התאמה מדויקת, המערכת מציגה מודעות קרובות ומסבירה איזה תנאי הורדנו, כדי שלא תישאר עם דף ריק בלי הבנה למה.',
   },
   {
     n: 3,
     label: 'מתחברים וחושפים קשר',
     icon: Handshake,
     body:
-      'ההרשמה נדרשת רק כדי לחשוף את פרטי הקשר של התאגיד. משם, הפנייה ישירה — בלי מתווכים.',
+      'ההרשמה נדרשת רק כדי לחשוף את פרטי הקשר של התאגיד. משם, הפנייה ישירה, בלי מתווכים.',
     detail:
       // U9 §3a · was "טלפון של מוקד הזמנות" — a manpower corp has an
       // account contact, not a call centre. Also reordered: what you
@@ -59,7 +59,7 @@ const STEPS = [
       // to browse. Reveal count is deliberately not quoted here —
       // it lives on the pricing plans page (max_reveals_per_month per
       // tier) and would go stale the moment an admin edits a plan.
-      'מה שנחשף: שם התאגיד, טלפון ישיר של איש הקשר וכתובת אימייל — כדי שתוכל לפנות בעצמך, בלי מתווך. הצפייה במודעות היא תמיד חופשית ובלתי מוגבלת; רק חשיפת פרטי הקשר נספרת במכסה החודשית של המנוי.',
+      'מה שנחשף: שם התאגיד, טלפון ישיר של איש הקשר וכתובת אימייל, כדי שתוכל לפנות בעצמך, בלי מתווך. הצפייה במודעות היא תמיד חופשית ובלתי מוגבלת; רק חשיפת פרטי הקשר נספרת במכסה החודשית של המנוי.',
   },
 ] as const;
 
@@ -90,7 +90,7 @@ export default function HowItWorksPage() {
         <p className="text-xs font-semibold text-brand-600 tracking-widest uppercase">פשוט, מהיר ובטוח</p>
         <h1 className="text-3xl md:text-4xl font-bold text-slate-900 leading-tight">איך זה עובד?</h1>
         <p className="text-base md:text-lg text-slate-600 leading-relaxed">
-          שלושה שלבים למציאת עובדים לענף הבנייה — הסבר מפורט לקבלנים ולתאגידי כוח אדם.
+          שלושה שלבים למציאת עובדים לענף הבנייה, הסבר מפורט לקבלנים ולתאגידי כוח אדם.
         </p>
       </header>
 
@@ -130,13 +130,13 @@ export default function HowItWorksPage() {
           </div>
           <div>
             <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">לקבלן</p>
-            <h2 id="for-contractor" className="text-xl md:text-2xl font-bold text-slate-900">קבלנים — מוצאים עובדים מיידית</h2>
+            <h2 id="for-contractor" className="text-xl md:text-2xl font-bold text-slate-900">קבלנים: מוצאים עובדים מיידית</h2>
           </div>
         </div>
         <ul className="grid gap-3 text-sm md:text-base text-slate-700 leading-relaxed">
           <li className="flex items-start gap-2">
             <CheckCircle2 className="h-4 w-4 text-emerald-600 mt-1 shrink-0" />
-            <span>מחפשים לפי מקצוע, מוצא, אזור וכמות — הכל בעברית חופשית, בלי טפסים.</span>
+            <span>מחפשים לפי מקצוע, מוצא, אזור וכמות, הכל בעברית חופשית, בלי טפסים.</span>
           </li>
           <li className="flex items-start gap-2">
             <CheckCircle2 className="h-4 w-4 text-emerald-600 mt-1 shrink-0" />
@@ -152,7 +152,7 @@ export default function HowItWorksPage() {
           </li>
           <li className="flex items-start gap-2">
             <CheckCircle2 className="h-4 w-4 text-emerald-600 mt-1 shrink-0" />
-            <span>ההרשמה מהירה דרך SMS. אם אתם רשומים בפנקס הקבלנים — האימות אוטומטי.</span>
+            <span>ההרשמה מהירה דרך SMS. אם אתם רשומים בפנקס הקבלנים, האימות אוטומטי.</span>
           </li>
         </ul>
         <div className="pt-2">
@@ -174,13 +174,13 @@ export default function HowItWorksPage() {
           </div>
           <div>
             <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">לתאגיד</p>
-            <h2 id="for-corp" className="text-xl md:text-2xl font-bold text-slate-900">תאגידי כוח אדם — מפרסמים ומתחברים</h2>
+            <h2 id="for-corp" className="text-xl md:text-2xl font-bold text-slate-900">תאגידי כוח אדם: מפרסמים ומתחברים</h2>
           </div>
         </div>
         <ul className="grid gap-3 text-sm md:text-base text-slate-700 leading-relaxed">
           <li className="flex items-start gap-2">
             <CheckCircle2 className="h-4 w-4 text-emerald-600 mt-1 shrink-0" />
-            <span>מפרסמים מודעת עובדים עם מקצוע, מוצא, אזור וכמות — פרטים מלאים במקום מודעה גנרית.</span>
+            <span>מפרסמים מודעת עובדים עם מקצוע, מוצא, אזור וכמות, פרטים מלאים במקום מודעה גנרית.</span>
           </li>
           <li className="flex items-start gap-2">
             <CheckCircle2 className="h-4 w-4 text-emerald-600 mt-1 shrink-0" />
@@ -194,7 +194,7 @@ export default function HowItWorksPage() {
                 broken promise. Equipment is reserved for the
                 service_provider marketplace. */}
             <CheckCircle2 className="h-4 w-4 text-emerald-600 mt-1 shrink-0" />
-            <span>אפשר להוסיף מודעות דיור לצד מודעות עובדים — פרסום הדיור כלול ברישיון התאגיד, ללא תשלום נוסף.</span>
+            <span>אפשר להוסיף מודעות דיור לצד מודעות עובדים, פרסום הדיור כלול ברישיון התאגיד, ללא תשלום נוסף.</span>
           </li>
           <li className="flex items-start gap-2">
             {/* U9 §3c · was "כמות המודעות והצפיות הפעילות" — but
@@ -229,7 +229,7 @@ export default function HowItWorksPage() {
           </div>
           <div>
             <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">לספקי שירות</p>
-            <h2 id="for-provider" className="text-xl md:text-2xl font-bold text-slate-900">שירותים נלווים — דיור, הסעות, ביטוח וציוד</h2>
+            <h2 id="for-provider" className="text-xl md:text-2xl font-bold text-slate-900">שירותים נלווים: דיור, הסעות, ביטוח וציוד</h2>
           </div>
         </div>
         <ul className="grid gap-3 text-sm md:text-base text-slate-700 leading-relaxed">
@@ -239,7 +239,7 @@ export default function HowItWorksPage() {
           </li>
           <li className="flex items-start gap-2">
             <CheckCircle2 className="h-4 w-4 text-emerald-600 mt-1 shrink-0" />
-            <span>דיור לעובדים, הסעות, ביטוח, ציוד וקורסי עברית — מספקים שנרשמו לפלטפורמה.</span>
+            <span>דיור לעובדים, הסעות, ביטוח, ציוד וקורסי עברית, מספקים שנרשמו לפלטפורמה.</span>
           </li>
           <li className="flex items-start gap-2">
             <CheckCircle2 className="h-4 w-4 text-emerald-600 mt-1 shrink-0" />
@@ -320,7 +320,7 @@ export default function HowItWorksPage() {
       <section aria-label="שקיפות" className="text-center max-w-2xl mx-auto space-y-3 pt-2 pb-4">
         <div className="inline-flex items-center gap-2 text-emerald-700">
           <ShieldCheck className="h-5 w-5" />
-          <span className="text-sm font-semibold">הכל במקום אחד — דיגיטלי, מהיר ושקוף</span>
+          <span className="text-sm font-semibold">הכל במקום אחד: דיגיטלי, מהיר ושקוף</span>
         </div>
         <p className="text-xs text-slate-500 leading-relaxed">
           {/* U9 §3d · was "מרשם החברות ומרשם היבואנים" — but

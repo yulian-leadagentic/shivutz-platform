@@ -51,7 +51,7 @@ export default function CorporationRevealsPage() {
         </Link>
         <h1 className="text-2xl font-bold text-slate-900">חשיפות פרטי קשר</h1>
         <p className="text-sm text-slate-500">
-          קבלנים שחשפו את פרטי הקשר של המודעות שלכם. אנחנו לא מציגים את זהות הקבלן —
+          קבלנים שחשפו את פרטי הקשר של המודעות שלכם. אנחנו לא מציגים את זהות הקבלן,
           רק את המודעה שנחשפה, המקצוע ותאריך החשיפה.
         </p>
       </header>

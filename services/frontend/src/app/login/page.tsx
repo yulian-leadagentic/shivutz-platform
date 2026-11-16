@@ -78,12 +78,12 @@ function defaultForRole(role: string | null): string {
 const COPY = {
   contractor: {
     title:           'כניסה כקבלן',
-    description:    'מצא עובדים לפרויקטים שלך — בכמה לחיצות',
+    description:    'מצא עובדים לפרויקטים שלך, בכמה לחיצות',
     // Was "קבלן קיים — הכנס" — the role context is already conveyed by
     // the title above ("כניסה כקבלן"), so the button just needs to read
     // as the action verb.
     existingLabel:  'התחבר',
-    newLabel:       'קבלן חדש — הירשם כאן',
+    newLabel:       'קבלן חדש: הירשם כאן',
     registerHref:   '/register/contractor',
     noAccountHint:  'מספר זה אינו רשום כקבלן. רוצה להירשם?',
   },
@@ -91,7 +91,7 @@ const COPY = {
     title:           'כניסה כתאגיד',
     description:    'פרסם עובדים זמינים והגיע ישירות לקבלנים',
     existingLabel:  'התחבר',
-    newLabel:       'תאגיד חדש — הירשמו כאן',
+    newLabel:       'תאגיד חדש: הירשמו כאן',
     registerHref:   '/register/corporation',
     noAccountHint:  'מספר זה אינו רשום כתאגיד. רוצה להירשם?',
   },
@@ -99,7 +99,7 @@ const COPY = {
     title:           'כניסה כספק שירותים נלווים',
     description:    'פרסם את השירות שלך והגיע לקבלנים ותאגידים בענף',
     existingLabel:  'התחבר',
-    newLabel:       'ספק חדש — הירשם כאן',
+    newLabel:       'ספק חדש: הירשם כאן',
     registerHref:   '/register/provider',
     noAccountHint:  'מספר זה אינו רשום כספק שירותים. רוצה להירשם?',
   },

@@ -139,7 +139,7 @@ export const ORIGIN_LABEL: Record<string, string> = {
 };
 
 export function heOrigin(code?: string | null): string {
-  if (!code) return '—';
+  if (!code) return '–';
   return ORIGIN_LABEL[code.toUpperCase()] ?? code;
 }
 

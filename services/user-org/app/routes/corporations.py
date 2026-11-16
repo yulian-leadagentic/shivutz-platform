@@ -240,7 +240,7 @@ async def register_corporation(
                     status_code=409,
                     detail={
                         "code": "already_have_corporation",
-                        "message": "כבר יש לך חשבון תאגיד — אנחנו מעבירים אותך אליו.",
+                        "message": "כבר יש לך חשבון תאגיד. אנחנו מעבירים אותך אליו.",
                         "existing_entity_id": row[0] if row else None,
                         "entity_type": "corporation",
                     },

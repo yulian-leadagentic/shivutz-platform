@@ -215,7 +215,7 @@ export default function RoleGuard({ expect, children }: Props) {
         >
           <ShieldAlert className="w-4 h-4 shrink-0 text-amber-700" aria-hidden="true" />
           <span className="flex-1 min-w-0 leading-snug">
-            אתה צופה כמנהל מערכת. הישות הפעילה שלך היא <b>{activeLabel}</b>, והמסך הזה מיועד ל<b>{expectLabel}</b> — לכן חלק מהנתונים לא ייטענו.
+            אתה צופה כמנהל מערכת. הישות הפעילה שלך היא <b>{activeLabel}</b>, והמסך הזה מיועד ל<b>{expectLabel}</b> , לכן חלק מהנתונים לא ייטענו.
           </span>
           <Link
             href="/select-entity"

@@ -45,7 +45,7 @@ type OrgRow = {
 };
 
 function fmtDate(iso: string | null | undefined) {
-  if (!iso) return '—';
+  if (!iso) return '–';
   return new Date(iso).toLocaleString('he-IL');
 }
 
@@ -245,7 +245,7 @@ function OrgDetailContent() {
           <Building2 className="h-6 w-6 text-brand-600" />
           <div>
             <h1 className="text-xl font-bold text-slate-900">
-              {org.company_name_he || org.company_name || '—'}
+              {org.company_name_he || org.company_name || '–'}
             </h1>
             <div className="flex items-center gap-2 mt-0.5">
               <Badge variant={orgType === 'contractor' ? 'default' : 'secondary'}>
@@ -255,8 +255,8 @@ function OrgDetailContent() {
               {org.verification_tier && (
                 <span className="text-xs text-slate-500">
                   {{
-                    tier_1: 'אימות חלקי — נמצא ברשם בלבד',
-                    tier_2: 'אימות מלא — אומת מול הקבלן/התאגיד',
+                    tier_1: 'אימות חלקי: נמצא ברשם בלבד',
+                    tier_2: 'אימות מלא: אומת מול הקבלן/התאגיד',
                   }[org.verification_tier as 'tier_1' | 'tier_2'] ?? org.verification_tier}
                 </span>
               )}
@@ -330,7 +330,7 @@ function OrgDetailContent() {
             </ul>
             {history.length > 3 && (
               <p className="text-xs text-slate-400 mt-2">
-                ועוד {history.length - 3} שינויים — לחץ "היסטוריה" בראש הדף לראות הכל.
+                ועוד {history.length - 3} שינויים: לחץ "היסטוריה" בראש הדף לראות הכל.
               </p>
             )}
           </CardContent>
@@ -431,7 +431,7 @@ function OrgDetailContent() {
                           }
                         }}
                         className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm">
-                        <option value="">—</option>
+                        <option value="">–</option>
                         {(['ג','ב','א','ד','ה'] as const).flatMap((k) =>
                           [1,2,3,4,5].map((n) => (
                             <option key={`${k}${n}`} value={`${k}${n}`}>{`${k}${n}`}</option>
@@ -523,7 +523,7 @@ function OrgDetailContent() {
                     {h.metadata && typeof h.metadata === 'object' && (
                       <dl className="mt-1.5 grid grid-cols-[max-content_1fr] gap-x-3 gap-y-0.5 text-xs">
                         {Object.entries(h.metadata as Record<string, unknown>).map(([k, v]) => {
-                          const rendered = (v === null || v === undefined) ? '—'
+                          const rendered = (v === null || v === undefined) ? '–'
                             : typeof v === 'object' ? JSON.stringify(v)
                             : String(v);
                           return (
@@ -616,9 +616,9 @@ function SendMessageModal({ orgId, orgType, orgName, contactPhone, onClose }: {
   useEffect(() => {
     if (dealNo === '' || !orgName) return;
     const opener = orgType === 'corporation' && dealNo
-      ? `TagidAI — שלום, בנוגע לדרישה #C-${dealNo} ב${orgName}: `
-      : `TagidAI — שלום ${orgName}, `;
-    setMessage((cur) => cur.startsWith('TagidAI —') ? opener : (cur || opener));
+      ? `TagidAI: שלום, בנוגע לדרישה #C-${dealNo} ב${orgName}: `
+      : `TagidAI: שלום ${orgName}, `;
+    setMessage((cur) => cur.startsWith('TagidAI:') ? opener : (cur || opener));
   }, [dealNo, orgName, orgType]);
 
   async function send() {
@@ -668,10 +668,10 @@ function SendMessageModal({ orgId, orgType, orgName, contactPhone, onClose }: {
             <div className="flex flex-col gap-1">
               <label className="text-sm font-medium text-slate-700">צרף הפניה לדרישה (לא חובה)</label>
               <select value={dealNo} onChange={(e) => setDealNo(e.target.value === '' ? '' : Number(e.target.value))} className="h-10 rounded-md border border-slate-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
-                <option value="">— ללא —</option>
+                <option value="">ללא</option>
                 {recent.map((d) => (
                   <option key={d.id} value={d.corp_deal_no ?? 0}>
-                    {d.corp_deal_no != null ? `#C-${d.corp_deal_no}` : '—'} · {d.profession_he ?? '—'} · {d.status}
+                    {d.corp_deal_no != null ? `#C-${d.corp_deal_no}` : '–'} · {d.profession_he ?? '–'} · {d.status}
                   </option>
                 ))}
               </select>
@@ -681,7 +681,7 @@ function SendMessageModal({ orgId, orgType, orgName, contactPhone, onClose }: {
           <div className="flex flex-col gap-1">
             <label className="text-sm font-medium text-slate-700">הודעה</label>
             <textarea value={message} onChange={(e) => setMessage(e.target.value)} rows={4} placeholder="..." className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
-            <span className="text-xs text-slate-400">{message.length}/320 תווים — SMS ארוך יישבר ל-2 הודעות.</span>
+            <span className="text-xs text-slate-400">{message.length}/320 תווים: SMS ארוך יישבר ל-2 הודעות.</span>
           </div>
 
           {error && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">{error}</p>}
@@ -705,7 +705,7 @@ function Field({ label, value }: { label: string; value: string | number | null 
   return (
     <div>
       <p className="text-xs text-slate-400">{label}</p>
-      <p className="font-medium text-slate-700 truncate">{value ?? '—'}</p>
+      <p className="font-medium text-slate-700 truncate">{value ?? '–'}</p>
     </div>
   );
 }

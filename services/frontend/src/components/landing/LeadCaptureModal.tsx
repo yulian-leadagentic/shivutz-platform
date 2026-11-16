@@ -49,7 +49,7 @@ export default function LeadCaptureModal({ open, onClose }: LeadCaptureModalProp
       await leadsApi.submit(form);
       setSubmitted(true);
     } catch {
-      setError('אירעה שגיאה — אנא נסה שנית');
+      setError('אירעה שגיאה: אנא נסה שנית');
     } finally {
       setSubmitting(false);
     }
@@ -85,7 +85,7 @@ export default function LeadCaptureModal({ open, onClose }: LeadCaptureModalProp
           >
             <X className="h-5 w-5" />
           </button>
-          <h2 id="lead-capture-title" className="text-xl font-bold text-white mb-1">השאר פרטים — נחזור אליך</h2>
+          <h2 id="lead-capture-title" className="text-xl font-bold text-white mb-1">השאר פרטים: נחזור אליך</h2>
           <p id="lead-capture-desc" className="text-brand-200 text-sm">
             נציג שלנו יצור איתך קשר לסיוע ברישום ובהתחלה
           </p>
@@ -101,7 +101,7 @@ export default function LeadCaptureModal({ open, onClose }: LeadCaptureModalProp
               <div>
                 <p className="text-lg font-bold text-slate-900 mb-1">תודה, {form.full_name}!</p>
                 <p className="text-sm text-slate-500">
-                  קיבלנו את פרטיך — נציג שלנו יצור איתך קשר בהקדם
+                  קיבלנו את פרטיך: נציג שלנו יצור איתך קשר בהקדם
                 </p>
               </div>
               <Button onClick={handleClose} className="mt-2 w-full bg-brand-600 hover:bg-brand-800 text-slate-900">

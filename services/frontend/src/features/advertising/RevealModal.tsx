@@ -231,7 +231,7 @@ export function RevealModal({
             && (block.status === 503 || block.status >= 500);
           const title   = isTransient ? 'תקלה זמנית' : 'שגיאה';
           const message = isTransient
-            ? 'אירעה תקלה זמנית בשירות. הבקשה שלך נשמרה — אפשר לנסות שוב בעוד רגע.'
+            ? 'אירעה תקלה זמנית בשירות. הבקשה שלך נשמרה: אפשר לנסות שוב בעוד רגע.'
             : block.message;
           const canRetry = !!block.adId && !!onRetry;
           return (

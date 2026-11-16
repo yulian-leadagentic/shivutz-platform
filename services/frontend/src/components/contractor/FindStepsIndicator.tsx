@@ -37,7 +37,7 @@ export function FindStepsIndicator({ active }: Props) {
                   isActive ? 'text-brand-700' : isDone ? 'text-emerald-700' : 'text-slate-500'
                 }`}
               >
-                <span className="hidden sm:inline">שלב {s.num} — </span>
+                <span className="hidden sm:inline">שלב {s.num} – </span>
                 {s.label}
               </span>
             </div>

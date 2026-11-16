@@ -352,7 +352,7 @@ router.post('/webhooks/vonage/messages/inbound', captureRawBody, vonageWebhookAu
   // proper handling requires re-uploading to our own storage and lives
   // in the WhatsApp P4 inbox feature, not P1.
   if (messageType !== 'text') {
-    console.log(`[vonage-messages-inbound] non-text message_type=${messageType} from=${from} — logged, not persisted`);
+    console.log(`[vonage-messages-inbound] non-text message_type=${messageType} from=${from}, logged, not persisted`);
     return res.status(200).json({ ok: true, skipped: 'non_text' });
   }
 

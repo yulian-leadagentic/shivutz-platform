@@ -57,7 +57,7 @@ async function send(phone, message) {
 
           resolve({ messageId: msg['message-id'], provider: 'vonage' });
         } catch (e) {
-          reject(new Error(`Vonage: failed to parse response — ${e.message}`));
+          reject(new Error(`Vonage: failed to parse response: ${e.message}`));
         }
       });
     });
