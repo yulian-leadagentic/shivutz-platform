@@ -642,6 +642,12 @@ notification service, so the handshake answers 403 and a POST 401, as before.
      shows the same; the search was not touched.
   3. Those four housing ads are two pairs with the same city and bed count, so the reply repeats two lines.
 
+**The verify token is set (16.11.2026, at your word).** `WHATSAPP_VERIFY_TOKEN` is on staging's notification service,
+the value I generated; it is in Railway and not in git. From outside, the way Meta will call it:
+`GET https://staging.tagidai.com/api/webhooks/whatsapp` with `hub.mode=subscribe`, that token and a challenge answers
+`200`, `text/plain`, the challenge itself as the whole body. A wrong token answers 403, a wrong mode 403, an unsigned
+POST 401. The other five variables are still not set, so staging still sends nothing.
+
 **Not verified, all of it waiting on your secrets:** Meta's handshake, a real signature, a real send, real status
 callbacks, a real message from your phone, the 12-message run, and a real SMS OTP. I sent no SMS.
 
@@ -726,8 +732,9 @@ insertions, 268 deletions. By area:
    never charged and nothing happens to it at its end.
 7. Set `NEXT_PUBLIC_FREE_LAUNCH_UNTIL` on the staging frontend if the banner and the registration sentence should show
    there (finding 4).
-8. **WhatsApp.** On Railway, staging, notification service: the six `WHATSAPP_*` variables, with the verify token from
-   my closing message, then redeploy. In Meta: callback URL `https://staging.tagidai.com/api/webhooks/whatsapp`, the
+8. **WhatsApp.** On Railway, staging, notification service: five `WHATSAPP_*` variables are left to set
+   (`ACCESS_TOKEN`, `PHONE_NUMBER_ID`, `WABA_ID`, `APP_SECRET`, `API_VERSION`); `WHATSAPP_VERIFY_TOKEN` is set, copy
+   its value from Railway for Meta. Saving redeploys. In Meta: callback URL `https://staging.tagidai.com/api/webhooks/whatsapp`, the
    same verify token, subscribe to **messages**. Delete `VONAGE_APPLICATION_ID`, `VONAGE_PRIVATE_KEY`,
    `VONAGE_WHATSAPP_NUMBER`. Then tell me, and I run the acceptance. Decide deviation 5 (near matches) first.
 9. Before production: the R33 backfill dry run, then `--apply`. Still open.
