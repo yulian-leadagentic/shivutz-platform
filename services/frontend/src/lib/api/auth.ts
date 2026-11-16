@@ -49,12 +49,16 @@ export const authApi = {
   me: () => apiFetch<User>('/auth/me'),
 };
 
+export type OtpChannel = 'sms' | 'whatsapp';
+
 export const otpApi = {
-  /** Send a 6-digit OTP to phone. Purpose: 'login' | 'register' | 'invite_accept'. */
-  sendOtp: (phone: string, purpose: 'login' | 'register' | 'invite_accept') =>
-    apiFetch<{ sent: boolean; phone: string }>('/auth/send-otp', {
+  /** Send a 6-digit OTP to phone. `channel` defaults to SMS on the server.
+   *  The answer's `channel` is where the code really went: 'sms' after a
+   *  WhatsApp fallback, null when the server could not confirm a send. */
+  sendOtp: (phone: string, purpose: 'login' | 'register' | 'invite_accept', channel?: OtpChannel) =>
+    apiFetch<{ sent: boolean; phone: string; channel: OtpChannel | null }>('/auth/send-otp', {
       method: 'POST',
-      body: JSON.stringify({ phone, purpose }),
+      body: JSON.stringify({ phone, purpose, channel }),
     }),
 
   /** Verify OTP without issuing a JWT (used during registration to confirm phone ownership). */

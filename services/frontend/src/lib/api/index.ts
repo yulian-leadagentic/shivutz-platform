@@ -4,7 +4,7 @@
 export { apiFetch, BASE, fileHref } from './client';
 
 export { authApi, otpApi, inviteApi } from './auth';
-export type { Membership, InviteMetadata } from './auth';
+export type { Membership, InviteMetadata, OtpChannel } from './auth';
 
 export { enumApi, clearEnumCache } from './enums';
 export { orgApi } from './organizations';
