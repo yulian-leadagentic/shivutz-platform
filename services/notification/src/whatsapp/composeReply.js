@@ -1,4 +1,5 @@
-// The one message a WhatsApp search gets back.
+// The one message a WhatsApp search gets back, and the fixed lines the
+// chat answers with when it does not search.
 //
 // Structured fields only. Titles, descriptions and addresses are free
 // text the advertiser wrote and can name the corporation or provider,
@@ -85,6 +86,18 @@ function titleLine(filters, query, labels) {
   return `חיפשתם: ${understood.length ? understood.join(' · ') : query}`;
 }
 
+// What the viewer's scope hid (hidden_types). Every searched sender is
+// registered (R38), so the sign-up line is for one who is not a
+// contractor (a service provider). A contractor in review is told the
+// worker ads open on approval, with no link; one rejected or suspended
+// gets no line.
+function hiddenLine(search, frontendUrl) {
+  if ((search.hidden_types || []).length === 0) return null;
+  if (search.viewer_approval_status === 'pending') return 'מודעות עובדים יוצגו אחרי אישור החשבון';
+  if (search.viewer_approval_status) return null;
+  return `מודעות עובדים ודיור זמינות לקבלנים רשומים: ${frontendUrl}/register/contractor`;
+}
+
 function composeReply({ query, search, labels, frontendUrl }) {
   const q        = clipQuery(query);
   const ads      = search.results || [];
@@ -99,14 +112,14 @@ function composeReply({ query, search, labels, frontendUrl }) {
   const head = ordered.length === 0
     ? `לא מצאתי התאמות ל־${q}. אפשר לנסח אחרת, למשל: 10 רצפים במרכז`
     : titleLine(search.filters || {}, q, labels);
-  const hidden = (search.hidden_types || []).length > 0
-    ? `מודעות עובדים ודיור זמינות לקבלנים רשומים: ${frontendUrl}/register/contractor`
-    : null;
+  const hidden = hiddenLine(search, frontendUrl);
   const onlyServices = ads.length === 0 && listings.length > 0;
   const link = `${frontendUrl}/?q=${encodeURIComponent(q)}${onlyServices ? '&type=services' : ''}`;
 
+  // R38 · the search link comes before any other: WhatsApp builds the
+  // preview card from the first link in a message.
   let shown = ordered.slice(0, MAX_RESULTS);
-  const build = () => [head, ...shown, hidden, link].filter(Boolean).join('\n');
+  const build = () => [head, ...shown, link, hidden].filter(Boolean).join('\n');
   let message = build();
   while (message.length >= MAX_LENGTH && shown.length > 1) {
     shown = shown.slice(0, -1);

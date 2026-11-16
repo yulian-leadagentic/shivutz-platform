@@ -193,6 +193,8 @@ async function run() {
     && r.searches[0].headers['x-entity-type'] === 'service_provider' && r.searches[0].headers['x-entity-id'] === 'prov-1', r.searches[0]?.headers);
   check('a service provider: one reply, with the sign-up line for what it cannot see',
     r.sent.length === 1 && bodyOf(r).includes('מודעות עובדים ודיור זמינות לקבלנים רשומים: https://staging.example.test/register/contractor'), bodyOf(r));
+  check('and the first link in it is the search link, so the preview card opens the results',
+    bodyOf(r).match(/https?:\/\/\S+/)[0] === `https://staging.example.test/?q=${encodeURIComponent('20 פועלים סינים במרכז')}&type=services`, bodyOf(r));
 
   // ── 2b. R38 · registered users only ──────────────────────────────
   for (const [type, message] of [['text', () => text(UNKNOWN, '20 פועלים סינים במרכז')], ['image', () => media(UNKNOWN, 'image')], ['audio', () => media(UNKNOWN, 'audio')]]) {

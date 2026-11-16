@@ -3,7 +3,8 @@
 // Three rules from the spec are what this file holds in place:
 //   1. under 1,000 characters, whatever the search returned
 //   2. nothing that identifies a corporation or a provider, for anyone
-//   3. it always ends with the link to the site
+//   3. its first link is the search link (R38: WhatsApp builds the
+//      preview card from the first link), and it is always there
 //
 // The fixtures below are shaped like the real POST /search response
 // (user-org routes/search.py: _serialize_ad and
@@ -66,6 +67,11 @@ function compose(search, query = '20 פועלים סינים במרכז') {
 }
 const lines = (message) => message.split('\n');
 const lastLine = (message) => lines(message).at(-1);
+const linkLine = (message) => lines(message).find((x) => x.startsWith(`${FRONTEND}/?q=`));
+const firstUrl = (message) => (message.match(/https?:\/\/\S+/) || [])[0];
+function searchLinkFirst(name, message) {
+  check(`${name}: the first link in it is the search link`, firstUrl(message) === linkLine(message), { first: firstUrl(message), link: linkLine(message) });
+}
 function noSecrets(name, message) {
   const leaked = SECRETS.filter((s) => message.includes(s));
   check(`${name}: nothing that identifies the advertiser`, leaked.length === 0, leaked);
@@ -121,10 +127,11 @@ function underLimit(name, message) {
   check('services: with no filter understood the title repeats the query', l[0] === 'חיפשתם: השכרת ציוד', l[0]);
   check('services: a result is category · area (city)', l[1] === '• שירות: ציוד וכלי עבודה · נתניה', l[1]);
   check('services: area falls back to the region name', l[2] === '• שירות: ציוד וכלי עבודה · צפון', l[2]);
-  check('services: hidden types add the register line, worded as the spec has it',
-    l[3] === `מודעות עובדים ודיור זמינות לקבלנים רשומים: ${FRONTEND}/register/contractor`, l[3]);
-  check('services: only services came back, so the link carries &type=services',
-    lastLine(message) === `${FRONTEND}/?q=${encodeURIComponent('השכרת ציוד')}&type=services`, lastLine(message));
+  check('services: only services came back, so the link carries &type=services, right after the results',
+    l[3] === `${FRONTEND}/?q=${encodeURIComponent('השכרת ציוד')}&type=services`, l[3]);
+  check('services: hidden types add the register line, worded as the spec has it, after the search link',
+    l[4] === `מודעות עובדים ודיור זמינות לקבלנים רשומים: ${FRONTEND}/register/contractor` && l.length === 5, l);
+  searchLinkFirst('services', message);
   noSecrets('services', message);
   underLimit('services', message);
 }
@@ -156,8 +163,9 @@ function underLimit(name, message) {
 
   const anonymous = compose({ filters: {}, results: [], marketplace_matches: [], hidden_types: ['workers', 'housing'] }, query);
   const a = lines(anonymous);
-  check('zero results, anonymous viewer: sentence, register line, link',
-    a.length === 3 && a[1].startsWith('מודעות עובדים ודיור זמינות לקבלנים רשומים: ') && a[2].startsWith(`${FRONTEND}/?q=`), a);
+  check('zero results, a viewer who is not a contractor: sentence, search link, register line',
+    a.length === 3 && a[1].startsWith(`${FRONTEND}/?q=`) && a[2].startsWith('מודעות עובדים ודיור זמינות לקבלנים רשומים: '), a);
+  searchLinkFirst('zero results, not a contractor', anonymous);
 
   const empty = composeReply({ query: 'x', search: {}, labels, frontendUrl: FRONTEND });
   check('a search object with nothing in it still composes', lines(empty).length === 2 && empty.startsWith('לא מצאתי התאמות ל־x.'), empty);
@@ -169,12 +177,26 @@ function underLimit(name, message) {
     filters: { ad_type: 'housing' }, results: [housingAd()], marketplace_matches: [], primary_section: 'ads',
     viewer_approval_status: 'pending', hidden_types: ['workers'],
   }, 'דיור בחיפה');
-  check('hidden types: a pending contractor (workers hidden) gets the register line once',
-    pending.split('מודעות עובדים ודיור זמינות לקבלנים רשומים: ').length === 2);
-  check('hidden types: the register line sits just above the link',
-    lines(pending).at(-2).endsWith('/register/contractor') && lastLine(pending).startsWith(`${FRONTEND}/?q=`));
+  check('hidden types: a pending contractor is not invited to register, he is registered',
+    !pending.includes('/register/') && !pending.includes('לקבלנים רשומים'), pending);
+  check('hidden types: he is told the worker ads open on approval, after the search link',
+    lastLine(pending) === 'מודעות עובדים יוצגו אחרי אישור החשבון' && lines(pending).at(-2).startsWith(`${FRONTEND}/?q=`), lines(pending));
+  check('hidden types: the search link is the only link', pending.match(/https?:\/\//g).length === 1, pending);
   noSecrets('hidden types', pending);
   underLimit('hidden types', pending);
+
+  for (const status of ['rejected', 'suspended']) {
+    const closed = compose({ filters: {}, results: [], marketplace_matches: [listing()], primary_section: 'marketplace',
+      viewer_approval_status: status, hidden_types: ['workers', 'housing'] }, 'השכרת ציוד');
+    check(`hidden types: a ${status} contractor gets no register line and no approval line`,
+      !closed.includes('/register/') && !closed.includes('אחרי אישור') && lastLine(closed).startsWith(`${FRONTEND}/?q=`), lines(closed));
+  }
+
+  const provider = compose({ filters: {}, results: [], marketplace_matches: [listing()], primary_section: 'marketplace',
+    viewer_approval_status: null, hidden_types: ['workers', 'housing'] }, 'השכרת ציוד');
+  check('hidden types: a service provider (not a contractor) gets the register line, after the search link',
+    lastLine(provider) === `מודעות עובדים ודיור זמינות לקבלנים רשומים: ${FRONTEND}/register/contractor`, lines(provider));
+  searchLinkFirst('hidden types, provider', provider);
 
   const open = compose({ filters: { ad_type: 'housing' }, results: [housingAd()], marketplace_matches: [], hidden_types: [] }, 'דיור בחיפה');
   check('hidden types: an empty list adds no register line', !open.includes('/register/'));
@@ -225,8 +247,8 @@ function underLimit(name, message) {
     check(`${name}: composes without throwing`, threw === null, threw && threw.message);
     if (!message) continue;
     underLimit(name, message);
-    check(`${name}: still ends with the link`, lastLine(message).startsWith(`${FRONTEND}/?q=`), lastLine(message));
-    check(`${name}: the link is a valid URL`, URL.canParse(lastLine(message)));
+    check(`${name}: still has the search link, and it is the first link`, !!linkLine(message) && firstUrl(message) === linkLine(message), linkLine(message));
+    check(`${name}: the link is a valid URL`, URL.canParse(linkLine(message)));
     const kept = lines(message).filter((x) => x.startsWith('• ')).length;
     check(`${name}: results were dropped to fit, and at least one is kept (${kept} of 5)`, kept >= 1 && kept < 5, kept);
     check(`${name}: the register line survives the trimming`, message.includes('/register/contractor'));
@@ -240,6 +262,7 @@ function underLimit(name, message) {
   const all = [
     compose({ filters: {}, results: [workerAd(), housingAd()], marketplace_matches: [listing()], hidden_types: ['workers'] }),
     compose({ results: [], marketplace_matches: [] }),
+    compose({ results: [housingAd()], marketplace_matches: [], viewer_approval_status: 'pending', hidden_types: ['workers'] }),
     load('whatsapp/composeReply').NON_TEXT_REPLY,
     load('whatsapp/composeReply').RATE_LIMIT_REPLY,
     load('whatsapp/composeReply').SEARCH_FAILED_REPLY,
