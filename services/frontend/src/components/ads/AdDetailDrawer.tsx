@@ -241,7 +241,7 @@ export function AdDetailDrawer({
                       <ContactActions phone={revealed.phone} adTitle={ad.title_he} target={{ type: 'ad', id: ad.id }} />
                     )}
                     {revealed.email && (
-                      <a href={`mailto:${revealed.email}`} dir="ltr" className="block text-sm text-brand-800 underline underline-offset-2">
+                      <a href={`mailto:${revealed.email}`} dir="ltr" className="inline-block text-sm text-brand-800 underline underline-offset-2">
                         {revealed.email}
                       </a>
                     )}
