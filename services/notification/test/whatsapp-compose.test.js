@@ -243,12 +243,20 @@ function underLimit(name, message) {
     load('whatsapp/composeReply').NON_TEXT_REPLY,
     load('whatsapp/composeReply').RATE_LIMIT_REPLY,
     load('whatsapp/composeReply').SEARCH_FAILED_REPLY,
+    load('whatsapp/composeReply').pickEntityReply(FRONTEND),
   ].join('\n');
   check('no em dash in any user-facing string', !all.includes(String.fromCharCode(0x2014)));
   check('the fixed replies are worded as the spec has them',
     load('whatsapp/composeReply').NON_TEXT_REPLY === 'כרגע אני מבין רק הודעות טקסט. מה אתם מחפשים?'
     && load('whatsapp/composeReply').RATE_LIMIT_REPLY === 'קיבלתי כמה הודעות, עונה על האחרונה'
     && load('whatsapp/composeReply').SEARCH_FAILED_REPLY === 'לא הצלחתי לחפש כרגע, נסו שוב עוד רגע');
+}
+
+// ── R38 · several accounts, none picked for WhatsApp ───────────────
+{
+  const message = load('whatsapp/composeReply').pickEntityReply(FRONTEND);
+  check('pick reply: one line, ends with the link to the card', !message.includes('\n') && message.endsWith(`${FRONTEND}/billing#whatsapp`), message);
+  check('pick reply: the link is the only URL in it, so the preview card opens the card', message.match(/https?:\/\//g).length === 1, message);
 }
 
 finish('whatsapp-compose');

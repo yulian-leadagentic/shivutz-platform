@@ -8,6 +8,12 @@ const NON_TEXT_REPLY      = 'כרגע אני מבין רק הודעות טקסט
 const RATE_LIMIT_REPLY    = 'קיבלתי כמה הודעות, עונה על האחרונה';
 const SEARCH_FAILED_REPLY = 'לא הצלחתי לחפש כרגע, נסו שוב עוד רגע';
 
+// R38 · a user with several accounts and none picked for WhatsApp. The
+// link opens the card where he picks (frontend WhatsAppEntityCard).
+function pickEntityReply(frontendUrl) {
+  return `המספר הזה משויך לכמה חשבונות. בחרו באתר את החשבון לוואטסאפ: ${frontendUrl}/billing#whatsapp`;
+}
+
 const MAX_LENGTH  = 1000;
 const MAX_RESULTS = 5;
 const FIELD_SHOWN = 40;
@@ -103,6 +109,7 @@ function composeReply({ query, search, labels, frontendUrl }) {
 
 module.exports = {
   composeReply,
+  pickEntityReply,
   NON_TEXT_REPLY,
   RATE_LIMIT_REPLY,
   SEARCH_FAILED_REPLY,

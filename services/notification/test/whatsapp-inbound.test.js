@@ -36,7 +36,7 @@ stubModule('sms/index.js', {
 });
 let { handleInbound } = load('whatsapp/handleInbound');
 const {
-  NON_TEXT_REPLY, RATE_LIMIT_REPLY, SEARCH_FAILED_REPLY, MAX_LENGTH,
+  pickEntityReply, NON_TEXT_REPLY, RATE_LIMIT_REPLY, SEARCH_FAILED_REPLY, MAX_LENGTH,
 } = load('whatsapp/composeReply');
 
 const CONTRACTOR  = '972501110001';
@@ -44,11 +44,18 @@ const CORPORATION = '972501110002';
 const PROVIDER    = '972501110003';
 const TWO_HATS    = '972501110004';
 const UNKNOWN     = '972501110005';
+const TWO_PICKED  = '972501110006';
 db.memberships = {
-  '+972501110001': [{ entity_type: 'contractor', entity_id: 'con-1' }],
-  '+972501110002': [{ entity_type: 'corporation', entity_id: 'corp-1' }],
-  '+972501110003': [{ entity_type: 'service_provider', entity_id: 'prov-1' }],
-  '+972501110004': [{ entity_type: 'contractor', entity_id: 'con-2' }, { entity_type: 'corporation', entity_id: 'corp-2' }],
+  '+972501110001': [{ entity_type: 'contractor', entity_id: 'con-1', is_whatsapp_default: 0 }],
+  '+972501110002': [{ entity_type: 'corporation', entity_id: 'corp-1', is_whatsapp_default: 0 }],
+  '+972501110003': [{ entity_type: 'service_provider', entity_id: 'prov-1', is_whatsapp_default: 0 }],
+  '+972501110004': [{ entity_type: 'contractor', entity_id: 'con-2', is_whatsapp_default: 0 }, { entity_type: 'corporation', entity_id: 'corp-2', is_whatsapp_default: 0 }],
+  // mysql2 hands a BOOLEAN back as 0 / 1
+  '+972501110006': [
+    { entity_type: 'contractor', entity_id: 'con-3', is_whatsapp_default: 0 },
+    { entity_type: 'corporation', entity_id: 'corp-3', is_whatsapp_default: 1 },
+    { entity_type: 'service_provider', entity_id: 'prov-3', is_whatsapp_default: 0 },
+  ],
 };
 
 const WORKERS = {
@@ -142,8 +149,24 @@ async function run() {
   check('corporation user: corporation scope with its entity id',
     r.searches[0].headers['x-user-role'] === 'corporation' && r.searches[0].headers['x-entity-type'] === 'corporation' && r.searches[0].headers['x-entity-id'] === 'corp-1', r.searches[0].headers);
 
+  wait(10);
+  r = await deliver(text(TWO_PICKED, 'רצפים במרכז'));
+  check('several memberships, one picked for WhatsApp: searches with the picked one',
+    r.searches.length === 1 && r.searches[0].headers['x-user-role'] === 'corporation'
+    && r.searches[0].headers['x-entity-type'] === 'corporation' && r.searches[0].headers['x-entity-id'] === 'corp-3', r.searches[0]?.headers);
+
+  wait(10);
+  r = await deliver(text(TWO_HATS, '20 פועלים סינים במרכז'));
+  check('several memberships, none picked: no search', r.searches.length === 0, r.searches.length);
+  check('and one reply asking to pick, with the link to the card',
+    r.sent.length === 1 && bodyOf(r) === pickEntityReply('https://staging.example.test')
+    && bodyOf(r).endsWith('https://staging.example.test/billing#whatsapp') && r.outbound.length === 1, bodyOf(r));
+  wait(10);
+  r = await deliver(text(TWO_HATS, '?'));
+  check('even a message too short to search gets the pick reply', r.sent.length === 1 && bodyOf(r) === pickEntityReply('https://staging.example.test'), bodyOf(r));
+
   net.searchResult = SERVICES_ONLY;
-  for (const [name, from] of [['an unknown number', UNKNOWN], ['a service provider', PROVIDER], ['a user with two memberships', TWO_HATS]]) {
+  for (const [name, from] of [['an unknown number', UNKNOWN], ['a service provider', PROVIDER]]) {
     wait(10);
     r = await deliver(text(from, '20 פועלים סינים במרכז'));
     check(`${name}: searches with no identity header at all`, identityHeaders(r.searches[0].headers).length === 0, r.searches[0].headers);
@@ -162,6 +185,7 @@ async function run() {
     flat.includes('FROM auth_db.users u JOIN auth_db.entity_memberships em ON em.user_id = u.id WHERE u.phone = ?') && lookup.params[0] === '+972501110001', flat);
   check('and only counts live users and accepted, active memberships',
     flat.includes('u.is_active = TRUE') && flat.includes('u.deleted_at IS NULL') && flat.includes('em.is_active = TRUE') && flat.includes('em.invitation_accepted_at IS NOT NULL'), flat);
+  check('and reads which membership is picked for WhatsApp', flat.includes('em.is_whatsapp_default'), flat);
 
   // ── 3. non-text ──────────────────────────────────────────────────
   for (const type of ['image', 'document', 'location', 'audio', 'video', 'sticker', 'unsupported']) {

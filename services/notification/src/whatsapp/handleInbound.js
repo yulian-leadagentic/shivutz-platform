@@ -7,7 +7,7 @@ const { getPool }        = require('../db');
 const { sendMessage }    = require('../messaging');
 const { normalizePhone } = require('./phone');
 const {
-  composeReply, NON_TEXT_REPLY, RATE_LIMIT_REPLY, SEARCH_FAILED_REPLY,
+  composeReply, pickEntityReply, NON_TEXT_REPLY, RATE_LIMIT_REPLY, SEARCH_FAILED_REPLY,
 } = require('./composeReply');
 
 const USER_ORG_URL = process.env.USER_ORG_SERVICE_URL || 'http://user-org:3002';
@@ -55,13 +55,13 @@ async function rateLimitVerdict(inboundId) {
   return 'proceed';
 }
 
-// Search headers for the sender, by the R32 D1 matrix. Exactly one
-// active membership, as a contractor or a corporation, searches with
-// that entity's scope. Everyone else searches as an anonymous visitor.
-// x-user-is-admin is never sent: a phone number is not an admin login.
-async function identitySearchHeaders(phone) {
+// Which entity the sender speaks for (R38). One active membership is
+// that one. With several, the one the user picked on the site
+// (is_whatsapp_default, migration 110); none picked means no search,
+// one reply asking him to pick.
+async function identifySender(phone) {
   const [rows] = await getPool().query(
-    `SELECT em.entity_type, em.entity_id
+    `SELECT em.entity_type, em.entity_id, em.is_whatsapp_default
        FROM auth_db.users u
        JOIN auth_db.entity_memberships em ON em.user_id = u.id
       WHERE u.phone = ?
@@ -71,8 +71,19 @@ async function identitySearchHeaders(phone) {
         AND em.invitation_accepted_at IS NOT NULL`,
     [phone],
   );
-  if (rows.length !== 1) return {};
-  const { entity_type: entityType, entity_id: entityId } = rows[0];
+  if (rows.length === 0) return { kind: 'unknown' };
+  const entity = rows.length === 1 ? rows[0] : rows.find((r) => Number(r.is_whatsapp_default) === 1);
+  if (!entity) return { kind: 'pick' };
+  return { kind: 'member', entityType: entity.entity_type, entityId: entity.entity_id };
+}
+
+// Search headers for the entity, by the R32 D1 matrix: a contractor or
+// a corporation searches with its own scope, anyone else as an
+// anonymous visitor. x-user-is-admin is never sent: a phone number is
+// not an admin login.
+function searchHeaders(sender) {
+  if (sender.kind !== 'member') return {};
+  const { entityType, entityId } = sender;
   if (entityType !== 'contractor' && entityType !== 'corporation') return {};
   return { 'x-user-role': entityType, 'x-entity-type': entityType, 'x-entity-id': entityId };
 }
@@ -119,17 +130,19 @@ async function loadLabels() {
 }
 
 async function searchReply(phone, text) {
+  let sender = { kind: 'unknown' };
+  try {
+    sender = await identifySender(phone);
+  } catch (err) {
+    console.error('[whatsapp] sender lookup failed, searching as anonymous:', err.message);
+  }
+  if (sender.kind === 'pick') return pickEntityReply(FRONTEND_URL);
+
   if (Array.from(text).length < SEARCH_QUERY_MIN) {
     return composeReply({ query: text, search: {}, labels: NO_LABELS, frontendUrl: FRONTEND_URL });
   }
 
-  let headers = {};
-  try {
-    headers = await identitySearchHeaders(phone);
-  } catch (err) {
-    console.error('[whatsapp] sender lookup failed, searching as anonymous:', err.message);
-  }
-
+  const headers = searchHeaders(sender);
   let result;
   try {
     result = await search(text, headers);
