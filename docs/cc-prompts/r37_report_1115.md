@@ -648,8 +648,46 @@ the value I generated; it is in Railway and not in git. From outside, the way Me
 `200`, `text/plain`, the challenge itself as the whole body. A wrong token answers 403, a wrong mode 403, an unsigned
 POST 401. The other five variables are still not set, so staging still sends nothing.
 
-**Not verified, all of it waiting on your secrets:** Meta's handshake, a real signature, a real send, real status
-callbacks, a real message from your phone, the 12-message run, and a real SMS OTP. I sent no SMS.
+**First real run, 16.11.2026.** Yulian set `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_APP_SECRET` and
+`WHATSAPP_ACCESS_TOKEN` on staging's notification service, saved the webhook in Meta and subscribed to `messages`.
+Then he sent two messages from his own phone to the business number, and staging answered both.
+
+- Asked of Meta, read-only, from inside the service: the token is accepted for +972 52-466-9987, display name
+  "TagidAI" (name status `PENDING_REVIEW`), number `CONNECTED`, account mode `LIVE`, tier `TIER_250`.
+- A voice message got "כרגע אני מבין רק הודעות טקסט. מה אתם מחפשים?". The text "טייחים סינים" got the no-results reply,
+  the sign-up line and the link.
+- On staging: 2 inbound rows and 2 outbound rows, one reply for each inbound, each sent 1 to 2 seconds after the
+  inbound was stored, no duplicate ids. Meta's inbound ids are 78 characters long, so the wider column (deviation 4)
+  was needed. The search ran with the anonymous scope, as decided for a number with more than one membership (his
+  has three).
+- `whatsapp_message_log`: both replies went `submitted` and then `read`, from Meta's own status callbacks. No
+  `delivered` callback arrived for either; the chat was open on his phone.
+
+| Acceptance line | Result |
+|---|---|
+| GET with the right token returns the challenge; wrong token 403; Meta shows the webhook as verified | Pass. Meta saved the webhook and delivers to it |
+| POST with a valid signature 200; forged 401 and nothing stored | Pass. Real signed messages were processed; a forged signature gets 401 |
+| A real message from Yulian's phone: one inbound row, exactly one reply | Pass, twice |
+| "20 פועלים סינים במרכז" from an approved contractor's phone: worker results | Not run. His phone counts as anonymous, and staging has no worker ad for that text |
+| Same text from an unknown number: services only, the sign-up line, the link | Pass in effect, with his phone as the anonymous sender and another text |
+| The same webhook delivered twice: one row, one reply | Not seen from Meta. Covered by the unique index and the unit tests |
+| 12 messages in a row: the rate limit | Not run. Every reply is billed |
+| The log moves submitted, delivered, read | `submitted` and `read` seen; `delivered` did not arrive |
+| SMS OTP through Vonage still works | Not run |
+
+Three things this run showed:
+
+1. **The big preview card in the reply opens the registration page.** WhatsApp builds the card from the first link
+   in a message, and in a reply with the sign-up line that link is `/register/contractor`; the search link is the
+   last line. Yulian tapped the card and landed on "הרשמת קבלן". The order of the two lines is the prompt's.
+2. **A registered user with more than one membership is invited to register.** That is decision 2 as written
+   (multi-entity means anonymous scope plus the sign-up line), and it reads wrong to the person it happens to.
+3. **The token on staging is the temporary one** from the API Setup screen, good for about 24 hours from the
+   afternoon of 16.11. The permanent System User token is blocked: Meta asks for an SMS code that does not arrive.
+   When the temporary token expires, staging stores inbound messages and cannot answer them.
+
+**Still not verified after the first real run:** a worker result for an approved contractor's phone, a webhook
+delivered twice by Meta, the 12-message run, a `delivered` status, and a real SMS OTP. I sent no SMS.
 
 The verify token is in my closing message of this session, not in this file, so it is not in git.
 
