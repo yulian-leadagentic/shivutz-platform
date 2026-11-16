@@ -8,39 +8,42 @@ const { handle: handleEvent } = require('../consumers/handlers');
 const { TEST_CATALOG, TEST_CRONS } = require('../testCatalog');
 const { vonageWebhookAuth, captureRawBody } = require('../sms/vonageWebhookAuth');
 
-// Name of the Meta-approved OTP template. An OTP is sent outside the
-// 24h window, where Meta accepts nothing but an approved template, so
-// until one exists this stays unset and every OTP goes by SMS. There is
-// no default name: a name Meta does not know costs a failed API call on
-// each login before the SMS goes out.
+// Name of the Meta-approved AUTHENTICATION template for the OTP. An OTP
+// is sent outside the 24h window, where Meta accepts nothing but an
+// approved template, so until one exists this stays unset and every OTP
+// goes by SMS. There is no default name: a name Meta does not know costs
+// a failed API call on each login before the SMS goes out.
 const WHATSAPP_OTP_TEMPLATE = process.env.WHATSAPP_OTP_TEMPLATE_NAME;
+const WHATSAPP_OTP_LANGUAGE = process.env.WHATSAPP_OTP_TEMPLATE_LANGUAGE || 'he';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /internal/otp
-// Channel-aware OTP send — called by the auth service. The auth service
-// already knows the user's whatsapp_opt_in flag (it queries auth_db); it
-// passes the preference here and we pick the channel + template + falls
-// back to SMS on any WhatsApp failure so the user always gets the code.
+// Called by the auth service with { phone, code, channel }. channel is
+// what the user picked on the login screen: 'sms' (the default) or
+// 'whatsapp'. WhatsApp is tried only when the OTP template is configured,
+// and any WhatsApp failure falls back to SMS. The answer's `channel` is
+// the one that really went out.
 // NOT routed through the gateway (internal Docker network only).
 // ─────────────────────────────────────────────────────────────────────────────
 router.post('/internal/otp', async (req, res) => {
-  const { phone, code, whatsapp_opt_in: whatsappOptIn } = req.body;
+  const { phone, code } = req.body;
+  const channel = req.body.channel || 'sms';
   if (!phone || !code) {
     return res.status(400).json({ error: 'phone and code required' });
   }
+  if (channel !== 'sms' && channel !== 'whatsapp') {
+    return res.status(400).json({ error: "channel must be 'sms' or 'whatsapp'" });
+  }
 
-  // The SMS provider sends this text verbatim. It matches the wording
-  // of the WhatsApp template, so the user reads the same message on
-  // either channel.
+  // The SMS text. Meta fixes the body of an authentication template, so
+  // on WhatsApp the user reads Meta's wording, not this.
   const message = `קוד האימות שלך לכניסה לפורטל TagidAI הוא: ${code}\nבתוקף 10 דקות. אל תשתף קוד זה.`;
 
-  const viaWhatsapp = !!(whatsappOptIn && WHATSAPP_OTP_TEMPLATE);
+  const viaWhatsapp = channel === 'whatsapp' && !!WHATSAPP_OTP_TEMPLATE;
   try {
-    const result = await sendMessage(phone, message, {
-      channel:        viaWhatsapp ? 'auto' : 'sms',
-      templateName:   viaWhatsapp ? WHATSAPP_OTP_TEMPLATE : undefined,
-      templateParams: viaWhatsapp ? [code] : undefined,
-    });
+    const result = await sendMessage(phone, message, viaWhatsapp
+      ? { channel: 'auto', templateName: WHATSAPP_OTP_TEMPLATE, templateLanguage: WHATSAPP_OTP_LANGUAGE, otpCode: code }
+      : { channel: 'sms' });
     res.json({ sent: true, channel: result.channel, messageId: result.messageId });
   } catch (err) {
     console.error('[OTP] send failed:', err.message);

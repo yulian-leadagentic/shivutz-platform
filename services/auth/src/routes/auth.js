@@ -107,27 +107,6 @@ async function getMemberships(pool, userId) {
   return rows;
 }
 
-/**
- * Look up whether the phone owner has opted into WhatsApp OTP. Returns
- * `true` only if the user exists and their flag is 1; new phones (no
- * row yet — register flow) and existing users without the flag get the
- * default SMS path.
- */
-async function getWhatsappOptIn(normPhone) {
-  try {
-    const pool = getPool();
-    const [rows] = await pool.query(
-      'SELECT whatsapp_opt_in FROM users WHERE phone = ? LIMIT 1',
-      [normPhone],
-    );
-    return rows[0]?.whatsapp_opt_in === 1;
-  } catch (err) {
-    // DB blip should not block OTP — fall back to SMS.
-    console.warn('[OTP] whatsapp_opt_in lookup failed:', err.message);
-    return false;
-  }
-}
-
 // P0-1 — Uniform error contract for the auth service.
 //
 // Every response carries THREE fields the frontend can rely on:
@@ -160,26 +139,32 @@ const M_MAX_ATTEMPTS   = 'יותר מדי ניסיונות שגויים. בקש 
 const M_OTP_EXPIRED    = 'הקוד פג תוקף. בקש קוד חדש';
 const M_OTP_NONE       = 'לא נמצא קוד תקף, בקש קוד חדש';
 
+const OTP_CHANNELS = ['sms', 'whatsapp'];
+
 /**
- * Send OTP via notification service. Channel is picked downstream from
- * the whatsapp_opt_in flag (WhatsApp first → SMS fallback for opted-in
- * users; pure SMS for everyone else).
+ * Send the OTP through the notification service on the channel the user
+ * picked. Resolves to the channel notification reports it really used
+ * ('whatsapp', or 'sms' after a fallback), or null when it did not
+ * confirm a send.
  */
-async function sendOtp(phone, code) {
-  const whatsappOptIn = await getWhatsappOptIn(phone);
+async function sendOtp(phone, code, channel) {
   try {
     const resp = await fetch(`${NOTIF_URL}/internal/otp`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ phone, code, whatsapp_opt_in: whatsappOptIn }),
+      body:    JSON.stringify({ phone, code, channel }),
     });
     if (!resp.ok) {
       const err = await resp.text();
       console.error('[OTP] send failed:', err);
+      return null;
     }
+    const data = await resp.json().catch(() => null);
+    return OTP_CHANNELS.includes(data?.channel) ? data.channel : null;
   } catch (err) {
-    // Log but don't throw — we don't want OTP generation to fail if SMS is down
+    // Log but don't throw: OTP generation must not fail when SMS is down.
     console.error('[OTP] notification service unreachable:', err.message);
+    return null;
   }
 }
 
@@ -187,20 +172,26 @@ async function sendOtp(phone, code) {
 // POST /auth/send-otp
 // Send a 6-digit OTP to a phone number.
 // Rate limited: 3 per phone per 10 minutes.
+// Body: { phone, purpose, channel? }. channel is 'sms' (the default) or
+// 'whatsapp'; the answer's `channel` says where the code really went.
 // ─────────────────────────────────────────────────────────────────────────────
 router.post('/auth/send-otp', async (req, res) => {
   try {
     const { phone, purpose } = req.body;
+    const channel = req.body.channel || 'sms';
     if (!phone) return apiError(res, 400, 'phone_required', M_PHONE_REQUIRED);
     if (!['login', 'register', 'invite_accept'].includes(purpose)) {
       return apiError(res, 400, 'invalid_purpose', M_INVALID_PURPOSE);
     }
+    if (!OTP_CHANNELS.includes(channel)) {
+      return apiError(res, 400, 'invalid_channel', M_INVALID_PURPOSE);
+    }
 
     const ip = req.ip || req.headers['x-forwarded-for'];
     const { code, normPhone } = await generateOtp(phone, purpose, ip);
-    await sendOtp(normPhone, code);
+    const sentVia = await sendOtp(normPhone, code, channel);
 
-    res.json({ sent: true, phone: normPhone });
+    res.json({ sent: true, phone: normPhone, channel: sentVia });
   } catch (err) {
     if (err.status === 429) return apiError(res, 429, 'rate_limited', M_RATE_LIMITED, { retryAfter: err.retryAfter });
     if (err.status === 400) return apiError(res, 400, err.code || 'bad_request', err.message || M_MISSING_FIELDS);

@@ -6,7 +6,7 @@ import { Loader2 } from 'lucide-react';
 // Link / UserPlus / ArrowLeft were removed along with the inline
 // "register here" CTA inside ErrorBlock — see ErrorBlock's docstring
 // for why that CTA is no longer needed with the prospect flow.
-import { authApi, otpApi, type Membership } from '@/lib/api';
+import { authApi, otpApi, type Membership, type OtpChannel } from '@/lib/api';
 import { saveTokens, getRoleFromToken } from '@/lib/auth';
 import { useAuth } from '@/lib/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -27,6 +27,12 @@ import { sanitizeReturnTo, writeReturnTo, resolveDestination } from '@/features/
 type Mode = 'sms' | 'email';
 type OtpPhase = 'phone' | 'code';
 type Intent = 'contractor' | 'corporation' | 'service_provider' | null;
+
+const OTP_CHANNELS: { value: OtpChannel; label: string }[] = [
+  { value: 'sms',      label: 'SMS' },
+  { value: 'whatsapp', label: 'WhatsApp' },
+];
+const SENT_VIA: Record<OtpChannel, string> = { sms: 'ב-SMS ', whatsapp: 'ב-WhatsApp ' };
 
 import { mapApiError } from '@/lib/api/errors';
 
@@ -116,7 +122,7 @@ const COPY = {
 // Build marker — bump this whenever something user-facing on this
 // page changes so you can confirm the user's browser is on the
 // expected bundle. Look for [login v=…] in their console.
-const LOGIN_BUILD = 'option-a-2026-05-24';
+const LOGIN_BUILD = 'otp-channel-2026-11-16';
 
 function LoginPageInner() {
   const router        = useRouter();
@@ -124,7 +130,7 @@ function LoginPageInner() {
   const { refreshAuth } = useAuth();
 
   // One-shot, on first render. Visible in DevTools → Console
-  // so we can ask "does it say option-a-2026-05-24?" to confirm
+  // so we can ask "does it say otp-channel-2026-11-16?" to confirm
   // a cached old bundle is or isn't the cause of the next bug.
   if (typeof window !== 'undefined') {
     const w = window as unknown as { __loginBuildLogged?: boolean };
@@ -168,6 +174,9 @@ function LoginPageInner() {
   const [normPhone, setNormPhone] = useState('');
   const [code, setCode]           = useState('');
   const codeRef = useRef<HTMLInputElement>(null);
+  const [otpChannel, setOtpChannel]     = useState<OtpChannel>('sms');
+  const [sentVia, setSentVia]           = useState<OtpChannel | null>(null);
+  const [resendingVia, setResendingVia] = useState<OtpChannel | null>(null);
 
   const [email, setEmail]       = useState('');
   const [password, setPassword] = useState('');
@@ -291,14 +300,30 @@ function LoginPageInner() {
       // this fix, the caller passed `phone.trim()` and a user who
       // typed `052-526-7879` or a mix like `0525267879גגג` shipped
       // that mixed string straight to the SMS gateway.
-      const res = await otpApi.sendOtp(check.normalized, 'login');
-      setNormPhone(res.phone);
-      setOtpPhase('code');
-      setCode('');
-      setTimeout(() => codeRef.current?.focus(), 50);
+      await sendCode(check.normalized, otpChannel);
     } catch (err) {
       setError(otpError(err instanceof Error ? err.message : ''));
     } finally { setLoading(false); }
+  }
+
+  async function sendCode(normalized: string, channel: OtpChannel) {
+    const res = await otpApi.sendOtp(normalized, 'login', channel);
+    setNormPhone(res.phone);
+    setSentVia(res.channel);
+    setOtpPhase('code');
+    setCode('');
+    setTimeout(() => codeRef.current?.focus(), 50);
+  }
+
+  async function handleResend(channel: OtpChannel) {
+    setError('');
+    setOtpChannel(channel);
+    setResendingVia(channel);
+    try {
+      await sendCode(normPhone, channel);
+    } catch (err) {
+      setError(otpError(err instanceof Error ? err.message : ''));
+    } finally { setResendingVia(null); }
   }
 
   async function handleOtpLogin(e?: { preventDefault?: () => void }) {
@@ -431,6 +456,31 @@ function LoginPageInner() {
                 <div id="login-phone-error">
                   <ErrorBlock error={error} />
                 </div>
+                <fieldset>
+                  <legend className="mb-1.5 text-sm font-medium text-slate-700">איך לקבל את הקוד?</legend>
+                  <div className="grid grid-cols-2 gap-2">
+                    {OTP_CHANNELS.map(({ value, label }) => (
+                      <label
+                        key={value}
+                        className={`flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg border px-3 text-sm font-medium transition-colors ${
+                          otpChannel === value
+                            ? 'border-brand-600 bg-brand-50 text-slate-900'
+                            : 'border-slate-300 bg-white text-slate-700 hover:border-slate-400'
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="otp-channel"
+                          value={value}
+                          checked={otpChannel === value}
+                          onChange={() => setOtpChannel(value)}
+                          className="h-4 w-4 accent-brand-800"
+                        />
+                        <span dir="ltr">{label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
                 <Button
                   type="submit"
                   size="lg"
@@ -454,7 +504,7 @@ function LoginPageInner() {
                 {/* verify(O3) — role=status aria-live so SR users hear
                     the 'code sent' transition. */}
                 <p role="status" aria-live="polite" className="text-sm text-slate-600 text-center">
-                  קוד אימות נשלח אל <span className="font-medium" dir="ltr">{normPhone}</span>
+                  קוד אימות נשלח {sentVia ? SENT_VIA[sentVia] : ''}אל <span className="font-medium" dir="ltr">{normPhone}</span>
                 </p>
                 <Input
                   ref={codeRef}
@@ -475,19 +525,39 @@ function LoginPageInner() {
                 <Button
                   type="submit"
                   size="lg"
-                  disabled={loading}
+                  disabled={loading || resendingVia !== null}
                   className="w-full"
                 >
                   {loading
                     ? <><Loader2 className="h-4 w-4 animate-spin" /><span>מאמת…</span></>
                     : 'כניסה'}
                 </Button>
+                <div role="group" aria-labelledby="login-resend-label" className="flex flex-col gap-2">
+                  <p id="login-resend-label" className="text-sm text-slate-600 text-center">לא קיבלת את הקוד? שלח שוב ב:</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {OTP_CHANNELS.map(({ value, label }) => (
+                      <Button
+                        key={value}
+                        type="button"
+                        variant="outline"
+                        size="lg"
+                        disabled={loading || resendingVia !== null}
+                        onClick={() => handleResend(value)}
+                        className="w-full px-3 text-sm"
+                      >
+                        {resendingVia === value
+                          ? <><Loader2 className="h-4 w-4 animate-spin" /><span>שולח…</span></>
+                          : <span dir="ltr">{label}</span>}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
                 <button
                   type="button"
                   onClick={() => { setOtpPhase('phone'); setError(''); setCode(''); }}
-                  className="text-sm text-brand-600 hover:underline text-center"
+                  className="min-h-11 text-sm text-brand-800 hover:underline text-center"
                 >
-                  ← שנה מספר טלפון / שלח שוב
+                  ← שנה מספר טלפון
                 </button>
               </form>
             )}

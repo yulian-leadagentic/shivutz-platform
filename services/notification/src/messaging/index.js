@@ -105,6 +105,9 @@ async function sendWhatsappOnce(phone, message, opts) {
  * @param {string}   [opts.templateName]   — WhatsApp template name; required
  *                                          for out-of-window sends
  * @param {string[]} [opts.templateParams] — positional template params
+ * @param {string}   [opts.templateLanguage] - template language code, 'he' when unset
+ * @param {string}   [opts.otpCode]        - with templateName: send it as an
+ *                                          AUTHENTICATION template carrying this code
  * @returns {Promise<{ messageId: string, provider: string, channel: string }>}
  */
 async function sendMessage(phone, message, opts = {}) {
