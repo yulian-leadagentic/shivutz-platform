@@ -406,8 +406,9 @@ block is a shared component, written to sit on any billing page.
 contractors and corporations as well, the entity types `payment_methods` already held, but only the provider page got
 the block. Putting it on `/billing` is one line and a decision (Choices, 9).
 
-**Real mode needs two settings on the payment service:** `FRONTEND_URL` and `PUBLIC_API_URL`. Staging has neither.
-Without them, and with fake mode off, adding a card answers 503 and opens no page. In fake mode there is no Cardcom
+**Real mode needs two settings on the payment service:** `FRONTEND_URL` and `PUBLIC_API_URL`. Staging had neither;
+both were set on 16.11.2026 at your word (see the note under Manual action 12). Without them, and with fake mode off,
+adding a card answers 503 and opens no page. In fake mode there is no Cardcom
 page: the browser comes straight back and a card marked "כרטיס בדיקה" is saved.
 
 #### 4.1.6 · The card-page webhook (`47bb9db`)
@@ -717,7 +718,12 @@ insertions, 268 deletions. By area:
 12. **The real run on the Cardcom test terminal, staging, payment service.** In this order:
     1. Confirm in Cardcom that the terminal number set on staging is a test terminal.
     2. Check the terminal may create a token without a charge and may refund ("זיכוי כרטיס או אסימון").
-    3. Set `FRONTEND_URL` (the staging site's address) and `PUBLIC_API_URL` (the same address with `/api`).
+    3. ~~Set `FRONTEND_URL` and `PUBLIC_API_URL`.~~ **Done 16.11.2026**, on staging's payment service only:
+       `FRONTEND_URL=https://staging.tagidai.com` (the value notification, user-org and admin already use) and
+       `PUBLIC_API_URL=https://staging.tagidai.com/api`. The service restarted with both. Fake mode is still on.
+       In real mode Cardcom would be given `https://staging.tagidai.com/provider/billing?card_setup=<id>` to return
+       to and `https://staging.tagidai.com/api/webhooks/cardcom` to call; that address answers
+       `200 {"received":true}` from outside. Adding a card in fake mode still works. Production was not touched.
     4. Make sure `FREE_LAUNCH_UNTIL` is not set there.
     5. Set `PAYMENT_FAKE_MODE=0` and redeploy.
     6. As a provider on staging: "מנוי ותשלום", "הוספת כרטיס", a Cardcom test card. The card should appear in the block.
