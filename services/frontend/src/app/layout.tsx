@@ -3,6 +3,7 @@ import { Heebo } from 'next/font/google';
 import { AuthProvider } from '@/lib/AuthContext';
 import { EnumsProvider } from '@/features/enums/EnumsContext';
 import AccessibilityFab from '@/components/a11y/AccessibilityFab';
+import CookieNotice from '@/components/privacy/CookieNotice';
 import './globals.css';
 
 const heebo = Heebo({ subsets: ['hebrew', 'latin'], variable: '--font-heebo' });
@@ -61,6 +62,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     // mismatches inside the app still surface as warnings.
     <html lang="he" dir="rtl" className={heebo.variable} suppressHydrationWarning>
       <body className="font-sans antialiased bg-slate-50 text-slate-900" suppressHydrationWarning>
+        {/* R38 item 8 · first in the DOM so the first Tab reaches it;
+            it is fixed to the bottom, so it moves nothing on screen. */}
+        <CookieNotice />
         <AuthProvider>
           <EnumsProvider>{children}</EnumsProvider>
         </AuthProvider>
