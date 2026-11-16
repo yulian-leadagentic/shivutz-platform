@@ -423,8 +423,15 @@ export default function NewProviderListingPage() {
               className="min-w-0 space-y-2 focus:outline-none"
               aria-describedby={fieldErrors.audience ? 'audience-error' : undefined}
             >
-              <legend className={LABEL}>קהל יעד *</legend>
-              <div role="radiogroup" aria-required="true" className="flex flex-wrap gap-2">
+              <legend id="audience-legend" className={LABEL}>קהל יעד *</legend>
+              <div
+                role="radiogroup"
+                aria-labelledby="audience-legend"
+                aria-required="true"
+                aria-invalid={fieldErrors.audience ? true : undefined}
+                aria-describedby={fieldErrors.audience ? 'audience-error' : undefined}
+                className="flex flex-wrap gap-2"
+              >
                 {AUDIENCE_OPTIONS.map((o) => {
                   const on = audience === o.value;
                   return (
