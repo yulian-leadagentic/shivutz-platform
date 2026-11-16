@@ -347,7 +347,7 @@ class NoSlotsLinkTest(unittest.TestCase):
         ])
         with mock.patch.object(marketplace, "get_db", return_value=_conn(cur)):
             with self.assertRaises(HTTPException) as ctx:
-                create_listing(ListingCreate(category="services", title="הסעות"), **PROVIDER)
+                create_listing(ListingCreate(category="services", title="הסעות", audience="both"), **PROVIDER)
         self.assertEqual(ctx.exception.detail["buy_url"], "/provider/billing?category=services")
 
 

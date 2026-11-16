@@ -250,6 +250,20 @@ def _is_quantity_word(bare: str) -> bool:
     return bool(core) and core.isdigit()
 
 
+def _rewriter_trade_words(raw_query: str) -> frozenset[str]:
+    """R38 item 3b · the consumed words that name a trade. A trade can be a
+    service too ("פיגומים": scaffolders, and scaffolding for hire), so
+    when a query is nothing but a trade the services pass still looks
+    for it. Regions, origins and numbers never come back on their own."""
+    _, tokens = normalize_search_term(raw_query)
+    out: set[str] = set()
+    for tok in tokens:
+        bare = tok[1:-1] if tok.startswith("%") and tok.endswith("%") else tok
+        if bare and any(key in bare for key in PROFESSION_KEYWORDS):
+            out.add(bare)
+    return frozenset(out)
+
+
 def _rewriter_consumed_words(raw_query: str) -> frozenset[str]:
     """R32 S3.2 · the words the rewriter has already turned into filters.
 
@@ -341,7 +355,9 @@ def _search_marketplace(
     """
     filters = filters or {}
     clauses = marketplace_text_token_clauses(
-        raw_query, drop_words=_rewriter_consumed_words(raw_query),
+        raw_query,
+        drop_words=_rewriter_consumed_words(raw_query),
+        restore_if_alone=_rewriter_trade_words(raw_query),
     )
     if not clauses:
         # R34 · the empty result keeps the function's two-value shape.

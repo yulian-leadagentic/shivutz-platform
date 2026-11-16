@@ -1,6 +1,9 @@
 import { apiFetch } from './client';
 import type { MarketplaceListing, LeadFormData } from '@/types';
 
+/** R38 3a · who a service listing is for (marketplace_listings.audience). */
+export type ListingAudience = 'contractors' | 'corporations' | 'both';
+
 export interface PublicMarketplaceCategory {
   code:       string;
   name_he:    string;
@@ -56,6 +59,8 @@ export const marketplaceApi = {
     images_json?: string[];
     attributes?: Record<string, unknown>;
     regions?: string[];
+    /** R38 3a · who the listing is for. Required from a service provider. */
+    audience?: ListingAudience;
   }) =>
     apiFetch<{ id: string; status: string; subscription_id?: string; slots_used?: number; slot_count?: number }>('/marketplace', {
       method: 'POST',

@@ -71,7 +71,9 @@ def _conn(cursor):
 
 
 def _listing(category="services"):
-    return ListingCreate(category=category, title="הסעות עובדים")
+    # R38 3a · a provider names who the listing is for; a corporation's
+    # housing defaults to both.
+    return ListingCreate(category=category, title="הסעות עובדים", audience="both")
 
 
 class CreateListingTest(unittest.TestCase):

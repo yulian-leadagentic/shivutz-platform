@@ -16,11 +16,12 @@ from app.services.listing_attributes import (
     single_region, validate_attributes, validate_regions,
 )
 from app.services.provider_plans import PROVIDER_BLOCKED_CATEGORIES
-from app.services.search_normalize import marketplace_text_conditions
+from app.services.search_normalize import marketplace_text_conditions, normalize_search_term
 from app.services.phone_normalize import normalize_or_400
 from app.services.seed_visibility import seed_where
 from app.services.visibility import (
     contractor_approval_status,
+    LISTING_AUDIENCES,
     marketplace_scope_wheres,
 )
 
@@ -50,6 +51,9 @@ class ListingCreate(BaseModel):
     # (marketplace_categories.field_schema), and the regions served.
     attributes:     Optional[dict] = None
     regions:        Optional[List[str]] = None
+    # R38 item 3a · contractors | corporations | both. Required from a
+    # service provider; everyone else defaults to both.
+    audience:       Optional[str] = None
 
 class ListingUpdate(BaseModel):
     title:          Optional[str] = None
@@ -67,6 +71,7 @@ class ListingUpdate(BaseModel):
     images_json:    Optional[List[str]] = None
     attributes:     Optional[dict] = None
     regions:        Optional[List[str]] = None
+    audience:       Optional[str] = None
 
 # Soft-cap on stored image URLs per listing — protects against runaway
 # JSON columns. Not enforced at the DB level; FE shouldn't allow more
@@ -110,6 +115,9 @@ _PUBLIC_LISTING_FIELDS = (
     # identifies the advertiser.
     "attributes",
     "regions",
+    # R38 item 3a · who the listing is for. Says nothing about who
+    # published it.
+    "audience",
     "status",
     "created_at",
     "updated_at",
@@ -289,10 +297,18 @@ def list_listings(
             # it. When the input reduces to nothing (a lone comma) the
             # predicate comes back empty and the filter is dropped
             # rather than returning zero rows.
+            #
+            # R38 item 3b · a search made only of generic words ("עובדים")
+            # or region names says nothing about a service, and finds no
+            # listing, the same answer the search section gives it. A
+            # search with no word at all (a lone comma) still drops the
+            # filter.
             text_sql, text_params = marketplace_text_conditions(search)
             if text_sql:
                 conditions.append(text_sql)
                 params.extend(text_params)
+            elif normalize_search_term(search)[1]:
+                conditions.append("1 = 0")
 
         # R30 · seed listings are never served in production. One gate,
         # shared with the sponsor-ads path; a no-op on staging where the
@@ -543,6 +559,29 @@ def reveal_listing_contact(
         conn.close()
 
 
+# ── Who a listing is for (R38 item 3a) ────────────────────────────────────────
+
+def _audience_or_400(value: Optional[str], *, required: bool) -> str:
+    """The audience a listing is saved with. One of LISTING_AUDIENCES;
+    'both' when none is given and none is required."""
+    if value is None or not str(value).strip():
+        if required:
+            raise HTTPException(
+                status_code=400,
+                detail={"code": "audience_required", "message": "יש לבחור קהל יעד למודעה.",
+                        "fields": {"audience": "יש לבחור קהל יעד"}},
+            )
+        return "both"
+    value = str(value).strip()
+    if value not in LISTING_AUDIENCES:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "audience_invalid", "message": "קהל היעד שנבחר אינו תקין.",
+                    "fields": {"audience": "קהל היעד שנבחר אינו תקין"}},
+        )
+    return value
+
+
 # ── A plan with room for one more listing ─────────────────────────────────────
 
 def _plan_with_free_slot(cur, entity_type: str, entity_id: str, category: str):
@@ -710,6 +749,7 @@ def create_listing(
 
     listing_id = str(uuid.uuid4())
     regions = validate_regions(body.regions)
+    audience = _audience_or_400(body.audience, required=entity_type == "service_provider")
     conn = get_db()
     try:
         cur = conn.cursor()
@@ -756,8 +796,8 @@ def create_listing(
                category, subcategory, title, description,
                city, region, price, price_unit, capacity, is_furnished,
                available_from, contact_phone, contact_name, images_json,
-               attributes, regions)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+               attributes, regions, audience)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         """, (
             listing_id, legacy_corp_id, sub_id,
             entity_type, entity_id,
@@ -774,6 +814,7 @@ def create_listing(
             json.dumps(images) if images else None,
             json.dumps(attributes, ensure_ascii=False) if attributes else None,
             json.dumps(regions) if regions else None,
+            audience,
         ))
         conn.commit()
         return {
@@ -862,6 +903,9 @@ def update_listing(
                     price, price_unit = card_price(schema, clean)
                     updates.extend(["price=%s", "price_unit=%s"])
                     params.extend([price, price_unit])
+            elif field == "audience":
+                updates.append("audience=%s")
+                params.append(_audience_or_400(val, required=True))
             elif field == "regions":
                 regions = validate_regions(val)
                 updates.extend(["regions=%s", "region=%s"])

@@ -130,6 +130,23 @@ _MARKETPLACE_REQUEST_WORDS = frozenset({
     "עובדים", "פועלים", "צריך", "אני", "מחפש", "מחפשים", "בשביל", "עבור",
 })
 
+# R38 item 3b · words about who the service is for, not what it is.
+# "לעובדים" in "קורס עברית לעובדים" and in "ביטוח רפואי לעובדים זרים" made
+# every query that mentioned workers return both. Compared after a
+# one- or two-letter prefix (ל, ה, ו, ב...) is taken off, so "לעובדים"
+# and "והפועלים" are caught as well. A query made only of these words,
+# region names and the like has no word about a service, and matches no
+# service listing.
+_MARKETPLACE_GENERIC_WORDS = frozenset({
+    "עובד", "עובדים", "עובדת", "עובדות",
+    "פועל", "פועלים", "פועלת", "פועלות",
+    "זר", "זרים", "זרה", "זרות",
+})
+
+# The one-letter words Hebrew attaches to the front of a word: ו ה ב כ ל מ ש,
+# up to two of them ("וב", "שה", "מה").
+_HE_PREFIX_LETTERS = "והבכלמש"
+
 # The four fields a services query matches against. `mc.name_he` (R28
 # §2) is why `דיור` finds listings titled `מתחם מגורים`: they sit in the
 # category whose display name is `דיור להשכרה`. Any caller of
@@ -137,6 +154,15 @@ _MARKETPLACE_REQUEST_WORDS = frozenset({
 # `LEFT JOIN marketplace_categories mc ON mc.code = ml.category` in its
 # FROM clause.
 _MARKETPLACE_MATCH_FIELDS = ("ml.title", "ml.description", "ml.city", "mc.name_he")
+
+# R38 item 3b · how a query word has to appear in a field. It used to be
+# `LIKE %word%`, a fragment anywhere: "טייח לבת ים" found "חבילת ביטוח
+# משולבת לתאגידים", because "לבת" sits inside "משולבת" and "ים" inside
+# "לתאגידים". A query word now has to be a WORD in the field: a letter
+# or digit may not touch it on either side, except up to two Hebrew
+# prefix letters in front and a plural or construct ending behind.
+# MySQL's REGEXP (ICU) counts Hebrew letters as [:alnum:], on 8.0 and 9.4.
+_WORD_ENDINGS = ("ים", "ות", "ה", "ת", "י", "יות")
 
 
 def _stem_he(word: str) -> str | None:
@@ -159,15 +185,56 @@ def _stem_he(word: str) -> str | None:
 
 def _unwrap(token: str) -> str:
     """Strip the `%` wrappers `normalize_search_term` adds, so the bare
-    word can be tested against the stopword list and stemmed. Both
-    wrappers are re-applied by the caller."""
+    word can be tested against the stopword list and stemmed."""
     return token[1:-1] if token.startswith("%") and token.endswith("%") else token
+
+
+def _unescape_like(word: str) -> str:
+    """`normalize_search_term` escapes LIKE wildcards with a backslash.
+    A regular expression wants the word itself."""
+    return word.replace("\\%", "%").replace("\\_", "_").replace("\\\\", "\\")
+
+
+def _without_prefix(word: str) -> list[str]:
+    """The word, and the word with one or two prefix letters taken off,
+    longest first, keeping at least two letters."""
+    out = [word]
+    for n in (1, 2):
+        head, rest = word[:n], word[n:]
+        if len(rest) >= 2 and all(ch in _HE_PREFIX_LETTERS for ch in head):
+            out.append(rest)
+    return out
+
+
+def is_generic_word(word: str) -> bool:
+    """R38 item 3b · a word about who a service is for ("עובדים",
+    "לפועלים זרים"), which alone says nothing about the service."""
+    return any(form in _MARKETPLACE_GENERIC_WORDS for form in _without_prefix(word))
+
+
+def _regex_escape(word: str) -> str:
+    return "".join("\\" + ch if ch in r".^$*+?()[]{}|\-" else ch for ch in word)
+
+
+def word_pattern(word: str) -> str:
+    """The REGEXP a field must match for `word` to count as found in it."""
+    cores: list[str] = []
+    for form in _without_prefix(word):
+        stem = _stem_he(form)
+        for core in (form, stem):
+            if core and core not in cores:
+                cores.append(core)
+    alternatives = "|".join(_regex_escape(c) for c in cores)
+    endings = "|".join(_WORD_ENDINGS)
+    return (f"(^|[^[:alnum:]])[{_HE_PREFIX_LETTERS}]{{0,2}}({alternatives})"
+            f"({endings})?([^[:alnum:]]|$)")
 
 
 def marketplace_text_token_clauses(
     raw_query: str | None,
     *,
     drop_words: frozenset[str] = frozenset(),
+    restore_if_alone: frozenset[str] = frozenset(),
 ) -> list[tuple[str, list[object]]]:
     """R32 S3 · one `(clause, params)` pair per surviving token.
 
@@ -179,11 +246,21 @@ def marketplace_text_token_clauses(
     this returns the parts instead of a finished predicate.
 
     `drop_words` holds bare words the caller has already consumed:
-    region names, professions, origins, numbers. Stopwords and the
-    request words in `_MARKETPLACE_REQUEST_WORDS` are always dropped.
-    A query that reduces to nothing but dropped words keeps its
-    original tokens — a vacuous AND is better than pretending the user
-    typed nothing.
+    region names, professions, origins, numbers. Stopwords, the request
+    words in `_MARKETPLACE_REQUEST_WORDS` and the generic words in
+    `_MARKETPLACE_GENERIC_WORDS` are always dropped.
+
+    R38 item 3b · a query that reduces to nothing but dropped words
+    returns no clause, so it matches no listing: a region or a word like
+    "עובדים" alone is not a word about a service. It used to keep its
+    original tokens, which is how "עובדים בצפון" brought up every
+    listing that mentioned workers. The one exception is
+    `restore_if_alone`: a dropped word that can name a service as well
+    as a trade ("פיגומים" is scaffolders and scaffolding for hire) comes
+    back when nothing else is left.
+
+    Each word must appear as a word (`word_pattern`), not as a fragment
+    inside another word.
     """
     _, tokens = normalize_search_term(raw_query)
     if not tokens:
@@ -200,23 +277,17 @@ def marketplace_text_token_clauses(
             continue
         if bare in drop_words:
             continue
-        kept.append(tok)
+        if is_generic_word(bare):
+            continue
+        kept.append(_unescape_like(bare))
     if not kept:
-        kept = tokens
+        kept = [_unescape_like(_unwrap(tok)) for tok in tokens if _unwrap(tok) in restore_if_alone]
 
     clauses: list[tuple[str, list[object]]] = []
-    for tok in kept:
-        forms = [tok]
-        stem = _stem_he(_unwrap(tok))
-        if stem:
-            forms.append(f"%{stem}%")
-        field_clauses: list[str] = []
-        params: list[object] = []
-        for field in _MARKETPLACE_MATCH_FIELDS:
-            for form in forms:
-                field_clauses.append(f"{field} LIKE %s ESCAPE '\\\\'")
-                params.append(form)
-        clauses.append(("(" + " OR ".join(field_clauses) + ")", params))
+    for word in kept:
+        pattern = word_pattern(word)
+        field_clauses = [f"{field} REGEXP %s" for field in _MARKETPLACE_MATCH_FIELDS]
+        clauses.append(("(" + " OR ".join(field_clauses) + ")", [pattern] * len(_MARKETPLACE_MATCH_FIELDS)))
     return clauses
 
 
@@ -229,9 +300,8 @@ def marketplace_text_conditions(
 
     Returns `(sql, params)`. `sql` is a single parenthesised predicate
     to AND into a `FROM marketplace_listings ml` query, or `''` when
-    the query carries no usable word — in which case the caller must
-    drop the text filter entirely rather than emit an always-false
-    clause.
+    the query carries no word about a service. The caller decides what
+    that means: `/marketplace?search=` answers with no listings.
 
     Every word the user typed has to land somewhere; that conjunction
     is what makes a two-word query precise, and what makes pruning the

@@ -34,7 +34,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { AlertCircle, ArrowRight, Loader2, Lock, Plus } from 'lucide-react';
 import { ApiError } from '@/lib/api/client';
-import { marketplaceApi } from '@/lib/api/marketplace';
+import { type ListingAudience, marketplaceApi } from '@/lib/api/marketplace';
 import {
   marketplaceSubscriptionsApi,
   type CatalogCategory,
@@ -56,6 +56,14 @@ type LockedCategory = { value: string; label: string };
 
 const ADD_PLAN = '/provider/marketplace/subscribe';
 const BILLING  = '/provider/billing';
+
+// R38 3a · who the listing is for. The labels are the ones the prompt
+// gives; the values are the server's (services/visibility.py).
+const AUDIENCE_OPTIONS: { value: ListingAudience; label: string }[] = [
+  { value: 'contractors',  label: 'קבלנים' },
+  { value: 'corporations', label: 'תאגידי כוח אדם' },
+  { value: 'both',         label: 'שניהם' },
+];
 
 // The regions catalogue's code for "the whole country".
 const ANYWHERE = 'national';
@@ -95,6 +103,9 @@ export default function NewProviderListingPage() {
   });
   // Region codes the listing serves. 'national' stands for all of them.
   const [regions, setRegions] = useState<string[]>([]);
+  // R38 3a · who the listing is for. No answer is chosen for the
+  // provider: it is a required question, not a default to overlook.
+  const [audience, setAudience] = useState<ListingAudience | ''>('');
   // The answers to the chosen category's questions, as typed, and the
   // server's complaint about each, when it has one.
   const [answers,     setAnswers]     = useState<FieldValues>({});
@@ -191,6 +202,12 @@ export default function NewProviderListingPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!form.title.trim()) { setError('כותרת היא שדה חובה'); return; }
+    if (!audience) {
+      setFieldErrors({ audience: 'יש לבחור קהל יעד' });
+      setError('יש לבחור קהל יעד למודעה.');
+      document.getElementById('audience-group')?.focus();
+      return;
+    }
     setSaving(true); setError(''); setFix(null); setFieldErrors({});
     try {
       await marketplaceApi.create({
@@ -198,6 +215,7 @@ export default function NewProviderListingPage() {
         title:          form.title.trim(),
         description:    form.description || undefined,
         regions:        regions.length > 0 ? regions : undefined,
+        audience,
         attributes:     schema ? toAttributes(schema, answers) : undefined,
         contact_phone:  form.contact_phone || undefined,
         contact_name:   form.contact_name || undefined,
@@ -397,6 +415,47 @@ export default function NewProviderListingPage() {
                   );
                 })}
               </div>
+            </fieldset>
+
+            <fieldset
+              id="audience-group"
+              tabIndex={-1}
+              className="min-w-0 space-y-2 focus:outline-none"
+              aria-describedby={fieldErrors.audience ? 'audience-error' : undefined}
+            >
+              <legend className={LABEL}>קהל יעד *</legend>
+              <div role="radiogroup" aria-required="true" className="flex flex-wrap gap-2">
+                {AUDIENCE_OPTIONS.map((o) => {
+                  const on = audience === o.value;
+                  return (
+                    <label
+                      key={o.value}
+                      className={`${PILL} inline-flex cursor-pointer items-center gap-2 font-medium focus-within:ring-2 focus-within:ring-brand-500 ${
+                        on
+                          ? 'border-brand-600 bg-brand-600 text-slate-900'
+                          : 'border-slate-200 text-slate-600 hover:border-brand-300'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="audience"
+                        value={o.value}
+                        checked={on}
+                        onChange={() => {
+                          setAudience(o.value);
+                          setFieldErrors(({ audience: _gone, ...rest }) => rest);
+                        }}
+                        className="sr-only"
+                      />
+                      {o.label}
+                    </label>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-slate-500">מי יראה את המודעה בחיפוש ובעמוד השירותים הנלווים.</p>
+              {fieldErrors.audience && (
+                <p id="audience-error" role="alert" className="text-xs font-medium text-red-700">{fieldErrors.audience}</p>
+              )}
             </fieldset>
 
             {schema && (

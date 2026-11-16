@@ -299,6 +299,9 @@ class CreateWithAttributesTest(unittest.TestCase):
     def _post(self, cursor, body, **headers):
         self.conn = _conn(cursor)
         with mock.patch.object(marketplace, "get_db", return_value=self.conn):
+            # R38 3a · a provider names who the listing is for.
+            if headers.get("x_entity_type") == "service_provider":
+                body = {"audience": "both", **body}
             return create_listing(ListingCreate(**body), **headers)
 
     def test_answers_regions_and_the_card_price_are_stored(self):
@@ -306,9 +309,10 @@ class CreateWithAttributesTest(unittest.TestCase):
         self._post(cur, {"category": "transport", "title": "הסעות", "regions": ["north", "center"],
                          "attributes": {"max_passengers": 19, "price_from": 450, "price_unit": "לנסיעה"}}, **PROVIDER)
         sql, params = cur.ran("INSERT INTO marketplace_listings")[0]
-        self.assertIn("attributes, regions)", sql)
-        self.assertEqual(json.loads(params[-2]), {"max_passengers": 19, "price_from": 450, "price_unit": "לנסיעה"})
-        self.assertEqual(json.loads(params[-1]), ["center", "north"])
+        self.assertIn("attributes, regions, audience)", sql)
+        self.assertEqual(json.loads(params[-3]), {"max_passengers": 19, "price_from": 450, "price_unit": "לנסיעה"})
+        self.assertEqual(json.loads(params[-2]), ["center", "north"])
+        self.assertEqual(params[-1], "both")
         # city, region, price, price_unit: two regions leave the single column empty
         self.assertEqual(params[9:13], (None, None, 450, "לנסיעה"))
 
@@ -316,7 +320,7 @@ class CreateWithAttributesTest(unittest.TestCase):
         cur = Cursor(_create_rules())
         self._post(cur, {"category": "transport", "title": "הסעות", "regions": ["national"]}, **PROVIDER)
         _, params = cur.ran("INSERT INTO marketplace_listings")[0]
-        self.assertEqual((params[10], json.loads(params[-1]), params[-2]), ("national", ["national"], None))
+        self.assertEqual((params[10], json.loads(params[-2]), params[-3]), ("national", ["national"], None))
 
     def test_a_wrong_answer_is_refused_before_the_plan_is_looked_at(self):
         cur = Cursor(_create_rules(plan=False))
@@ -342,7 +346,7 @@ class CreateWithAttributesTest(unittest.TestCase):
                          "price": 3500, "price_unit": "per_month"}, **CORP)
         _, params = cur.ran("INSERT INTO marketplace_listings")[0]
         self.assertEqual(params[9:13], ("נתניה", "center", Decimal("3500"), "per_month"))
-        self.assertEqual(params[-2:], (None, None))
+        self.assertEqual(params[-3:], (None, None, "both"))   # corporation housing defaults to both
         self.assertEqual(cur.ran("FROM marketplace_subscriptions"), [])
 
 

@@ -285,6 +285,8 @@ export interface MarketplaceListing {
   attributes?: Record<string, unknown> | null;
   /** Region codes the listing serves; ['national'] is everywhere. */
   regions?: string[] | null;
+  /** R38 3a · contractors | corporations | both. */
+  audience?: 'contractors' | 'corporations' | 'both';
   /** The answers with the category's labels, in its order. Sent with a
    *  single listing (GET /marketplace/{id}), not with lists. */
   attribute_fields?: ListingAttributeField[];

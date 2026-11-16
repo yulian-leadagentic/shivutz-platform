@@ -121,6 +121,40 @@ _NOT_CORP_HOUSING = (
 _MARKETPLACE_HOUSING_STATUSES = ("approved", "pending")
 
 
+# R38 item 3a · who a service listing is for (marketplace_listings.audience,
+# migration 107). The allowed values, and the ones each viewer sees.
+LISTING_AUDIENCES = ("contractors", "corporations", "both")
+LISTING_AUDIENCE_HE = {
+    "contractors":  "קבלנים",
+    "corporations": "תאגידי כוח אדם",
+    "both":         "שניהם",
+}
+_AUDIENCE_SEEN_BY = {
+    "contractor":  ("contractors", "both"),
+    "corporation": ("corporations", "both"),
+}
+
+
+def _audience_where(x_entity_id: Optional[str], x_entity_type: Optional[str]) -> Tuple[str, List[object]]:
+    """R38 item 3a · the audience half of the listing scope.
+
+      contractor (with id)    contractors, both
+      corporation (with id)   corporations, both
+      anyone else             both only (anonymous, service provider)
+
+    The advertiser always sees its own listing, whatever it is set to,
+    so a provider's listing for contractors stays on its own dashboard.
+    """
+    seen = _AUDIENCE_SEEN_BY.get(x_entity_type or "", ("both",)) if x_entity_id else ("both",)
+    marks = ", ".join(["%s"] * len(seen))
+    if not x_entity_id:
+        return (f"ml.audience IN ({marks})", list(seen))
+    return (
+        f"(ml.audience IN ({marks}) OR (ml.advertiser_entity_id = %s AND ml.advertiser_entity_type = %s))",
+        [*seen, x_entity_id, x_entity_type or ""],
+    )
+
+
 def marketplace_scope_wheres(
     x_entity_id:     Optional[str],
     x_entity_type:   Optional[str],
@@ -154,21 +188,26 @@ def marketplace_scope_wheres(
     unrestricted here, so the owner of every row this predicate hides
     is already in an allowed branch.
 
-    The `ml.` alias is required — every caller uses it. If a caller
+    The `ml.` alias is required: every caller uses it. If a caller
     needs another alias, rename it at the SQL layer; do NOT fork this
     helper.
+
+    R38 item 3a · the audience rule rides here too (`_audience_where`),
+    so search, browse, the home strips, the detail page and the reveal
+    all apply it without a line of their own. Admin sees every listing.
     """
     if x_user_role == "admin":
         return ([], [])
+    audience_sql, audience_params = _audience_where(x_entity_id, x_entity_type)
     if x_entity_type == "corporation" and x_entity_id:
-        return ([], [])
+        return ([audience_sql], audience_params)
     if (
         x_entity_type == "contractor"
         and x_entity_id
         and approval_status in _MARKETPLACE_HOUSING_STATUSES
     ):
-        return ([], [])
-    return ([_NOT_CORP_HOUSING], [])
+        return ([audience_sql], audience_params)
+    return ([_NOT_CORP_HOUSING, audience_sql], audience_params)
 
 
 # R32 D1 · derived from the viewer alone, never from a result count, so
