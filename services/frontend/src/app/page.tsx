@@ -28,6 +28,7 @@ import LandingFooter from '@/components/landing/LandingFooter';
 import LeadCaptureModal from '@/components/landing/LeadCaptureModal';
 import ListingCard from '@/components/marketplace/ListingCard';
 import { ListingDetailDrawer } from '@/components/marketplace/ListingDetailPanel';
+import { AdDetailDrawer, type AdScreenAd } from '@/components/ads/AdDetailDrawer';
 // Landing IA — mount the mock-driven floating bubble. Was orphan
 // code; mounting it here surfaces marketplace-activity ambient
 // cues on the public landing (see LiveActivityFeed for the future
@@ -1200,6 +1201,36 @@ function LandingPageInner() {
     }
   }, [voiceActive]);
 
+  // R38 item 6 · the ad screen. Opened by `?ad=<id>`: from a card, or a
+  // shared link. The ad comes from the cards already loaded, or from
+  // /ads/public/{id} for a link (signed-in only, the endpoint is closed
+  // to anonymous visitors since L2).
+  const adParam = params.get('ad');
+  const [adScreen, setAdScreen] = useState<{ ad: AdScreenAd | null; loading: boolean; failed: 'gone' | 'login' | 'error' | null } | null>(null);
+
+  useEffect(() => {
+    if (!adParam) { setAdScreen(null); return; }
+    const known = recent.find((a) => a.id === adParam);
+    if (known) { setAdScreen({ ad: known, loading: false, failed: null }); return; }
+    if (!isLoggedIn()) { setAdScreen({ ad: null, loading: false, failed: 'login' }); return; }
+    let cancelled = false;
+    setAdScreen({ ad: null, loading: true, failed: null });
+    apiFetch<AdScreenAd>(`/ads/public/${encodeURIComponent(adParam)}`)
+      .then((fetched) => { if (!cancelled) setAdScreen({ ad: fetched?.id ? fetched : null, loading: false, failed: fetched?.id ? null : 'gone' }); })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        const status = err instanceof ApiError ? err.cause.status : undefined;
+        setAdScreen({ ad: null, loading: false, failed: status === 404 ? 'gone' : status === 401 ? 'login' : 'error' });
+      });
+    return () => { cancelled = true; };
+  }, [adParam, recent]);
+
+  const closeAdScreen = useCallback(() => {
+    const url = new URL(window.location.href);
+    url.searchParams.delete('ad');
+    router.replace(url.pathname + url.search + url.hash, { scroll: false });
+  }, [router]);
+
   const revealFor = useCallback(async (adId: string) => {
     if (!isLoggedIn()) { setBlock({ kind: 'unauth', adId }); return; }
     if (revealing) return;
@@ -1340,6 +1371,26 @@ function LandingPageInner() {
         onRetry={(adId) => { void revealFor(adId); }}
         q={q}
       />
+      {/* While a reveal modal (quota, renewal, error) is up the drawer
+          steps aside: it sits above the modal and traps the keyboard.
+          It comes back when the modal closes, `?ad=` is still there. */}
+      {adScreen && !block && (
+        <AdDetailDrawer
+          adId={adParam ?? ''}
+          ad={adScreen.ad}
+          loading={adScreen.loading}
+          failed={adScreen.failed}
+          labels={{
+            profession: (c) => labelFor(professions, c),
+            origin:     (c) => labelFor(origins, c),
+            region:     (c) => labelFor(regions, c),
+          }}
+          revealed={adScreen.ad ? reveals[adScreen.ad.id] ?? null : null}
+          revealing={!!adScreen.ad && revealing === adScreen.ad.id}
+          onReveal={(adId) => { void revealFor(adId); }}
+          onClose={closeAdScreen}
+        />
+      )}
 
       {/* R30 §24 · SponsorSideRail is no longer rendered here as a
           standalone fixed-position overlay. The rail lives inside
@@ -2881,21 +2932,19 @@ function LandingPageInner() {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {recent.slice(0, 9).map((ad) => {
                   const isHousing = ad.ad_type === 'housing';
-                  // R30 §13 · use `?reveal=<id>` instead of the earlier
-                  // `?ad=<id>` — the reveal handler already exists at
-                  // page.tsx:878-944 (matches ?reveal, opens
-                  // RevealModal for anon → registration return, or
-                  // consumes a quota for a signed-in contractor). The
-                  // earlier `?ad=` was written into the URL but had
-                  // no reader anywhere in the frontend, so the click
-                  // navigated to `/?ad=<id>` and rendered exactly the
-                  // same landing page — the "does nothing" bug Yulian
-                  // filed on 22.09. aria-label unchanged; whole card
-                  // is one tab stop.
+                  // R38 item 6 · a card opens the ad screen (`?ad=<id>`,
+                  // read below). It used to link to `?reveal=<id>`,
+                  // which spent a reveal from the contractor's quota on
+                  // a click and showed the result on a search row this
+                  // page does not have. A reveal now happens only on the
+                  // screen's "הצג פרטים" button. `?reveal=` stays as the
+                  // return path after registration (O1 / H11). The
+                  // whole card is one tab stop.
                   return (
                     <Link
                       key={ad.id}
-                      href={`/?reveal=${ad.id}`}
+                      href={`/?ad=${ad.id}`}
+                      scroll={false}
                       aria-label={ad.title_he || 'פרסום חדש'}
                       className="group rounded-2xl border border-slate-200 bg-white p-4 shadow-sm hover:shadow-md hover:border-brand-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 transition"
                     >
