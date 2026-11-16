@@ -623,6 +623,25 @@ Wording the subagent had to invent, since the prompt gives none: the title prefi
 - Staging now: `GET /api/webhooks/whatsapp` → 403 and `POST` → 401, both from the notification service. That is the
   correct answer with no secrets set.
 
+**Checked again on 16.11.2026, still without Meta.** None of the six `WHATSAPP_*` variables is set on staging's
+notification service, so the handshake answers 403 and a POST 401, as before.
+
+- The five test files at the current code: 277 checks, all pass.
+- A dry run on staging, inside the notification container: the real inbound handler, the real sender lookup and the
+  real search, with the two writes and the send captured. Ten messages, 45 checks, all pass: one reply per message,
+  under 1,000 characters, to the sender, ending with the staging link, no phone number in it; a reaction is ignored.
+  Nothing was stored and nothing was sent. Dedup and the rate limit depend on stored rows and were not part of it.
+- What the replies showed:
+  1. **"20 פועלים סינים במרכז" finds no worker ad on staging,** for an approved contractor either, and no near
+     match. The reply then lists a transport service, a housing listing and an insurance listing under the title
+     "חיפשתם: כללי · סין · מרכז · כמות 20", and its link opens the services tab. It never says that no workers were
+     found. The acceptance line that expects worker results for this text cannot pass on staging's data. Worker ads
+     that do exist there: "פועלים סינים בירושלים", "טייחים מהודו במרכז", "צבעים מתאילנד במרכז".
+  2. **"דירה לעובדים בחיפה" answers with Rishon LeZion and Tel Aviv first.** The four housing ads on staging have no
+     region, and the search lets an ad with no region match any region. The one Haifa listing comes last. The site
+     shows the same; the search was not touched.
+  3. Those four housing ads are two pairs with the same city and bed count, so the reply repeats two lines.
+
 **Not verified, all of it waiting on your secrets:** Meta's handshake, a real signature, a real send, real status
 callbacks, a real message from your phone, the 12-message run, and a real SMS OTP. I sent no SMS.
 
