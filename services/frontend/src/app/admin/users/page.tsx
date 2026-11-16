@@ -15,6 +15,7 @@ import { EmptyState } from '@/components/admin/EmptyState';
 import { Users, Download } from 'lucide-react';
 import { exportCsv } from '@/lib/csv';
 import { useTableKeyNav } from '@/hooks/useTableKeyNav';
+import { WhatsAppEntityCard } from '@/components/shared/WhatsAppEntityCard';
 
 const ROLE_LABEL: Record<string, string> = {
   admin:            'מנהל',
@@ -369,8 +370,9 @@ export default function AdminUsersPage() {
                         </tr>
                         {isExpanded && (
                           <tr className="bg-slate-50 border-b border-slate-100">
-                            <td colSpan={8} className="px-4 py-3">
+                            <td colSpan={8} className="px-4 py-3 space-y-3">
                               <UserDetailBlock state={detail} onRefresh={() => fetchDetail(u.id)} />
+                              <WhatsAppEntityCard userId={u.id} />
                             </td>
                           </tr>
                         )}

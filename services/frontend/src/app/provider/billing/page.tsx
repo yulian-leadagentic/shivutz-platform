@@ -40,6 +40,7 @@ import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { PaymentCardBlock } from '@/components/billing/PaymentCardBlock';
 import { MarketplaceCharges } from '@/components/billing/MarketplaceCharges';
+import { WhatsAppEntityCard } from '@/components/shared/WhatsAppEntityCard';
 
 function fmtPrice(nis: number): string {
   return `₪${Number(nis).toLocaleString('he-IL', { maximumFractionDigits: 2 })}`;
@@ -356,6 +357,8 @@ function ProviderBillingInner() {
           )}
         </>
       )}
+
+      <WhatsAppEntityCard />
 
       <ConfirmDialog
         open={!!pendingUpgrade}

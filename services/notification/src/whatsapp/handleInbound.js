@@ -5,9 +5,12 @@
 const { v4: uuidv4, v7: uuidv7 } = require('uuid');
 const { getPool }        = require('../db');
 const { sendMessage }    = require('../messaging');
+const { downloadMedia }  = require('../messaging/metaWhatsapp');
 const { normalizePhone } = require('./phone');
+const { transcribe, sttKey } = require('./transcribe');
 const {
-  composeReply, NON_TEXT_REPLY, RATE_LIMIT_REPLY, SEARCH_FAILED_REPLY,
+  composeReply, pickEntityReply, registerInviteReply,
+  NON_TEXT_REPLY, RATE_LIMIT_REPLY, SEARCH_FAILED_REPLY, VOICE_FAILED_REPLY,
 } = require('./composeReply');
 
 const USER_ORG_URL = process.env.USER_ORG_SERVICE_URL || 'http://user-org:3002';
@@ -55,13 +58,15 @@ async function rateLimitVerdict(inboundId) {
   return 'proceed';
 }
 
-// Search headers for the sender, by the R32 D1 matrix. Exactly one
-// active membership, as a contractor or a corporation, searches with
-// that entity's scope. Everyone else searches as an anonymous visitor.
-// x-user-is-admin is never sent: a phone number is not an admin login.
-async function identitySearchHeaders(phone) {
+// Who the sender is (R38). WhatsApp is for registered users only: a
+// number with no live user and no active, accepted membership is
+// 'unknown' and is invited to register. One membership is that one.
+// With several, the one the user picked on the site
+// (is_whatsapp_default, migration 110); none picked means no search,
+// one reply asking him to pick.
+async function identifySender(phone) {
   const [rows] = await getPool().query(
-    `SELECT em.entity_type, em.entity_id
+    `SELECT em.entity_type, em.entity_id, em.is_whatsapp_default
        FROM auth_db.users u
        JOIN auth_db.entity_memberships em ON em.user_id = u.id
       WHERE u.phone = ?
@@ -71,9 +76,17 @@ async function identitySearchHeaders(phone) {
         AND em.invitation_accepted_at IS NOT NULL`,
     [phone],
   );
-  if (rows.length !== 1) return {};
-  const { entity_type: entityType, entity_id: entityId } = rows[0];
-  if (entityType !== 'contractor' && entityType !== 'corporation') return {};
+  if (rows.length === 0) return { kind: 'unknown' };
+  const entity = rows.length === 1 ? rows[0] : rows.find((r) => Number(r.is_whatsapp_default) === 1);
+  if (!entity) return { kind: 'pick' };
+  return { kind: 'member', entityType: entity.entity_type, entityId: entity.entity_id };
+}
+
+// The entity's own scope, as the site would send it, so the R32 D1
+// matrix in user-org decides what it sees: a service provider sees
+// services and no worker or housing ads, as on the site.
+// x-user-is-admin is never sent: a phone number is not an admin login.
+function searchHeaders({ entityType, entityId }) {
   return { 'x-user-role': entityType, 'x-entity-type': entityType, 'x-entity-id': entityId };
 }
 
@@ -118,18 +131,12 @@ async function loadLabels() {
   return labels.value;
 }
 
-async function searchReply(phone, text) {
+async function searchReply(sender, text) {
   if (Array.from(text).length < SEARCH_QUERY_MIN) {
     return composeReply({ query: text, search: {}, labels: NO_LABELS, frontendUrl: FRONTEND_URL });
   }
 
-  let headers = {};
-  try {
-    headers = await identitySearchHeaders(phone);
-  } catch (err) {
-    console.error('[whatsapp] sender lookup failed, searching as anonymous:', err.message);
-  }
-
+  const headers = searchHeaders(sender);
   let result;
   try {
     result = await search(text, headers);
@@ -138,12 +145,66 @@ async function searchReply(phone, text) {
     return SEARCH_FAILED_REPLY;
   }
   console.log(
-    `[whatsapp] search POST ${USER_ORG_URL}/search scope=${headers['x-entity-type'] || 'anonymous'} ` +
+    `[whatsapp] search POST ${USER_ORG_URL}/search scope=${headers['x-entity-type']} ` +
     `ads=${(result.results || []).length} listings=${(result.marketplace_matches || []).length}`,
   );
   return composeReply({
     query: text, search: result, labels: await loadLabels(), frontendUrl: FRONTEND_URL,
   });
+}
+
+// R38 · a voice note becomes the text it says, kept on the inbound row
+// as "[audio] <transcript>". Any failure is null: the caller answers
+// with one line asking to type instead.
+async function voiceToText(message, inboundId) {
+  if (!sttKey()) {
+    console.warn('[whatsapp] voice note, ELEVENLABS_API_KEY is not set');
+    return null;
+  }
+  let transcript;
+  try {
+    const { bytes, mimeType } = await downloadMedia(message.audio?.id);
+    transcript = await transcribe(bytes, mimeType);
+  } catch (err) {
+    console.error('[whatsapp] voice note not transcribed:', err.message);
+    return null;
+  }
+  if (!transcript) {
+    console.warn('[whatsapp] voice note transcribed to nothing');
+    return null;
+  }
+  try {
+    await getPool().query(
+      'UPDATE support_messages SET message_text = ? WHERE id = ?',
+      [`[audio] ${transcript}`, inboundId],
+    );
+  } catch (err) {
+    console.error('[whatsapp] transcript not stored:', err.message);
+  }
+  console.log(`[whatsapp] voice note transcribed, ${Array.from(transcript).length} characters`);
+  return transcript;
+}
+
+// Who the sender is decides the reply before what he sent does: an
+// unregistered number or an unpicked entity gets its one line whatever
+// the message was, and nothing is searched or transcribed for it.
+async function replyFor(message, phone, text, inboundId) {
+  let sender;
+  try {
+    sender = await identifySender(phone);
+  } catch (err) {
+    // Not knowing who wrote is not a reason to search for him.
+    console.error('[whatsapp] sender lookup failed, no search:', err.message);
+    return SEARCH_FAILED_REPLY;
+  }
+  if (sender.kind === 'unknown') return registerInviteReply(FRONTEND_URL);
+  if (sender.kind === 'pick')    return pickEntityReply(FRONTEND_URL);
+  if (message.type === 'audio') {
+    const transcript = await voiceToText(message, inboundId);
+    return transcript ? searchReply(sender, transcript) : VOICE_FAILED_REPLY;
+  }
+  if (message.type !== 'text')   return NON_TEXT_REPLY;
+  return searchReply(sender, text);
 }
 
 async function handleInbound(message) {
@@ -181,10 +242,7 @@ async function handleInbound(message) {
     return;
   }
 
-  let body;
-  if (verdict === 'notice') body = RATE_LIMIT_REPLY;
-  else if (!isText)         body = NON_TEXT_REPLY;
-  else                      body = await searchReply(phone, text);
+  const body = verdict === 'notice' ? RATE_LIMIT_REPLY : await replyFor(message, phone, text, inboundId);
 
   const sent = await sendMessage(phone, body, { channel: 'whatsapp' });
   await pool.query(

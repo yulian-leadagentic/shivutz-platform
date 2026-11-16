@@ -3,6 +3,10 @@
 // What is locked here:
 //   * who the sender is decides the search scope (decision 2), and the
 //     headers that carry it are exactly the three the search reads
+//   * R38: only a registered number is searched for; one with several
+//     memberships uses the one picked on the site, or is asked to pick;
+//     a voice note is downloaded from Meta, transcribed by ElevenLabs
+//     and searched as text, and any failure there is one line
 //   * every inbound message gets at most one outbound message, and a
 //     normal one gets exactly one (decision 3: each is billed)
 //   * the per-number limits: 10 an hour, 1 per 5 seconds
@@ -36,20 +40,33 @@ stubModule('sms/index.js', {
 });
 let { handleInbound } = load('whatsapp/handleInbound');
 const {
-  NON_TEXT_REPLY, RATE_LIMIT_REPLY, SEARCH_FAILED_REPLY, MAX_LENGTH,
+  pickEntityReply, registerInviteReply, NON_TEXT_REPLY, RATE_LIMIT_REPLY, SEARCH_FAILED_REPLY, VOICE_FAILED_REPLY, MAX_LENGTH,
 } = load('whatsapp/composeReply');
+const INVITE = registerInviteReply('https://staging.example.test');
 
 const CONTRACTOR  = '972501110001';
 const CORPORATION = '972501110002';
 const PROVIDER    = '972501110003';
 const TWO_HATS    = '972501110004';
 const UNKNOWN     = '972501110005';
+const TWO_PICKED  = '972501110006';
 db.memberships = {
-  '+972501110001': [{ entity_type: 'contractor', entity_id: 'con-1' }],
-  '+972501110002': [{ entity_type: 'corporation', entity_id: 'corp-1' }],
-  '+972501110003': [{ entity_type: 'service_provider', entity_id: 'prov-1' }],
-  '+972501110004': [{ entity_type: 'contractor', entity_id: 'con-2' }, { entity_type: 'corporation', entity_id: 'corp-2' }],
+  '+972501110001': [{ entity_type: 'contractor', entity_id: 'con-1', is_whatsapp_default: 0 }],
+  '+972501110002': [{ entity_type: 'corporation', entity_id: 'corp-1', is_whatsapp_default: 0 }],
+  '+972501110003': [{ entity_type: 'service_provider', entity_id: 'prov-1', is_whatsapp_default: 0 }],
+  '+972501110004': [{ entity_type: 'contractor', entity_id: 'con-2', is_whatsapp_default: 0 }, { entity_type: 'corporation', entity_id: 'corp-2', is_whatsapp_default: 0 }],
+  // mysql2 hands a BOOLEAN back as 0 / 1
+  '+972501110006': [
+    { entity_type: 'contractor', entity_id: 'con-3', is_whatsapp_default: 0 },
+    { entity_type: 'corporation', entity_id: 'corp-3', is_whatsapp_default: 1 },
+    { entity_type: 'service_provider', entity_id: 'prov-3', is_whatsapp_default: 0 },
+  ],
 };
+// The rate-limit runs below are about the limiter, so their numbers are
+// registered: an unknown number would never reach the search anyway.
+for (const n of ['+972501119999', '+972501118888', '+972501117777']) {
+  db.memberships[n] = [{ entity_type: 'contractor', entity_id: `con-${n.slice(-4)}`, is_whatsapp_default: 0 }];
+}
 
 const WORKERS = {
   filters: { ad_type: 'worker', profession_code: 'flooring', origin_country: 'CN', region: 'center', quantity: 20 },
@@ -77,7 +94,10 @@ function media(from, type) {
 }
 // Runs one inbound message and reports what it caused.
 async function deliver(message) {
-  const before = { graph: net.graphCalls.length, search: net.searchCalls.length, inbound: db.inbound().length, outbound: db.outbound().length, sms: smsSent.length };
+  const before = {
+    graph: net.graphCalls.length, search: net.searchCalls.length, inbound: db.inbound().length, outbound: db.outbound().length, sms: smsSent.length,
+    media: net.mediaCalls.length, download: net.downloadCalls.length, stt: net.sttCalls.length,
+  };
   let error = null;
   try {
     await handleInbound(message);
@@ -91,7 +111,14 @@ async function deliver(message) {
     inbound:  db.inbound().slice(before.inbound),
     outbound: db.outbound().slice(before.outbound),
     sms:      smsSent.slice(before.sms),
+    media:    net.mediaCalls.slice(before.media),
+    download: net.downloadCalls.slice(before.download),
+    stt:      net.sttCalls.slice(before.stt),
   };
+}
+function voice(from, extra = {}) {
+  counter += 1;
+  return { from, id: `wamid.IN${counter}`, timestamp: String(Math.floor(db.now / 1000)), type: 'audio', audio: { id: `media-${counter}`, mime_type: 'audio/ogg; codecs=opus', voice: true, ...extra } };
 }
 const wait = (seconds) => { db.now += seconds * 1000; };
 const bodyOf = (r) => r.sent[0]?.body?.text?.body;
@@ -142,15 +169,48 @@ async function run() {
   check('corporation user: corporation scope with its entity id',
     r.searches[0].headers['x-user-role'] === 'corporation' && r.searches[0].headers['x-entity-type'] === 'corporation' && r.searches[0].headers['x-entity-id'] === 'corp-1', r.searches[0].headers);
 
+  wait(10);
+  r = await deliver(text(TWO_PICKED, 'רצפים במרכז'));
+  check('several memberships, one picked for WhatsApp: searches with the picked one',
+    r.searches.length === 1 && r.searches[0].headers['x-user-role'] === 'corporation'
+    && r.searches[0].headers['x-entity-type'] === 'corporation' && r.searches[0].headers['x-entity-id'] === 'corp-3', r.searches[0]?.headers);
+
+  wait(10);
+  r = await deliver(text(TWO_HATS, '20 פועלים סינים במרכז'));
+  check('several memberships, none picked: no search', r.searches.length === 0, r.searches.length);
+  check('and one reply asking to pick, with the link to the card',
+    r.sent.length === 1 && bodyOf(r) === pickEntityReply('https://staging.example.test')
+    && bodyOf(r).endsWith('https://staging.example.test/billing#whatsapp') && r.outbound.length === 1, bodyOf(r));
+  wait(10);
+  r = await deliver(text(TWO_HATS, '?'));
+  check('even a message too short to search gets the pick reply', r.sent.length === 1 && bodyOf(r) === pickEntityReply('https://staging.example.test'), bodyOf(r));
+
   net.searchResult = SERVICES_ONLY;
-  for (const [name, from] of [['an unknown number', UNKNOWN], ['a service provider', PROVIDER], ['a user with two memberships', TWO_HATS]]) {
+  wait(10);
+  r = await deliver(text(PROVIDER, '20 פועלים סינים במרכז'));
+  check('a service provider: searches with its own scope, and the D1 matrix in user-org decides what it sees',
+    r.searches.length === 1 && r.searches[0].headers['x-user-role'] === 'service_provider'
+    && r.searches[0].headers['x-entity-type'] === 'service_provider' && r.searches[0].headers['x-entity-id'] === 'prov-1', r.searches[0]?.headers);
+  check('a service provider: one reply, with the sign-up line for what it cannot see',
+    r.sent.length === 1 && bodyOf(r).includes('מודעות עובדים ודיור זמינות לקבלנים רשומים: https://staging.example.test/register/contractor'), bodyOf(r));
+  check('and the first link in it is the search link, so the preview card opens the results',
+    bodyOf(r).match(/https?:\/\/\S+/)[0] === `https://staging.example.test/?q=${encodeURIComponent('20 פועלים סינים במרכז')}&type=services`, bodyOf(r));
+
+  // ── 2b. R38 · registered users only ──────────────────────────────
+  for (const [type, message] of [['text', () => text(UNKNOWN, '20 פועלים סינים במרכז')], ['image', () => media(UNKNOWN, 'image')], ['audio', () => media(UNKNOWN, 'audio')]]) {
     wait(10);
-    r = await deliver(text(from, '20 פועלים סינים במרכז'));
-    check(`${name}: searches with no identity header at all`, identityHeaders(r.searches[0].headers).length === 0, r.searches[0].headers);
-    check(`${name}: one reply, with the sign-up line and the link`,
-      r.sent.length === 1 && bodyOf(r).includes('מודעות עובדים ודיור זמינות לקבלנים רשומים: https://staging.example.test/register/contractor')
-      && bodyOf(r).split('\n').at(-1).endsWith('&type=services'), bodyOf(r));
+    r = await deliver(message());
+    check(`an unknown number, ${type}: stored, no search, exactly one reply, the invitation`,
+      r.inbound.length === 1 && r.searches.length === 0 && r.sent.length === 1 && bodyOf(r) === INVITE && r.outbound.length === 1, { searches: r.searches.length, body: bodyOf(r) });
+    check(`an unknown number, ${type}: nothing is downloaded or transcribed`, r.media.length === 0 && r.stt.length === 0);
   }
+  check('the invitation links to the role picker on the home page, and is the only link in it',
+    INVITE.endsWith('https://staging.example.test/#register') && INVITE.match(/https?:\/\//g).length === 1, INVITE);
+  db.memberships['+972501110007'] = [];
+  wait(10);
+  r = await deliver(text('972501110007', 'רצפים'));
+  check('a number whose user has no active membership is not registered either', r.searches.length === 0 && bodyOf(r) === INVITE, bodyOf(r));
+  delete db.memberships['+972501110007'];
   check('an x-user-is-admin header was never built, for anyone',
     net.searchCalls.every((c) => !Object.keys(c.headers).some((k) => k.toLowerCase() === 'x-user-is-admin')));
 
@@ -162,11 +222,12 @@ async function run() {
     flat.includes('FROM auth_db.users u JOIN auth_db.entity_memberships em ON em.user_id = u.id WHERE u.phone = ?') && lookup.params[0] === '+972501110001', flat);
   check('and only counts live users and accepted, active memberships',
     flat.includes('u.is_active = TRUE') && flat.includes('u.deleted_at IS NULL') && flat.includes('em.is_active = TRUE') && flat.includes('em.invitation_accepted_at IS NOT NULL'), flat);
+  check('and reads which membership is picked for WhatsApp', flat.includes('em.is_whatsapp_default'), flat);
 
-  // ── 3. non-text ──────────────────────────────────────────────────
-  for (const type of ['image', 'document', 'location', 'audio', 'video', 'sticker', 'unsupported']) {
+  // ── 3. non-text, from a registered number ────────────────────────
+  for (const type of ['image', 'document', 'location', 'video', 'sticker', 'unsupported']) {
     wait(10);
-    r = await deliver(media(UNKNOWN, type));
+    r = await deliver(media(CORPORATION, type));
     check(`${type}: stored, answered once with the text-only line, no search`,
       r.inbound.length === 1 && r.inbound[0].message_text === `[${type}]` && r.sent.length === 1 && bodyOf(r) === NON_TEXT_REPLY
       && r.searches.length === 0 && r.outbound.length === 1 && r.outbound[0].in_reply_to === r.inbound[0].id, { sent: r.sent.length, body: bodyOf(r) });
@@ -179,6 +240,75 @@ async function run() {
   }
   r = await deliver({ id: 'wamid.NOFROM', type: 'text', text: { body: 'רצפים' } });
   check('a message with no sender number is dropped without a reply', r.inbound.length === 0 && r.sent.length === 0 && r.error === null);
+
+  // ── 3b. R38 · voice notes ────────────────────────────────────────
+  net.searchResult = WORKERS;
+  delete process.env.ELEVENLABS_API_KEY;
+  for (const [name, key] of [['not set', undefined], ['the "-" placeholder', '-']]) {
+    if (key) process.env.ELEVENLABS_API_KEY = key;
+    wait(10);
+    r = await deliver(voice(CONTRACTOR));
+    check(`voice, ELEVENLABS_API_KEY ${name}: one reply, the type-instead line, no download, no transcription, no search`,
+      r.sent.length === 1 && bodyOf(r) === VOICE_FAILED_REPLY && r.media.length === 0 && r.stt.length === 0 && r.searches.length === 0
+      && r.inbound[0].message_text === '[audio]' && r.outbound.length === 1, { body: bodyOf(r), media: r.media.length });
+  }
+  check('the type-instead line', VOICE_FAILED_REPLY === 'לא הצלחתי להבין את ההודעה הקולית, נסו לכתוב במקום');
+
+  process.env.ELEVENLABS_API_KEY = 'test-eleven-key';
+  wait(10);
+  r = await deliver(voice(CONTRACTOR));
+  check('voice: the media id is looked up once, on the Graph API at the configured version, with the token',
+    r.media.length === 1 && r.media[0].url === `https://graph.facebook.com/v26.0/media-${counter}` && r.media[0].method === 'GET'
+    && r.media[0].headers.Authorization === 'Bearer test-access-token' && r.media[0].signal instanceof AbortSignal, r.media[0]);
+  check('voice: the URL Meta returned is fetched once, with the same token',
+    r.download.length === 1 && r.download[0].url.startsWith('https://lookaside.fbsbx.com/') && r.download[0].headers.Authorization === 'Bearer test-access-token', r.download[0]);
+  const stt = r.stt[0];
+  check('voice: ElevenLabs is called once, as the gateway calls it', r.stt.length === 1
+    && stt.url === 'https://api.elevenlabs.io/v1/speech-to-text' && stt.method === 'POST' && stt.headers['xi-api-key'] === 'test-eleven-key'
+    && stt.form.get('model_id') === 'scribe_v1' && stt.form.get('language_code') === 'heb' && stt.signal instanceof AbortSignal, stt && stt.headers);
+  const file = stt.form.get('file');
+  check('voice: the bytes Meta sent are the file, typed audio/ogg without the codec parameter',
+    file.type === 'audio/ogg' && file.name === 'voice.ogg' && Buffer.from(await file.arrayBuffer()).equals(Buffer.from(net.voiceBytes)), { type: file.type, name: file.name, size: file.size });
+  check('voice: the transcript is the query, with the sender\'s own scope',
+    r.searches.length === 1 && r.searches[0].body.query === 'רצפים במרכז' && r.searches[0].headers['x-entity-id'] === 'con-1', r.searches[0]?.body);
+  check('voice: one reply, the search reply', r.sent.length === 1 && bodyOf(r).includes('• עובדים: ריצוף · סין · מרכז · 25') && r.outbound.length === 1, bodyOf(r));
+  check('voice: the inbound row keeps the transcript', db.inbound().find((x) => x.id === r.inbound[0].id).message_text === '[audio] רצפים במרכז',
+    db.inbound().find((x) => x.id === r.inbound[0].id).message_text);
+  check('voice: neither key nor transcript is in a log line',
+    !logs.join('\n').includes('test-eleven-key') && !logs.join('\n').includes('רצפים במרכז'));
+
+  const voiceFails = [
+    ['the media lookup answers 404', () => { net.media = () => net.json(404, { error: { message: 'Unsupported get request', code: 100 } }); }, 'Meta media lookup failed (404, code 100)'],
+    ['the media URL is not on a Meta host', () => { net.media = () => net.json(200, { url: 'https://media.example.test/x', mime_type: 'audio/ogg', file_size: 7 }); }, 'not on a Meta host'],
+    ['the file is over 10 MB', () => { net.media = () => net.json(200, { url: 'https://lookaside.fbsbx.com/x', mime_type: 'audio/ogg', file_size: 11 * 1024 * 1024 }); }, 'over 10485760'],
+    ['the download answers 401', () => { net.download = () => new Response('no', { status: 401 }); }, 'Meta media download failed (401)'],
+    ['ElevenLabs answers 500', () => { net.stt = () => net.json(500, { detail: 'boom' }); }, 'ElevenLabs answered 500'],
+    ['ElevenLabs times out', () => { net.stt = () => { throw Object.assign(new Error('The operation was aborted due to timeout'), { name: 'TimeoutError' }); }; }, 'aborted due to timeout'],
+    ['the transcript is empty', () => { net.transcript = '   '; }, 'transcribed to nothing'],
+  ];
+  wait(3600); // the hourly limit is not what these are about
+  for (const [name, arrange, logged] of voiceFails) {
+    arrange();
+    wait(10);
+    r = await deliver(voice(CONTRACTOR));
+    net.media = null; net.download = null; net.stt = null; net.transcript = 'רצפים במרכז';
+    check(`voice, ${name}: one reply, the type-instead line, no search, the row stays [audio]`,
+      r.error === null && r.sent.length === 1 && bodyOf(r) === VOICE_FAILED_REPLY && r.searches.length === 0
+      && db.inbound().find((x) => x.id === r.inbound[0].id).message_text === '[audio]', { body: bodyOf(r), error: r.error && r.error.message });
+    check(`voice, ${name}: and a log line`, logs.some((l) => l.includes('[whatsapp] voice note') && l.includes(logged)), logs.slice(-2));
+  }
+  check('voice: the token never went to a host that is not Meta\'s', !logs.some((l) => l.includes('unexpected request')));
+
+  wait(10);
+  r = await deliver(voice(TWO_HATS));
+  check('voice from a user who has not picked an entity: the pick reply, nothing transcribed',
+    bodyOf(r) === pickEntityReply('https://staging.example.test') && r.media.length === 0 && r.stt.length === 0);
+  wait(10);
+  const v1 = await deliver(voice(CORPORATION));
+  const v2 = await deliver(voice(CORPORATION));
+  check('a second voice note in the burst window: the limit notice, nothing transcribed for it',
+    v1.stt.length === 1 && bodyOf(v2) === RATE_LIMIT_REPLY && v2.media.length === 0 && v2.stt.length === 0, bodyOf(v2));
+  delete process.env.ELEVENLABS_API_KEY;
 
   // ── 4. dedup ─────────────────────────────────────────────────────
   wait(4000);
@@ -203,7 +333,7 @@ async function run() {
   check('all twelve are stored', flood.every((x) => x.inbound.length === 1));
   check('only one of the twelve reached the search', flood.reduce((n, x) => n + x.searches.length, 0) === 1);
   check('no message got more than one reply', flood.every((x) => x.sent.length <= 1 && x.outbound.length === x.sent.length));
-  check('a limited number does not limit anyone else', (await deliver(text(UNKNOWN, 'רצפים'))).searches.length === 1);
+  check('a limited number does not limit anyone else', (await deliver(text(CORPORATION, 'רצפים'))).searches.length === 1);
 
   // ── 6. rate limit: spaced out ────────────────────────────────────
   const STEADY = '972501118888';
@@ -272,8 +402,11 @@ async function run() {
   db.failNext = (sql) => (/FROM auth_db\.users/.test(sql) ? new Error('auth_db unreachable') : null);
   r = await deliver(text(CONTRACTOR, 'רצפים במרכז'));
   db.failNext = null;
-  check('sender lookup fails: the search still runs, as anonymous, never with a wider scope',
-    r.searches.length === 1 && identityHeaders(r.searches[0].headers).length === 0 && r.sent.length === 1, r.searches[0]?.headers);
+  check('sender lookup fails: no search, since who wrote is not known',
+    r.searches.length === 0, r.searches[0]?.headers);
+  check('and one reply, the search-failed line, never the invitation to a user who may be registered',
+    r.sent.length === 1 && bodyOf(r) === SEARCH_FAILED_REPLY, bodyOf(r));
+  check('and a log line', logs.some((l) => l.includes('[whatsapp] sender lookup failed, no search') && l.includes('auth_db unreachable')));
 
   // ── 10. Meta refuses the send ────────────────────────────────────
   wait(10);

@@ -101,6 +101,12 @@ function fakeDb() {
       return [{ affectedRows: 1 }];
     }
 
+    if (/UPDATE support_messages SET message_text = \? WHERE id = \?/.test(sql)) {
+      const row = db.supportMessages.find((r) => r.id === params[1]);
+      if (row) row.message_text = params[0];
+      return [{ affectedRows: row ? 1 : 0 }];
+    }
+
     if (/hour_before/.test(sql)) {
       const [burstSeconds, id] = params;
       const me = db.supportMessages.find((r) => r.id === id);
@@ -165,21 +171,53 @@ function fakeDb() {
 }
 
 // ── fake network ───────────────────────────────────────────────────
-// Replaces global fetch. Routes by URL: Meta's Graph API and the
+// Replaces global fetch. Routes by URL: Meta's Graph API (sends are
+// POSTs, media lookups GETs), Meta's media host, ElevenLabs and the
 // user-org search. Anything else is a test failure.
+const VOICE_BYTES = Uint8Array.from([0x4f, 0x67, 0x67, 0x53, 0x00, 0x02, 0x07]);
+
 function fakeNetwork() {
   const net = {
     graphCalls: [],
     searchCalls: [],
+    mediaCalls: [],             // GET graph.facebook.com/{version}/{media_id}
+    downloadCalls: [],          // GET the media URL Meta handed back
+    sttCalls: [],               // POST api.elevenlabs.io speech-to-text
     searchResult: { filters: {}, results: [], marketplace_matches: [], hidden_types: [] },
     graph: null,                // (payload) => Response-like override
     search: null,               // (call) => Response-like override
+    media: null,                // (call) => Response-like override
+    download: null,             // (call) => Response-like override
+    stt: null,                  // (call) => Response-like override
+    transcript: 'רצפים במרכז',
+    voiceBytes: VOICE_BYTES,
     wamidCounter: 0,
   };
   const json = (status, body) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
   global.fetch = async (url, init = {}) => {
-    const call = { url: String(url), method: init.method, headers: init.headers || {}, body: init.body ? JSON.parse(init.body) : null, signal: init.signal };
+    const href = String(url);
+    if (href.startsWith('https://api.elevenlabs.io/')) {
+      const call = { url: href, method: init.method, headers: init.headers || {}, form: init.body, signal: init.signal };
+      net.sttCalls.push(call);
+      if (net.stt) return net.stt(call);
+      return json(200, { language_code: 'heb', language_probability: 0.98, text: net.transcript });
+    }
+    const call = { url: href, method: init.method || 'GET', headers: init.headers || {}, body: init.body ? JSON.parse(init.body) : null, signal: init.signal };
+    if (call.url.startsWith('https://graph.facebook.com/') && call.method === 'GET') {
+      net.mediaCalls.push(call);
+      if (net.media) return net.media(call);
+      const id = decodeURIComponent(call.url.split('/').pop());
+      return json(200, {
+        messaging_product: 'whatsapp', url: `https://lookaside.fbsbx.com/whatsapp_business/attachments/?mid=${id}`,
+        mime_type: 'audio/ogg; codecs=opus', sha256: 'f'.repeat(64), file_size: net.voiceBytes.length, id,
+      });
+    }
+    if (call.url.startsWith('https://lookaside.fbsbx.com/')) {
+      net.downloadCalls.push(call);
+      if (net.download) return net.download(call);
+      return new Response(net.voiceBytes, { status: 200, headers: { 'content-type': 'audio/ogg' } });
+    }
     if (call.url.startsWith('https://graph.facebook.com/')) {
       net.graphCalls.push(call);
       if (net.graph) return net.graph(call);

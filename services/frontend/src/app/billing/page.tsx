@@ -23,6 +23,8 @@ import { ApiError } from '@/lib/api/client';
 import { mapApiError } from '@/lib/api/errors';
 import { checkIsraeliPhone } from '@/lib/phone';
 import { useAuth } from '@/lib/AuthContext';
+import { useRouter } from 'next/navigation';
+import { WhatsAppEntityCard } from '@/components/shared/WhatsAppEntityCard';
 
 // Static tier taglines; the actual limits are pulled live from the
 // subscription_plans table via /admin/subscription-plans (via the
@@ -70,8 +72,19 @@ function daysUntil(iso: string | null): number | null {
 }
 
 export default function BillingPage() {
-  const { entityId, entityType, userId } = useAuth();
+  const { entityId, entityType, userId, isLoggedIn } = useAuth();
+  const router = useRouter();
   const isContractor = entityType === 'contractor';
+
+  // R38 · the WhatsApp chat links here (#whatsapp) for a user who has to
+  // pick his WhatsApp account, whichever entity he is acting as. A
+  // provider's account page is /provider/billing, and a visitor who is
+  // not logged in comes back here after the login.
+  useEffect(() => {
+    const hash = window.location.hash;
+    if (!isLoggedIn) router.replace(`/login?next=${encodeURIComponent(`/billing${hash}`)}`);
+    else if (entityType === 'service_provider') router.replace(`/provider/billing${hash}`);
+  }, [isLoggedIn, entityType, router]);
   const TIERS = isContractor ? CONTRACTOR_TIERS : CORP_TIERS;
 
   const [sub, setSub]         = useState<SubscriptionRow | null>(null);
@@ -628,6 +641,8 @@ export default function BillingPage() {
       <p className="text-xs text-slate-400 text-center pt-2">
         התשלום מתבצע בקארדקום · חידוש אוטומטי חודשי · ניתן לבטל בכל עת
       </p>
+
+      <WhatsAppEntityCard />
     </div>
   );
 }
