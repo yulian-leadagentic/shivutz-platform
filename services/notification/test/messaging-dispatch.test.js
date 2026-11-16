@@ -4,9 +4,10 @@
 // text only inside the 24 hours after the user's last message; outside
 // that window it wants an approved template, and R35 has none. So a
 // caller that asks for WhatsApp when WhatsApp cannot deliver must end
-// up on SMS, not on an error. The one caller that exists today is the
-// OTP route (channel 'auto' for users who opted in), and an OTP that
-// fails to send is a user who cannot log in.
+// up on SMS, not on an error. The OTP route is the caller that matters
+// most (channel 'auto' with the authentication template, when the user
+// picked WhatsApp on the login screen), and an OTP that fails to send
+// is a user who cannot log in.
 //
 // Real dispatcher, real Meta sender, real OTP route. Fake database,
 // fake SMS provider, fake network.
@@ -149,6 +150,34 @@ async function run() {
   r = await send(sendMessage, { channel: 'auto' });
   check("'auto' without a template: SMS, and Meta is not called, even inside the window", r.result.channel === 'sms' && r.graph.length === 0 && r.sms.length === 1);
 
+  // ── 3b. the AUTHENTICATION template (the OTP) ────────────────────
+  // Meta's documented send: the code as the body parameter AND as the
+  // parameter of the copy-code button (a URL button at index "0").
+  const AUTH_PAYLOAD = (name, code, language = 'he') => ({
+    messaging_product: 'whatsapp', recipient_type: 'individual', to: '972507777777', type: 'template',
+    template: {
+      name, language: { code: language },
+      components: [
+        { type: 'body', parameters: [{ type: 'text', text: code }] },
+        { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: code }] },
+      ],
+    },
+  });
+  r = await send(sendMessage, { channel: 'auto', templateName: 'tagidai_otp', otpCode: '482913' }, WINDOWLESS);
+  check('authentication template: WhatsApp, no SMS', r.error === null && r.result.channel === 'whatsapp' && r.graph.length === 1 && r.sms.length === 0, r.result);
+  check('authentication template payload: body parameter and copy-code button parameter, both the code, language he',
+    JSON.stringify(r.graph[0].body) === JSON.stringify(AUTH_PAYLOAD('tagidai_otp', '482913')), r.graph[0].body);
+  check('the button index is the string "0", as Meta documents it', r.graph[0].body.template.components[1]?.index === '0');
+  r = await send(sendMessage, { channel: 'auto', templateName: 'tagidai_otp', otpCode: 482913, templateLanguage: 'en_US' }, WINDOWLESS);
+  check('the language can be overridden, and a numeric code is sent as text',
+    JSON.stringify(r.graph[0].body) === JSON.stringify(AUTH_PAYLOAD('tagidai_otp', '482913', 'en_US')), r.graph[0].body);
+  r = await send(sendMessage, { channel: 'auto', otpCode: '482913' }, WINDOWLESS);
+  check('a code without a template name: SMS, Meta not called', r.result.channel === 'sms' && r.graph.length === 0 && r.sms.length === 1, r.result);
+  net.graph = metaRejects(132018, 'There was an issue with the parameters in your template');
+  r = await send(sendMessage, { channel: 'auto', templateName: 'tagidai_otp', otpCode: '482913' }, WINDOWLESS);
+  check('authentication template Meta refuses: SMS', r.error === null && r.result.channel === 'sms' && r.graph.length === 1 && r.sms.length === 1, r.error && r.error.message);
+  net.graph = null;
+
   // ── 4. no Meta credentials ───────────────────────────────────────
   configureMeta(false);
   r = await send(sendMessage, { channel: 'auto', templateName: 'tagidai_otp_he', templateParams: ['123456'] });
@@ -179,10 +208,12 @@ async function run() {
   r = await send(sendMessage, { channel: 'whatsapp' });
   check('unset, the request still names a version', /^https:\/\/graph\.facebook\.com\/v\d+\.0\/100000000000001\/messages$/.test(r.graph[0].url), r.graph[0].url);
 
-  // ── 6. the one existing caller: POST /internal/otp ───────────────
-  async function otpServer(templateName) {
+  // ── 6. the OTP route: POST /internal/otp { phone, code, channel } ─
+  async function otpServer(templateName, language) {
     if (templateName) process.env.WHATSAPP_OTP_TEMPLATE_NAME = templateName;
     else delete process.env.WHATSAPP_OTP_TEMPLATE_NAME;
+    if (language) process.env.WHATSAPP_OTP_TEMPLATE_LANGUAGE = language;
+    else delete process.env.WHATSAPP_OTP_TEMPLATE_LANGUAGE;
     unloadSrc(STUBS);
     const app = express();
     app.use(express.json());
@@ -199,45 +230,68 @@ async function run() {
   }
   const OTP_TEXT = 'קוד האימות שלך לכניסה לפורטל TagidAI הוא: 482913\nבתוקף 10 דקות. אל תשתף קוד זה.';
 
-  // R35 as deployed: Meta credentials set, no approved template.
+  // As deployed today: Meta credentials set, no approved template.
   let server = await otpServer(null);
-  let o = await otp(server, { phone: PHONE, code: '482913', whatsapp_opt_in: true });
-  check('OTP, opted in, no template configured: 200 and sent', o.status === 200 && o.json.sent === true, o.json);
-  check('by SMS', o.json.channel === 'sms' && o.sms.length === 1 && o.sms[0].phone === PHONE && o.sms[0].message === OTP_TEXT, o.sms);
+  let o = await otp(server, { phone: PHONE, code: '482913', channel: 'whatsapp' });
+  check('OTP, WhatsApp chosen, no template configured: 200 and sent', o.status === 200 && o.json.sent === true, o.json);
+  check('by SMS, and the answer says sms', o.json.channel === 'sms' && o.sms.length === 1 && o.sms[0].phone === PHONE && o.sms[0].message === OTP_TEXT, o.sms);
   check('without calling Meta first', o.graph.length === 0, o.graph.length);
   openWindow(PHONE, 60);
-  o = await otp(server, { phone: PHONE, code: '482913', whatsapp_opt_in: true });
-  check('even when the user is inside the 24-hour window: OTP over WhatsApp is a later round', o.json.channel === 'sms' && o.graph.length === 0);
-  o = await otp(server, { phone: PHONE, code: '482913', whatsapp_opt_in: false });
-  check('OTP, not opted in: SMS', o.json.channel === 'sms' && o.graph.length === 0 && o.sms.length === 1);
+  o = await otp(server, { phone: PHONE, code: '482913', channel: 'whatsapp' });
+  check('inside the 24-hour window, still no free-text OTP: SMS without a template', o.json.channel === 'sms' && o.graph.length === 0);
+  o = await otp(server, { phone: PHONE, code: '482913', channel: 'sms' });
+  check("OTP, channel 'sms': SMS", o.json.channel === 'sms' && o.graph.length === 0 && o.sms.length === 1);
   o = await otp(server, { phone: PHONE, code: '482913' });
-  check('OTP with no opt-in flag at all: SMS', o.json.channel === 'sms' && o.graph.length === 0 && o.sms.length === 1);
+  check('OTP with no channel at all (registration): SMS', o.json.channel === 'sms' && o.graph.length === 0 && o.sms.length === 1);
   o = await otp(server, { phone: PHONE });
   check('OTP without a code is still a 400', o.status === 400 && o.sms.length === 0);
+  o = await otp(server, { phone: PHONE, code: '482913', channel: 'telegram' });
+  check('OTP with an unknown channel: 400, nothing sent', o.status === 400 && o.sms.length === 0 && o.graph.length === 0, o.json);
   server.close();
 
-  // A later round: a template name is configured.
-  server = await otpServer('tagidai_otp_he');
+  // The template is configured.
+  server = await otpServer('tagidai_otp');
   net.graph = metaRejects(132001, 'Template name does not exist in the translation');
-  o = await otp(server, { phone: PHONE, code: '482913', whatsapp_opt_in: true });
-  check('OTP, template configured but Meta rejects it: the user still gets the code, by SMS',
+  o = await otp(server, { phone: PHONE, code: '482913', channel: 'whatsapp' });
+  check('OTP, template configured but Meta rejects it: the user still gets the code, by SMS, and the answer says sms',
     o.status === 200 && o.json.sent === true && o.json.channel === 'sms' && o.sms.length === 1 && o.sms[0].message === OTP_TEXT && o.graph.length === 1, o.json);
   net.graph = null;
+  o = await otp(server, { phone: PHONE, code: '482913', channel: 'whatsapp' });
+  const sent = o.graph[0] && o.graph[0].body;
+  check('OTP, template configured and accepted: WhatsApp, and the answer says whatsapp', o.json.channel === 'whatsapp' && o.sms.length === 0 && o.graph.length === 1, o.json);
+  check('sent as the authentication template: the code in the body and in the copy-code button, language he',
+    JSON.stringify(sent) === JSON.stringify({
+      messaging_product: 'whatsapp', recipient_type: 'individual', to: WA_ID, type: 'template',
+      template: {
+        name: 'tagidai_otp', language: { code: 'he' },
+        components: [
+          { type: 'body', parameters: [{ type: 'text', text: '482913' }] },
+          { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: '482913' }] },
+        ],
+      },
+    }), sent);
+  check('the log row names the template', db.whatsappLog.at(-1).template_name === 'tagidai_otp' && db.whatsappLog.at(-1).status === 'submitted');
+  o = await otp(server, { phone: PHONE, code: '482913', channel: 'sms' });
+  check('OTP, template configured, SMS chosen: SMS, Meta not called', o.json.channel === 'sms' && o.graph.length === 0 && o.sms.length === 1);
+  o = await otp(server, { phone: PHONE, code: '482913' });
+  check('OTP, template configured, no channel (registration): SMS, Meta not called', o.json.channel === 'sms' && o.graph.length === 0 && o.sms.length === 1);
   o = await otp(server, { phone: PHONE, code: '482913', whatsapp_opt_in: true });
-  check('OTP, template configured and accepted: WhatsApp, template with the code as its parameter',
-    o.json.channel === 'whatsapp' && o.sms.length === 0 && o.graph[0].body.type === 'template' && o.graph[0].body.template.name === 'tagidai_otp_he'
-    && o.graph[0].body.template.components[0].parameters[0].text === '482913', o.graph[0] && o.graph[0].body);
-  o = await otp(server, { phone: PHONE, code: '482913', whatsapp_opt_in: false });
-  check('OTP, template configured, user not opted in: SMS', o.json.channel === 'sms' && o.graph.length === 0);
+  check('the old whatsapp_opt_in flag no longer switches WhatsApp on', o.json.channel === 'sms' && o.graph.length === 0);
+  server.close();
+
+  server = await otpServer('tagidai_otp', 'en_US');
+  o = await otp(server, { phone: PHONE, code: '482913', channel: 'whatsapp' });
+  check('WHATSAPP_OTP_TEMPLATE_LANGUAGE overrides he', o.json.channel === 'whatsapp' && o.graph[0].body.template.language.code === 'en_US', o.graph[0] && o.graph[0].body.template);
   server.close();
 
   // No Meta credentials at all (a local stack).
   configureMeta(false);
-  server = await otpServer('tagidai_otp_he');
-  o = await otp(server, { phone: PHONE, code: '482913', whatsapp_opt_in: true });
+  server = await otpServer('tagidai_otp');
+  o = await otp(server, { phone: PHONE, code: '482913', channel: 'whatsapp' });
   check('OTP with no Meta credentials: SMS', o.status === 200 && o.json.channel === 'sms' && o.graph.length === 0 && o.sms.length === 1);
   server.close();
   delete process.env.WHATSAPP_OTP_TEMPLATE_NAME;
+  delete process.env.WHATSAPP_OTP_TEMPLATE_LANGUAGE;
 
   // ── 7. callers, read from the source ─────────────────────────────
   const files = [];

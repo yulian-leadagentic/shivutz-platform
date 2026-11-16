@@ -6,9 +6,60 @@
 // template; the dispatcher decides which of the two applies.
 const { toWaId } = require('../whatsapp/phone');
 
-const GRAPH_URL       = 'https://graph.facebook.com';
-const DEFAULT_VERSION = 'v26.0';
-const SEND_TIMEOUT_MS = 10_000;
+const GRAPH_URL        = 'https://graph.facebook.com';
+const DEFAULT_VERSION  = 'v26.0';
+const DEFAULT_LANGUAGE = 'he';
+const SEND_TIMEOUT_MS  = 10_000;
+
+// An AUTHENTICATION template (the only kind Meta accepts for one-time
+// codes) carries the code twice: as the body parameter and as the
+// parameter of its copy-code button, which Meta stores as a URL button
+// at index 0.
+// https://developers.facebook.com/documentation/business-messaging/whatsapp/templates/authentication-templates/copy-code-button-authentication-templates
+function authenticationTemplate(to, opts) {
+  const code = String(opts.otpCode);
+  return {
+    messaging_product: 'whatsapp',
+    recipient_type:    'individual',
+    to,
+    type: 'template',
+    template: {
+      name:     opts.templateName,
+      language: { code: opts.templateLanguage || DEFAULT_LANGUAGE },
+      components: [
+        { type: 'body', parameters: [{ type: 'text', text: code }] },
+        { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: code }] },
+      ],
+    },
+  };
+}
+
+function bodyTemplate(to, opts) {
+  return {
+    messaging_product: 'whatsapp',
+    to,
+    type: 'template',
+    template: {
+      name:     opts.templateName,
+      language: { code: opts.templateLanguage || DEFAULT_LANGUAGE },
+      components: [{
+        type: 'body',
+        parameters: (opts.templateParams || []).map((v) => ({ type: 'text', text: String(v) })),
+      }],
+    },
+  };
+}
+
+function buildPayload(to, message, opts) {
+  if (opts.templateName && opts.otpCode) return authenticationTemplate(to, opts);
+  if (opts.templateName) return bodyTemplate(to, opts);
+  return {
+    messaging_product: 'whatsapp',
+    to,
+    type: 'text',
+    text: { body: message, preview_url: true },
+  };
+}
 
 async function send(phone, message, opts = {}) {
   const token         = process.env.WHATSAPP_ACCESS_TOKEN;
@@ -19,29 +70,7 @@ async function send(phone, message, opts = {}) {
   const to = toWaId(phone);
   if (!to) throw new Error('WhatsApp send needs a phone number');
 
-  // Template branch is a skeleton: body text parameters only. An
-  // AUTHENTICATION template also needs its button component, to be
-  // added with the first template Meta approves.
-  const payload = opts.templateName
-    ? {
-        messaging_product: 'whatsapp',
-        to,
-        type: 'template',
-        template: {
-          name:     opts.templateName,
-          language: { code: 'he' },
-          components: [{
-            type: 'body',
-            parameters: (opts.templateParams || []).map((v) => ({ type: 'text', text: String(v) })),
-          }],
-        },
-      }
-    : {
-        messaging_product: 'whatsapp',
-        to,
-        type: 'text',
-        text: { body: message, preview_url: true },
-      };
+  const payload = buildPayload(to, message, opts);
 
   const version = process.env.WHATSAPP_API_VERSION || DEFAULT_VERSION;
   const resp = await fetch(`${GRAPH_URL}/${version}/${phoneNumberId}/messages`, {
