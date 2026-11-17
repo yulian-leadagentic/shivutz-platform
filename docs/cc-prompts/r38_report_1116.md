@@ -21,12 +21,17 @@ Everything is on `pivot/v2` and on `staging`. `git rev-list --left-right --count
 | W1.3 | WhatsApp: voice notes | Built; waits for `ELEVENLABS_API_KEY` on staging notification | `fbfd89e` |
 | W1.4 | WhatsApp: search link first | Done, on staging | `d486aa8` |
 | W2 | Login code by WhatsApp | Built; waits for a Meta authentication template | `d962e6d`, `525365d` (merge `eba7181`) |
+| F1 | 17.11 · dashboard waiting time says 48 hours (findings 3) | Done, on staging | `73f953b` |
+| F2 | 17.11 · "הצג פרטים" contrast (findings 2) | Done, on staging | `a5942e8` |
 
 Items 8, W1 and W2 were built in parallel by three background agents in their own worktrees, reviewed, merged here with `--no-ff`, and tested on the merged tree before each push.
 
 ## Commits
 
 ```
+a5942e8 R38 follow-up · "הצג פרטים" is emerald-700, readable on its own colour
+73f953b R38 follow-up · the dashboard waiting time says 48 hours, like the banner
+62d009c R38 · the report and its screenshots
 73f1ce4 R38 item 3 · the audience choice is a named radio group
 2030ada Merge: WhatsApp W1, default entity, registered users only, voice, link order
 d486aa8 R38 WhatsApp 4 · the search link is the first link in a reply
@@ -151,10 +156,10 @@ Screenshots are in `docs/cc-prompts/r38_shots/`, named `item<N>-<width>-<what>`.
 
 ## Findings
 1. **Privacy policy still has 36 em dashes.** It was left out of migration 106 on purpose: it is a legal text, and item 8 sends it to a lawyer anyway (its section 9 says "ולכן אין באנר הסכמה"). Fix the dashes in the same legal pass.
-2. **The green "הצג פרטים" (`.results-cta`, emerald-600 with white text) measures about 3.8:1, below AA for 13px text.** It is used on every result row; the ad screen uses the same class for consistency. This round did not change it.
+2. **Fixed 17.11 (`a5942e8`).** The green "הצג פרטים" (`.results-cta`) was emerald-600 with white text, 3.77:1. It is now emerald-700 (#047857), measured in the browser at 5.48:1, with emerald-800 on hover (7.68:1); the "נחשף" text after a reveal uses the same emerald-700. Shots: `fix2-390-reveal-button.jpg`, `fix2-1280-reveal-button.jpg`. About ten other buttons and badges still use white on emerald-600 (the `success` variant in `components/ui/button.tsx`, the "how it works" registration button, several admin approve buttons); they were not part of this fix.
 3. **Contractor dashboard copy disagrees with itself.**
-   - The banner says "בדרך כלל תוך 48 שעות", while the verification card says "בדרך כלל עד 24 שעות עסקיות".
-   - The card addresses the reader in the feminine ("תוכלי").
+   - Fixed 17.11 (`73f953b`): the verification card said "עד 24 שעות עסקיות" under a banner that says 48. You chose 48; the card now reads "בדרך כלל עד 48 שעות". Shots: `fix1-390-dashboard-48h.jpg`, `fix1-1280-dashboard-48h.jpg`.
+   - Still open: the card addresses the reader in the feminine ("תוכלי").
    - "חיפוש בחופש" reads like a typo.
    - All of this predates R38 and was left for you to decide.
 4. **"החשיפות שלי" at 390** is a table that scrolls sideways inside its frame, so the contact column is off-screen until scrolled. This predates R38; a card layout on phones would fix it.
