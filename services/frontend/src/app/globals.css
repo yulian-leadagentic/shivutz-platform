@@ -749,16 +749,16 @@ body {
 .results-cta {
   display: inline-flex; align-items: center; justify-content: center;
   gap: 8px; min-height: 40px; padding: 0 12px;
-  background: #059669;            /* emerald-600 */
+  background: #047857;            /* emerald-700 */
   color: #ffffff;
   font-size: 13px; font-weight: 600;
   border-radius: 8px; width: 100%;
 }
-.results-cta:hover { background: #047857; }
+.results-cta:hover { background: #065f46; }
 .results-cta:disabled { background: #cbd5e1; color: #64748b; }
 .results-cta-revealed {
   display: inline-flex; align-items: center; justify-content: center;
-  gap: 4px; font-size: 13px; font-weight: 600; color: #059669;
+  gap: 4px; font-size: 13px; font-weight: 600; color: #047857;
   min-height: 40px;
 }
 .results-reveal-block {
