@@ -43,7 +43,7 @@ export const subscriptionApi = {
     ),
 
   cancel: () =>
-    apiFetch<{ status: 'cancelled' }>(
+    apiFetch<{ status: 'cancelled' | 'comped'; current_period_end?: string | null }>(
       '/payments/subscriptions/cancel',
       { method: 'POST' },
     ),

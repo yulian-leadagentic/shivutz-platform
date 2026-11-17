@@ -1152,6 +1152,13 @@ def cancel_subscription(
         # billing page doesn't render a stale "cancelled" chip.
         if row["status"] == "comped":
             return {"status": "comped"}
+        if row["status"] == "cancelled":
+            return {"status": "cancelled", "current_period_end": row["current_period_end"]}
+        # Only a paid period can be cancelled. A trial row has no
+        # current_period_end, and /check reads a cancelled row with no
+        # period end as entitled forever; a free provider row is the same.
+        if row["status"] not in ("active", "past_due") or row["current_period_end"] is None:
+            raise HTTPException(status_code=409, detail="nothing_to_cancel")
         cur.execute(
             """UPDATE subscriptions
                  SET status='cancelled', cancelled_at=NOW()
@@ -1159,7 +1166,7 @@ def cancel_subscription(
             (entity_id, entity_type),
         )
         conn.commit()
-        return {"status": "cancelled"}
+        return {"status": "cancelled", "current_period_end": row["current_period_end"]}
     finally:
         conn.close()
 

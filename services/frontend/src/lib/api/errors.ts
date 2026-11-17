@@ -147,6 +147,7 @@ export const CODE_TO_HE: Record<string, string> = {
   no_slots_available:        'אין משבצות זמינות',
   no_subscription:           'אין לך מנוי פעיל',
   no_active_subscription:    'אין לך מנוי פעיל',
+  nothing_to_cancel:         'אין מנוי בתשלום לבטל',
   // U8 §2 — corp POST /marketplace with any category ≠ housing.
   // The server returns 403 with this code; the human copy tells the
   // user why (housing is included in their license, other categories

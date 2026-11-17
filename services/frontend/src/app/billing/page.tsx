@@ -25,6 +25,13 @@ import { checkIsraeliPhone } from '@/lib/phone';
 import { useAuth } from '@/lib/AuthContext';
 import { useRouter } from 'next/navigation';
 import { WhatsAppEntityCard } from '@/components/shared/WhatsAppEntityCard';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+
+function fmtDate(iso: string | null): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('he-IL');
+}
 
 // Static tier taglines; the actual limits are pulled live from the
 // subscription_plans table via /admin/subscription-plans (via the
@@ -109,6 +116,9 @@ export default function BillingPage() {
   // on each upgrade attempt; hydrated only when the payment service
   // returns `invoice_url` (real-mode only).
   const [lastInvoiceUrl, setLastInvoiceUrl] = useState<string | null>(null);
+  const [cancelOpen, setCancelOpen]   = useState(false);
+  const [cancelBusy, setCancelBusy]   = useState(false);
+  const [cancelDone, setCancelDone]   = useState(false);
 
   // Team-members merge (contractor-only). Corp still has /corporation/users.
   const [members, setMembers]   = useState<TeamMember[]>([]);
@@ -221,6 +231,22 @@ export default function BillingPage() {
     }
   }
 
+  async function confirmCancel() {
+    setCancelBusy(true);
+    setError('');
+    try {
+      await subscriptionApi.cancel();
+      setCancelOpen(false);
+      setCancelDone(true);
+      await refresh();
+    } catch (e) {
+      setCancelOpen(false);
+      setError(mapApiError(e));
+    } finally {
+      setCancelBusy(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="max-w-3xl mx-auto px-4 py-10 text-center">
@@ -231,6 +257,12 @@ export default function BillingPage() {
 
   const trialDays  = sub?.status === 'trialing'  ? daysUntil(sub.trial_ends_at)      : null;
   const periodDays = sub?.status === 'active'    ? daysUntil(sub.current_period_end) : null;
+  // Only a paid period can be cancelled (the payment service answers
+  // 409 for a trial). A cancelled period keeps access to its end.
+  const canCancel  = (sub?.status === 'active' || sub?.status === 'past_due') && !!sub.current_period_end;
+  const cancelledUntil = sub?.status === 'cancelled' && sub.current_period_end && (daysUntil(sub.current_period_end) ?? 0) > 0
+    ? fmtDate(sub.current_period_end)
+    : null;
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
@@ -287,8 +319,8 @@ export default function BillingPage() {
         // works"). Kept as its own variable so the chip label — which
         // reads differently — stays honest.
         const isComped    = sub?.status === 'comped';
-        const isLapsed    = sub && !isActive && !isTrialing && !isComped;
-        const statusColor = isTrialing ? 'bg-amber-100 text-amber-800 border-amber-300'
+        const isLapsed    = sub && !isActive && !isTrialing && !isComped && !cancelledUntil;
+        const statusColor = isTrialing || cancelledUntil ? 'bg-amber-100 text-amber-800 border-amber-300'
                         : isActive     ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
                         : isComped     ? 'bg-sky-100 text-sky-800 border-sky-300'
                         :                'bg-red-100 text-red-800 border-red-300';
@@ -327,7 +359,9 @@ export default function BillingPage() {
               return (
                 <p className="text-lg font-bold text-slate-700">
                   ₪{heroPrice}
-                  <span className="text-xs font-medium text-slate-500 ms-1">/ חודש · חידוש אוטומטי</span>
+                  <span className="text-xs font-medium text-slate-500 ms-1">
+                    {sub.status === 'cancelled' ? '/ חודש' : '/ חודש · חידוש אוטומטי'}
+                  </span>
                 </p>
               );
             })()}
@@ -343,10 +377,24 @@ export default function BillingPage() {
               החיוב הבא בעוד {periodDays} ימים
             </p>
           )}
+          {cancelledUntil && (
+            <p className="text-sm text-amber-800 font-medium" role={cancelDone ? 'status' : undefined}>
+              המנוי בוטל ולא יתחדש. הגישה נשמרת עד {cancelledUntil}.
+            </p>
+          )}
           {isLapsed && (
             <p className="text-sm text-red-800 font-medium">
               המנוי לא פעיל. שדרג כדי להמשיך להשתמש.
             </p>
+          )}
+          {canCancel && (
+            <button
+              type="button"
+              onClick={() => { setError(''); setCancelOpen(true); }}
+              className="inline-flex min-h-11 items-center text-sm font-semibold text-red-700 underline-offset-2 hover:underline hover:text-red-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300 rounded"
+            >
+              ביטול המנוי
+            </button>
           )}
 
         {/* Usage vs limits — B1 role-scoped grid:
@@ -643,6 +691,18 @@ export default function BillingPage() {
       </p>
 
       <WhatsAppEntityCard />
+
+      <ConfirmDialog
+        open={cancelOpen}
+        title="ביטול המנוי"
+        message={`המנוי לא יתחדש ולא יהיו חיובים נוספים. הגישה נשמרת עד ${fmtDate(sub?.current_period_end ?? null)}.`}
+        confirmLabel="ביטול המנוי"
+        cancelLabel="חזרה"
+        variant="destructive"
+        busy={cancelBusy}
+        onConfirm={confirmCancel}
+        onCancel={() => setCancelOpen(false)}
+      />
     </div>
   );
 }
