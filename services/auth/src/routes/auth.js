@@ -798,32 +798,36 @@ router.post('/auth/register', async (req, res) => {
 
       // Upsert — if user already exists (phone), just update their org link
       const [existing] = await pool.query(
-        'SELECT id FROM users WHERE phone = ? AND deleted_at IS NULL LIMIT 1',
+        'SELECT id, role FROM users WHERE phone = ? AND deleted_at IS NULL LIMIT 1',
         [normPhone]
       );
       if (existing[0]) {
+        // A platform admin who registers an entity stays an admin: the
+        // entity lives in entity_memberships, and users.role = 'admin' is
+        // the only thing that opens /admin and the picker's admin tile.
+        const keptRole = existing[0].role === 'admin' ? 'admin' : role;
         // Update full_name too if the registration carries a fresh one and the
         // stored value is empty (don't clobber a name the user already has).
         if (full_name) {
           await pool.query(
             'UPDATE users SET org_id=?, org_type=?, role=?, full_name=COALESCE(NULLIF(full_name,""), ?) WHERE id=?',
-            [org_id || null, org_type || null, role, full_name, existing[0].id]
+            [org_id || null, org_type || null, keptRole, full_name, existing[0].id]
           );
         } else {
           await pool.query(
             'UPDATE users SET org_id=?, org_type=?, role=? WHERE id=?',
-            [org_id || null, org_type || null, role, existing[0].id]
+            [org_id || null, org_type || null, keptRole, existing[0].id]
           );
         }
         if (include_tokens && org_id) {
           const [refreshed] = await pool.query('SELECT full_name FROM users WHERE id=? LIMIT 1', [existing[0].id]);
-          const u = { id: existing[0].id, phone: normPhone, email: undefined, full_name: refreshed[0]?.full_name || full_name || undefined, role, org_id: org_id || null, org_type: org_type || null };
+          const u = { id: existing[0].id, phone: normPhone, email: undefined, full_name: refreshed[0]?.full_name || full_name || undefined, role: keptRole, org_id: org_id || null, org_type: org_type || null };
           const membership = { entity_id: org_id, entity_type: org_type, role: 'owner' };
           const at = signAccess(buildPayload(u, membership));
           const rt = await issueRefreshToken(pool, existing[0].id, { entity_id: org_id, entity_type: org_type });
-          return res.status(200).json({ id: existing[0].id, phone: normPhone, role, access_token: at, refresh_token: rt });
+          return res.status(200).json({ id: existing[0].id, phone: normPhone, role: keptRole, access_token: at, refresh_token: rt });
         }
-        return res.status(200).json({ id: existing[0].id, phone: normPhone, role });
+        return res.status(200).json({ id: existing[0].id, phone: normPhone, role: keptRole });
       }
 
       await pool.query(
