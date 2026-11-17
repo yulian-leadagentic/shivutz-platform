@@ -11,7 +11,7 @@ Everything is on `pivot/v2` and on `staging`. `git rev-list --left-right --count
 | 1 | Kablan banner only where a check is waiting | Done, on staging | `63ad6cf` |
 | 2 | No em dash in any text a user reads, with a lock | Done, on staging; privacy policy left (see findings) | `c0c07d7` |
 | 3 | Listing audience (3a) and search relevance (3b) | Done, on staging | `5508816`, `73f1ce4` |
-| 4 | Results tabs | **Step 1 done; stopped for your choice of A, B or C** | `99a3651` |
+| 4 | Results tabs | Done, on staging: design A, chosen 17.11 | `99a3651`, `6efdec7` |
 | 5 | First results column "תאגידים" | Done, on staging | `6f5432e` |
 | 6 | Card opens the ad screen; reveal only on its button | Done, on staging | `418a50b` |
 | 7 | Shared call / WhatsApp block after a reveal, with events | Done, on staging | `eddaed1`, `b518f5b` |
@@ -23,12 +23,19 @@ Everything is on `pivot/v2` and on `staging`. `git rev-list --left-right --count
 | W2 | Login code by WhatsApp | Built; waits for a Meta authentication template | `d962e6d`, `525365d` (merge `eba7181`) |
 | F1 | 17.11 · dashboard waiting time says 48 hours (findings 3) | Done, on staging | `73f953b` |
 | F2 | 17.11 · "הצג פרטים" contrast (findings 2) | Done, on staging | `a5942e8` |
+| F3 | 17.11 · admin entry missing from the account picker | Done, on staging; your role restored on staging | `c390784` |
+| F4 | 17.11 · cancel a paid plan on `/billing` | Done, on staging | `f5c913d` |
 
 Items 8, W1 and W2 were built in parallel by three background agents in their own worktrees, reviewed, merged here with `--no-ff`, and tested on the merged tree before each push.
 
 ## Commits
 
 ```
+f5c913d /billing: a paid plan can be cancelled from the page
+c390784 An admin who registers an entity stays an admin
+6efdec7 R38 item 4, step 2 · design A: icon, count badge, underline
+4deef1d R38 · a short summary in Hebrew: what was fixed and what is open
+0549557 R38 report · the two 17.11 follow-ups
 a5942e8 R38 follow-up · "הצג פרטים" is emerald-700, readable on its own colour
 73f953b R38 follow-up · the dashboard waiting time says 48 hours, like the banner
 62d009c R38 · the report and its screenshots
@@ -93,6 +100,28 @@ Screenshots are in `docs/cc-prompts/r38_shots/`, named `item<N>-<width>-<what>`.
 - In all three, an empty tab is quiet ("אין תוצאות מהסוג הזה לחיפוש הזה"), a tab that needs login is marked locked, and arrow keys move between tabs (RTL aware).
 - **At 390:** A truncates its labels ("עו…", "ש…"), B wraps "שירותים נלווים" to a second row, and C keeps one row and scrolls inside the bar (the page itself does not scroll sideways).
 - Shots: `item4-1280-design-{a,b,c}.jpg`, `item4-390-design-{a,b,c}.jpg`. They show a combined answer: the workers of one real staging search plus the housing of another, so that more than one tab has a count. Real searches on staging each returned one type only.
+
+### 4 · Results tabs, step 2 (17.11, `6efdec7`)
+- You chose A. B, C and `?tabs` are gone; the component has one design.
+- Keyboard, checked in the browser: ArrowLeft from "הכל" focuses and selects "עובדים" (`?type=workers`), End reaches "שירותים נלווים", Home returns to "הכל". Only the active tab is in the tab order.
+- Contrast: active label 5.47:1, other labels 7.58:1, active badge 6.93:1, other badges 9.45:1. Tabs are 44px tall.
+- On a phone the labels still shorten ("עו…", "ש…"), as in the screenshot you chose. Full labels would need the row to scroll sideways; say if you want that.
+- Shots: `item4-390-design-a-final.jpg`, `item4-1280-design-a-final.jpg`.
+
+### F3 · Admin entry on the account picker (17.11, `c390784`)
+- The picker already shows "מנהל מערכת" when the user's role is `admin`. Yours on staging read `service_provider`, and staging had no admin user at all.
+- Cause: `POST /auth/register` on an existing phone wrote the new entity's type into `users.role`. Registering the provider overwrote `admin`.
+- Fix: an existing `admin` is kept on that path. Test `services/auth/test/register-keeps-admin.test.js`, 7 checks; `send-otp-channel` still 19.
+- Staging data: your user's role set back to `admin` (one row, guarded on `service_provider`; your 3 memberships unchanged). Undo: set it back to `service_provider`.
+- Shot: `fix3-390-picker-admin-tile.jpg` (local, admin token, three test accounts).
+
+### F4 · Cancel a paid plan on `/billing` (17.11, `f5c913d`)
+- "ביטול המנוי" appears in the plan card for an active or past-due plan with a period end. Not for a trial or a comped plan.
+- The dialog says the plan will not renew, no further charges, access until the period end date. After confirming, the card reads "המנוי בוטל ולא יתחדש. הגישה נשמרת עד …".
+- What a cancel does is unchanged: status `cancelled`, the renewal batch skips it, `/check` keeps access until `current_period_end`.
+- New guard on `POST /payments/subscriptions/cancel`: a trial, an expired row or a row with no period end answers 409 `nothing_to_cancel`. Before, a trial could be cancelled through the API into a row with no end date, which `/check` read as entitled forever. Cancelling twice answers the same and writes nothing. Test `app/routes/test_subscription_cancel.py`, 7 tests; payment suite 133 OK.
+- Browser, fake API: one POST on confirm, none on Escape; no button on a trial. Shots: `fix4-{390,1280}-cancel-button.jpg`, `fix4-{390,1280}-cancel-dialog.jpg`, `fix4-1280-cancelled.jpg`.
+- Not changed: after a cancel, the plan cards still offer your own tier as "בחר חבילה זו", and choosing it charges now and starts a new period.
 
 ### 5 · Column
 - The header and the mobile `data-l` label read "תאגידים". The sponsor badge "מודעה" is unchanged. It is visible in the item 4 shots.
@@ -344,12 +373,7 @@ Screenshots are in `docs/cc-prompts/r38_shots/`, named `item<N>-<width>-<what>`.
 
 הפעולות שנשארו לך, לפי סדר החשיבות. שמות כפתורים ומסכים כתובים כפי שהם מופיעים על המסך.
 
-1. **לבחור עיצוב לשוניות (פריט 4).** להתחבר ל-staging כקבלן ולפתוח שלושה קישורים:
-   - `https://staging.tagidai.com/?q=דיור לעובדים במרכז&tabs=a`
-   - אותו קישור עם `tabs=b`
-   - אותו קישור עם `tabs=c`
-   - לבדוק גם בטלפון. ההבדלים: A מקצר את השמות בטלפון; B יורד לשורה שנייה; C נשאר בשורה אחת, נגלל הצידה ונדבק למעלה.
-   - לכתוב לי איזה מהם. אחרי הבחירה אשאיר רק אותו ואסיר את הדגל.
+1. ~~לבחור עיצוב לשוניות (פריט 4).~~ בוצע 17.11: נבחר A. **מה שנשאר:** להתנתק ולהתחבר מחדש ב-staging, כדי שהכניסה תציג את "מנהל מערכת" במסך "בחר חשבון".
 2. **להחליט על שורות החשיפה (פריט 6a).** בחשבון הקבלן "בוני הנגב בע"מ" יש 5 חשיפות בנובמבר, ושתיים מהן על אותה מודעה בהפרש של שתי דקות. כנראה שהקליק על הכרטיס הוא שגרם להן. לכתוב לי אם למחוק את הכפולה (או את כולן), או להשאיר.
 3. **לבחור חשבון לוואטסאפ.** ב-staging: "חשבון ומנוי" ← "היישות לוואטסאפ" ← לבחור חשבון. עד שתבחר, כל הודעה מהמספר שלך תקבל תשובה עם הקישור לבחירה, בלי חיפוש.
 4. **להגדיר את מפתח ElevenLabs ב-staging (הודעות קוליות).**
