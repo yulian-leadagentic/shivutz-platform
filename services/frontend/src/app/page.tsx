@@ -63,7 +63,7 @@ import { mapApiError } from '@/lib/api/errors';
 import { enumApi } from '@/lib/api/enums';
 import { isLoggedIn, getAccessToken, getEntityType } from '@/lib/auth';
 import { readPendingReveal, clearPendingReveal } from '@/features/prospect/state';
-import ResultTypeFilter, { type TabsVariant } from '@/components/search/ResultTypeFilter';
+import ResultTypeFilter from '@/components/search/ResultTypeFilter';
 import type { Profession } from '@/types';
 
 // R32 S4 · the type filter's URL vocabulary, module-level so the lazy
@@ -207,10 +207,6 @@ interface PublicAd {
 function LandingPageInner() {
   const router = useRouter();
   const params = useSearchParams();
-  // R38 item 4 · which candidate tab design to show (?tabs=a|b|c). Goes
-  // once Yulian picks one.
-  const tabsParam = params?.get('tabs');
-  const tabsVariant: TabsVariant | null = tabsParam === 'a' || tabsParam === 'b' || tabsParam === 'c' ? tabsParam : null;
   const [leadModalOpen, setLeadModalOpen] = useState(false);
   // QA-2: LiveActivityFeed CTAs (check_match / anon check_match) route
   // to `/?focus=search#search-hero`. When the visitor is already on
@@ -2260,7 +2256,6 @@ function LandingPageInner() {
                       counts={typeCounts}
                       hiddenTypes={hiddenTypes}
                       onChange={selectType}
-                      variant={tabsVariant}
                     />
                   )}
 

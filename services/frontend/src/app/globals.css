@@ -1247,13 +1247,9 @@ bdi {
 [data-fresh="1"] .results-row:nth-child(n+9),
 [data-fresh="1"] .r32-card:nth-child(n+9) { animation: none; }
 
-/* E4 · the type filter's active marker slides; the counts cross-fade
-   under it. */
+/* E4 · the type filter's active marker slides. */
 .result-type-filter__indicator {
   transition: transform 200ms var(--r32-ease);
-}
-.result-type-filter__count {
-  transition: opacity 150ms var(--r32-ease);
 }
 
 /* E5 · skeletons shimmer instead of pulsing. A sweep reads as "being
@@ -1380,7 +1376,6 @@ bdi {
   .ai-search-form,
   .r32-press,
   .result-type-filter__indicator,
-  .result-type-filter__count,
   .r32-expand,
   .r32-sticky-bar {
     transition-duration: 1ms;
