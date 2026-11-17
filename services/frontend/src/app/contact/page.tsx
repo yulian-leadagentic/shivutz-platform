@@ -17,13 +17,13 @@ export default function ContactPage() {
       <header>
         <h1 className="text-2xl md:text-3xl font-bold text-slate-900">יצירת קשר</h1>
         <p className="text-sm text-slate-500 mt-1">
-          עודכן לאחרונה: <time dateTime="2026-11-15">15 בנובמבר 2026</time>
+          עודכן לאחרונה: <time dateTime="2026-11-17">17 בנובמבר 2026</time>
         </p>
       </header>
 
       <section className="space-y-2 text-slate-800">
         <h2 className="text-lg font-semibold text-slate-900">בית העסק</h2>
-        <p><b>אג&#39;נטיק טכנולוגיות בע&quot;מ</b> · ח.פ <span dir="ltr">517362620</span></p>
+        <p><b>אג&#39;נטיק טכנולוגיות והחזקות בע&quot;מ</b> · ח.פ <span dir="ltr">517362620</span></p>
         <p>רבי יוסף בוכריץ 6, ראשון לציון 7511404</p>
       </section>
 

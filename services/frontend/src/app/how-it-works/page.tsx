@@ -329,7 +329,7 @@ export default function HowItWorksPage() {
               list uploaded by admin. There is no "מרשם היבואנים"
               lookup anywhere. Rewriting to match what the code
               actually does. */}
-          פלטפורמה של אג&#39;נטיק טכנולוגיות בע&quot;מ. תאגידים עוברים אימות מול מרשם החברות וברשימת תאגידי כוח אדם מורשים של רשות האוכלוסין וההגירה לפני שהמודעות שלהם מתפרסמות.
+          פלטפורמה של אג&#39;נטיק טכנולוגיות והחזקות בע&quot;מ. תאגידים עוברים אימות מול מרשם החברות וברשימת תאגידי כוח אדם מורשים של רשות האוכלוסין וההגירה לפני שהמודעות שלהם מתפרסמות.
         </p>
         <p className="text-xs">
           <Link href="/" className="text-slate-500 hover:text-slate-800">← חזרה לדף הבית</Link>

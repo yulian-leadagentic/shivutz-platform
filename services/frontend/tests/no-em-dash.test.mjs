@@ -53,6 +53,6 @@ test('an en dash in a number range is allowed', () => {
 });
 
 test('Hebrew quote marks in JSX text do not confuse the scan', () => {
-  const src = `export const A = () => <p>אג'נטיק טכנולוגיות בע"מ ${EM_DASH} ח"פ</p>;`;
+  const src = `export const A = () => <p>אג'נטיק טכנולוגיות והחזקות בע"מ ${EM_DASH} ח"פ</p>;`;
   assert.equal(scanSource('a.tsx', src).length, 1);
 });

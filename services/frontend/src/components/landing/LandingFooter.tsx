@@ -50,7 +50,7 @@ export default function LandingFooter() {
         </div>
 
         <div className="border-t border-slate-200 pt-6 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500">
-          <span>© {new Date().getFullYear()} <b>אג&#39;נטיק טכנולוגיות בע&quot;מ</b> · ח.פ <span dir="ltr">517362620</span> · כל הזכויות שמורות</span>
+          <span>© {new Date().getFullYear()} <b>אג&#39;נטיק טכנולוגיות והחזקות בע&quot;מ</b> · ח.פ <span dir="ltr">517362620</span> · כל הזכויות שמורות</span>
           <span>מורשה ופועל לפי חוקי הגנת העובד הזר בישראל</span>
         </div>
       </div>
