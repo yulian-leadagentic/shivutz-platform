@@ -25,7 +25,7 @@ import logging
 from typing import Optional
 
 from app.db import get_db
-from app.services import cardcom, marketplace_charges as mc
+from app.services import cardcom, marketplace_charges as mc, vat
 from app.services.cardcom import CardcomApiError, CardcomNetworkError, refund_transaction
 from app.services.payment_events import record_event
 
@@ -156,9 +156,9 @@ async def refund(charge: dict, admin_user_id: Optional[str]) -> dict:
     if not _claim(charge["id"]):
         raise RefundRefused(409, "refund_in_progress", "זיכוי של החיוב הזה כבר מתבצע.")
 
-    amount = float(charge["amount_nis"])
+    # A refund returns the whole transaction: the total, VAT inside it.
     audit = dict(entity_id=charge["entity_id"], entity_type=charge["entity_type"],
-                 kind="marketplace_refund", amount_nis=int(round(amount)))
+                 kind="marketplace_refund", **vat.event_fields(mc.money_of(charge)))
     about = {"charge_id": charge["id"], "subscription_id": charge.get("subscription_id"),
              "refund_of": charge.get("provider_transaction_id"), "admin_user_id": admin_user_id}
 

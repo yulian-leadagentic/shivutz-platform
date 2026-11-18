@@ -395,8 +395,14 @@ async def charge_token(
             "Name":          invoice_data.get("customer_name") or "",
             "IsSendByEmail": bool(email),
             "Languge":       "he",     # the field's spelling in Cardcom's API
-            # The amount charged is the whole price, VAT inside it, so
-            # the one line carries the whole amount.
+            # Prices are before VAT (fixes list ג, item 6): the caller
+            # passes the price as base_amount and the VAT as vat_amount,
+            # and Amount is their sum. Cardcom's v11 product line has no
+            # "price excludes VAT" switch (Products: UnitCost,
+            # TotalLineCost, IsVatFree only), and the document must add
+            # up to the amount charged, so the one line carries the
+            # total, VAT inside it. On a tax invoice-receipt Cardcom then
+            # prints the price before VAT, the VAT and the total.
             "Products": [{
                 "Description": line,
                 "UnitCost":    total,

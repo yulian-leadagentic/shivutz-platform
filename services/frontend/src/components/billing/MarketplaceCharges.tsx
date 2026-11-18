@@ -53,7 +53,7 @@ export function MarketplaceCharges() {
                 {c.kind === 'renewal' ? ' · חידוש' : ''}
               </p>
               <p className="text-xs text-slate-600">
-                {fmtDate(c.created_at)} · <span dir="ltr">{fmtPrice(c.amount_nis)}</span>
+                {fmtDate(c.created_at)} · <span dir="ltr">{fmtPrice(c.amount_nis)}</span> כולל מע&quot;מ
                 {c.mode === 'fake' ? ' · מצב בדיקה, לא בוצע חיוב' : ''}
               </p>
             </div>

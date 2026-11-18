@@ -17,6 +17,7 @@ import { EditMemberModal } from '@/components/team/EditMemberModal';
 import { SeatUpgradeModal, type SeatUpgradeDetail } from '@/features/subscription/SeatUpgradeModal';
 import { TableToolbar } from '@/components/table/TableToolbar';
 import { useTableState } from '@/components/table/useTableState';
+import { PLUS_VAT } from '@/lib/vat';
 import { billingHref } from '@/features/billing/billingReturn';
 
 // Wave 2: 'operator' dropped — three roles cover the cases.
@@ -276,7 +277,7 @@ export default function ContractorUsersPage() {
                   ? 'הגעת לתקרת המשתמשים במסלול הנוכחי, שדרג כדי להוסיף עוד.'
                   : `כל המשתמשים החדשים כלולים במסלול. נותרו ${seatIncluded - seatUsed}.`}
                 {seatExtraPrice !== null && seatsFull && (
-                  <> משתמש נוסף: ₪{seatExtraPrice}/חודש.</>
+                  <> משתמש נוסף: ₪{seatExtraPrice}/חודש {PLUS_VAT}.</>
                 )}
               </p>
             </div>

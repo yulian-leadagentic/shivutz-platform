@@ -128,7 +128,7 @@ def skip_summary():
     last_at = row.get("last_at")
     return {
         "count":            int(row.get("n") or 0),
-        "total_amount_nis": int(row.get("total") or 0),
+        "total_amount_nis": float(row.get("total") or 0),
         "last_at":          last_at.isoformat() if last_at else None,
         # Month window is UTC-normalised on the server so an admin in a
         # different TZ still gets one true value per calendar month.

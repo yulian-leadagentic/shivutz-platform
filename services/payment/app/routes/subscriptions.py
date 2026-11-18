@@ -32,7 +32,7 @@ from app.services.cardcom import (
     CardcomNetworkError,
 )
 from app.services.payment_events import record_event
-from app.services import invoice_lines, marketplace_renewal
+from app.services import invoice_lines, marketplace_renewal, vat
 from app.crypto import decrypt_token
 
 logger = logging.getLogger(__name__)
@@ -267,6 +267,7 @@ async def start_subscription(
         # charge_token is idempotency-keyed by our own uuid. Cardcom
         # replays would return the same UniqueID and be dedup'd on
         # their side too; our payment_events UNIQUE is the belt.
+        money = _money_or_500(price, cur)
         idem = str(uuid.uuid4())
         invoice_data = _invoice_data_for(cur, entity_id, entity_type,
                                          description=invoice_lines.subscription(body.tier))
@@ -275,8 +276,8 @@ async def start_subscription(
             charge = await charge_token(
                 provider_token  = decrypt_token(pm["provider_token"]),
                 card_expiry     = expiry_mmyy(pm),
-                base_amount     = price,
-                vat_amount      = 0,  # subscription_plans prices are VAT-included per Yulian
+                base_amount     = float(money["net"]),
+                vat_amount      = float(money["vat"]),   # prices are before VAT (item 6)
                 deal_id         = f"sub:{entity_type}:{entity_id}:start",
                 idempotency_key = idem,
                 invoice_data    = invoice_data,
@@ -287,7 +288,7 @@ async def start_subscription(
             record_event(
                 entity_id=entity_id, entity_type=entity_type,
                 kind="subscription_start", outcome="declined",
-                amount_nis=price,
+                **vat.event_fields(money),
                 provider_transaction_id=None,
                 response_code=getattr(exc, "code", None),
                 raw={"error": str(exc)},
@@ -299,7 +300,7 @@ async def start_subscription(
             record_event(
                 entity_id=entity_id, entity_type=entity_type,
                 kind="subscription_start", outcome="error",
-                amount_nis=price,
+                **vat.event_fields(money),
                 provider_transaction_id=None,
                 raw={"error": str(exc)},
             )
@@ -313,7 +314,7 @@ async def start_subscription(
         inserted, event_id = record_event(
             entity_id=entity_id, entity_type=entity_type,
             kind="subscription_start", outcome="ok",
-            amount_nis=price,
+            **vat.event_fields(money),
             provider_transaction_id=charge.get("provider_transaction_id"),
             response_code=charge.get("response_code"),
             invoice_number=charge.get("invoice_number") or None,
@@ -383,6 +384,15 @@ def _plan_price(cur, entity_type: str, tier: str) -> Optional[int]:
     if not row or row["monthly_price_nis"] is None:
         return None
     return int(row["monthly_price_nis"])
+
+
+def _money_or_500(net, cur) -> dict:
+    """The price plus VAT for a charge made now. With no VAT period in
+    force nothing is charged."""
+    try:
+        return vat.for_price(net, cur=cur)
+    except vat.VatPeriodMissing:
+        raise HTTPException(status_code=500, detail={"code": "vat_period_missing"})
 
 
 def _invoice_data_for(cur, entity_id: str, entity_type: str, *,
@@ -510,6 +520,7 @@ async def purchase_seats(
                 "tier":    row["tier"],
             })
         amount = seat_price * body.count
+        money = _money_or_500(amount, cur)
 
         # Deal id built off the idempotency key so a replay produces the
         # same provider_transaction_id even before Cardcom sees it. Same
@@ -526,7 +537,7 @@ async def purchase_seats(
             inserted, event_id = record_event(
                 entity_id=entity_id, entity_type=entity_type,
                 kind="seat_purchase", outcome="ok",
-                amount_nis=amount,
+                **vat.event_fields(money),
                 provider_transaction_id=fake_txn,
                 response_code="fake",
                 invoice_number=None, invoice_url=None,
@@ -546,7 +557,7 @@ async def purchase_seats(
                     "mode":                "fake",
                     "kind":                "seat_purchase",
                     "count":               body.count,
-                    "amount_nis":          amount,
+                    **vat.event_fields(money),
                     "extra_seats_paid":    int(cur_row["extra_seats_paid"]) if cur_row else row["extra_seats_paid"],
                     "duplicate":           True,
                     "event_id":            event_id,
@@ -562,7 +573,7 @@ async def purchase_seats(
                 "mode":                "fake",
                 "kind":                "seat_purchase",
                 "count":               body.count,
-                "amount_nis":          amount,
+                **vat.event_fields(money),
                 "extra_seats_paid":    int(row["extra_seats_paid"]) + body.count,
                 "duplicate":           False,
                 "event_id":            event_id,
@@ -583,8 +594,8 @@ async def purchase_seats(
             charge = await charge_token(
                 provider_token  = decrypt_token(pm["provider_token"]),
                 card_expiry     = expiry_mmyy(pm),
-                base_amount     = amount,
-                vat_amount      = 0,
+                base_amount     = float(money["net"]),
+                vat_amount      = float(money["vat"]),
                 deal_id         = deal_id,
                 idempotency_key = body.idempotency_key,
                 invoice_data    = invoice_data,
@@ -593,7 +604,7 @@ async def purchase_seats(
             record_event(
                 entity_id=entity_id, entity_type=entity_type,
                 kind="seat_purchase", outcome="declined",
-                amount_nis=amount,
+                **vat.event_fields(money),
                 provider_transaction_id=None,
                 response_code=getattr(exc, "code", None),
                 raw={"count": body.count, "seat_price": seat_price,
@@ -607,7 +618,7 @@ async def purchase_seats(
             record_event(
                 entity_id=entity_id, entity_type=entity_type,
                 kind="seat_purchase", outcome="error",
-                amount_nis=amount,
+                **vat.event_fields(money),
                 provider_transaction_id=None,
                 raw={"count": body.count, "seat_price": seat_price,
                      "error": str(exc)},
@@ -619,7 +630,7 @@ async def purchase_seats(
         inserted, event_id = record_event(
             entity_id=entity_id, entity_type=entity_type,
             kind="seat_purchase", outcome="ok",
-            amount_nis=amount,
+            **vat.event_fields(money),
             provider_transaction_id=charge.get("provider_transaction_id"),
             response_code=charge.get("response_code"),
             invoice_number=charge.get("invoice_number") or None,
@@ -642,7 +653,7 @@ async def purchase_seats(
                 "mode":              "real",
                 "kind":              "seat_purchase",
                 "count":             body.count,
-                "amount_nis":        amount,
+                **vat.event_fields(money),
                 "extra_seats_paid":  int(cur_row["extra_seats_paid"]) if cur_row else row["extra_seats_paid"],
                 "duplicate":         True,
                 "invoice_number":    charge.get("invoice_number") or None,
@@ -660,7 +671,7 @@ async def purchase_seats(
             "mode":              "real",
             "kind":              "seat_purchase",
             "count":             body.count,
-            "amount_nis":        amount,
+            **vat.event_fields(money),
             "extra_seats_paid":  int(row["extra_seats_paid"]) + body.count,
             "duplicate":         False,
             "invoice_number":    charge.get("invoice_number") or None,
@@ -841,6 +852,12 @@ async def renewal_batch(x_internal_secret: Optional[str] = Header(default=None))
                 paid_seats, extra_price_per_seat, price,
             )
 
+        try:
+            money = vat.for_price(price)
+        except vat.VatPeriodMissing as exc:
+            logger.error("[renewal-batch] sub=%s not renewed: %s", sub["id"], exc)
+            continue
+
         pm = _default_payment_method_by_id(sub["entity_id"], sub["entity_type"])
         if not pm:
             # R9 §3 · no payment method on file → this is NOT a failed
@@ -854,7 +871,7 @@ async def renewal_batch(x_internal_secret: Optional[str] = Header(default=None))
             record_event(
                 entity_id=sub["entity_id"], entity_type=sub["entity_type"],
                 kind="renewal", outcome="skipped_no_payment_method",
-                amount_nis=price,
+                **vat.event_fields(money),
                 provider_transaction_id=None,
                 raw={"reason": "no_payment_method", "sub_id": sub["id"]},
             )
@@ -868,8 +885,8 @@ async def renewal_batch(x_internal_secret: Optional[str] = Header(default=None))
             charge = await charge_token(
                 provider_token  = decrypt_token(pm["provider_token"]),
                 card_expiry     = expiry_mmyy(pm),
-                base_amount     = price,
-                vat_amount      = 0,
+                base_amount     = float(money["net"]),
+                vat_amount      = float(money["vat"]),
                 deal_id         = f"sub:{sub['entity_type']}:{sub['entity_id']}:renewal",
                 idempotency_key = idem,
                 invoice_data    = _invoice_data_for_id(
@@ -880,7 +897,7 @@ async def renewal_batch(x_internal_secret: Optional[str] = Header(default=None))
         except CardcomDeclinedError as exc:
             record_event(
                 entity_id=sub["entity_id"], entity_type=sub["entity_type"],
-                kind="renewal", outcome="declined", amount_nis=price,
+                kind="renewal", outcome="declined", **vat.event_fields(money),
                 provider_transaction_id=None,
                 response_code=getattr(exc, "code", None),
                 raw={"error": str(exc)},
@@ -891,7 +908,7 @@ async def renewal_batch(x_internal_secret: Optional[str] = Header(default=None))
         except CardcomNetworkError as exc:
             record_event(
                 entity_id=sub["entity_id"], entity_type=sub["entity_type"],
-                kind="renewal", outcome="error", amount_nis=price,
+                kind="renewal", outcome="error", **vat.event_fields(money),
                 provider_transaction_id=None,
                 raw={"error": str(exc)},
             )
@@ -903,7 +920,7 @@ async def renewal_batch(x_internal_secret: Optional[str] = Header(default=None))
 
         inserted, event_id = record_event(
             entity_id=sub["entity_id"], entity_type=sub["entity_type"],
-            kind="renewal", outcome="ok", amount_nis=price,
+            kind="renewal", outcome="ok", **vat.event_fields(money),
             provider_transaction_id=charge.get("provider_transaction_id"),
             response_code=charge.get("response_code"),
             invoice_number=charge.get("invoice_number") or None,

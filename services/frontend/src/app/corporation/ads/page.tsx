@@ -14,6 +14,7 @@ import { ApiError } from '@/lib/api/client';
 import { mapApiError } from '@/lib/api/errors';
 import { billingHref } from '@/features/billing/billingReturn';
 import { PromotedBadge } from '@/components/ads/PromotedBadge';
+import { PLUS_VAT } from '@/lib/vat';
 
 // verify(CP3) — boost is FREE during launch (intentional product
 // decision). The CTA shows the eventual price so corps see the future
@@ -240,7 +241,7 @@ function CorporationAdsPageInner() {
                   >
                     <Zap className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
                     {boosted ? `הארך ${BOOST_DAYS} ימים` : `קדם ${BOOST_DAYS} ימים`}
-                    <span className="text-amber-900">· ₪{BOOST_TOTAL_NIS}</span>
+                    <span className="text-amber-900">· ₪{BOOST_TOTAL_NIS} {PLUS_VAT}</span>
                   </button>
                   <button
                     type="button"

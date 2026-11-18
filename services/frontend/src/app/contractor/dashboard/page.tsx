@@ -19,6 +19,7 @@ import {
   SUBSCRIPTION_STATUS_HE_SHORT as STATUS_LABEL,
   TIER_HE_SHORT as TIER_LABEL,
 } from '@/lib/labels';
+import { PLUS_VAT } from '@/lib/vat';
 
 // U8 §1 — STATUS_LABEL + TIER_LABEL moved to lib/labels.ts. Same
 // values as the previous local copy — verified byte-identical
@@ -276,7 +277,7 @@ export default function ContractorDashboardPage() {
                 </p>
                 {included != null && memberCount >= included && usage?.limits.extra_user_price_nis != null && (
                   <p className="text-xs text-amber-700 mt-1">
-                    הגעת למכסה. משתמש נוסף: ₪{usage.limits.extra_user_price_nis}/חודש.
+                    הגעת למכסה. משתמש נוסף: ₪{usage.limits.extra_user_price_nis}/חודש {PLUS_VAT}.
                   </p>
                 )}
                 <Link

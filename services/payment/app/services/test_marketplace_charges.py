@@ -27,7 +27,8 @@ ME, OTHER = "11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222
 def a_charge(**over):
     row = dict(id="charge-1", kind="purchase", entity_type="service_provider", entity_id=ME,
                subscription_id=None, tier_id="tier-1", category_code="transport", slot_count=5,
-               duration_days=30, amount_nis=Decimal("200.00"), auto_renew=1, status="pending",
+               duration_days=30, amount_nis=Decimal("236.00"), net_amount_nis=Decimal("200.00"),
+               vat_percent=Decimal("18.00"), vat_amount_nis=Decimal("36.00"), auto_renew=1, status="pending",
                is_fake=0, payment_method_id=None, payment_event_id=None, provider_transaction_id=None,
                invoice_number=None, invoice_url=None, failure_reason=None)
     row.update(over)
@@ -169,9 +170,11 @@ class Base(unittest.TestCase):
 
 
 class PaidTest(Base):
-    def test_the_card_is_charged_the_amount_on_the_row_vat_inside_it(self):
+    def test_a_200_plan_is_charged_200_plus_vat(self):
+        # Fixes ג item 6 · the price before VAT and the VAT go to Cardcom
+        # apart; charge_token charges their sum.
         self.pay()
-        self.assertEqual((self.sent["base_amount"], self.sent["vat_amount"]), (200.0, 0))
+        self.assertEqual((self.sent["base_amount"], self.sent["vat_amount"]), (200.0, 36.0))
         self.assertEqual(self.sent["provider_token"], "tok(enc)")
         self.assertEqual(self.sent["card_expiry"], "0728")
 
@@ -209,9 +212,16 @@ class PaidTest(Base):
         self.pay()
         (event,) = self.events
         self.assertEqual((event["kind"], event["outcome"], event["amount_nis"], event["provider_transaction_id"]),
-                         ("marketplace_purchase", "ok", 200, "9911"))
+                         ("marketplace_purchase", "ok", 236.0, "9911"))
+        self.assertEqual((event["net_amount_nis"], event["vat_percent"], event["vat_amount_nis"]), (200.0, 18.0, 36.0))
         self.assertEqual(event["raw"]["charge_id"], "charge-1")
         self.assertEqual((event["entity_type"], event["entity_id"]), ("service_provider", ME))
+
+    def test_a_row_from_before_item_6_is_charged_as_it_stood(self):
+        self.use(FakeDB(a_charge(amount_nis=Decimal("200.00"), net_amount_nis=None,
+                                 vat_percent=None, vat_amount_nis=None)))
+        self.pay()
+        self.assertEqual((self.sent["base_amount"], self.sent["vat_amount"]), (200.0, 0.0))
 
     def test_the_document_is_made_out_to_the_provider(self):
         self.pay()

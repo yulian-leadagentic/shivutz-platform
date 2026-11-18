@@ -224,7 +224,8 @@ class PaidPurchaseTest(unittest.TestCase):
         self.conn = _conn(cursor)
         with mock.patch.object(subs, "get_db", side_effect=lambda: self.conn), \
              mock.patch.object(subs, "PAYMENT_FAKE_MODE", False), \
-             mock.patch.object(subs.httpx, "post", post):
+             mock.patch.object(subs.httpx, "post", post), \
+             mock.patch.object(subs.vat, "percent_on", lambda cur, day=None: Decimal("18")):
             self.post = post
             return subs.purchase_subscription(PurchaseRequest(tier_id="tier-1", **body), **PROVIDER)
 
@@ -243,9 +244,12 @@ class PaidPurchaseTest(unittest.TestCase):
             sql, params = cur.ran("INSERT INTO payment_db.marketplace_charges")[0]
             self.assertIn("'purchase'", sql)
             self.assertIn("'pending'", sql)
-            # (id, entity type, entity, tier, category, slots, days, amount, auto_renew)
+            # (id, entity type, entity, tier, category, slots, days,
+            #  total, price before VAT, VAT rate, VAT, auto_renew)
+            # Fixes ג item 6 · 149 before VAT at 18%: 26.82 VAT, 175.82 charged.
             self.assertEqual(params[1:], ("service_provider", "prov-1", "tier-1", "equipment", 5, 30,
-                                          Decimal("149.00"), True), promo)
+                                          Decimal("175.82"), Decimal("149.00"), Decimal("18"),
+                                          Decimal("26.82"), True), promo)
             (url,), kwargs = self.post.call_args
             self.assertTrue(url.endswith(f"/payments/marketplace/charges/{params[0]}/pay"))
             self.assertEqual(kwargs["headers"], {"x-entity-id": "prov-1", "x-entity-type": "service_provider"})
@@ -260,14 +264,14 @@ class PaidPurchaseTest(unittest.TestCase):
         cur = Cursor(_paid_rules(PAST))
         self._buy(cur, price_nis=1, amount_nis=1, amount=1)
         _, params = cur.ran("INSERT INTO payment_db.marketplace_charges")[0]
-        self.assertEqual(params[7], Decimal("149.00"))
+        self.assertEqual((params[7], params[8]), (Decimal("175.82"), Decimal("149.00")))
         self.assertNotIn("json", self.post.call_args.kwargs)
 
     def test_renewal_off_at_purchase_is_carried_to_the_charge(self):
         cur = Cursor(_paid_rules(PAST))
         self._buy(cur, auto_renew=False)
         _, params = cur.ran("INSERT INTO payment_db.marketplace_charges")[0]
-        self.assertIs(params[8], False)
+        self.assertIs(params[11], False)
 
     def test_a_declined_card_activates_nothing_and_says_so_in_hebrew(self):
         declined = _Answer(402, {"error": {"code": "http_402", "message": "x", "details": {
@@ -442,10 +446,13 @@ class PurchaseTest(unittest.TestCase):
                "category_code": "equipment", "category_name_he": "ציוד", "category_active": 1}
         rules = [r for r in _purchase_rules() if "subscription_tiers t" not in r[0]]
         rules.insert(0, ("FROM marketplace_subscription_tiers t", [row]))
+        rules.insert(0, ("FROM payment_db.vat_periods", [{"percent": Decimal("18.00")}]))
         with mock.patch.object(subs, "get_db", side_effect=lambda: _conn(Cursor(rules))):
             out = subs.quote_subscription(QuoteRequest(tier_id="tier-1"), **PROVIDER)
             self.assertEqual(out["promo_end"], FUTURE)
             self.assertEqual(out["tier"]["price_nis"], 149.0)
+            # Fixes ג item 6 · the confirm step reads the price, the VAT and the total.
+            self.assertEqual(out["vat"], {"net_nis": 149.0, "vat_percent": 18.0, "vat_nis": 26.82, "total_nis": 175.82})
             corp = subs.quote_subscription(QuoteRequest(tier_id="tier-1"), **CORP)
             self.assertIsNone(corp["promo_end"])
 

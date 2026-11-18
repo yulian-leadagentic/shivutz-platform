@@ -40,6 +40,7 @@ import { paymentApi } from '@/lib/api/payments';
 import { isProviderCategory, paidTiers } from '@/lib/providerCategories';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { PLUS_VAT, breakdownText } from '@/lib/vat';
 
 function fmtPrice(nis: number): string {
   return `₪${nis.toLocaleString('he-IL', { maximumFractionDigits: 2 })}`;
@@ -160,12 +161,14 @@ function ProviderSubscribeInner() {
   const confirmMessage = pending
     ? [
         `מסלול "${pending.tier.name_he}" בקטגוריית ${pending.tier.category_name_he}: עד ${pending.tier.slot_count} מודעות.`,
-        `מחיר המסלול ${fmtPrice(Number(pending.tier.price_nis))} לתקופה של ${pending.tier.duration_days} ימים.`,
+        `מחיר המסלול ${fmtPrice(Number(pending.tier.price_nis))} ${PLUS_VAT} לתקופה של ${pending.tier.duration_days} ימים.`,
         pending.promo_end
           ? 'הפרסום ללא עלות לתקופת ניסיון. לא נחייב אותך ללא הודעה מראש.'
           : [
-              `באישור יחויב הכרטיס השמור שלך ב-${fmtPrice(Number(pending.tier.price_nis))}.`,
-              `המסלול מתחדש אוטומטית בכל ${pending.tier.duration_days} ימים, בחיוב הכרטיס במחיר המסלול באותו מועד.`,
+              pending.vat
+                ? `באישור יחויב הכרטיס השמור שלך: ${breakdownText({ net: pending.vat.net_nis, percent: pending.vat.vat_percent, vat: pending.vat.vat_nis, total: pending.vat.total_nis })}.`
+                : `באישור יחויב הכרטיס השמור שלך ב-${fmtPrice(Number(pending.tier.price_nis))} ${PLUS_VAT}.`,
+              `המסלול מתחדש אוטומטית בכל ${pending.tier.duration_days} ימים, בחיוב הכרטיס במחיר המסלול באותו מועד ועוד מע"מ.`,
               'אפשר לכבות את החידוש האוטומטי בעמוד מנוי ותשלום.',
             ].join(' '),
       ].filter(Boolean).join(' ')
@@ -205,7 +208,7 @@ function ProviderSubscribeInner() {
             <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden="true" />
             <span>
               המסלול נוסף. אפשר לפרסם בקטגוריה.
-              {paid && <> הכרטיס חויב ב-<span dir="ltr">{fmtPrice(paid.nis)}</span>.</>}
+              {paid && <> הכרטיס חויב ב-<span dir="ltr">{fmtPrice(paid.nis)}</span>, כולל מע&quot;מ.</>}
               {paid?.invoiceUrl && (
                 <>
                   {' '}
@@ -279,7 +282,7 @@ function ProviderSubscribeInner() {
                           </p>
                         </div>
                         <div className="flex items-center gap-3">
-                          <span className="text-sm font-bold text-slate-900 whitespace-nowrap" dir="ltr">{fmtPrice(t.price_nis)}</span>
+                          <span className="text-sm font-bold text-slate-900 whitespace-nowrap"><span dir="ltr">{fmtPrice(t.price_nis)}</span> {PLUS_VAT}</span>
                           <Button type="button" size="sm" disabled={quoting !== null || buying} onClick={() => void ask(t)}>
                             {quoting === t.id
                               ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />

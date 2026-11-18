@@ -31,6 +31,7 @@ import { PaymentCardBlock } from '@/components/billing/PaymentCardBlock';
 import { clearBillingReturn, readBillingReturn, returnLine, writeBillingReturn } from '@/features/billing/billingReturn';
 import { sanitizeReturnTo } from '@/features/prospect/returnTo';
 import type { PaymentMethod } from '@/types';
+import { PLUS_VAT, breakdownText, useVatPercent, withVat } from '@/lib/vat';
 
 function fmtDate(iso: string | null): string {
   if (!iso) return '';
@@ -124,6 +125,10 @@ export default function BillingPage() {
   const [cancelOpen, setCancelOpen]   = useState(false);
   const [cancelBusy, setCancelBusy]   = useState(false);
   const [cancelDone, setCancelDone]   = useState(false);
+  // Fixes ג item 6 · a plan is charged at its price plus VAT, so the
+  // price, the VAT and the total are shown and confirmed first.
+  const [pendingTier, setPendingTier] = useState<{ code: SubscriptionTier; title: string; price: number } | null>(null);
+  const vatPercent = useVatPercent();
   const [card, setCard]         = useState<PaymentMethod | null | undefined>(undefined);
   const [cardRedirect, setCardRedirect] = useState(false);
   const [autoStarting, setAutoStarting] = useState(false);
@@ -167,10 +172,9 @@ export default function BillingPage() {
     }
   }
 
-  function choose(code: SubscriptionTier) {
+  function choose(code: SubscriptionTier, title: string, price: number) {
     setError('');
-    if (card === null) { void goToCardPage(code); return; }
-    void upgrade(code);
+    setPendingTier({ code, title, price });
   }
 
   // Team-members merge (contractor-only). Corp still has /corporation/users.
@@ -262,6 +266,7 @@ export default function BillingPage() {
   }
 
   async function upgrade(tier: SubscriptionTier) {
+    setPendingTier(null);
     setBusy(tier);
     setError('');
     setLastInvoiceUrl(null);
@@ -443,7 +448,7 @@ export default function BillingPage() {
                 <p className="text-lg font-bold text-slate-700">
                   ₪{heroPrice}
                   <span className="text-xs font-medium text-slate-500 ms-1">
-                    {sub.status === 'cancelled' ? '/ חודש' : '/ חודש · חידוש אוטומטי'}
+                    {sub.status === 'cancelled' ? `/ חודש ${PLUS_VAT}` : `/ חודש ${PLUS_VAT} · חידוש אוטומטי`}
                   </span>
                 </p>
               );
@@ -466,7 +471,7 @@ export default function BillingPage() {
                   <button
                     type="button"
                     disabled={busyTier !== null}
-                    onClick={() => choose(sub.tier)}
+                    onClick={() => choose(sub.tier, currentTier.title, price)}
                     className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-brand-800 px-4 text-sm font-semibold text-white hover:bg-brand-900 disabled:opacity-60"
                   >
                     <Crown className="w-4 h-4" aria-hidden /> הפעל מנוי {currentTier.title}
@@ -729,7 +734,7 @@ export default function BillingPage() {
               ) : (
                 <p className="text-lg font-extrabold text-slate-900">
                   ₪{price}
-                  <span className="text-xs font-medium text-slate-500 ms-1">/ חודש · חידוש אוטומטי</span>
+                  <span className="text-xs font-medium text-slate-500 ms-1">/ חודש {PLUS_VAT} · חידוש אוטומטי</span>
                 </p>
               )}
               {/* R26 §1d · features from the catalog row. included_users
@@ -766,14 +771,14 @@ export default function BillingPage() {
                 {plan?.extra_user_price_nis != null && (
                   <li className="flex items-start gap-2">
                     <Check className="w-4 h-4 text-emerald-600 mt-0.5 shrink-0" />
-                    <span>₪{plan.extra_user_price_nis} למשתמש נוסף</span>
+                    <span>₪{plan.extra_user_price_nis} למשתמש נוסף {PLUS_VAT}</span>
                   </li>
                 )}
               </ul>
               <button
                 type="button"
                 disabled={busyTier !== null || isCurrent || priceMissing}
-                onClick={() => choose(t.code)}
+                onClick={() => choose(t.code, t.title, price as number)}
                 title={priceMissing ? 'מחיר חסר בקטלוג: פנה לתמיכה' : undefined}
                 className={`w-full text-sm font-semibold py-2.5 rounded-lg
                            disabled:cursor-not-allowed inline-flex items-center justify-center gap-2 transition ${
@@ -809,11 +814,32 @@ export default function BillingPage() {
           when the customer's Cardcom account is active (see Q4 in the
           pivot plan). For now upgrades flip status via fake mode. */}
       <p className="text-xs text-slate-400 text-center pt-2">
-        התשלום מתבצע בקארדקום · חידוש אוטומטי חודשי · ניתן לבטל בכל עת
+        המחירים אינם כוללים מע&quot;מ · התשלום מתבצע בקארדקום · חידוש אוטומטי חודשי · ניתן לבטל בכל עת
       </p>
 
       <WhatsAppEntityCard />
 
+      <ConfirmDialog
+        open={!!pendingTier}
+        title={pendingTier ? `מסלול ${pendingTier.title}` : ''}
+        message={pendingTier
+          ? (vatPercent != null
+              ? `חיוב חודשי: ${breakdownText(withVat(pendingTier.price, vatPercent))}. החיוב מתחדש כל חודש עד לביטול.`
+              : `₪${pendingTier.price} לחודש ${PLUS_VAT}. החיוב מתחדש כל חודש עד לביטול.`)
+            + (card === null ? ' בשלב הבא מזינים כרטיס אשראי בעמוד המאובטח של קארדקום, והמנוי מופעל מיד כשהכרטיס מאושר.' : '')
+          : ''}
+        confirmLabel={card === null ? 'אישור והמשך להזנת כרטיס' : 'אישור וחיוב'}
+        cancelLabel="חזרה"
+        variant="primary"
+        busy={busyTier !== null}
+        onConfirm={() => {
+          if (!pendingTier) return;
+          const tier = pendingTier.code;
+          if (card === null) { setPendingTier(null); void goToCardPage(tier); }
+          else void upgrade(tier);
+        }}
+        onCancel={() => setPendingTier(null)}
+      />
       <ConfirmDialog
         open={cancelOpen}
         title="ביטול המנוי"

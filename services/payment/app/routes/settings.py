@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, Header
 from pydantic import BaseModel
 from typing import Any, Optional
 from app.system_settings import get_all_settings, set_setting
+from app.services import vat
 from app.services.admin_check import is_admin
 
 router = APIRouter()
@@ -10,6 +11,16 @@ router = APIRouter()
 class SettingUpdate(BaseModel):
     key: str
     value: Any
+
+
+@router.get("/vat")
+def current_vat():
+    """The VAT rate in force today, for a page that shows a price plus VAT
+    before a charge (fixes list ג, item 6)."""
+    try:
+        return {"percent": float(vat.percent_on())}
+    except vat.VatPeriodMissing:
+        raise HTTPException(status_code=503, detail={"code": "vat_period_missing"})
 
 
 @router.get("")

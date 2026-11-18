@@ -31,14 +31,21 @@ def record_event(
     entity_type: str,
     kind: str,
     outcome: str,
-    amount_nis: Optional[int],
+    amount_nis: Optional[float],
     provider_transaction_id: Optional[str],
     response_code: Optional[str] = None,
     invoice_number: Optional[str] = None,
     invoice_url: Optional[str] = None,
     raw: Optional[dict] = None,
+    net_amount_nis: Optional[float] = None,
+    vat_percent: Optional[float] = None,
+    vat_amount_nis: Optional[float] = None,
 ) -> tuple[bool, str]:
     """Insert a payment_events row idempotently.
+
+    amount_nis is the total charged, VAT inside it; the three fields after
+    it are its split (services/vat.event_fields). A row from before item 6
+    has only amount_nis.
 
     Returns (inserted, event_id). inserted=False means the
     provider_transaction_id was already seen — the caller MUST NOT
@@ -60,10 +67,12 @@ def record_event(
             cur.execute(
                 """INSERT INTO payment_events
                      (id, entity_id, entity_type, kind, is_fake, outcome, amount_nis,
+                      net_amount_nis, vat_percent, vat_amount_nis,
                       provider_transaction_id, response_code,
                       invoice_number, invoice_url, raw)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (event_id, entity_id, entity_type, kind, is_fake, outcome, amount_nis,
+                 net_amount_nis, vat_percent, vat_amount_nis,
                  provider_transaction_id, response_code,
                  invoice_number, invoice_url, raw_json),
             )

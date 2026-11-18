@@ -13,6 +13,7 @@ import { Loader2, X, CheckCircle2, AlertCircle } from 'lucide-react';
 import { subscriptionApi } from '@/lib/api/payments';
 import { Button } from '@/components/ui/button';
 import { mapApiError } from '@/lib/api/errors';
+import { PLUS_VAT, fmtNis, useVatPercent, withVat } from '@/lib/vat';
 
 export interface SeatUpgradeDetail {
   tier:     string;
@@ -54,6 +55,9 @@ export function SeatUpgradeModal({ detail, onClose, onSuccess }: Props) {
   const idempotencyKey = useMemo(uuidish, []);
 
   const total = count * detail.price;
+  // Fixes ג item 6 · the seat price is before VAT; the charge adds it.
+  const vatPercent = useVatPercent();
+  const money = vatPercent != null ? withVat(total, vatPercent) : null;
 
   async function submit() {
     if (busy) return;
@@ -141,15 +145,25 @@ export function SeatUpgradeModal({ detail, onClose, onSuccess }: Props) {
               <div className="rounded-lg bg-slate-50 border border-slate-200 p-3 text-sm">
                 <div className="flex justify-between text-slate-600">
                   <span>מחיר למושב לחודש</span>
-                  <span>₪{detail.price}</span>
+                  <span>₪{detail.price} {PLUS_VAT}</span>
                 </div>
                 <div className="flex justify-between text-slate-600 mt-1">
                   <span>מושבים</span>
                   <span>×{count}</span>
                 </div>
+                <div className="flex justify-between text-slate-600 pt-2 mt-2 border-t border-slate-200">
+                  <span>לפני מע&quot;מ</span>
+                  <span>{fmtNis(total)}</span>
+                </div>
+                {money && (
+                  <div className="flex justify-between text-slate-600 mt-1">
+                    <span>מע&quot;מ {money.percent}%</span>
+                    <span>{fmtNis(money.vat)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between font-bold text-slate-900 pt-2 mt-2 border-t border-slate-200">
-                  <span>סה״כ בכל חידוש</span>
-                  <span>₪{total}</span>
+                  <span>{money ? 'סה״כ לחיוב, כולל מע"מ' : `סה״כ ${PLUS_VAT}`}</span>
+                  <span>{fmtNis(money ? money.total : total)}</span>
                 </div>
               </div>
 
@@ -172,7 +186,7 @@ export function SeatUpgradeModal({ detail, onClose, onSuccess }: Props) {
                   disabled={busy}
                   className="flex-1"
                 >
-                  {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : `אשר רכישה · ₪${total}`}
+                  {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : `אשר רכישה · ${fmtNis(money ? money.total : total)}${money ? '' : ` ${PLUS_VAT}`}`}
                 </Button>
                 <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
                   ביטול

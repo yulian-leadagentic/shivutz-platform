@@ -56,6 +56,9 @@ export interface SubscriptionQuote {
    *  meaning this purchase charges nothing and runs until that date.
    *  null when a purchase would have to be paid for. */
   promo_end?: string | null;
+  /** Fixes ג item 6 · the tier price before VAT, the VAT and the total a
+   *  purchase charges. null when no VAT rate is in force. */
+  vat?: { net_nis: number; vat_percent: number; vat_nis: number; total_nis: number } | null;
 }
 
 // Public — used by the subscribe page to list available bundles.

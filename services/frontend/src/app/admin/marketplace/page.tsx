@@ -15,6 +15,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { MarketplaceChargesAdmin } from '@/components/admin/MarketplaceChargesAdmin';
+import { PLUS_VAT } from '@/lib/vat';
 
 // ── Empty-row helper ────────────────────────────────────────────────────
 
@@ -421,7 +422,7 @@ function TierRow({
           <div className="mt-1 text-xs text-slate-500 flex flex-wrap gap-x-3">
             <span>{tier.slot_count} מודעות</span>
             <span>{tier.duration_days} ימים</span>
-            <span dir="ltr">₪{tier.price_nis.toLocaleString('he-IL')}</span>
+            <span dir="ltr">₪{tier.price_nis.toLocaleString('he-IL')}</span> {PLUS_VAT}
           </div>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
@@ -475,7 +476,7 @@ function TierEditor({
                  onChange={e => set('duration_days', Math.max(1, parseInt(e.target.value) || 1))} dir="ltr" />
         </div>
         <div className="space-y-1">
-          <Label>מחיר (₪)</Label>
+          <Label>מחיר (₪, לפני מע&quot;מ)</Label>
           <Input type="number" min={0} step="0.01" value={value.price_nis}
                  onChange={e => set('price_nis', Math.max(0, parseFloat(e.target.value) || 0))} dir="ltr" />
         </div>

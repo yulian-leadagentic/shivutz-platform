@@ -43,6 +43,7 @@ from pydantic import BaseModel, Field
 from decimal import Decimal
 
 from app.db import get_db
+from app.services import vat
 from app.services.listing_attributes import parse_schema
 from app.services.provider_plans import (
     PROVIDER_BLOCKED_CATEGORIES, insert_promo_plan, is_paid_tier, launch_promo_end,
@@ -279,14 +280,26 @@ def _buy_with_charge(conn, cur, entity_type: str, entity_id: str, tier: dict, au
         if _get_active_subscription(cur, entity_type, entity_id, tier["category_code"]):
             raise HTTPException(status_code=409, detail="already_subscribed_to_category")
 
+        # Fixes ג item 6 · the tier price is before VAT; the row carries
+        # the price, the VAT and the total, and the total is what is charged.
+        try:
+            money = vat.for_price(cur, tier["price_nis"])
+        except vat.VatPeriodMissing:
+            raise HTTPException(
+                status_code=503,
+                detail={"code": "vat_period_missing",
+                        "message": f"שיעור המע\"מ אינו מוגדר. {_NOT_ACTIVATED} פנו לתמיכה."},
+            )
         charge_id = str(uuid.uuid4())
         cur.execute(
             f"""INSERT INTO {CHARGES_TABLE}
                     (id, kind, entity_type, entity_id, tier_id, category_code,
-                     slot_count, duration_days, amount_nis, auto_renew, status)
-                VALUES (%s, 'purchase', %s, %s, %s, %s, %s, %s, %s, %s, 'pending')""",
+                     slot_count, duration_days, amount_nis, net_amount_nis, vat_percent,
+                     vat_amount_nis, auto_renew, status)
+                VALUES (%s, 'purchase', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'pending')""",
             (charge_id, entity_type, entity_id, tier["id"], tier["category_code"],
-             tier["slot_count"], tier["duration_days"], tier["price_nis"], auto_renew),
+             tier["slot_count"], tier["duration_days"], money["total"], money["net"],
+             money["percent"], money["vat"], auto_renew),
         )
         conn.commit()
 
@@ -322,6 +335,7 @@ def _buy_with_charge(conn, cur, entity_type: str, entity_id: str, tier: dict, au
         cur.execute("SELECT * FROM marketplace_subscriptions WHERE id=%s", (paid["subscription_id"],))
         plan = _serialize(cur.fetchone())
         plan["charged_nis"] = paid.get("amount_nis")
+        plan["charged_vat_nis"] = paid.get("vat_amount_nis")
         plan["invoice_number"] = paid.get("invoice_number")
         plan["invoice_url"] = paid.get("invoice_url")
         return plan
@@ -449,6 +463,13 @@ def quote_subscription(
         # surface it so the UI can show "renew/upgrade" instead of "buy".
         existing = _get_active_subscription(cur, entity_type, entity_id, row["category_code"])
 
+        # Fixes ג item 6 · what the confirm step shows: the price before
+        # VAT, the VAT and the total that will be charged.
+        try:
+            money = vat.as_json(vat.for_price(cur, row["price_nis"]))
+        except vat.VatPeriodMissing:
+            money = None
+
         return {
             "tier":            _serialize({k: row[k] for k in (
                 "tier_id","name_he","name_en","slot_count","duration_days","price_nis",
@@ -457,6 +478,7 @@ def quote_subscription(
             "existing_subscription": _serialize(existing) if existing else None,
             "advertiser": {"entity_type": entity_type, "entity_id": entity_id},
             "promo_end": promo_end.strftime("%Y-%m-%d") if promo_end else None,
+            "vat": money,
         }
     finally:
         conn.close()

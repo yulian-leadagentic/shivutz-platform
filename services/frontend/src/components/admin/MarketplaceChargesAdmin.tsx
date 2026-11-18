@@ -75,7 +75,7 @@ export function MarketplaceChargesAdmin() {
 
   const refundMessage = pending
     ? [
-        `${fmtPrice(pending.amount_nis)} יוחזרו לכרטיס של ${pending.advertiser_name ?? 'המפרסם'}.`,
+        `${fmtPrice(pending.amount_nis)}, כל הסכום שנגבה כולל מע"מ, יוחזרו לכרטיס של ${pending.advertiser_name ?? 'המפרסם'}.`,
         'המסלול עצמו לא משתנה: הוא נשאר כפי שהוא עד תאריך הסיום שלו.',
         'אי אפשר לבטל זיכוי אחרי שבוצע.',
         pending.mode === 'fake' ? 'החיוב נעשה במצב בדיקה, ולכן גם הזיכוי הוא במצב בדיקה ולא עובר כסף.' : '',
@@ -131,7 +131,7 @@ export function MarketplaceChargesAdmin() {
                   </span>
                 </p>
                 <p className="text-xs text-slate-600">
-                  {fmtDate(c.created_at)} · <span dir="ltr">{fmtPrice(c.amount_nis)}</span>
+                  {fmtDate(c.created_at)} · <span dir="ltr">{fmtPrice(c.amount_nis)}</span> כולל מע&quot;מ
                   {c.mode === 'fake' ? ' · מצב בדיקה' : ''}
                   {c.refunded_at ? ` · זוכה ב-${fmtDate(c.refunded_at)}` : ''}
                   {c.failure_reason && c.status !== 'charged' && c.status !== 'refunded' ? ` · ${c.failure_reason}` : ''}

@@ -52,6 +52,7 @@ import { ConsentLine } from '@/components/register/ConsentLine';
 import { checkIsraeliPhone } from '@/lib/phone';
 import { checkEmail } from '@/lib/email';
 import { checkBusinessNumber, BUSINESS_NUMBER_ERROR_INVALID } from '@/lib/businessNumber';
+import { PLUS_VAT } from '@/lib/vat';
 
 type Phase = 'phone' | 'otp' | 'form' | 'done';
 
@@ -513,7 +514,7 @@ export default function ProviderRegisterPage() {
                                       </div>
                                     </div>
                                     <div className="text-sm font-bold text-slate-900 whitespace-nowrap">
-                                      ₪{t.price_nis.toLocaleString('he-IL')}
+                                      ₪{t.price_nis.toLocaleString('he-IL')} {PLUS_VAT}
                                       <span className="text-xs font-normal text-slate-500"> / חודש</span>
                                     </div>
                                   </div>

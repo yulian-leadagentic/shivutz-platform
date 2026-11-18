@@ -29,6 +29,7 @@ import { enumApi } from '@/lib/api/enums';
 import { sizeFor, SPONSOR_SIZES } from '@/lib/sponsorSizes';
 import { BidiText } from '@/lib/bidi';
 import type { Profession } from '@/types';
+import { PLUS_VAT } from '@/lib/vat';
 
 // ── placement / ad_type dictionaries ────────────────────────────
 
@@ -992,7 +993,7 @@ function SlotsTab() {
                   <td className="px-3 py-2 text-slate-500">{r.category_code ?? '–'}</td>
                   <td className="px-3 py-2 text-slate-500">{fmtDate(r.starts_at)}</td>
                   <td className="px-3 py-2 text-slate-500">{fmtDate(r.ends_at)}</td>
-                  <td className="px-3 py-2 tabular-nums">{r.price_nis} ₪</td>
+                  <td className="px-3 py-2 tabular-nums">{r.price_nis} ₪ {PLUS_VAT}</td>
                   <td className="px-3 py-2">{r.advertiser_name ?? <span className="text-slate-400">לא הוזמן</span>}</td>
                 </tr>
               ))}

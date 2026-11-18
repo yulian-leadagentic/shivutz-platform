@@ -20,16 +20,18 @@ Only after Cardcom confirms the charge is the plan row written, in the
 same database transaction that marks the charge as charged. A declined
 card, an unreachable Cardcom or a missing card leave no plan behind.
 
-The price is charged as it stands on the tier row, VAT inside it, the
-way the contractor plans are charged (subscriptions.py: vat_amount=0).
+The tier price is before VAT. The charge row carries the price
+(net_amount_nis), the VAT and its rate, and the total (amount_nis), which
+is what is charged and what a refund returns (fixes list ג, item 6).
 """
 import logging
 import uuid
+from decimal import Decimal
 from typing import Optional
 
 from app.crypto import decrypt_token
 from app.db import get_db
-from app.services import cardcom, invoice_lines
+from app.services import cardcom, invoice_lines, vat
 from app.services.cardcom import (
     CardcomDeclinedError,
     CardcomNetworkError,
@@ -161,12 +163,24 @@ def invoice_data(charge: dict) -> dict:
     }
 
 
+def money_of(charge: dict) -> dict:
+    """The charge's price, VAT and total. A row written before item 6 has
+    no split: its amount was charged as it stood, so it reads as all net."""
+    total = Decimal(str(charge["amount_nis"]))
+    if charge.get("net_amount_nis") is None:
+        return {"net": total, "percent": Decimal("0"), "vat": Decimal("0"), "total": total}
+    return {"net":     Decimal(str(charge["net_amount_nis"])),
+            "percent": Decimal(str(charge["vat_percent"])),
+            "vat":     Decimal(str(charge["vat_amount_nis"])),
+            "total":   total}
+
+
 def _answer(charge: dict) -> dict:
     return {
         "charge_id":       charge["id"],
         "status":          charge["status"],
         "subscription_id": charge.get("subscription_id"),
-        "amount_nis":      float(charge["amount_nis"]),
+        **vat.event_fields(money_of(charge)),
         "invoice_number":  charge.get("invoice_number"),
         "invoice_url":     charge.get("invoice_url"),
         "mode":            "fake" if charge.get("is_fake") else "real",
@@ -184,9 +198,9 @@ async def pay(charge: dict) -> dict:
         return _answer(load(charge["id"]))
 
     entity_type, entity_id = charge["entity_type"], charge["entity_id"]
-    amount = float(charge["amount_nis"])
+    money = money_of(charge)
     audit = dict(entity_id=entity_id, entity_type=entity_type,
-                 kind=f"marketplace_{charge['kind']}", amount_nis=int(round(amount)))
+                 kind=f"marketplace_{charge['kind']}", **vat.event_fields(money))
 
     # FREE_LAUNCH_UNTIL makes charge_token return a made-up "charged"
     # answer. A plan must not be activated on that: the provider promo
@@ -207,8 +221,8 @@ async def pay(charge: dict) -> dict:
     try:
         result = await charge_token(
             provider_token  = decrypt_token(card["provider_token"]),
-            base_amount     = amount,
-            vat_amount      = 0,   # the tier price is the whole price, VAT inside it
+            base_amount     = float(money["net"]),
+            vat_amount      = float(money["vat"]),
             deal_id         = f"mp:{charge['id']}",
             idempotency_key = charge["id"],
             invoice_data    = invoice_data(charge),
@@ -265,7 +279,7 @@ def _activate(charge: dict, card_id: str, event_id: str, result: dict) -> str:
             (
                 sub_id, charge["entity_type"], charge["entity_id"],
                 charge["category_code"], charge["tier_id"],
-                charge["slot_count"], charge["duration_days"], charge["amount_nis"],
+                charge["slot_count"], charge["duration_days"], money_of(charge)["net"],
                 charge["duration_days"], bool(charge["auto_renew"]),
                 # Not a token: the id of the card row that paid, and the
                 # id of the payment_events row of the charge.
@@ -306,7 +320,8 @@ def mine(entity_type: str, entity_id: str, limit: int = 50) -> list[dict]:
         cur = conn.cursor()
         cur.execute(
             f"""SELECT m.id, m.kind, m.status, m.category_code, c.name_he AS category_name_he,
-                       m.amount_nis, m.invoice_number, m.invoice_url, m.is_fake,
+                       m.amount_nis, m.net_amount_nis, m.vat_percent, m.vat_amount_nis,
+                       m.invoice_number, m.invoice_url, m.is_fake,
                        m.created_at, m.refunded_at
                   FROM {PAY_DB}.marketplace_charges m
                   LEFT JOIN {ORG_DB}.marketplace_categories c
@@ -325,7 +340,7 @@ def mine(entity_type: str, entity_id: str, limit: int = 50) -> list[dict]:
                 "status":           r["status"],
                 "category_code":    r["category_code"],
                 "category_name_he": r["category_name_he"],
-                "amount_nis":       float(r["amount_nis"]),
+                **vat.event_fields(money_of(r)),
                 "invoice_number":   r["invoice_number"],
                 "invoice_url":      r["invoice_url"],
                 "mode":             "fake" if r["is_fake"] else "real",

@@ -41,6 +41,7 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { PaymentCardBlock } from '@/components/billing/PaymentCardBlock';
 import { MarketplaceCharges } from '@/components/billing/MarketplaceCharges';
 import { WhatsAppEntityCard } from '@/components/shared/WhatsAppEntityCard';
+import { PLUS_VAT } from '@/lib/vat';
 
 function fmtPrice(nis: number): string {
   return `₪${Number(nis).toLocaleString('he-IL', { maximumFractionDigits: 2 })}`;
@@ -210,7 +211,7 @@ function ProviderBillingInner() {
   const upgradeMessage = pendingUpgrade
     ? [
         `מעבר למסלול "${pendingUpgrade.quote.tier.name_he}" בקטגוריית ${pendingUpgrade.quote.tier.category_name_he}: עד ${pendingUpgrade.quote.tier.slot_count} מודעות.`,
-        `מחיר המסלול ${fmtPrice(pendingUpgrade.quote.tier.price_nis)} לתקופה של ${pendingUpgrade.quote.tier.duration_days} ימים.`,
+        `מחיר המסלול ${fmtPrice(pendingUpgrade.quote.tier.price_nis)} ${PLUS_VAT} לתקופה של ${pendingUpgrade.quote.tier.duration_days} ימים.`,
         pendingUpgrade.quote.promo_end
           ? 'הפרסום ללא עלות לתקופת ניסיון. לא נחייב אותך ללא הודעה מראש.'
           : '',
@@ -446,7 +447,7 @@ function PlanCard({
         <dd className="font-medium text-slate-900">{fmtDate(plan.expires_at)}</dd>
         <dt className="text-slate-500">מחיר המסלול</dt>
         <dd className="font-medium text-slate-900">
-          <span dir="ltr">{fmtPrice(plan.price_nis)}</span> לתקופה של {plan.duration_days} ימים
+          <span dir="ltr">{fmtPrice(plan.price_nis)}</span> {PLUS_VAT} לתקופה של {plan.duration_days} ימים
         </dd>
       </dl>
 
@@ -528,7 +529,7 @@ function PlanCard({
                 </p>
               </div>
               <div className="flex items-center gap-3">
-                <span className="whitespace-nowrap text-sm font-bold text-slate-900" dir="ltr">{fmtPrice(t.price_nis)}</span>
+                <span className="whitespace-nowrap text-sm font-bold text-slate-900"><span dir="ltr">{fmtPrice(t.price_nis)}</span> {PLUS_VAT}</span>
                 <Button type="button" className={TAP} disabled={quoting !== null || busy} onClick={() => onPickTier(t)}>
                   {quoting === t.id && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
                   מעבר למסלול

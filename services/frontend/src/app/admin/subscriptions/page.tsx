@@ -168,7 +168,7 @@ export default function AdminSubscriptionsPage() {
               <div className="mt-2 flex items-baseline gap-4 flex-wrap text-sm">
                 <span className="font-bold text-slate-900">{skip.count} מנויים</span>
                 <span className="text-slate-500">·</span>
-                <span className="font-bold text-slate-900">₪{skip.total_amount_nis.toLocaleString('he-IL')}</span>
+                <span className="font-bold text-slate-900">₪{skip.total_amount_nis.toLocaleString('he-IL')} <span className="text-xs font-normal text-slate-500">כולל מע&quot;מ</span></span>
                 <span className="text-xs text-slate-400">
                   {skip.last_at
                     ? `אחרון: ${new Date(skip.last_at).toLocaleDateString('he-IL')}`

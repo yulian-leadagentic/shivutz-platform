@@ -43,7 +43,7 @@ from typing import Optional
 
 from app.crypto import decrypt_token
 from app.db import get_db
-from app.services import cardcom, marketplace_charges as mc
+from app.services import cardcom, marketplace_charges as mc, vat
 from app.services.cardcom import (
     CardcomDeclinedError,
     CardcomNetworkError,
@@ -184,24 +184,28 @@ def _fail(plan: dict, reason: str, interval_days: int, max_attempts: int) -> str
     return "past_due"
 
 
-def _open_charge(plan: dict, tier: dict) -> dict:
+def _open_charge(plan: dict, tier: dict, money: dict) -> dict:
     """The row for this renewal attempt, taken for charging as it is
-    written: nobody else pays a renewal."""
+    written: nobody else pays a renewal. `money` is the tier price plus
+    VAT (vat.for_price)."""
     charge = {
         "id": str(uuid.uuid4()), "kind": "renewal",
         "entity_type": plan["advertiser_entity_type"], "entity_id": plan["advertiser_entity_id"],
         "subscription_id": plan["id"], "tier_id": plan["tier_id"], "category_code": plan["category_code"],
         "slot_count": plan["slot_count"], "duration_days": int(tier["duration_days"]),
-        "amount_nis": tier["price_nis"], "auto_renew": 1,
+        "amount_nis": money["total"], "net_amount_nis": money["net"],
+        "vat_percent": money["percent"], "vat_amount_nis": money["vat"], "auto_renew": 1,
     }
     _run(
         f"""INSERT INTO {mc.PAY_DB}.marketplace_charges
                 (id, kind, entity_type, entity_id, subscription_id, tier_id, category_code,
-                 slot_count, duration_days, amount_nis, auto_renew, status, is_fake)
-            VALUES (%s, 'renewal', %s, %s, %s, %s, %s, %s, %s, %s, TRUE, 'charging', %s)""",
+                 slot_count, duration_days, amount_nis, net_amount_nis, vat_percent, vat_amount_nis,
+                 auto_renew, status, is_fake)
+            VALUES (%s, 'renewal', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE, 'charging', %s)""",
         (charge["id"], charge["entity_type"], charge["entity_id"], charge["subscription_id"],
          charge["tier_id"], charge["category_code"], charge["slot_count"], charge["duration_days"],
-         charge["amount_nis"], cardcom.PAYMENT_FAKE_MODE),
+         charge["amount_nis"], charge["net_amount_nis"], charge["vat_percent"], charge["vat_amount_nis"],
+         cardcom.PAYMENT_FAKE_MODE),
     )
     return charge
 
@@ -220,7 +224,7 @@ def _renewed(plan: dict, charge: dict, card_id: str, event_id: str, result: dict
                        rebill_attempts=0, next_attempt_at=NULL, last_renewal_error=NULL,
                        cardcom_token_ref=%s, payment_transaction_id=%s
                  WHERE id=%s""",
-            (charge["duration_days"], charge["duration_days"], charge["amount_nis"],
+            (charge["duration_days"], charge["duration_days"], charge["net_amount_nis"],
              card_id, event_id, plan["id"]),
         )
         cur.execute(
@@ -270,9 +274,15 @@ async def renew_due_plans(now: datetime, *, interval_days: int, max_attempts: in
             counts["skipped"] += 1
             continue
 
-        amount = float(tier["price_nis"])
+        try:
+            money = vat.for_price(tier["price_nis"])
+        except vat.VatPeriodMissing as exc:
+            logger.error("[plan-renewal] plan %s not renewed: %s", plan["id"], exc)
+            _note(plan["id"], "vat_period_missing")
+            counts["skipped"] += 1
+            continue
         audit = dict(entity_id=entity_id, entity_type=entity_type,
-                     kind="marketplace_renewal", amount_nis=int(round(amount)))
+                     kind="marketplace_renewal", **vat.event_fields(money))
 
         if cardcom._free_launch_active():
             # The switch that makes charge_token answer "charged" with
@@ -290,12 +300,12 @@ async def renew_due_plans(now: datetime, *, interval_days: int, max_attempts: in
             counts["ended" if outcome == "expired" else "failed"] += 1
             continue
 
-        charge = _open_charge(plan, tier)
+        charge = _open_charge(plan, tier, money)
         try:
             result = await charge_token(
                 provider_token  = decrypt_token(card["provider_token"]),
-                base_amount     = amount,
-                vat_amount      = 0,
+                base_amount     = float(money["net"]),
+                vat_amount      = float(money["vat"]),
                 deal_id         = f"mp:{charge['id']}",
                 idempotency_key = charge["id"],
                 invoice_data    = mc.invoice_data(charge),

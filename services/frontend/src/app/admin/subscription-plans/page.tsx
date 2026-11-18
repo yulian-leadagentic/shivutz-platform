@@ -221,7 +221,7 @@ export default function SubscriptionPlansPage() {
                       onChange={(v) => updateDraft(p.id, { max_users: v })}
                     />
                     <Field
-                      label="₪/חודש למשתמש נוסף מעל הכלולים"
+                      label="₪/חודש למשתמש נוסף מעל הכלולים, לפני מע&quot;מ"
                       value={d.extra_user_price_nis}
                       onChange={(v) => updateDraft(p.id, { extra_user_price_nis: v })}
                       placeholderUnlimited="לא נמכרים"
@@ -250,7 +250,7 @@ export default function SubscriptionPlansPage() {
                     )}
 
                     <Field
-                      label="מחיר חודשי (₪)"
+                      label="מחיר חודשי (₪, לפני מע&quot;מ)"
                       value={d.monthly_price_nis}
                       onChange={(v) => updateDraft(p.id, { monthly_price_nis: v })}
                       hideUnlimited

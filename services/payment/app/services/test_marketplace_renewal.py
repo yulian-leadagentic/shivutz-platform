@@ -62,11 +62,14 @@ class Base(unittest.TestCase):
             self.events.append(kw)
             return True, f"event-{len(self.events)}"
 
-        def opened(p, t):
+        def opened(p, t, money):
             self.steps.append("charge_row")
+            self.opened_money = money
             return {"id": "charge-9", "kind": "renewal", "entity_type": p["advertiser_entity_type"],
                     "entity_id": p["advertiser_entity_id"], "tier_id": p["tier_id"],
-                    "duration_days": int(t["duration_days"]), "amount_nis": t["price_nis"]}
+                    "duration_days": int(t["duration_days"]), "amount_nis": money["total"],
+                    "net_amount_nis": money["net"], "vat_percent": money["percent"],
+                    "vat_amount_nis": money["vat"]}
 
         def fail(p, reason, interval_days, max_attempts):
             self.failed.append((reason, interval_days, max_attempts))
@@ -90,6 +93,8 @@ class Base(unittest.TestCase):
             mock.patch.object(mr.mc, "invoice_data", lambda c: {"description": "x"}),
             mock.patch.object(mr.mc, "_settle", lambda cid, status, reason=None, event_id=None: self.settled.append((cid, status, reason))),
             mock.patch.object(mr.cardcom, "_free_launch_active", lambda: free_launch),
+            # The VAT period in force, as payment_db.vat_periods would give it.
+            mock.patch.object(mr.vat, "percent_on", lambda day=None, cur=None: Decimal("18")),
         ]
         for p in patches:
             p.start()
@@ -101,10 +106,12 @@ class RenewTest(Base):
     def test_a_charged_renewal_runs_another_period_at_todays_tier_price(self):
         counts = self.run_pass(a_plan())
         self.assertEqual(counts, {"processed": 1, "charged": 1, "failed": 0, "ended": 0, "skipped": 0})
-        self.assertEqual((self.sent["base_amount"], self.sent["vat_amount"]), (250.0, 0))
+        # Fixes ג item 6 · the tier price is before VAT: 250 + 18% = 295.
+        self.assertEqual((self.sent["base_amount"], self.sent["vat_amount"]), (250.0, 45.0))
         (charge, card_id, event_id), = self.renewed
-        self.assertEqual((charge["amount_nis"], charge["duration_days"], card_id, event_id),
-                         (Decimal("250.00"), 30, "card-1", "event-1"))
+        self.assertEqual((charge["amount_nis"], charge["net_amount_nis"], charge["vat_amount_nis"],
+                          charge["duration_days"], card_id, event_id),
+                         (Decimal("295.00"), Decimal("250.00"), Decimal("45.00"), 30, "card-1", "event-1"))
 
     def test_the_attempt_is_stamped_before_cardcom_is_called(self):
         self.run_pass(a_plan())
@@ -117,7 +124,8 @@ class RenewTest(Base):
     def test_the_audit_row_is_a_renewal_of_that_plan(self):
         self.run_pass(a_plan())
         (event,) = self.events
-        self.assertEqual((event["kind"], event["outcome"], event["amount_nis"]), ("marketplace_renewal", "ok", 250))
+        self.assertEqual((event["kind"], event["outcome"], event["amount_nis"]), ("marketplace_renewal", "ok", 295.0))
+        self.assertEqual((event["net_amount_nis"], event["vat_percent"], event["vat_amount_nis"]), (250.0, 18.0, 45.0))
         self.assertEqual((event["raw"]["subscription_id"], event["raw"]["charge_id"]), ("plan-1", "charge-9"))
 
     def test_a_declined_card_is_past_due_with_the_batchs_own_numbers(self):
