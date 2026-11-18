@@ -206,6 +206,25 @@ class TokenChargeTest(unittest.TestCase):
         _, sent = _charge(invoice_data=None)
         self.assertNotIn("Document", sent["json"])
 
+    def test_the_document_asked_for_is_a_tax_invoice_and_receipt(self):
+        _, sent = _charge()
+        self.assertEqual(sent["json"]["Document"]["DocumentTypeToCreate"], "TaxInvoiceAndReceipt")
+
+    def test_a_document_without_a_line_is_not_sent_and_nothing_is_charged(self):
+        for invoice_data in ({"customer_name": "ספק"}, {"customer_name": "ספק", "description": "  "}):
+            _Client.sent = None
+            with self.assertRaises(ValueError) as ctx:
+                _charge(invoice_data=invoice_data)
+            self.assertEqual(str(ctx.exception), "invoice_description_missing")
+            self.assertIsNone(_Client.sent)
+
+    def test_a_missing_line_fails_in_fake_mode_too(self):
+        with mock.patch.object(cardcom, "PAYMENT_FAKE_MODE", True):
+            with self.assertRaises(ValueError):
+                asyncio.run(cardcom.charge_token(
+                    provider_token="tok", base_amount=1, vat_amount=0, deal_id="d",
+                    idempotency_key="k", invoice_data={"customer_name": "ספק"}))
+
     def test_the_answer_gives_the_transaction_and_the_invoice(self):
         out, _ = _charge()
         self.assertEqual(out["provider_transaction_id"], "9911")

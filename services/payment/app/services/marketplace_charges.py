@@ -29,7 +29,7 @@ from typing import Optional
 
 from app.crypto import decrypt_token
 from app.db import get_db
-from app.services import cardcom
+from app.services import cardcom, invoice_lines
 from app.services.cardcom import (
     CardcomDeclinedError,
     CardcomNetworkError,
@@ -124,20 +124,20 @@ def invoice_data(charge: dict) -> dict:
     a missing name or address thins the document, it does not stop the
     charge."""
     name = email = tax_id = ""
-    category = tier = ""
+    category = ""
     try:
         conn = get_db(ORG_DB)
         try:
             cur = conn.cursor()
             cur.execute(
-                f"""SELECT t.name_he AS tier_name, c.name_he AS category_name
+                f"""SELECT c.name_he AS category_name
                       FROM {ORG_DB}.marketplace_subscription_tiers t
                       JOIN {ORG_DB}.marketplace_categories c ON c.code = t.category_code
                      WHERE t.id=%s""",
                 (charge["tier_id"],),
             )
             names = cur.fetchone() or {}
-            category, tier = names.get("category_name") or "", names.get("tier_name") or ""
+            category = names.get("category_name") or ""
             if charge["entity_type"] == "service_provider":
                 cur.execute(
                     f"SELECT name, email, business_number FROM {ORG_DB}.service_providers WHERE id=%s",
@@ -153,12 +153,11 @@ def invoice_data(charge: dict) -> dict:
             conn.close()
     except Exception as exc:  # noqa: BLE001
         logger.warning("[marketplace-charges] invoice details lookup failed: %s", exc)
-    line = " · ".join(part for part in ("מסלול פרסום בשירותים נלווים", category, tier) if part)
     return {
         "customer_name":  name,
         "customer_email": email,
         "tax_id":         tax_id,
-        "description":    f"{line} · {int(charge['duration_days'])} ימים",
+        "description":    invoice_lines.marketplace_plan(category),
     }
 
 

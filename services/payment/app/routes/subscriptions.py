@@ -32,7 +32,7 @@ from app.services.cardcom import (
     CardcomNetworkError,
 )
 from app.services.payment_events import record_event
-from app.services import marketplace_renewal
+from app.services import invoice_lines, marketplace_renewal
 from app.crypto import decrypt_token
 
 logger = logging.getLogger(__name__)
@@ -269,7 +269,7 @@ async def start_subscription(
         # their side too; our payment_events UNIQUE is the belt.
         idem = str(uuid.uuid4())
         invoice_data = _invoice_data_for(cur, entity_id, entity_type,
-                                         plan_tier=body.tier, amount=price)
+                                         description=invoice_lines.subscription(body.tier))
 
         try:
             charge = await charge_token(
@@ -386,11 +386,11 @@ def _plan_price(cur, entity_type: str, tier: str) -> Optional[int]:
 
 
 def _invoice_data_for(cur, entity_id: str, entity_type: str, *,
-                      plan_tier: str, amount: int) -> dict:
-    """PAY-4 · fill Cardcom's InvoiceHead/InvoiceLines so it issues a
-    real Israeli invoice. Fields degrade to empty strings — Cardcom
-    tolerates missing metadata on the invoice side, and we'd rather
-    charge with a thin invoice than skip the charge."""
+                      description: str) -> dict:
+    """PAY-4 · who the document is made out to, and its one line, which
+    the caller takes from services/invoice_lines.py. The name and email
+    degrade to empty strings: a thin document beats a skipped charge.
+    The line never does; charge_token refuses a document without one."""
     name = ""
     email = ""
     try:
@@ -413,7 +413,7 @@ def _invoice_data_for(cur, entity_id: str, entity_type: str, *,
     return {
         "customer_name":  name,
         "customer_email": email,
-        "description":    f"מנוי {plan_tier}, פלטפורמת שיבוץ",
+        "description":    description,
     }
 
 
@@ -577,7 +577,7 @@ async def purchase_seats(
             })
         invoice_data = _invoice_data_for(
             cur, entity_id, entity_type,
-            plan_tier=row["tier"], amount=amount,
+            description=invoice_lines.extra_seats(row["tier"], body.count),
         )
         try:
             charge = await charge_token(
@@ -874,7 +874,7 @@ async def renewal_batch(x_internal_secret: Optional[str] = Header(default=None))
                 idempotency_key = idem,
                 invoice_data    = _invoice_data_for_id(
                     sub["entity_id"], sub["entity_type"],
-                    plan_tier=sub["tier"], amount=price,
+                    description=invoice_lines.subscription(sub["tier"]),
                 ),
             )
         except CardcomDeclinedError as exc:
@@ -1121,12 +1121,12 @@ def _lookup_extra_seat_price(entity_type: str, tier: str) -> Optional[int]:
 
 
 def _invoice_data_for_id(entity_id: str, entity_type: str, *,
-                         plan_tier: str, amount: int) -> dict:
+                         description: str) -> dict:
     conn = get_db("payment_db")
     try:
         cur = conn.cursor()
         return _invoice_data_for(cur, entity_id, entity_type,
-                                 plan_tier=plan_tier, amount=amount)
+                                 description=description)
     finally:
         conn.close()
 

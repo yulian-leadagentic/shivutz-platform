@@ -99,6 +99,21 @@ LP_PENDING_CODES = {5117, 5118, 5119}
 # validates the card for it and moves no money.
 CARD_CHECK_AMOUNT = 1
 
+# The document every charge asks for: חשבונית מס קבלה. Without it Cardcom
+# creates "Auto", whatever the terminal's admin panel is set to.
+# v11 swagger: DocumentTran.DocumentTypeToCreate, enum DocumentToCreate.
+INVOICE_DOCUMENT_TYPE = "TaxInvoiceAndReceipt"
+
+
+def _invoice_line(invoice_data: dict) -> str:
+    """The document's one line, from the caller (services/invoice_lines.py).
+    There is no fallback wording: a document that does not say what was
+    sold is not sent, and neither is the charge."""
+    line = (invoice_data.get("description") or "").strip()
+    if not line:
+        raise ValueError("invoice_description_missing")
+    return line
+
 # What of a Cardcom answer is kept in payment_events.raw. A list of what
 # may stay, not of what must go: the answers also carry the token, the
 # first digits of the card and the holder's id number and phone, and
@@ -310,6 +325,9 @@ async def charge_token(
     Returns: provider_transaction_id, response_code, invoice_number, invoice_url, raw
     """
     total = round(base_amount + vat_amount, 2)
+    # Checked before the fake-mode branch, so a missing line fails on
+    # staging and in tests too.
+    line = _invoice_line(invoice_data) if invoice_data else None
 
     # L5 §3 — the critical fix. charge_token was the ONE Cardcom
     # entry point that ignored PAYMENT_FAKE_MODE (authorize / capture /
@@ -373,13 +391,14 @@ async def charge_token(
     if invoice_data:
         email = invoice_data.get("customer_email") or ""
         document = {
+            "DocumentTypeToCreate": INVOICE_DOCUMENT_TYPE,
             "Name":          invoice_data.get("customer_name") or "",
             "IsSendByEmail": bool(email),
             "Languge":       "he",     # the field's spelling in Cardcom's API
             # The amount charged is the whole price, VAT inside it, so
             # the one line carries the whole amount.
             "Products": [{
-                "Description": invoice_data.get("description", "עמלת שיבוץ עובדים זרים"),
+                "Description": line,
                 "UnitCost":    total,
                 "Quantity":    1,
             }],
@@ -591,6 +610,7 @@ async def capture_transaction(
 
     Returns: provider_transaction_id, response_code, invoice_*, raw.
     """
+    line = _invoice_line(invoice_data) if invoice_data else None
     if PAYMENT_FAKE_MODE:
         logger.info("[cardcom FAKE] capture auth=%s amount=%.2f", auth_provider_deal_id, amount)
         return {
@@ -622,7 +642,7 @@ async def capture_transaction(
             "VATIncluded":  True,
         }
         payload["InvoiceLines"] = [{
-            "Description": invoice_data.get("description", "עמלת שיבוץ עובדים זרים"),
+            "Description": line,
             "Price":       invoice_data.get("base_amount", amount),
             "Quantity":    1,
             "IsTaxFree":   False,

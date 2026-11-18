@@ -18,7 +18,7 @@ from unittest import mock
 from fastapi import HTTPException
 
 from app.routes import marketplace_charges as routes
-from app.services import marketplace_charges as mc
+from app.services import invoice_lines, marketplace_charges as mc
 from app.services.cardcom import CardcomDeclinedError, CardcomNetworkError
 
 ME, OTHER = "11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222"
@@ -218,7 +218,8 @@ class PaidTest(Base):
         doc = self.sent["invoice_data"]
         self.assertEqual((doc["customer_name"], doc["customer_email"], doc["tax_id"]),
                          ("הסעות הצפון", "office@north.test", "514000000"))
-        self.assertEqual(doc["description"], "מסלול פרסום בשירותים נלווים · הסעות · בסיסי · 30 ימים")
+        self.assertEqual(doc["description"],
+                         f"פרסום בפלטפורמת TagidAI, קטגוריית הסעות, {invoice_lines.billing_month()}")
 
     def test_a_business_number_that_is_not_one_stays_off_the_document(self):
         for number in ("12345", "51400000a", None, ""):
