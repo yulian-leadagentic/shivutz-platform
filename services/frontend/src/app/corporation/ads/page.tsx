@@ -12,6 +12,7 @@ import { Loader2, Plus, Pencil, Trash2, Zap, Eye, ArrowLeft, CreditCard, CheckCi
 import { adApi, type AdRow } from '@/lib/api/ads';
 import { ApiError } from '@/lib/api/client';
 import { mapApiError } from '@/lib/api/errors';
+import { billingHref } from '@/features/billing/billingReturn';
 import { PromotedBadge } from '@/components/ads/PromotedBadge';
 
 // verify(CP3) — boost is FREE during launch (intentional product
@@ -150,7 +151,7 @@ function CorporationAdsPageInner() {
             <p className="text-sm text-amber-800 mt-0.5">{upgradePrompt}</p>
           </div>
           <Link
-            href="/billing"
+            href={billingHref('/corporation/ads')}
             className="inline-flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold px-4 py-2 rounded-lg shrink-0"
           >
             <CreditCard className="w-4 h-4" />

@@ -16,6 +16,7 @@ import { NotificationRecipientsSection } from '@/features/notification-recipient
 import { EditMemberModal } from '@/components/team/EditMemberModal';
 import { TableToolbar } from '@/components/table/TableToolbar';
 import { useTableState } from '@/components/table/useTableState';
+import { billingHref } from '@/features/billing/billingReturn';
 
 // Wave 2: 'operator' dropped — three roles cover the cases.
 const ROLE_LABELS: Record<string, string> = {
@@ -284,7 +285,7 @@ export default function CorporationUsersPage() {
             </div>
           </div>
           <Link
-            href="/billing"
+            href={seatsFull ? billingHref('/corporation/users') : '/billing'}
             className="shrink-0 inline-flex items-center gap-1 text-sm font-semibold text-brand-700 hover:text-brand-900 underline underline-offset-2"
           >
             {seatsFull ? 'שדרג מסלול' : 'ניהול מנוי'}

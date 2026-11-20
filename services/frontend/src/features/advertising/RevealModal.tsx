@@ -9,6 +9,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { X, UserPlus, LogIn, CreditCard, Sparkles, RotateCw } from 'lucide-react';
 import { writePendingReveal, clearPendingReveal } from '@/features/prospect/state';
+import { billingHref } from '@/features/billing/billingReturn';
 
 export type RevealBlock =
   | { kind: 'unauth';  adId: string }
@@ -194,7 +195,7 @@ export function RevealModal({
               </p>
             </div>
             <Link
-              href="/billing"
+              href={billingHref(returnHref(block.adId, q))}
               className="w-full bg-brand-600 hover:bg-brand-800 text-slate-900 text-sm font-semibold px-4 py-2.5 rounded-lg inline-flex items-center justify-center gap-2"
             >
               חדש מנוי
@@ -214,7 +215,7 @@ export function RevealModal({
               </p>
             </div>
             <Link
-              href="/billing"
+              href={billingHref(returnHref(block.adId, q))}
               className="w-full bg-brand-600 hover:bg-brand-800 text-slate-900 text-sm font-semibold px-4 py-2.5 rounded-lg inline-flex items-center justify-center gap-2"
             >
               שדרג מנוי

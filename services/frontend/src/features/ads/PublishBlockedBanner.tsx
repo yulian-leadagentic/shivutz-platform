@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { AlertTriangle, CreditCard } from 'lucide-react';
 import { ApiError } from '@/lib/api/client';
+import { billingHref } from '@/features/billing/billingReturn';
 
 export type PublishBlock =
   | { kind: 'ad_limit'; limit: number | null }
@@ -36,7 +37,7 @@ function copyFor(block: PublishBlock) {
   };
 }
 
-export function PublishBlockedBanner({ block }: { block: PublishBlock }) {
+export function PublishBlockedBanner({ block, returnTo }: { block: PublishBlock; returnTo: string }) {
   const copy = copyFor(block);
   return (
     <div role="alert" className="flex flex-col sm:flex-row sm:items-start gap-3 rounded-2xl border border-amber-300 bg-amber-50 p-4">
@@ -48,7 +49,7 @@ export function PublishBlockedBanner({ block }: { block: PublishBlock }) {
         </div>
       </div>
       <Link
-        href="/billing"
+        href={billingHref(returnTo)}
         className="shrink-0 self-start inline-flex items-center gap-1.5 bg-brand-800 hover:bg-brand-900 text-white text-sm font-semibold px-3 py-2 rounded-lg"
       >
         <CreditCard className="w-4 h-4" aria-hidden /> {copy.cta}

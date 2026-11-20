@@ -17,6 +17,7 @@ import { EditMemberModal } from '@/components/team/EditMemberModal';
 import { SeatUpgradeModal, type SeatUpgradeDetail } from '@/features/subscription/SeatUpgradeModal';
 import { TableToolbar } from '@/components/table/TableToolbar';
 import { useTableState } from '@/components/table/useTableState';
+import { billingHref } from '@/features/billing/billingReturn';
 
 // Wave 2: 'operator' dropped — three roles cover the cases.
 const ROLE_LABELS: Record<string, string> = {
@@ -281,7 +282,7 @@ export default function ContractorUsersPage() {
             </div>
           </div>
           <Link
-            href="/billing"
+            href={seatsFull ? billingHref('/contractor/users') : '/billing'}
             className="shrink-0 inline-flex items-center gap-1 text-sm font-semibold text-brand-700 hover:text-brand-900 underline underline-offset-2"
           >
             {seatsFull ? 'שדרג מסלול' : 'ניהול מנוי'}

@@ -27,6 +27,8 @@ import { useRouter } from 'next/navigation';
 import { WhatsAppEntityCard } from '@/components/shared/WhatsAppEntityCard';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { PaymentCardBlock } from '@/components/billing/PaymentCardBlock';
+import { clearBillingReturn, readBillingReturn, returnLabel, writeBillingReturn } from '@/features/billing/billingReturn';
+import { sanitizeReturnTo } from '@/features/prospect/returnTo';
 import type { PaymentMethod } from '@/types';
 
 function fmtDate(iso: string | null): string {
@@ -124,15 +126,38 @@ export default function BillingPage() {
   const [card, setCard]         = useState<PaymentMethod | null | undefined>(undefined);
   const [needCard, setNeedCard] = useState(false);
   const cardBox                 = useRef<HTMLDivElement>(null);
+  const [returnTo, setReturnTo]     = useState<string | null>(null);
+  const [resumeTier, setResumeTier] = useState<SubscriptionTier | null>(null);
+  const [activated, setActivated]   = useState(false);
+  const fromCardPage                = useRef(false);
 
-  function askForCard() {
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    const asked = sanitizeReturnTo(q.get('returnTo'));
+    if (asked) writeBillingReturn({ to: asked, tier: null });
+    else if (q.get('card_setup')) fromCardPage.current = true;
+    else clearBillingReturn();
+    setReturnTo(readBillingReturn().to);
+  }, []);
+
+  function onCard(c: PaymentMethod | null) {
+    setCard(c);
+    if (c && fromCardPage.current) {
+      fromCardPage.current = false;
+      const { tier } = readBillingReturn();
+      if (tier) setResumeTier(tier);
+    }
+  }
+
+  function askForCard(tier?: SubscriptionTier) {
+    if (tier) writeBillingReturn({ tier });
     setNeedCard(true);
     cardBox.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
   }
 
   function choose(code: SubscriptionTier) {
     setError('');
-    if (card === null) { askForCard(); return; }
+    if (card === null) { askForCard(code); return; }
     void upgrade(code);
   }
 
@@ -234,6 +259,14 @@ export default function BillingPage() {
       // Fake mode returns no invoice, so this stays null and the
       // "Invoice ready" row simply doesn't render.
       if (result.invoice_url) setLastInvoiceUrl(result.invoice_url);
+      const { to } = readBillingReturn();
+      clearBillingReturn();
+      setResumeTier(null);
+      if (to) {
+        router.push(to);
+        return;
+      }
+      setActivated(true);
       await refresh();
     } catch (e) {
       // R3 — QA-3 follow-up. Sibling calls (`refresh`, `addMember`,
@@ -243,7 +276,7 @@ export default function BillingPage() {
       // banner.
       const details = e instanceof ApiError ? (e.cause?.details as { code?: string } | undefined) : undefined;
       const code = details?.code || (e instanceof ApiError ? (e.cause?.error || e.cause?.code) : undefined);
-      if (code === 'no_payment_method') askForCard();
+      if (code === 'no_payment_method') askForCard(tier);
       else setError(mapApiError(e));
     } finally {
       setBusy(null);
@@ -312,6 +345,23 @@ export default function BillingPage() {
         </div>
         <p className="text-sm text-slate-500">ניהול המנוי החודשי שלך</p>
       </header>
+
+      {returnTo && (
+        <p className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900">
+          אחרי הפעלת המנוי נחזיר אותך {returnLabel(returnTo)}.
+        </p>
+      )}
+      {activated && (
+        <div role="status" className="flex flex-wrap items-center gap-3 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2">
+          <p className="flex-1 text-sm font-semibold text-emerald-900">המנוי פעיל.</p>
+          <Link
+            href={isContractor ? '/' : '/corporation/ads/new'}
+            className="inline-flex min-h-11 items-center gap-1 text-sm font-semibold text-emerald-900 underline underline-offset-2"
+          >
+            {isContractor ? 'לחיפוש עובדים' : 'לפרסום מודעה'} <ArrowLeft className="w-4 h-4" aria-hidden />
+          </Link>
+        </div>
+      )}
 
       {/* R2 — no-subscription empty state. Shown ONLY when the payment
           service explicitly returns 404 (not on any other error).
@@ -604,8 +654,26 @@ export default function BillingPage() {
             כדי להפעיל מנוי יש להוסיף כרטיס אשראי. הכרטיס מוזן בעמוד המאובטח של קארדקום.
           </p>
         )}
+        {resumeTier && card && (() => {
+          const tier  = TIERS.find(x => x.code === resumeTier);
+          const price = plans.find(x => x.tier === resumeTier)?.monthly_price_nis;
+          if (!tier || price == null) return null;
+          return (
+            <div role="status" className="flex flex-wrap items-center gap-3 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2">
+              <p className="flex-1 text-sm text-emerald-900">הכרטיס נשמר. נשאר רק להפעיל את המנוי.</p>
+              <button
+                type="button"
+                disabled={busyTier !== null}
+                onClick={() => choose(tier.code)}
+                className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-brand-800 px-4 text-sm font-semibold text-white hover:bg-brand-900 disabled:opacity-60"
+              >
+                <Crown className="w-4 h-4" aria-hidden /> הפעל מנוי {tier.title}
+              </button>
+            </div>
+          );
+        })()}
         <Suspense fallback={null}>
-          <PaymentCardBlock onCard={setCard} />
+          <PaymentCardBlock onCard={onCard} />
         </Suspense>
       </div>
 
