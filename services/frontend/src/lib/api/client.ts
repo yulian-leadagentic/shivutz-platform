@@ -218,7 +218,10 @@ async function extractErrorPayload(res: Response): Promise<ApiErrorPayload & { _
     // Node legacy: { error: { message, code } }
     if (b.error && typeof b.error === 'object') {
       const e = b.error as Record<string, unknown>;
-      return { ...e, error: e.code as string, message: e.message as string, _raw: (e.message as string) || (e.code as string) || res.statusText };
+      const details = e.details && typeof e.details === 'object' && !Array.isArray(e.details)
+        ? e.details as Record<string, unknown>
+        : {};
+      return { ...details, ...e, error: e.code as string, message: e.message as string, _raw: (e.message as string) || (e.code as string) || res.statusText };
     }
     // FastAPI: { detail: "..." } OR { detail: {message, code} } OR { detail: [{msg, loc, ...}] }
     // For dict detail (e.g. reveal-paywall's {code, tier, used, limit}),

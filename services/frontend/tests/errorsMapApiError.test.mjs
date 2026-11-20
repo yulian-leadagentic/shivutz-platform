@@ -16,6 +16,7 @@ const CODE_TO_HE = {
   seat_limit:            'הגעת למכסת המשתמשים במסלול שלך',
   corp_housing_only:     'תאגיד יכול לפרסם דיור בלבד. קטגוריות נוספות זמינות לספקי שירותים.',
   internal_error:        'קרתה תקלה, נסה שוב עוד רגע',
+  tier_active_ad_limit:  'הגעת למכסת המודעות הפעילות במסלול שלך',
 };
 const DEFAULT_MESSAGE = 'קרתה תקלה, נסה שוב עוד רגע';
 
@@ -66,7 +67,7 @@ function mapApiError(err) {
   if (payload.message && looksHebrew(payload.message)) return payload.message;
   const code = payload.error || payload.code;
   if (code && CODE_TO_HE[code]) return CODE_TO_HE[code];
-  if (payload.message) return payload.message;
+  if (payload.message && !/^[a-z][a-z0-9_]*$/.test(payload.message)) return payload.message;
   return DEFAULT_MESSAGE;
 }
 
@@ -138,4 +139,16 @@ test('plain string body treated as code', () => {
 test('null / undefined → DEFAULT', () => {
   assert.equal(mapApiError(null),      DEFAULT_MESSAGE);
   assert.equal(mapApiError(undefined), DEFAULT_MESSAGE);
+});
+
+// ── A structured refusal never shows its bare code (ads publish, 20.11) ─
+
+test('a refusal whose message is only its code is mapped by the code', () => {
+  const cause = { error: 'tier_active_ad_limit', code: 'tier_active_ad_limit', message: 'tier_active_ad_limit', limit: 3 };
+  assert.equal(mapApiError(cause), 'הגעת למכסת המודעות הפעילות במסלול שלך');
+});
+
+test('an unmapped bare code, or the old literal "error", falls to DEFAULT', () => {
+  assert.equal(mapApiError({ error: 'http_402', message: 'error' }), DEFAULT_MESSAGE);
+  assert.equal(mapApiError({ error: 'some_new_code', message: 'some_new_code' }), DEFAULT_MESSAGE);
 });

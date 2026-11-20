@@ -9,6 +9,7 @@ import { Loader2, Save } from 'lucide-react';
 import { enumApi } from '@/lib/api/enums';
 import type { AdCreateInput } from '@/lib/api/ads';
 import type { Profession } from '@/types';
+import { mapApiError } from '@/lib/api/errors';
 
 export interface WorkerAdFormValues {
   title_he: string;
@@ -84,7 +85,8 @@ export function WorkerAdForm({
         languages:             v.languages.length ? v.languages : undefined,
       });
     } catch (e) {
-      setError((e as Error).message ?? 'שגיאה בשמירת המודעה');
+      setError(mapApiError(e));
+    } finally {
       setSub(false);
     }
   }

@@ -6,7 +6,7 @@
 // endpoint. Prevents "wait, that's not what I meant to publish" the
 // moment the ad hits the public feed.
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   X, Loader2, Send, Home, Users, Building2,
   Layers, Bolt, Wrench, PaintBucket, Hammer, Boxes,
@@ -15,6 +15,7 @@ import type { AdCreateInput } from '@/lib/api/ads';
 import { useModalA11y } from '@/components/ui/useModalA11y';
 import { useEnums } from '@/features/enums/EnumsContext';
 import { labelFor } from '@/lib/labels';
+import { mapApiError } from '@/lib/api/errors';
 
 const PROFESSION_STYLE: Record<string, { grad: string; icon: typeof Hammer; label: string }> = {
   flooring:    { grad: 'from-orange-500 to-rose-600',    icon: Layers,       label: 'ריצוף' },
@@ -52,7 +53,7 @@ export function AdPreviewModal({
   onCancel: () => void;
   onConfirm: () => Promise<void>;
 }) {
-  const { originMap } = useEnums();
+  const { originMap, regionMap } = useEnums();
   const [busy, setBusy]   = useState(false);
   const [error, setError] = useState('');
   const dialogRef         = useRef<HTMLDivElement>(null);
@@ -66,6 +67,11 @@ export function AdPreviewModal({
     dialogRef,
   });
 
+  useEffect(() => {
+    setBusy(false);
+    setError('');
+  }, [payload]);
+
   if (!payload) return null;
   const isHousing = payload.ad_type === 'housing';
   const st        = styleFor(payload);
@@ -78,7 +84,7 @@ export function AdPreviewModal({
     try {
       await onConfirm();
     } catch (e) {
-      setError((e as Error).message ?? 'שגיאה בפרסום');
+      setError(mapApiError(e));
       setBusy(false);
     }
   }
@@ -128,7 +134,7 @@ export function AdPreviewModal({
               <p className="text-xs text-white/85 mt-0.5">
                 {isHousing
                   ? [payload.city, payload.price_per_bed_nis ? `₪${payload.price_per_bed_nis}/מיטה` : null].filter(Boolean).join(' · ')
-                  : [payload.origin_country && `מוצא: ${labelFor(originMap, payload.origin_country)}`, payload.region].filter(Boolean).join(' · ')}
+                  : [payload.origin_country && `מוצא: ${labelFor(originMap, payload.origin_country)}`, payload.region && labelFor(regionMap, payload.region)].filter(Boolean).join(' · ')}
               </p>
             </div>
           </div>

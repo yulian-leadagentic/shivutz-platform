@@ -276,7 +276,7 @@ export function mapApiError(err: unknown): string {
 
   // 3) Fall back to the message even if it's not Hebrew — better than a
   //    raw code, and the caller can still catch English leaks in QA.
-  if (payload.message) return payload.message;
+  if (payload.message && !/^[a-z][a-z0-9_]*$/.test(payload.message)) return payload.message;
 
   // 4) Absolute last resort
   return DEFAULT_MESSAGE;

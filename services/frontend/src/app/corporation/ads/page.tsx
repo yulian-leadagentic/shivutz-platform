@@ -10,6 +10,8 @@ import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Loader2, Plus, Pencil, Trash2, Zap, Eye, ArrowLeft, CreditCard, CheckCircle2, X } from 'lucide-react';
 import { adApi, type AdRow } from '@/lib/api/ads';
+import { ApiError } from '@/lib/api/client';
+import { mapApiError } from '@/lib/api/errors';
 import { PromotedBadge } from '@/components/ads/PromotedBadge';
 
 // verify(CP3) — boost is FREE during launch (intentional product
@@ -80,11 +82,13 @@ function CorporationAdsPageInner() {
     setError('');
     try { await adApi.boost(id); await refresh(); }
     catch (e) {
-      const msg = (e as Error).message ?? '';
-      if (/can_boost|tier_active_ad_limit|subscription_required|402/i.test(msg)) {
+      const code = e instanceof ApiError ? (e.cause?.error || e.cause?.code) : undefined;
+      if (code === 'tier_boost_not_allowed') {
         setUpgradePrompt('קידום מודעות זמין רק במסלול מתקדם ומעלה. שדרג עכשיו כדי לקדם את המודעה.');
+      } else if (code === 'subscription_required') {
+        setUpgradePrompt('המנוי שלך אינו פעיל. כדי לקדם מודעות יש לחדש את המנוי.');
       } else {
-        setError(msg || 'שגיאה בקידום');
+        setError(mapApiError(e));
       }
     }
     finally { setBusy(null); }

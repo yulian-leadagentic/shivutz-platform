@@ -24,7 +24,8 @@ def register_error_handlers(app: FastAPI) -> None:
         if isinstance(exc.detail, str):
             message, details = exc.detail, None
         elif isinstance(exc.detail, dict):
-            message = exc.detail.get("message") or exc.detail.get("detail") or "error"
+            code = exc.detail.get("code") or code
+            message = exc.detail.get("message") or exc.detail.get("detail") or code
             details = exc.detail
         else:
             message, details = str(exc.detail), None

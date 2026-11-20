@@ -13,6 +13,7 @@ import { Loader2, Save } from 'lucide-react';
 import { enumApi } from '@/lib/api/enums';
 import type { AdCreateInput } from '@/lib/api/ads';
 import { PhotoUploader } from './PhotoUploader';
+import { mapApiError } from '@/lib/api/errors';
 
 const AMENITIES = [
   { code: 'AC',              label: 'מזגן' },
@@ -139,7 +140,8 @@ export function HousingAdForm({
         } as Partial<AdCreateInput>),
       });
     } catch (e) {
-      setError((e as Error).message ?? 'שגיאה בשמירת המודעה');
+      setError(mapApiError(e));
+    } finally {
       setSub(false);
     }
   }
