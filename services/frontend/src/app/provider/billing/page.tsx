@@ -45,11 +45,13 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { PaymentCardBlock } from '@/components/billing/PaymentCardBlock';
 import { MarketplaceCharges } from '@/components/billing/MarketplaceCharges';
 import { WhatsAppEntityCard } from '@/components/shared/WhatsAppEntityCard';
-import { PLUS_VAT } from '@/lib/vat';
+import { PLUS_VAT, breakdownText, useVatPercent, withVat } from '@/lib/vat';
+import { marketplaceChargesApi } from '@/lib/api/payments';
 import { ApiError } from '@/lib/api/client';
 import { mapApiError } from '@/lib/api/errors';
 import type { PaymentMethod } from '@/types';
 import {
+  buyAfterCard,
   clearPendingPurchase,
   listingHref,
   readPendingPurchase,
@@ -98,8 +100,14 @@ function ProviderBillingInner() {
   const [pendingCancel, setPendingCancel]   = useState<Subscription | null>(null);
   const [busy, setBusy]         = useState(false);
   const [renewBusy, setRenewBusy] = useState<string | null>(null); // plan id being switched
-  const [autoBuying, setAutoBuying] = useState(false);
+  const [autoBuying, setAutoBuying] = useState<string | null>(null);
   const [buyFailed, setBuyFailed]   = useState<{ text: string; category: string } | null>(null);
+  // A past_due plan paid now (Fixes, 20.11): confirmed with its price,
+  // then charged; newCard goes through the card page first.
+  const [pendingPay, setPendingPay] = useState<{ plan: Subscription; newCard: boolean } | null>(null);
+  const [payDeclined, setPayDeclined] = useState<Subscription | null>(null);
+  const [chargesKey, setChargesKey] = useState(0);
+  const vatPercent = useVatPercent();
 
   // A plan confirmed before the card page waits only for the card. Any
   // other arrival here drops it, so an old purchase never runs later.
@@ -111,7 +119,13 @@ function ProviderBillingInner() {
     const p = readPendingPurchase();
     if (!c || !p) return;
     clearPendingPurchase();
-    setAutoBuying(true); setBuyFailed(null);
+    if (p.planId) {
+      setAutoBuying('הכרטיס נשמר. משלמים על המסלול…');
+      await payPlan(p.planId);
+      setAutoBuying(null);
+      return;
+    }
+    setAutoBuying('הכרטיס נשמר. מוסיפים את המסלול…'); setBuyFailed(null);
     try {
       const plan = await marketplaceSubscriptionsApi.purchase(p.tierId, true);
       savePlanAdded({
@@ -129,8 +143,54 @@ function ProviderBillingInner() {
         router.push(listingHref(p.category));
         return;
       }
-      setAutoBuying(false);
+      setAutoBuying(null);
       setBuyFailed({ text: mapApiError(e), category: p.category });
+    }
+  }
+
+  function tierOf(plan: Subscription): { price: number; days: number } {
+    const t = catalog.find((c) => c.code === plan.category_code)?.tiers.find((x) => x.id === plan.tier_id);
+    return { price: Number(t?.price_nis ?? plan.price_nis), days: Number(t?.duration_days ?? plan.duration_days) };
+  }
+
+  async function payPlan(planId: string) {
+    setNotice(null); setPayDeclined(null); setBusy(true);
+    try {
+      const out = await marketplaceChargesApi.payNow(planId);
+      setPendingPay(null);
+      const subs = await load();
+      setChargesKey((k) => k + 1);
+      const name = subs?.find((s) => s.id === planId)?.category_name_he;
+      setNotice({
+        kind: 'ok',
+        text: `המסלול${name ? ` בקטגוריית ${name}` : ''} חודש. הכרטיס חויב ב-${fmtPrice(out.amount_nis)}, כולל מע"מ.`,
+      });
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch (e) {
+      const plan = plans.find((s) => s.id === planId) ?? null;
+      setPendingPay(null);
+      const code = e instanceof ApiError
+        ? ((e.cause.details as { code?: string } | undefined)?.code || e.cause.error)
+        : undefined;
+      if (code === 'no_payment_method' && plan) {
+        await payAfterCard(plan);
+        return;
+      }
+      if (code === 'card_declined' && plan) setPayDeclined(plan);
+      setNotice({ kind: 'error', text: mapApiError(e) });
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function payAfterCard(plan: Subscription) {
+    setBusy(true);
+    try {
+      await buyAfterCard({ tierId: plan.tier_id, category: plan.category_code, planId: plan.id });
+    } catch (e) {
+      setBusy(false); setPendingPay(null);
+      setNotice({ kind: 'error', text: mapApiError(e) });
     }
   }
 
@@ -309,7 +369,12 @@ function ProviderBillingInner() {
           {notice.kind === 'error'
             ? <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
             : <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />}
-          <span>{notice.text}</span>
+          <span className="flex-1">{notice.text}</span>
+          {notice.kind === 'error' && payDeclined && (
+            <Button type="button" size="sm" className={TAP} disabled={busy} onClick={() => void payAfterCard(payDeclined)}>
+              החלפת כרטיס ותשלום
+            </Button>
+          )}
         </div>
       )}
 
@@ -340,6 +405,14 @@ function ProviderBillingInner() {
                     {' '}אם הכרטיס הוחלף, החיוב ייעשה בכרטיס החדש.
                     אם גם הניסיונות הבאים לא יצליחו, המסלול יסתיים והמודעות שבו יירדו מהפרסום.
                   </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Button type="button" className={TAP} disabled={busy} onClick={() => { setNotice(null); setPendingPay({ plan, newCard: false }); }}>
+                      תשלום עכשיו
+                    </Button>
+                    <Button type="button" variant="outline" className={TAP} disabled={busy} onClick={() => { setNotice(null); setPendingPay({ plan, newCard: true }); }}>
+                      החלפת כרטיס ותשלום
+                    </Button>
+                  </div>
                 </li>
               ))}
             </ul>
@@ -379,7 +452,7 @@ function ProviderBillingInner() {
           {autoBuying && (
             <p role="status" className="flex items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
               <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden="true" />
-              הכרטיס נשמר. מוסיפים את המסלול…
+              {autoBuying}
             </p>
           )}
           {buyFailed && (
@@ -395,7 +468,7 @@ function ProviderBillingInner() {
           )}
           <PaymentCardBlock onCardSaved={(c) => void onCardSaved(c)} />
 
-          <MarketplaceCharges />
+          <MarketplaceCharges key={chargesKey} />
 
           {ended.length > 0 && (
             <section aria-labelledby="ended-plans" className="space-y-2">
@@ -436,6 +509,29 @@ function ProviderBillingInner() {
         busy={busy}
         onConfirm={confirmUpgrade}
         onCancel={() => setPendingUpgrade(null)}
+      />
+      <ConfirmDialog
+        open={!!pendingPay}
+        title="תשלום על המסלול"
+        message={pendingPay ? (() => {
+          const { price, days } = tierOf(pendingPay.plan);
+          return [
+            `חידוש המסלול בקטגוריית ${pendingPay.plan.category_name_he ?? ''}:`,
+            vatPercent != null ? `${breakdownText(withVat(price, vatPercent))}.` : `${fmtPrice(price)} ${PLUS_VAT}.`,
+            `המסלול יפעל ${days} ימים נוספים מהיום.`,
+            pendingPay.newCard ? 'בשלב הבא מזינים את הכרטיס החדש בעמוד המאובטח של קארדקום, והחיוב מתבצע מיד כשהכרטיס מאושר.' : '',
+          ].filter(Boolean).join(' ');
+        })() : ''}
+        confirmLabel={pendingPay?.newCard ? 'אישור והמשך להזנת כרטיס' : 'אישור וחיוב'}
+        cancelLabel="חזרה"
+        variant="primary"
+        busy={busy}
+        onConfirm={() => {
+          if (!pendingPay) return;
+          if (pendingPay.newCard) void payAfterCard(pendingPay.plan);
+          else void payPlan(pendingPay.plan.id);
+        }}
+        onCancel={() => { if (!busy) setPendingPay(null); }}
       />
       <ConfirmDialog
         open={!!pendingCancel}

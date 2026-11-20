@@ -8,6 +8,8 @@ const ADDED   = 'provider_plan_added';
 export interface PendingPurchase {
   tierId: string;
   category: string;
+  /** Set when the card is for paying this past_due plan, not buying. */
+  planId?: string;
 }
 
 export interface PlanAdded {
@@ -36,9 +38,10 @@ export function readPendingPurchase(): PendingPurchase | null {
   try {
     const raw = sessionStorage.getItem(PENDING);
     const o = raw ? JSON.parse(raw) as Partial<PendingPurchase> : null;
-    return o && typeof o.tierId === 'string' && typeof o.category === 'string'
-      ? { tierId: o.tierId, category: o.category }
-      : null;
+    if (!o || typeof o.tierId !== 'string' || typeof o.category !== 'string') return null;
+    return typeof o.planId === 'string'
+      ? { tierId: o.tierId, category: o.category, planId: o.planId }
+      : { tierId: o.tierId, category: o.category };
   } catch {
     return null;
   }

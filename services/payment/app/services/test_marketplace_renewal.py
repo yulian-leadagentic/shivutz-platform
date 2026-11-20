@@ -228,3 +228,105 @@ class BatchTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PayNowTest(unittest.TestCase):
+    """Fixes, 20.11 · the owner pays a past_due plan now."""
+
+    def pay(self, plan, charge_result=OK, card=CARD, tier=TIER, other_plan=False, free_launch=False):
+        self.steps, self.events, self.settled, self.renewed, self.failed = [], [], [], [], []
+
+        async def charge(**kw):
+            self.steps.append("cardcom")
+            self.sent = kw
+            if isinstance(charge_result, Exception):
+                raise charge_result
+            return charge_result
+
+        def record(**kw):
+            self.events.append(kw)
+            return True, f"event-{len(self.events)}"
+
+        def opened(p, t, money):
+            self.steps.append("charge_row")
+            return {"id": "charge-9", "kind": "renewal", "duration_days": int(t["duration_days"]),
+                    "amount_nis": money["total"], "net_amount_nis": money["net"]}
+
+        patches = [
+            mock.patch.object(mr, "_one", lambda sql, params: plan),
+            mock.patch.object(mr, "_latch", lambda pid, when: self.steps.append("latch")),
+            mock.patch.object(mr, "_other_running_plan", lambda p: other_plan),
+            mock.patch.object(mr, "_live_tier", lambda tier_id: tier),
+            mock.patch.object(mr, "_open_charge", opened),
+            mock.patch.object(mr, "_fail", lambda *a: self.failed.append(a)),
+            mock.patch.object(mr, "_renewed", lambda p, c, card_id, event_id, result: self.renewed.append((c, card_id, event_id))),
+            mock.patch.object(mr, "charge_token", mock.AsyncMock(side_effect=charge)),
+            mock.patch.object(mr, "record_event", record),
+            mock.patch.object(mr, "decrypt_token", lambda t: "tok(" + t + ")"),
+            mock.patch.object(mr.mc, "default_card", lambda etype, eid: card),
+            mock.patch.object(mr.mc, "invoice_data", lambda c: {"description": "x"}),
+            mock.patch.object(mr.mc, "_settle", lambda cid, status, reason=None, event_id=None: self.settled.append((cid, status))),
+            mock.patch.object(mr.cardcom, "_free_launch_active", lambda: free_launch),
+            mock.patch.object(mr.vat, "percent_on", lambda day=None, cur=None: Decimal("18")),
+        ]
+        for p in patches:
+            p.start()
+            self.addCleanup(p.stop)
+        return asyncio.run(mr.pay_now("plan-1", "service_provider", "prov-1", NOW))
+
+    def refused(self, **kw):
+        with self.assertRaises(mr.mc.ChargeRefused) as ctx:
+            self.pay(**kw)
+        return ctx.exception
+
+    def test_a_past_due_plan_is_charged_now_and_runs_another_period(self):
+        out = self.pay(a_plan(status="past_due", rebill_attempts=1))
+        self.assertEqual((self.sent["base_amount"], self.sent["vat_amount"]), (250.0, 45.0))
+        self.assertEqual(self.steps, ["latch", "charge_row", "cardcom"])
+        self.assertEqual(len(self.renewed), 1)
+        self.assertEqual((out["status"], out["amount_nis"], out["invoice_number"]), ("charged", Decimal("295.00"), "3106"))
+
+    def test_only_a_past_due_paid_plan_can_be_paid_now(self):
+        for plan in (None, a_plan(status="active"), a_plan(status="past_due", payment_transaction_id=None)):
+            with self.subTest(plan=plan and plan["status"]):
+                err = self.refused(plan=plan)
+                self.assertEqual((err.status, err.detail["code"]), (409, "plan_not_past_due"))
+                self.assertNotIn("cardcom", self.steps)
+
+    def test_a_second_press_right_after_an_attempt_is_refused(self):
+        err = self.refused(plan=a_plan(status="past_due", last_renewal_attempt_at=datetime(2027, 2, 1, 8, 59, 30)))
+        self.assertEqual(err.detail["code"], "payment_in_progress")
+        self.assertNotIn("cardcom", self.steps)
+
+    def test_an_attempt_a_while_ago_does_not_block_paying(self):
+        self.pay(a_plan(status="past_due", last_renewal_attempt_at=datetime(2027, 2, 1, 8, 0, 0)))
+        self.assertEqual(len(self.renewed), 1)
+
+    def test_no_card_is_refused_before_anything_is_written(self):
+        err = self.refused(plan=a_plan(status="past_due"), card=None)
+        self.assertEqual((err.status, err.detail["code"]), (402, "no_payment_method"))
+        self.assertEqual(self.steps, [])
+
+    def test_a_declined_card_says_so_and_does_not_move_the_attempt_chain(self):
+        err = self.refused(plan=a_plan(status="past_due", rebill_attempts=2),
+                           charge_result=CardcomDeclinedError("declined", code="5", description="כרטיס חסום"))
+        self.assertEqual((err.status, err.detail["code"]), (402, "card_declined"))
+        self.assertIn("כרטיס חסום", err.detail["message"])
+        self.assertEqual(self.failed, [])
+        self.assertEqual(self.settled, [("charge-9", "declined")])
+        self.assertEqual(self.renewed, [])
+
+    def test_cardcom_unreachable_is_reported_and_nothing_renews(self):
+        err = self.refused(plan=a_plan(status="past_due"), charge_result=CardcomNetworkError("timeout"))
+        self.assertEqual((err.status, err.detail["code"]), (502, "payment_provider_unreachable"))
+        self.assertEqual((self.renewed, self.failed), ([], []))
+
+    def test_another_running_plan_in_the_category_is_not_renewed(self):
+        err = self.refused(plan=a_plan(status="past_due"), other_plan=True)
+        self.assertEqual(err.detail["code"], "already_subscribed_to_category")
+        self.assertNotIn("cardcom", self.steps)
+
+    def test_the_free_launch_switch_charges_nothing(self):
+        err = self.refused(plan=a_plan(status="past_due"), free_launch=True)
+        self.assertEqual(err.detail["code"], "payment_not_live")
+        self.assertNotIn("cardcom", self.steps)

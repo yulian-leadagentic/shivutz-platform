@@ -89,6 +89,17 @@ export interface MarketplaceCharge {
 export const marketplaceChargesApi = {
   /** The caller's own plan charges, newest first. */
   mine: () => apiFetch<MarketplaceCharge[]>('/payments/marketplace/charges/mine'),
+  /** A plan whose renewal failed (past_due), charged now instead of at
+   *  the next automatic attempt. */
+  payNow: (planId: string) =>
+    apiFetch<{
+      status: 'charged';
+      subscription_id: string;
+      amount_nis: number;
+      vat_amount_nis: number;
+      invoice_number: string | null;
+      invoice_url: string | null;
+    }>(`/payments/marketplace/plans/${encodeURIComponent(planId)}/pay-now`, { method: 'POST' }),
 };
 
 /** R37 4.1.5 · a plan charge as a platform admin sees it. */

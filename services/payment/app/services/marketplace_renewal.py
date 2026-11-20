@@ -340,3 +340,93 @@ async def renew_due_plans(now: datetime, *, interval_days: int, max_attempts: in
         _renewed(plan, charge, card["id"], event_id, result)
         counts["charged"] += 1
     return counts
+
+
+# Fixes, 20.11 · the owner of a past_due plan pays it now instead of
+# waiting days for the next attempt, typically right after replacing the
+# card. The charge is the batch's charge. A refusal here does not move
+# the attempt chain: the owner tried, nothing was decided by it.
+PAY_NOW_GAP_SECONDS = 120
+
+
+async def pay_now(plan_id: str, entity_type: str, entity_id: str, now: datetime) -> dict:
+    plan = _one(
+        f"""SELECT * FROM {mc.ORG_DB}.marketplace_subscriptions
+             WHERE id=%s AND advertiser_entity_type=%s AND advertiser_entity_id=%s""",
+        (plan_id, entity_type, entity_id),
+    )
+    if not plan or plan["status"] != "past_due" or not plan.get("payment_transaction_id"):
+        raise mc.ChargeRefused(409, "plan_not_past_due", "המסלול אינו ממתין לתשלום.")
+    last = plan.get("last_renewal_attempt_at")
+    if last and (now - last).total_seconds() < PAY_NOW_GAP_SECONDS:
+        raise mc.ChargeRefused(409, "payment_in_progress",
+                               "ניסיון חיוב למסלול הזה התבצע זה עתה. אפשר לנסות שוב בעוד שתי דקות.")
+    if _other_running_plan(plan):
+        raise mc.ChargeRefused(409, "already_subscribed_to_category",
+                               "יש לך מסלול פעיל אחר בקטגוריה הזו, ולכן המסלול הזה לא יחודש.")
+    tier = _live_tier(plan["tier_id"])
+    if tier is None:
+        raise mc.ChargeRefused(409, "tier_unavailable", "המסלול אינו נמכר כעת. פנו לתמיכה.")
+    try:
+        money = vat.for_price(tier["price_nis"])
+    except vat.VatPeriodMissing:
+        raise mc.ChargeRefused(503, "vat_period_missing", "שיעור המע\"מ אינו מוגדר. פנו לתמיכה.")
+    if cardcom._free_launch_active():
+        raise mc.ChargeRefused(503, "payment_not_live", "התשלום אינו זמין כרגע. פנו לתמיכה.")
+    card = mc.default_card(entity_type, entity_id)
+    if not card:
+        raise mc.ChargeRefused(402, "no_payment_method", "אין כרטיס אשראי שמור. יש להוסיף כרטיס כדי לשלם על המסלול.")
+
+    _latch(plan["id"], now)
+    audit = dict(entity_id=entity_id, entity_type=entity_type,
+                 kind="marketplace_renewal", **vat.event_fields(money))
+    charge = _open_charge(plan, tier, money)
+    try:
+        result = await charge_token(
+            provider_token  = decrypt_token(card["provider_token"]),
+            base_amount     = float(money["net"]),
+            vat_amount      = float(money["vat"]),
+            deal_id         = f"mp:{charge['id']}",
+            idempotency_key = charge["id"],
+            invoice_data    = mc.invoice_data(charge),
+            card_expiry     = expiry_mmyy(card),
+        )
+    except CardcomDeclinedError as exc:
+        said = (exc.description or "").strip()
+        _, event_id = record_event(**audit, outcome="declined", provider_transaction_id=None,
+                                   response_code=exc.code,
+                                   raw={"error": str(exc), "charge_id": charge["id"],
+                                        "subscription_id": plan["id"], "pay_now": True})
+        mc._settle(charge["id"], "declined", said or str(exc), event_id)
+        raise mc.ChargeRefused(
+            402, "card_declined",
+            (f"החיוב לא אושר: {said}. " if said else "החיוב לא אושר על ידי חברת האשראי. ")
+            + "אפשר להחליף כרטיס ולנסות שוב.",
+            reason=said or None, response_code=exc.code,
+        )
+    except CardcomNetworkError as exc:
+        _, event_id = record_event(**audit, outcome="error", provider_transaction_id=None,
+                                   raw={"error": str(exc), "charge_id": charge["id"],
+                                        "subscription_id": plan["id"], "pay_now": True})
+        mc._settle(charge["id"], "error", str(exc), event_id)
+        raise mc.ChargeRefused(502, "payment_provider_unreachable",
+                               "לא התקבלה תשובה מחברת הסליקה. לפני ניסיון נוסף כדאי לרענן את הדף ולבדוק אם המסלול חודש.")
+
+    _, event_id = record_event(
+        **audit, outcome="ok",
+        provider_transaction_id=result.get("provider_transaction_id"),
+        response_code=result.get("response_code"),
+        invoice_number=result.get("invoice_number") or None,
+        invoice_url=result.get("invoice_url"),
+        raw={**(result.get("raw") or {}), "charge_id": charge["id"],
+             "subscription_id": plan["id"], "pay_now": True},
+    )
+    _renewed(plan, charge, card["id"], event_id, result)
+    return {
+        "status":          "charged",
+        "subscription_id": plan["id"],
+        "amount_nis":      money["total"],
+        "vat_amount_nis":  money["vat"],
+        "invoice_number":  result.get("invoice_number") or None,
+        "invoice_url":     result.get("invoice_url"),
+    }

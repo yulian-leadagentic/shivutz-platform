@@ -4,6 +4,8 @@
         user-org approved and wrote down, for the entity that is asking
   GET  /payments/marketplace/charges/mine       the caller's own charges
         and their invoices
+  POST /payments/marketplace/plans/{id}/pay-now  the caller's own plan
+        whose renewal failed, charged now instead of at the next attempt
 
 Neither takes an amount, a tier or an entity from the request: the
 entity is the gateway's, the rest is on the charge row.
@@ -13,11 +15,12 @@ R37 4.1.5 · and for a platform admin only:
   GET  /payments/marketplace/charges              every plan charge
   POST /payments/marketplace/charges/{id}/refund  return one in full
 """
+from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Header, HTTPException
 
-from app.services import marketplace_charges, marketplace_refunds
+from app.services import marketplace_charges, marketplace_refunds, marketplace_renewal
 from app.services.admin_check import is_admin
 
 router = APIRouter()
@@ -47,6 +50,20 @@ async def pay_charge(
         raise HTTPException(status_code=404, detail="charge_not_found")
     try:
         return await marketplace_charges.pay(charge)
+    except marketplace_charges.ChargeRefused as refused:
+        raise HTTPException(status_code=refused.status, detail=refused.detail)
+
+
+@router.post("/plans/{plan_id}/pay-now")
+async def pay_plan_now(
+    plan_id: str,
+    x_entity_id:   Optional[str] = Header(default=None),
+    x_org_id:      Optional[str] = Header(default=None),
+    x_entity_type: Optional[str] = Header(default=None),
+):
+    entity_type, entity_id = _caller(x_entity_id, x_org_id, x_entity_type)
+    try:
+        return await marketplace_renewal.pay_now(plan_id, entity_type, entity_id, datetime.utcnow())
     except marketplace_charges.ChargeRefused as refused:
         raise HTTPException(status_code=refused.status, detail=refused.detail)
 
