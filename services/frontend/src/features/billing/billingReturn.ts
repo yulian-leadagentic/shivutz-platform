@@ -40,11 +40,11 @@ export function clearBillingReturn(): void {
   } catch {}
 }
 
-export function returnLabel(to: string): string {
+export function returnLine(to: string): string {
   const path = to.split('?')[0];
-  if (path.startsWith('/corporation/ads/new')) return 'לפרסום המודעה';
-  if (path === '/corporation/ads') return 'למודעות שלך';
-  if (to.includes('reveal=')) return 'לחשיפת פרטי הקשר';
-  if (path.endsWith('/users')) return 'לניהול המשתמשים';
-  return 'לדף שממנו הגעת';
+  if (path.startsWith('/corporation/ads/new')) return 'בסיום התשלום המודעה שלך תפורסם מיד.';
+  if (to.includes('reveal=')) return 'בסיום התשלום פרטי הקשר שביקשת ייחשפו מיד.';
+  if (path === '/corporation/ads') return 'בסיום התשלום נחזיר אותך למודעות שלך.';
+  if (path.endsWith('/users')) return 'בסיום התשלום נחזיר אותך לניהול המשתמשים.';
+  return 'בסיום התשלום נחזיר אותך לדף שממנו הגעת.';
 }

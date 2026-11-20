@@ -13,6 +13,7 @@ import { Suspense, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Loader2, Check, Sparkles, Users as UsersIcon, Trash2, Plus, ChevronRight, RefreshCw, Crown, ArrowLeft, ArrowRight } from 'lucide-react';
 import {
+  paymentApi,
   subscriptionApi,
   type SubscriptionRow,
   type SubscriptionTier,
@@ -27,7 +28,7 @@ import { useRouter } from 'next/navigation';
 import { WhatsAppEntityCard } from '@/components/shared/WhatsAppEntityCard';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { PaymentCardBlock } from '@/components/billing/PaymentCardBlock';
-import { clearBillingReturn, readBillingReturn, returnLabel, writeBillingReturn } from '@/features/billing/billingReturn';
+import { clearBillingReturn, readBillingReturn, returnLine, writeBillingReturn } from '@/features/billing/billingReturn';
 import { sanitizeReturnTo } from '@/features/prospect/returnTo';
 import type { PaymentMethod } from '@/types';
 
@@ -124,10 +125,10 @@ export default function BillingPage() {
   const [cancelBusy, setCancelBusy]   = useState(false);
   const [cancelDone, setCancelDone]   = useState(false);
   const [card, setCard]         = useState<PaymentMethod | null | undefined>(undefined);
-  const [needCard, setNeedCard] = useState(false);
+  const [cardRedirect, setCardRedirect] = useState(false);
+  const [autoStarting, setAutoStarting] = useState(false);
   const cardBox                 = useRef<HTMLDivElement>(null);
   const [returnTo, setReturnTo]     = useState<string | null>(null);
-  const [resumeTier, setResumeTier] = useState<SubscriptionTier | null>(null);
   const [activated, setActivated]   = useState(false);
   const fromCardPage                = useRef(false);
 
@@ -145,19 +146,30 @@ export default function BillingPage() {
     if (c && fromCardPage.current) {
       fromCardPage.current = false;
       const { tier } = readBillingReturn();
-      if (tier) setResumeTier(tier);
+      if (tier) {
+        setAutoStarting(true);
+        void upgrade(tier);
+      }
     }
   }
 
-  function askForCard(tier?: SubscriptionTier) {
-    if (tier) writeBillingReturn({ tier });
-    setNeedCard(true);
-    cardBox.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  async function goToCardPage(tier: SubscriptionTier) {
+    writeBillingReturn({ tier });
+    setError('');
+    setCardRedirect(true);
+    try {
+      const { url } = await paymentApi.setupCard();
+      window.location.assign(url);
+    } catch (e) {
+      setCardRedirect(false);
+      setError(mapApiError(e));
+      cardBox.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }
   }
 
   function choose(code: SubscriptionTier) {
     setError('');
-    if (card === null) { askForCard(code); return; }
+    if (card === null) { void goToCardPage(code); return; }
     void upgrade(code);
   }
 
@@ -261,7 +273,6 @@ export default function BillingPage() {
       if (result.invoice_url) setLastInvoiceUrl(result.invoice_url);
       const { to } = readBillingReturn();
       clearBillingReturn();
-      setResumeTier(null);
       if (to) {
         router.push(to);
         return;
@@ -276,10 +287,11 @@ export default function BillingPage() {
       // banner.
       const details = e instanceof ApiError ? (e.cause?.details as { code?: string } | undefined) : undefined;
       const code = details?.code || (e instanceof ApiError ? (e.cause?.error || e.cause?.code) : undefined);
-      if (code === 'no_payment_method') askForCard(tier);
+      if (code === 'no_payment_method') void goToCardPage(tier);
       else setError(mapApiError(e));
     } finally {
       setBusy(null);
+      setAutoStarting(false);
     }
   }
 
@@ -348,7 +360,7 @@ export default function BillingPage() {
 
       {returnTo && (
         <p className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900">
-          אחרי הפעלת המנוי נחזיר אותך {returnLabel(returnTo)}.
+          {returnLine(returnTo)}
         </p>
       )}
       {activated && (
@@ -649,29 +661,16 @@ export default function BillingPage() {
       )}
 
       <div ref={cardBox} className="space-y-2">
-        {needCard && card === null && (
-          <p role="alert" className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-            כדי להפעיל מנוי יש להוסיף כרטיס אשראי. הכרטיס מוזן בעמוד המאובטח של קארדקום.
+        {cardRedirect && (
+          <p role="status" className="flex items-center gap-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900">
+            <Loader2 className="w-4 h-4 animate-spin shrink-0" aria-hidden /> מעבירים אותך לעמוד המאובטח של קארדקום להזנת הכרטיס…
           </p>
         )}
-        {resumeTier && card && (() => {
-          const tier  = TIERS.find(x => x.code === resumeTier);
-          const price = plans.find(x => x.tier === resumeTier)?.monthly_price_nis;
-          if (!tier || price == null) return null;
-          return (
-            <div role="status" className="flex flex-wrap items-center gap-3 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2">
-              <p className="flex-1 text-sm text-emerald-900">הכרטיס נשמר. נשאר רק להפעיל את המנוי.</p>
-              <button
-                type="button"
-                disabled={busyTier !== null}
-                onClick={() => choose(tier.code)}
-                className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-brand-800 px-4 text-sm font-semibold text-white hover:bg-brand-900 disabled:opacity-60"
-              >
-                <Crown className="w-4 h-4" aria-hidden /> הפעל מנוי {tier.title}
-              </button>
-            </div>
-          );
-        })()}
+        {autoStarting && (
+          <p role="status" className="flex items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+            <Loader2 className="w-4 h-4 animate-spin shrink-0" aria-hidden /> הכרטיס נשמר. מפעילים את המנוי…
+          </p>
+        )}
         <Suspense fallback={null}>
           <PaymentCardBlock onCard={onCard} />
         </Suspense>
