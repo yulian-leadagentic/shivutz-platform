@@ -12,6 +12,7 @@ import { useMemo, useState } from 'react';
 import { Loader2, X, CheckCircle2, AlertCircle } from 'lucide-react';
 import { subscriptionApi } from '@/lib/api/payments';
 import { Button } from '@/components/ui/button';
+import { ApiError } from '@/lib/api/client';
 import { mapApiError } from '@/lib/api/errors';
 import { PLUS_VAT, fmtNis, useVatPercent, withVat } from '@/lib/vat';
 
@@ -35,6 +36,9 @@ interface Props {
    *  its seat state / retry the invite. `duplicate` is true when the
    *  server detected an idempotency-key replay and did NOT charge. */
   onSuccess: (info: { count: number; extra_seats_paid: number; duplicate: boolean }) => void;
+  /** No card on file, or the card was declined: the caller sends the
+   *  user to the card page and finishes the purchase on return. */
+  onNeedCard?: (count: number) => Promise<void>;
 }
 
 // Simple uuid without pulling a dep. Not crypto-grade — only used as
@@ -44,10 +48,12 @@ function uuidish(): string {
   return `sk-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-export function SeatUpgradeModal({ detail, onClose, onSuccess }: Props) {
+export function SeatUpgradeModal({ detail, onClose, onSuccess, onNeedCard }: Props) {
   const [count,   setCount]   = useState(1);
   const [busy,    setBusy]    = useState(false);
   const [error,   setError]   = useState<string | null>(null);
+  const [needCard, setNeedCard] = useState<'no_payment_method' | 'card_declined' | null>(null);
+  const [redirecting, setRedirecting] = useState(false);
   const [success, setSuccess] = useState<{ count: number; duplicate: boolean } | null>(null);
 
   // Fresh key per modal open so the server dedup fires only on a
@@ -63,6 +69,7 @@ export function SeatUpgradeModal({ detail, onClose, onSuccess }: Props) {
     if (busy) return;
     setBusy(true);
     setError(null);
+    setNeedCard(null);
     try {
       const res = await subscriptionApi.purchaseSeats(count, idempotencyKey);
       setSuccess({ count: res.count, duplicate: res.duplicate });
@@ -72,9 +79,23 @@ export function SeatUpgradeModal({ detail, onClose, onSuccess }: Props) {
         duplicate:        res.duplicate,
       });
     } catch (err) {
+      const details = err instanceof ApiError ? (err.cause?.details as { code?: string } | undefined) : undefined;
+      const code = details?.code || (err instanceof ApiError ? (err.cause?.error || err.cause?.code) : undefined);
+      if (onNeedCard && (code === 'no_payment_method' || code === 'card_declined')) setNeedCard(code);
       setError(mapApiError(err));
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function toCardPage() {
+    if (!onNeedCard) return;
+    setRedirecting(true);
+    try {
+      await onNeedCard(count);
+    } catch (err) {
+      setRedirecting(false);
+      setError(mapApiError(err));
     }
   }
 
@@ -168,14 +189,22 @@ export function SeatUpgradeModal({ detail, onClose, onSuccess }: Props) {
               </div>
 
               <p className="text-xs text-slate-500 leading-relaxed">
-                המושב יהיה זמין להזמנה מיידית. החיוב עצמו מתחיל בחידוש
-                הבא של המנוי: לא מתחלק לפי ימים.
+                המושב זמין להזמנה מיד. החיוב מתבצע עכשיו, במחיר מלא לחודש
+                (לא לפי ימים), והמושב מתחדש יחד עם המנוי.
               </p>
 
               {error && (
-                <div className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-md px-3 py-2 flex items-start gap-2">
-                  <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
-                  <span>{error}</span>
+                <div role="alert" className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-md px-3 py-2 space-y-2">
+                  <p className="flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" aria-hidden />
+                    <span>{error}</span>
+                  </p>
+                  {needCard && (
+                    <Button type="button" size="sm" onClick={() => void toCardPage()} disabled={redirecting}>
+                      {redirecting && <Loader2 className="w-4 h-4 animate-spin" aria-hidden />}
+                      {needCard === 'card_declined' ? 'החלפת כרטיס והמשך' : 'הזנת כרטיס והמשך'}
+                    </Button>
+                  )}
                 </div>
               )}
 
@@ -183,7 +212,7 @@ export function SeatUpgradeModal({ detail, onClose, onSuccess }: Props) {
                 <Button
                   type="button"
                   onClick={submit}
-                  disabled={busy}
+                  disabled={busy || redirecting}
                   className="flex-1"
                 >
                   {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : `אשר רכישה · ${fmtNis(money ? money.total : total)}${money ? '' : ` ${PLUS_VAT}`}`}

@@ -22,10 +22,14 @@
 // PaymentCardBlock: the card on file, and adding or replacing it on
 // Cardcom's page. Under it, the charges made for the plans and their
 // invoices (R37 4.1.2).
+//
+// The card page comes back here. When the provider went there from
+// "הוספת קטגוריה" with a plan confirmed, the plan is bought as soon as
+// the card is saved and the provider lands on the listing form.
 
 import { Suspense, useCallback, useEffect, useId, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { AlertCircle, ArrowUpCircle, CheckCircle2, Layers, Loader2, Plus } from 'lucide-react';
 
 import {
@@ -42,6 +46,15 @@ import { PaymentCardBlock } from '@/components/billing/PaymentCardBlock';
 import { MarketplaceCharges } from '@/components/billing/MarketplaceCharges';
 import { WhatsAppEntityCard } from '@/components/shared/WhatsAppEntityCard';
 import { PLUS_VAT } from '@/lib/vat';
+import { ApiError } from '@/lib/api/client';
+import { mapApiError } from '@/lib/api/errors';
+import type { PaymentMethod } from '@/types';
+import {
+  clearPendingPurchase,
+  listingHref,
+  readPendingPurchase,
+  savePlanAdded,
+} from '@/features/billing/providerPurchase';
 
 function fmtPrice(nis: number): string {
   return `₪${Number(nis).toLocaleString('he-IL', { maximumFractionDigits: 2 })}`;
@@ -69,6 +82,7 @@ type Notice = { kind: 'ok' | 'error'; text: string };
 
 function ProviderBillingInner() {
   const preset = useSearchParams()?.get('category') || null;
+  const router = useRouter();
 
   const [plans, setPlans]     = useState<Subscription[]>([]);
   const [catalog, setCatalog] = useState<CatalogCategory[]>([]);
@@ -84,6 +98,41 @@ function ProviderBillingInner() {
   const [pendingCancel, setPendingCancel]   = useState<Subscription | null>(null);
   const [busy, setBusy]         = useState(false);
   const [renewBusy, setRenewBusy] = useState<string | null>(null); // plan id being switched
+  const [autoBuying, setAutoBuying] = useState(false);
+  const [buyFailed, setBuyFailed]   = useState<{ text: string; category: string } | null>(null);
+
+  // A plan confirmed before the card page waits only for the card. Any
+  // other arrival here drops it, so an old purchase never runs later.
+  useEffect(() => {
+    if (!new URLSearchParams(window.location.search).get('card_setup')) clearPendingPurchase();
+  }, []);
+
+  async function onCardSaved(c: PaymentMethod | null) {
+    const p = readPendingPurchase();
+    if (!c || !p) return;
+    clearPendingPurchase();
+    setAutoBuying(true); setBuyFailed(null);
+    try {
+      const plan = await marketplaceSubscriptionsApi.purchase(p.tierId, true);
+      savePlanAdded({
+        category:      p.category,
+        nis:           plan.charged_nis ?? null,
+        invoiceUrl:    plan.invoice_url ?? null,
+        invoiceNumber: plan.invoice_number ?? null,
+      });
+      router.push(listingHref(p.category));
+    } catch (e) {
+      const code = e instanceof ApiError
+        ? ((e.cause.details as { code?: string } | undefined)?.code || e.cause.error)
+        : undefined;
+      if (code === 'already_subscribed_to_category') {
+        router.push(listingHref(p.category));
+        return;
+      }
+      setAutoBuying(false);
+      setBuyFailed({ text: mapApiError(e), category: p.category });
+    }
+  }
 
   const load = useCallback(async (first = false) => {
     if (first) setLoading(true);
@@ -327,7 +376,24 @@ function ProviderBillingInner() {
             </ul>
           )}
 
-          <PaymentCardBlock />
+          {autoBuying && (
+            <p role="status" className="flex items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+              <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden="true" />
+              הכרטיס נשמר. מוסיפים את המסלול…
+            </p>
+          )}
+          {buyFailed && (
+            <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+              <span className="flex items-start gap-2">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                {buyFailed.text}
+              </span>
+              <Button asChild size="sm" className={TAP}>
+                <Link href={`/provider/marketplace/subscribe?category=${encodeURIComponent(buyFailed.category)}`}>חזרה להוספת המסלול</Link>
+              </Button>
+            </div>
+          )}
+          <PaymentCardBlock onCardSaved={(c) => void onCardSaved(c)} />
 
           <MarketplaceCharges />
 

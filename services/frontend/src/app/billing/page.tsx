@@ -31,6 +31,8 @@ import { PaymentCardBlock } from '@/components/billing/PaymentCardBlock';
 import { clearBillingReturn, readBillingReturn, returnLine, writeBillingReturn } from '@/features/billing/billingReturn';
 import { sanitizeReturnTo } from '@/features/prospect/returnTo';
 import type { PaymentMethod } from '@/types';
+import { SeatUpgradeModal, type SeatUpgradeDetail } from '@/features/subscription/SeatUpgradeModal';
+import { buySeatsAfterCard } from '@/features/subscription/seatResume';
 import { PLUS_VAT, breakdownText, useVatPercent, withVat } from '@/lib/vat';
 
 function fmtDate(iso: string | null): string {
@@ -127,34 +129,47 @@ export default function BillingPage() {
   const [cancelDone, setCancelDone]   = useState(false);
   // Fixes ג item 6 · a plan is charged at its price plus VAT, so the
   // price, the VAT and the total are shown and confirmed first.
-  const [pendingTier, setPendingTier] = useState<{ code: SubscriptionTier; title: string; price: number } | null>(null);
+  const [pendingTier, setPendingTier] = useState<{ code: SubscriptionTier; title: string; price: number; newCard: boolean } | null>(null);
   const vatPercent = useVatPercent();
   const [card, setCard]         = useState<PaymentMethod | null | undefined>(undefined);
   const [cardRedirect, setCardRedirect] = useState(false);
   const [autoStarting, setAutoStarting] = useState(false);
   const cardBox                 = useRef<HTMLDivElement>(null);
+  const errorBox                = useRef<HTMLDivElement>(null);
   const [returnTo, setReturnTo]     = useState<string | null>(null);
+  const [cardOnly, setCardOnly]     = useState(false);
   const [activated, setActivated]   = useState(false);
-  const fromCardPage                = useRef(false);
+  const [declined, setDeclined]     = useState<SubscriptionTier | null>(null);
+  const [seatUpgrade, setSeatUpgrade] = useState<{ detail: SeatUpgradeDetail; phone: string } | null>(null);
 
   useEffect(() => {
     const q = new URLSearchParams(window.location.search);
     const asked = sanitizeReturnTo(q.get('returnTo'));
-    if (asked) writeBillingReturn({ to: asked, tier: null });
-    else if (q.get('card_setup')) fromCardPage.current = true;
-    else clearBillingReturn();
-    setReturnTo(readBillingReturn().to);
+    if (asked) writeBillingReturn({ to: asked, tier: null, cardOnly: false });
+    else if (!q.get('card_setup')) clearBillingReturn();
+    const r = readBillingReturn();
+    setReturnTo(r.to);
+    setCardOnly(r.cardOnly);
   }, []);
 
-  function onCard(c: PaymentMethod | null) {
-    setCard(c);
-    if (c && fromCardPage.current) {
-      fromCardPage.current = false;
-      const { tier } = readBillingReturn();
-      if (tier) {
-        setAutoStarting(true);
-        void upgrade(tier);
-      }
+  // An answer to a button near the top shows further down; on a phone
+  // it would be off screen.
+  useEffect(() => {
+    if (error) errorBox.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, [error]);
+
+  // Back from the card page with the card saved: the flow that sent the
+  // user there goes on by itself. A plan chosen before is activated; a
+  // flow that needed only a card is returned to.
+  function onCardSaved(c: PaymentMethod | null) {
+    if (!c) return;
+    const r = readBillingReturn();
+    if (r.tier) {
+      setAutoStarting(true);
+      void upgrade(r.tier);
+    } else if (r.cardOnly && r.to) {
+      clearBillingReturn();
+      router.push(r.to);
     }
   }
 
@@ -172,9 +187,10 @@ export default function BillingPage() {
     }
   }
 
-  function choose(code: SubscriptionTier, title: string, price: number) {
+  function choose(code: SubscriptionTier, title: string, price: number, newCard = false) {
     setError('');
-    setPendingTier({ code, title, price });
+    setDeclined(null);
+    setPendingTier({ code, title, price, newCard });
   }
 
   // Team-members merge (contractor-only). Corp still has /corporation/users.
@@ -182,8 +198,10 @@ export default function BillingPage() {
   const [newPhone, setNewPhone] = useState('');
   const [busyMem, setBusyMem]   = useState<string | null>(null);
 
-  async function refresh() {
-    setLoading(true);
+  // quiet: after a change made on this page. The page stays up (the
+  // card block with it) and only its numbers are reloaded.
+  async function refresh(quiet = false) {
+    if (!quiet) setLoading(true);
     setError('');
     setNoSub(false);
     try {
@@ -221,13 +239,13 @@ export default function BillingPage() {
 
   useEffect(() => { refresh(); }, [isContractor, entityId]);
 
-  async function addMember() {
+  async function addMember(phoneArg?: string) {
     if (!entityId || !isContractor) return;
     // U8 §4a — validate the raw text then send the NORMALIZED
     // form. `phone.trim()` used to ship "0525267879גגג" straight to
     // the server. `check.normalized` is always the canonical form
     // (0XXXXXXXXX or +972XXXXXXXXX).
-    const check = checkIsraeliPhone(newPhone);
+    const check = checkIsraeliPhone(phoneArg ?? newPhone);
     if (!check.valid || !check.normalized) {
       setError(check.message ?? 'מספר טלפון לא תקין');
       return;
@@ -245,7 +263,13 @@ export default function BillingPage() {
       // otherwise a mapApiError copy tweak silently breaks the
       // specialised upgrade nudge. mapApiError is still the default.
       const code = e instanceof ApiError ? (e.cause?.error || e.cause?.code) : undefined;
-      if (code === 'seat_limit') {
+      const c = e instanceof ApiError ? e.cause as { tier?: string; used?: number; included?: number; price?: number; seats?: SeatUpgradeDetail['seats'] } : {};
+      if (code === 'seat_upgrade_required' && typeof c.price === 'number' && typeof c.included === 'number' && typeof c.used === 'number') {
+        setSeatUpgrade({
+          detail: { tier: c.tier || 'basic', used: c.used, included: c.included, price: c.price, seats: c.seats },
+          phone:  check.normalized,
+        });
+      } else if (code === 'seat_limit') {
         setError('הגעת לתקרת המשתמשים במסלול הנוכחי, שדרג כדי להוסיף עוד.');
       } else {
         setError(mapApiError(e));
@@ -269,6 +293,7 @@ export default function BillingPage() {
     setPendingTier(null);
     setBusy(tier);
     setError('');
+    setDeclined(null);
     setLastInvoiceUrl(null);
     try {
       const result = await subscriptionApi.start(tier);
@@ -283,7 +308,7 @@ export default function BillingPage() {
         return;
       }
       setActivated(true);
-      await refresh();
+      await refresh(true);
     } catch (e) {
       // R3 — QA-3 follow-up. Sibling calls (`refresh`, `addMember`,
       // `removeMember`) already go through mapApiError, so an upgrade
@@ -292,8 +317,15 @@ export default function BillingPage() {
       // banner.
       const details = e instanceof ApiError ? (e.cause?.details as { code?: string } | undefined) : undefined;
       const code = details?.code || (e instanceof ApiError ? (e.cause?.error || e.cause?.code) : undefined);
-      if (code === 'no_payment_method') void goToCardPage(tier);
-      else setError(mapApiError(e));
+      if (code === 'no_payment_method') {
+        void goToCardPage(tier);
+      } else {
+        // A declined card keeps the plan chosen: replacing the card
+        // takes the user back here and the plan is activated on return.
+        if (code === 'card_declined') setDeclined(tier);
+        else writeBillingReturn({ tier: null });
+        setError(mapApiError(e));
+      }
     } finally {
       setBusy(null);
       setAutoStarting(false);
@@ -307,7 +339,7 @@ export default function BillingPage() {
       await subscriptionApi.cancel();
       setCancelOpen(false);
       setCancelDone(true);
-      await refresh();
+      await refresh(true);
     } catch (e) {
       setCancelOpen(false);
       setError(mapApiError(e));
@@ -365,7 +397,7 @@ export default function BillingPage() {
 
       {returnTo && (
         <p className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900">
-          {returnLine(returnTo)}
+          {returnLine(returnTo, cardOnly)}
         </p>
       )}
       {activated && (
@@ -406,7 +438,9 @@ export default function BillingPage() {
         // works"). Kept as its own variable so the chip label — which
         // reads differently — stays honest.
         const isComped    = sub?.status === 'comped';
-        const isLapsed    = sub && !isActive && !isTrialing && !isComped && !cancelledUntil;
+        const isPastDue   = sub?.status === 'past_due';
+        const isLapsed    = sub && !isActive && !isTrialing && !isComped && !isPastDue && !cancelledUntil;
+        const heroPrice   = sub ? plans.find(p => p.tier === sub.tier)?.monthly_price_nis ?? null : null;
         const statusColor = trialEnded ? 'bg-red-100 text-red-800 border-red-300'
                         : isTrialing || cancelledUntil ? 'bg-amber-100 text-amber-800 border-amber-300'
                         : isActive     ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
@@ -490,10 +524,51 @@ export default function BillingPage() {
               המנוי בוטל ולא יתחדש. הגישה נשמרת עד {cancelledUntil}.
             </p>
           )}
-          {isLapsed && (
-            <p className="text-sm text-red-800 font-medium">
-              המנוי לא פעיל. שדרג כדי להמשיך להשתמש.
-            </p>
+          {isPastDue && sub && (
+            <div className="space-y-2">
+              <p className="text-sm text-red-800 font-medium">
+                החיוב החודשי בכרטיס השמור לא הצליח.
+                {sub.next_attempt_at && <> ננסה לחייב שוב ב-{fmtDate(sub.next_attempt_at)}.</>}
+                {' '}כדי שהמנוי לא יסתיים, אפשר לשלם עכשיו.
+              </p>
+              {currentTier && heroPrice != null && (
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    disabled={busyTier !== null}
+                    onClick={() => choose(sub.tier, currentTier.title, heroPrice)}
+                    className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-brand-800 px-4 text-sm font-semibold text-white hover:bg-brand-900 disabled:opacity-60"
+                  >
+                    תשלום עכשיו
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busyTier !== null}
+                    onClick={() => choose(sub.tier, currentTier.title, heroPrice, true)}
+                    className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-900 hover:bg-slate-50 disabled:opacity-60"
+                  >
+                    החלפת כרטיס ותשלום
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+          {isLapsed && sub && (
+            <div className="space-y-2">
+              <p className="text-sm text-red-800 font-medium">
+                המנוי הסתיים. כדי להמשיך להשתמש במערכת, הפעל את המנוי.
+              </p>
+              {currentTier && heroPrice != null && (
+                <button
+                  type="button"
+                  disabled={busyTier !== null}
+                  onClick={() => choose(sub.tier, currentTier.title, heroPrice)}
+                  className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-brand-800 px-4 text-sm font-semibold text-white hover:bg-brand-900 disabled:opacity-60"
+                >
+                  <Crown className="w-4 h-4" aria-hidden /> הפעל מנוי {currentTier.title}
+                </button>
+              )}
+            </div>
           )}
           {canCancel && (
             <button
@@ -624,7 +699,7 @@ export default function BillingPage() {
             />
             <button
               type="button"
-              onClick={addMember}
+              onClick={() => void addMember()}
               disabled={busyMem !== null || newPhone.trim().length < 9}
               className="bg-brand-600 hover:bg-brand-800 text-slate-900 text-sm font-semibold px-4 py-2 rounded-lg disabled:bg-slate-300 inline-flex items-center gap-1.5"
             >
@@ -636,15 +711,25 @@ export default function BillingPage() {
       )}
 
       {error && (
-        <div className="text-sm text-red-800 bg-red-50 border border-red-200 rounded-lg px-3 py-2 flex items-center gap-2">
+        <div ref={errorBox} role="alert" className="text-sm text-red-800 bg-red-50 border border-red-200 rounded-lg px-3 py-2 flex flex-wrap items-center gap-2">
           <span className="flex-1">{error}</span>
-          <button
-            type="button"
-            onClick={refresh}
-            className="inline-flex items-center gap-1 text-xs font-semibold text-red-800 hover:bg-red-100 px-2 py-1 rounded"
-          >
-            <RefreshCw className="w-3.5 h-3.5" /> נסה שוב
-          </button>
+          {declined ? (
+            <button
+              type="button"
+              onClick={() => { const t = declined; setDeclined(null); void goToCardPage(t); }}
+              className="inline-flex min-h-11 items-center gap-1 rounded-lg bg-brand-800 px-3 text-sm font-semibold text-white hover:bg-brand-900"
+            >
+              החלפת כרטיס ותשלום
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => void refresh()}
+              className="inline-flex items-center gap-1 text-xs font-semibold text-red-800 hover:bg-red-100 px-2 py-1 rounded"
+            >
+              <RefreshCw className="w-3.5 h-3.5" /> נסה שוב
+            </button>
+          )}
         </div>
       )}
 
@@ -677,7 +762,7 @@ export default function BillingPage() {
           </p>
         )}
         <Suspense fallback={null}>
-          <PaymentCardBlock onCard={onCard} />
+          <PaymentCardBlock onCard={setCard} onCardSaved={onCardSaved} />
         </Suspense>
       </div>
 
@@ -826,20 +911,36 @@ export default function BillingPage() {
           ? (vatPercent != null
               ? `חיוב חודשי: ${breakdownText(withVat(pendingTier.price, vatPercent))}. החיוב מתחדש כל חודש עד לביטול.`
               : `₪${pendingTier.price} לחודש ${PLUS_VAT}. החיוב מתחדש כל חודש עד לביטול.`)
-            + (card === null ? ' בשלב הבא מזינים כרטיס אשראי בעמוד המאובטח של קארדקום, והמנוי מופעל מיד כשהכרטיס מאושר.' : '')
+            + (pendingTier.newCard ? ' בשלב הבא מזינים את הכרטיס החדש בעמוד המאובטח של קארדקום, והמנוי מופעל מיד כשהכרטיס מאושר.'
+              : card === null ? ' בשלב הבא מזינים כרטיס אשראי בעמוד המאובטח של קארדקום, והמנוי מופעל מיד כשהכרטיס מאושר.' : '')
           : ''}
-        confirmLabel={card === null ? 'אישור והמשך להזנת כרטיס' : 'אישור וחיוב'}
+        confirmLabel={card === null || pendingTier?.newCard ? 'אישור והמשך להזנת כרטיס' : 'אישור וחיוב'}
         cancelLabel="חזרה"
         variant="primary"
         busy={busyTier !== null}
         onConfirm={() => {
           if (!pendingTier) return;
           const tier = pendingTier.code;
-          if (card === null) { setPendingTier(null); void goToCardPage(tier); }
+          if (card === null || pendingTier.newCard) { setPendingTier(null); void goToCardPage(tier); }
           else void upgrade(tier);
         }}
         onCancel={() => setPendingTier(null)}
       />
+      {seatUpgrade && (
+        <SeatUpgradeModal
+          detail={seatUpgrade.detail}
+          onClose={() => setSeatUpgrade(null)}
+          onSuccess={() => {
+            const phone = seatUpgrade.phone;
+            setSeatUpgrade(null);
+            void addMember(phone);
+          }}
+          onNeedCard={(count) => buySeatsAfterCard({
+            count, detail: seatUpgrade.detail,
+            invite: { phone: seatUpgrade.phone, role: 'member', jobTitle: '', firstName: '', lastName: '' },
+          })}
+        />
+      )}
       <ConfirmDialog
         open={cancelOpen}
         title="ביטול המנוי"

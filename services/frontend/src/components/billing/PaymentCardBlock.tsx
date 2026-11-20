@@ -47,9 +47,13 @@ function expiry(card: PaymentMethod): string {
 
 export function PaymentCardBlock({
   onCard,
+  onCardSaved,
 }: {
   /** Told whenever the card on file is known or changes. */
   onCard?: (card: PaymentMethod | null) => void;
+  /** Told once the card brought back from the card page is confirmed
+   *  saved: the moment a flow waiting for a card can go on. */
+  onCardSaved?: (card: PaymentMethod | null) => void;
 }) {
   const router   = useRouter();
   const pathname = usePathname();
@@ -68,8 +72,10 @@ export function PaymentCardBlock({
 
   const onCardRef = useRef(onCard);
   useEffect(() => { onCardRef.current = onCard; }, [onCard]);
+  const onSavedRef = useRef(onCardSaved);
+  useEffect(() => { onSavedRef.current = onCardSaved; }, [onCardSaved]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (): Promise<PaymentMethod | null> => {
     setLoadFailed(false);
     try {
       const methods = await paymentApi.methods();
@@ -77,8 +83,10 @@ export function PaymentCardBlock({
         ?? methods.find((m) => m.status === 'active') ?? null;
       setCard(current);
       onCardRef.current?.(current);
+      return current;
     } catch {
       setLoadFailed(true);
+      return null;
     } finally {
       setLoading(false);
     }
@@ -92,7 +100,7 @@ export function PaymentCardBlock({
       if (out.status === 'completed') {
         setPendingSetup(null);
         setNotice({ kind: 'ok', text: 'הכרטיס נשמר.' });
-        await load();
+        onSavedRef.current?.(await load());
       } else if (out.status === 'pending') {
         setPendingSetup(id);
         setNotice({ kind: 'wait', text: 'הכרטיס עדיין לא אושר. אם סיימת להזין את הפרטים, אפשר לבדוק שוב.' });

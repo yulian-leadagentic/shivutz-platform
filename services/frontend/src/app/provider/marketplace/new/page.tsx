@@ -29,10 +29,10 @@
 // region, a monthly price, capacity, "available from") are gone: a
 // category that has a price asks for it in its own terms.
 
-import { useCallback, useEffect, useId, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { AlertCircle, ArrowRight, Loader2, Lock, Plus } from 'lucide-react';
+import { AlertCircle, ArrowRight, CheckCircle2, Loader2, Lock, Plus } from 'lucide-react';
 import { ApiError } from '@/lib/api/client';
 import { type ListingAudience, marketplaceApi } from '@/lib/api/marketplace';
 import {
@@ -47,6 +47,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import ImageUploader from '@/components/marketplace/ImageUploader';
+import { takePlanAdded, type PlanAdded } from '@/features/billing/providerPurchase';
 
 // A category the provider has a running plan in, with the plan's size
 // and how much of it is in use.
@@ -93,6 +94,16 @@ export default function NewProviderListingPage() {
   // chosen yet"; the effect below replaces it, and any hint the provider
   // has no plan in, with the first category it can publish in.
   const hint = searchParams?.get('category') || '';
+
+  // Arriving from a plan just bought in this category: says so, with
+  // what was charged, once.
+  const [planAdded, setPlanAdded] = useState<PlanAdded | null>(null);
+  const tookPlanAdded = useRef(false);
+  useEffect(() => {
+    if (!hint || tookPlanAdded.current) return;
+    tookPlanAdded.current = true;
+    setPlanAdded(takePlanAdded(hint));
+  }, [hint]);
 
   const [form, setForm] = useState({
     category:       isProviderCategory(hint) ? hint : '',
@@ -262,6 +273,25 @@ export default function NewProviderListingPage() {
           <p className="text-sm text-slate-500">המודעה נכללת במסלול שלך בקטגוריה</p>
         </div>
       </div>
+
+      {planAdded && (
+        <div role="status" className="flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+          <span>
+            המסלול נוסף. אפשר לפרסם בקטגוריה.
+            {planAdded.nis != null && <> הכרטיס חויב ב-<span dir="ltr">₪{Number(planAdded.nis).toLocaleString('he-IL', { maximumFractionDigits: 2 })}</span>, כולל מע&quot;מ.</>}
+            {planAdded.invoiceUrl && (
+              <>
+                {' '}
+                <a href={planAdded.invoiceUrl} target="_blank" rel="noopener noreferrer" className="font-semibold underline underline-offset-2">
+                  חשבונית{planAdded.invoiceNumber ? ` ${planAdded.invoiceNumber}` : ''}
+                  <span className="sr-only"> נפתח בחלון חדש</span>
+                </a>
+              </>
+            )}
+          </span>
+        </div>
+      )}
 
       {noPlan ? (
         <Card>

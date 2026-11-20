@@ -161,6 +161,8 @@ export const CODE_TO_HE: Record<string, string> = {
   valid_until_before_valid_from: 'תאריך הסיום חייב להיות אחרי תאריך ההתחלה',
   grace_period:              'המנוי בתקופת חסד: נא לעדכן אמצעי תשלום',
   cardcom_not_configured:    'שירות התשלום אינו מוגדר. פנה לתמיכה',
+  card_declined:             'הכרטיס נדחה. אפשר להחליף כרטיס ולנסות שוב',
+  payment_provider_unreachable: 'לא התקבלה תשובה מחברת הסליקה. לפני ניסיון נוסף כדאי לרענן את הדף ולבדוק אם החיוב בוצע',
   cardcom_recurring_not_wired_yet: 'החיוב החוזר אינו מחובר עדיין. פנה לתמיכה',
   cloudinary_not_configured: 'שירות תמונות אינו מוגדר. פנה לתמיכה',
   not_configured:            'השירות אינו מוגדר. פנה לתמיכה',

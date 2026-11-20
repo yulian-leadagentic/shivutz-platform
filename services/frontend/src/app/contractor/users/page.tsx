@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState, FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Loader2, UserPlus, Clock, CheckCircle2, Trash2, AlertCircle, Pencil, Users } from 'lucide-react';
 import { memberApi, type TeamMember } from '@/lib/api';
@@ -19,6 +19,8 @@ import { TableToolbar } from '@/components/table/TableToolbar';
 import { useTableState } from '@/components/table/useTableState';
 import { PLUS_VAT } from '@/lib/vat';
 import { billingHref } from '@/features/billing/billingReturn';
+import { subscriptionApi } from '@/lib/api/payments';
+import { buySeatsAfterCard, seatKey, seatsAddedLine, takeSeatResume, type InviteDraft } from '@/features/subscription/seatResume';
 
 // Wave 2: 'operator' dropped — three roles cover the cases.
 const ROLE_LABELS: Record<string, string> = {
@@ -55,6 +57,8 @@ export default function ContractorUsersPage() {
   // purchase dialog with the price+count breakdown. When set, the
   // SeatUpgradeModal renders and calls paymentApi.purchaseSeats.
   const [seatUpgrade, setSeatUpgrade] = useState<SeatUpgradeDetail | null>(null);
+  const [resumingSeats, setResumingSeats] = useState(false);
+  const resumed = useRef(false);
   // L4 §5 — contractor sees "X מתוך N משתמשים כלולים במנוי" + the
   // per-extra-seat price so they know a paid upgrade is possible
   // (message-only this round; L5 wires the actual charge).
@@ -113,11 +117,41 @@ export default function ContractorUsersPage() {
     adApi.usage().then(setUsage).catch(() => setUsage(null));
   }, [entityId]);
 
-  async function handleInvite(e: FormEvent) {
-    e.preventDefault();
+  // Back from the card page after a seat purchase that needed a card:
+  // the seats are bought and the invite sent with no further click.
+  useEffect(() => {
+    if (!entityId || resumed.current) return;
+    if (new URLSearchParams(window.location.search).get('resume') !== 'seats') return;
+    resumed.current = true;
+    window.history.replaceState(null, '', '/contractor/users');
+    const r = takeSeatResume();
+    if (!r) return;
+    if (r.invite) {
+      setFirstName(r.invite.firstName); setLastName(r.invite.lastName); setPhone(r.invite.phone);
+      setRole(r.invite.role); setJobTitle(r.invite.jobTitle); setShowForm(true);
+    }
+    setResumingSeats(true);
+    subscriptionApi.purchaseSeats(r.count, seatKey())
+      .then((res) => {
+        adApi.usage().then(setUsage).catch(() => undefined);
+        const lead = seatsAddedLine(res.count);
+        if (r.invite) return sendInvite(r.invite, lead);
+        setSuccess(lead.trim());
+      })
+      .catch((e) => { setError(mapApiError(e)); setSeatUpgrade(r.detail); })
+      .finally(() => setResumingSeats(false));
+  }, [entityId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function handleInvite(e?: { preventDefault(): void }, lead = '') {
+    e?.preventDefault();
+    void sendInvite({ phone, role, jobTitle, firstName, lastName }, lead);
+  }
+
+  async function sendInvite(v: InviteDraft, lead = '') {
     if (!entityId) return;
+    const { firstName, lastName, jobTitle, role } = v;
     // U8 §4 — same treatment as /corporation/users. Was only `!phone.trim()`.
-    const check = checkIsraeliPhone(phone);
+    const check = checkIsraeliPhone(v.phone);
     if (!check.valid || !check.normalized) {
       setError(check.message ?? 'מספר טלפון לא תקין');
       return;
@@ -142,8 +176,8 @@ export default function ContractorUsersPage() {
       }]);
       setFirstName(''); setLastName(''); setPhone(''); setRole('admin'); setJobTitle('');
       setShowForm(false);
-      setSuccess('ההזמנה נשלחה ב-SMS / WhatsApp');
-      setTimeout(() => setSuccess(''), 4000);
+      setSuccess(`${lead}ההזמנה נשלחה ב-SMS / WhatsApp`);
+      setTimeout(() => setSuccess(''), 6000);
     } catch (err) {
       // L1 — compare on structured status/code, not a server message
       // string. R1 fixed this exact anti-pattern on /billing; the same
@@ -291,8 +325,15 @@ export default function ContractorUsersPage() {
         </div>
       )}
 
+      {resumingSeats && (
+        <p role="status" className="flex items-center gap-2 text-sm text-emerald-900 bg-emerald-50 border border-emerald-300 rounded-md px-3 py-2">
+          <Loader2 className="h-4 w-4 animate-spin shrink-0" aria-hidden />
+          הכרטיס נשמר. מוסיפים את המושבים ושולחים את ההזמנה…
+        </p>
+      )}
+
       {success && (
-        <div className="flex items-center gap-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-md px-3 py-2">
+        <div role="status" className="flex items-center gap-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-md px-3 py-2">
           <CheckCircle2 className="h-4 w-4 shrink-0" />
           {success}
         </div>
@@ -651,11 +692,12 @@ export default function ContractorUsersPage() {
           onSuccess={({ count, duplicate }) => {
             // Best-effort usage refresh; failures don't block the modal.
             adApi.usage().then(setUsage).catch(() => undefined);
-            setSuccess(duplicate
-              ? 'הרכישה כבר תועדה: אפשר להזמין את המשתמש'
-              : `${count} מושבים נוספו לחשבון. אפשר להזמין את המשתמש כעת.`);
-            setTimeout(() => setSuccess(''), 6000);
+            setSeatUpgrade(null);
+            handleInvite(undefined, duplicate ? '' : seatsAddedLine(count));
           }}
+          onNeedCard={(count) => buySeatsAfterCard({
+            count, detail: seatUpgrade, invite: { phone, role, jobTitle, firstName, lastName },
+          })}
         />
       )}
 

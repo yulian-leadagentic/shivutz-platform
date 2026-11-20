@@ -18,6 +18,8 @@ export interface SubscriptionRow {
   trial_ends_at: string | null;
   current_period_end: string | null;
   cancelled_at: string | null;
+  /** past_due: when the failed renewal is tried again. */
+  next_attempt_at?: string | null;
   created_at: string;
   updated_at: string;
 }

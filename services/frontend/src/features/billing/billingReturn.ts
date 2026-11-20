@@ -9,6 +9,8 @@ const TIERS: SubscriptionTier[] = ['basic', 'advanced', 'pro'];
 export interface BillingReturn {
   to: string | null;
   tier: SubscriptionTier | null;
+  /** The flow needed only a card: once it is saved, go back. */
+  cardOnly: boolean;
 }
 
 export function billingHref(returnTo: string): string {
@@ -18,13 +20,14 @@ export function billingHref(returnTo: string): string {
 export function readBillingReturn(): BillingReturn {
   try {
     const raw = sessionStorage.getItem(KEY);
-    const o = raw ? JSON.parse(raw) as { to?: string; tier?: string } : {};
+    const o = raw ? JSON.parse(raw) as { to?: string; tier?: string; cardOnly?: boolean } : {};
     return {
-      to:   sanitizeReturnTo(o.to ?? null),
-      tier: TIERS.includes(o.tier as SubscriptionTier) ? o.tier as SubscriptionTier : null,
+      to:       sanitizeReturnTo(o.to ?? null),
+      tier:     TIERS.includes(o.tier as SubscriptionTier) ? o.tier as SubscriptionTier : null,
+      cardOnly: o.cardOnly === true,
     };
   } catch {
-    return { to: null, tier: null };
+    return { to: null, tier: null, cardOnly: false };
   }
 }
 
@@ -40,8 +43,9 @@ export function clearBillingReturn(): void {
   } catch {}
 }
 
-export function returnLine(to: string): string {
+export function returnLine(to: string, cardOnly = false): string {
   const path = to.split('?')[0];
+  if (cardOnly) return 'בסיום הזנת הכרטיס נחזיר אותך להמשך הפעולה.';
   if (path.startsWith('/corporation/ads/new')) return 'בסיום התשלום המודעה שלך תפורסם מיד.';
   if (to.includes('reveal=')) return 'בסיום התשלום פרטי הקשר שביקשת ייחשפו מיד.';
   if (path === '/corporation/ads') return 'בסיום התשלום נחזיר אותך למודעות שלך.';

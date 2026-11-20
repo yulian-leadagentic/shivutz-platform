@@ -15,17 +15,20 @@
 // (R37 D1); the quote's promo_end only decides whether it says so.
 //
 // R37 4.1.2 · after the promo the plan is paid for. The dialog then
-// says what will be charged and that the plan renews, and it opens only
-// if there is a card on file; without one the page points at "מנוי
-// ותשלום", where a card is added. The server charges the card and
-// answers with the plan only if the charge went through.
+// says what will be charged and that the plan renews. The server charges
+// the card and answers with the plan only if the charge went through.
+//
+// One approval, then the flow runs to its end (Yulian, 20.11). With no
+// card on file the dialog says the card comes next; confirming opens the
+// card page, and back from it "מנוי ותשלום" buys the plan by itself.
+// Either way the provider lands on the new listing form of the category.
 //
 // Prices shown are the tiers' own, from /admin/marketplace. Nothing
 // here is hard-coded.
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { AlertCircle, CheckCircle2, Loader2, Plus } from 'lucide-react';
 
 import {
@@ -36,11 +39,13 @@ import {
   type SubscriptionQuote,
 } from '@/lib/api/marketplaceSubscriptions';
 import { ApiError } from '@/lib/api/client';
+import { mapApiError } from '@/lib/api/errors';
 import { paymentApi } from '@/lib/api/payments';
 import { isProviderCategory, paidTiers } from '@/lib/providerCategories';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { PLUS_VAT, breakdownText } from '@/lib/vat';
+import { buyAfterCard, listingHref, savePlanAdded } from '@/features/billing/providerPurchase';
 
 function fmtPrice(nis: number): string {
   return `₪${nis.toLocaleString('he-IL', { maximumFractionDigits: 2 })}`;
@@ -64,19 +69,17 @@ export default function ProviderSubscribePage() {
 
 function ProviderSubscribeInner() {
   const preset = useSearchParams()?.get('category') || null;
+  const router = useRouter();
 
   const [catalog, setCatalog] = useState<CatalogCategory[]>([]);
   const [mine, setMine]       = useState<Subscription[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
   const [error, setError]     = useState<string | null>(null);
-  const [added, setAdded]     = useState<string | null>(null);   // category code just added
-  // What the plan just added cost, when it was paid for.
-  const [paid, setPaid]       = useState<{ nis: number; invoiceUrl: string | null; invoiceNumber: string | null } | null>(null);
-  // Set when a paid purchase cannot go ahead for want of a card.
-  const [needCard, setNeedCard] = useState<string | null>(null);  // where a card is added
   const [quoting, setQuoting] = useState<string | null>(null);   // tier id being quoted
   const [pending, setPending] = useState<SubscriptionQuote | null>(null);
+  // A paid plan with no card on file: confirming opens the card page.
+  const [needsCard, setNeedsCard] = useState(false);
   const [buying, setBuying]   = useState(false);
 
   const load = useCallback(async () => {
@@ -111,19 +114,17 @@ function ProviderSubscribeInner() {
   );
 
   async function ask(tier: CatalogTier) {
-    setError(null); setAdded(null); setPaid(null); setNeedCard(null); setQuoting(tier.id);
+    setError(null); setQuoting(tier.id);
     try {
       const quote = await marketplaceSubscriptionsApi.quote(tier.id);
-      // A purchase that will be charged needs a card first. Asked
-      // before the dialog, so nobody confirms a charge that cannot be
-      // made.
+      // A purchase that will be charged needs a card. Asked before the
+      // dialog, so the dialog can say the card comes next.
+      let noCard = false;
       if (!quote.promo_end) {
         const cards = await paymentApi.methods();
-        if (!cards.some((c) => c.status === 'active')) {
-          setNeedCard(`/provider/billing?category=${encodeURIComponent(tier.category_code)}`);
-          return;
-        }
+        noCard = !cards.some((c) => c.status === 'active');
       }
+      setNeedsCard(noCard);
       setPending(quote);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'לא הצלחנו לבדוק את המסלול. נסו שוב.');
@@ -132,29 +133,38 @@ function ProviderSubscribeInner() {
     }
   }
 
+  async function toCardPage(quote: SubscriptionQuote) {
+    try {
+      await buyAfterCard({ tierId: quote.tier.tier_id, category: quote.tier.category_code });
+    } catch (e) {
+      setPending(null); setBuying(false);
+      setError(e instanceof Error ? e.message : 'לא הצלחנו לפתוח את עמוד הכרטיס. נסו שוב.');
+    }
+  }
+
   async function confirm() {
     if (!pending) return;
     setBuying(true); setError(null);
+    if (needsCard) { await toCardPage(pending); return; }
     try {
       const plan = await marketplaceSubscriptionsApi.purchase(pending.tier.tier_id, true);
-      setAdded(pending.tier.category_code);
-      setPaid(plan.charged_nis != null
-        ? { nis: plan.charged_nis, invoiceUrl: plan.invoice_url ?? null, invoiceNumber: plan.invoice_number ?? null }
-        : null);
-      setPending(null);
-      await load();
+      savePlanAdded({
+        category:      pending.tier.category_code,
+        nis:           plan.charged_nis ?? null,
+        invoiceUrl:    plan.invoice_url ?? null,
+        invoiceNumber: plan.invoice_number ?? null,
+      });
+      router.push(listingHref(pending.tier.category_code));
     } catch (e) {
-      setPending(null);
       const details = e instanceof ApiError
-        ? (e.cause.details as { code?: string; add_card_url?: string } | undefined)
+        ? (e.cause.details as { code?: string } | undefined)
         : undefined;
       if (details?.code === 'no_payment_method') {
-        setNeedCard(details.add_card_url || '/provider/billing');
-      } else {
-        setError(e instanceof Error ? e.message : 'הוספת המסלול נכשלה. נסו שוב.');
+        await toCardPage(pending);
+        return;
       }
-    } finally {
-      setBuying(false);
+      setPending(null); setBuying(false);
+      setError(mapApiError(e));
     }
   }
 
@@ -165,12 +175,15 @@ function ProviderSubscribeInner() {
         pending.promo_end
           ? 'הפרסום ללא עלות לתקופת ניסיון. לא נחייב אותך ללא הודעה מראש.'
           : [
+              needsCard
+                ? 'בשלב הבא מזינים כרטיס אשראי בעמוד המאובטח של קארדקום, והמסלול מתווסף מיד כשהכרטיס מאושר.'
+                : '',
               pending.vat
-                ? `באישור יחויב הכרטיס השמור שלך: ${breakdownText({ net: pending.vat.net_nis, percent: pending.vat.vat_percent, vat: pending.vat.vat_nis, total: pending.vat.total_nis })}.`
-                : `באישור יחויב הכרטיס השמור שלך ב-${fmtPrice(Number(pending.tier.price_nis))} ${PLUS_VAT}.`,
+                ? `${needsCard ? 'החיוב' : 'באישור יחויב הכרטיס השמור שלך'}: ${breakdownText({ net: pending.vat.net_nis, percent: pending.vat.vat_percent, vat: pending.vat.vat_nis, total: pending.vat.total_nis })}.`
+                : `${needsCard ? 'החיוב' : 'באישור יחויב הכרטיס השמור שלך'}: ${fmtPrice(Number(pending.tier.price_nis))} ${PLUS_VAT}.`,
               `המסלול מתחדש אוטומטית בכל ${pending.tier.duration_days} ימים, בחיוב הכרטיס במחיר המסלול באותו מועד ועוד מע"מ.`,
               'אפשר לכבות את החידוש האוטומטי בעמוד מנוי ותשלום.',
-            ].join(' '),
+            ].filter(Boolean).join(' '),
       ].filter(Boolean).join(' ')
     : '';
 
@@ -187,42 +200,6 @@ function ProviderSubscribeInner() {
         <div role="alert" className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
           <span>{error}</span>
-        </div>
-      )}
-
-      {needCard && (
-        <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-          <span className="flex items-start gap-2">
-            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-            כדי להוסיף מסלול בתשלום יש להוסיף קודם כרטיס אשראי.
-          </span>
-          <Button asChild size="sm">
-            <Link href={needCard}>הוספת כרטיס</Link>
-          </Button>
-        </div>
-      )}
-
-      {added && (
-        <div role="status" className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
-          <span className="flex items-center gap-2">
-            <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden="true" />
-            <span>
-              המסלול נוסף. אפשר לפרסם בקטגוריה.
-              {paid && <> הכרטיס חויב ב-<span dir="ltr">{fmtPrice(paid.nis)}</span>, כולל מע&quot;מ.</>}
-              {paid?.invoiceUrl && (
-                <>
-                  {' '}
-                  <a href={paid.invoiceUrl} target="_blank" rel="noopener noreferrer" className="font-semibold underline underline-offset-2">
-                    חשבונית{paid.invoiceNumber ? ` ${paid.invoiceNumber}` : ''}
-                    <span className="sr-only"> נפתח בחלון חדש</span>
-                  </a>
-                </>
-              )}
-            </span>
-          </span>
-          <Button asChild size="sm">
-            <Link href={`/provider/marketplace/new?category=${encodeURIComponent(added)}`}>פרסום מודעה</Link>
-          </Button>
         </div>
       )}
 
@@ -304,11 +281,11 @@ function ProviderSubscribeInner() {
         open={!!pending}
         title="הוספת מסלול"
         message={confirmMessage}
-        confirmLabel={pending && !pending.promo_end ? 'אישור וחיוב' : 'אישור'}
+        confirmLabel={!pending || pending.promo_end ? 'אישור' : needsCard ? 'אישור והמשך להזנת כרטיס' : 'אישור וחיוב'}
         variant="primary"
         busy={buying}
         onConfirm={confirm}
-        onCancel={() => setPending(null)}
+        onCancel={() => { if (!buying) setPending(null); }}
       />
     </div>
   );
