@@ -9,7 +9,7 @@
 // /start endpoint will return a Cardcom redirect URL and we'll
 // window.location to it here.
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Loader2, Check, Sparkles, Users as UsersIcon, Trash2, Plus, ChevronRight, RefreshCw, Crown, ArrowLeft, ArrowRight } from 'lucide-react';
 import {
@@ -26,6 +26,8 @@ import { useAuth } from '@/lib/AuthContext';
 import { useRouter } from 'next/navigation';
 import { WhatsAppEntityCard } from '@/components/shared/WhatsAppEntityCard';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { PaymentCardBlock } from '@/components/billing/PaymentCardBlock';
+import type { PaymentMethod } from '@/types';
 
 function fmtDate(iso: string | null): string {
   if (!iso) return '';
@@ -119,6 +121,20 @@ export default function BillingPage() {
   const [cancelOpen, setCancelOpen]   = useState(false);
   const [cancelBusy, setCancelBusy]   = useState(false);
   const [cancelDone, setCancelDone]   = useState(false);
+  const [card, setCard]         = useState<PaymentMethod | null | undefined>(undefined);
+  const [needCard, setNeedCard] = useState(false);
+  const cardBox                 = useRef<HTMLDivElement>(null);
+
+  function askForCard() {
+    setNeedCard(true);
+    cardBox.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }
+
+  function choose(code: SubscriptionTier) {
+    setError('');
+    if (card === null) { askForCard(); return; }
+    void upgrade(code);
+  }
 
   // Team-members merge (contractor-only). Corp still has /corporation/users.
   const [members, setMembers]   = useState<TeamMember[]>([]);
@@ -225,7 +241,10 @@ export default function BillingPage() {
       // failure was the only path still leaking English machine codes
       // ("no_active_subscription", "plan_not_found") into the red
       // banner.
-      setError(mapApiError(e));
+      const details = e instanceof ApiError ? (e.cause?.details as { code?: string } | undefined) : undefined;
+      const code = details?.code || (e instanceof ApiError ? (e.cause?.error || e.cause?.code) : undefined);
+      if (code === 'no_payment_method') askForCard();
+      else setError(mapApiError(e));
     } finally {
       setBusy(null);
     }
@@ -255,7 +274,8 @@ export default function BillingPage() {
     );
   }
 
-  const trialDays  = sub?.status === 'trialing'  ? daysUntil(sub.trial_ends_at)      : null;
+  const trialEnded = sub?.status === 'trialing' && !!sub.trial_ends_at && new Date(sub.trial_ends_at).getTime() <= Date.now();
+  const trialDays  = sub?.status === 'trialing' && !trialEnded ? daysUntil(sub.trial_ends_at) : null;
   const periodDays = sub?.status === 'active'    ? daysUntil(sub.current_period_end) : null;
   // Only a paid period can be cancelled (the payment service answers
   // 409 for a trial). A cancelled period keeps access to its end.
@@ -320,7 +340,8 @@ export default function BillingPage() {
         // reads differently — stays honest.
         const isComped    = sub?.status === 'comped';
         const isLapsed    = sub && !isActive && !isTrialing && !isComped && !cancelledUntil;
-        const statusColor = isTrialing || cancelledUntil ? 'bg-amber-100 text-amber-800 border-amber-300'
+        const statusColor = trialEnded ? 'bg-red-100 text-red-800 border-red-300'
+                        : isTrialing || cancelledUntil ? 'bg-amber-100 text-amber-800 border-amber-300'
                         : isActive     ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
                         : isComped     ? 'bg-sky-100 text-sky-800 border-sky-300'
                         :                'bg-red-100 text-red-800 border-red-300';
@@ -336,7 +357,7 @@ export default function BillingPage() {
             </p>
             {sub && (
               <span className={`inline-block text-[11px] font-bold rounded-full px-2.5 py-0.5 border ${statusColor}`}>
-                {STATUS_LABEL[sub.status] ?? sub.status}
+                {trialEnded ? 'הניסיון הסתיים' : (STATUS_LABEL[sub.status] ?? sub.status)}
               </span>
             )}
           </div>
@@ -372,6 +393,26 @@ export default function BillingPage() {
               נותרו {trialDays} ימים בתקופת הניסיון החינמית
             </p>
           )}
+          {trialEnded && sub && (() => {
+            const price = plans.find(p => p.tier === sub.tier)?.monthly_price_nis;
+            return (
+              <div className="space-y-2">
+                <p className="text-sm text-red-800 font-medium">
+                  תקופת הניסיון הסתיימה. כדי להמשיך להשתמש במערכת, הפעל את המנוי.
+                </p>
+                {currentTier && price != null && (
+                  <button
+                    type="button"
+                    disabled={busyTier !== null}
+                    onClick={() => choose(sub.tier)}
+                    className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-brand-800 px-4 text-sm font-semibold text-white hover:bg-brand-900 disabled:opacity-60"
+                  >
+                    <Crown className="w-4 h-4" aria-hidden /> הפעל מנוי {currentTier.title}
+                  </button>
+                )}
+              </div>
+            );
+          })()}
           {periodDays !== null && (
             <p className="text-sm text-emerald-800 font-medium">
               החיוב הבא בעוד {periodDays} ימים
@@ -557,6 +598,17 @@ export default function BillingPage() {
         </div>
       )}
 
+      <div ref={cardBox} className="space-y-2">
+        {needCard && card === null && (
+          <p role="alert" className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            כדי להפעיל מנוי יש להוסיף כרטיס אשראי. הכרטיס מוזן בעמוד המאובטח של קארדקום.
+          </p>
+        )}
+        <Suspense fallback={null}>
+          <PaymentCardBlock onCard={setCard} />
+        </Suspense>
+      </div>
+
       {/* Tier picker */}
       <div>
         <h2 className="text-lg font-bold text-slate-900 mb-3">חבילות זמינות</h2>
@@ -565,7 +617,8 @@ export default function BillingPage() {
         {TIERS.map((t) => {
           const currentOrder  = sub ? (TIER_ORDER[sub.tier] ?? 0) : 0;
           const targetOrder   = TIER_ORDER[t.code];
-          const isCurrent     = sub?.tier === t.code && (sub?.status === 'active' || sub?.status === 'trialing' || sub?.status === 'comped');
+          const isSameTier    = sub?.tier === t.code;
+          const isCurrent     = isSameTier && (sub?.status === 'active' || (sub?.status === 'trialing' && !trialEnded) || sub?.status === 'comped');
           const isUpgrade     = !isCurrent && targetOrder > currentOrder;
           const isDowngrade   = !isCurrent && targetOrder < currentOrder;
           // R26 §1b/c/d · card numbers come from the /ads/plans catalog.
@@ -653,7 +706,7 @@ export default function BillingPage() {
               <button
                 type="button"
                 disabled={busyTier !== null || isCurrent || priceMissing}
-                onClick={() => upgrade(t.code)}
+                onClick={() => choose(t.code)}
                 title={priceMissing ? 'מחיר חסר בקטלוג: פנה לתמיכה' : undefined}
                 className={`w-full text-sm font-semibold py-2.5 rounded-lg
                            disabled:cursor-not-allowed inline-flex items-center justify-center gap-2 transition ${
@@ -670,6 +723,8 @@ export default function BillingPage() {
                   <><Crown className="w-4 h-4" /> המנוי הנוכחי</>
                 ) : priceMissing ? (
                   <>לא זמין</>
+                ) : isSameTier ? (
+                  <><Crown className="w-4 h-4" /> הפעל מנוי {t.title}</>
                 ) : isUpgrade ? (
                   <>שדרג ל{t.title} <ArrowLeft className="w-4 h-4" /></>
                 ) : isDowngrade ? (
